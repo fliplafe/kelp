@@ -2,11 +2,6 @@ import AppKit
 import Core
 import Agents
 
-extension NSImage {
-    /// SF Symbol, or an empty image if the name is unknown on this macOS.
-    static func symbol(_ name: String, _ label: String? = nil) -> NSImage { NSImage(systemSymbolName: name, accessibilityDescription: label) ?? NSImage() }
-}
-
 /// Present an alert as a sheet on the main window and await the answer (native, non-blocking).
 @MainActor
 func runSheet(_ a: NSAlert) async -> NSApplication.ModalResponse {
@@ -100,8 +95,8 @@ enum AgentActions {
             guard let r = await AppModel.shared.call("task.create", .object(p)), let wid = r["worktree"]?["id"]?.string,
                   let s = try? r["session"]?.decode(Session.self) else { return }
             await AppModel.shared.refresh()
-            delegate?.open(worktree: wid)
-            delegate?.content.workspace?.add(session: s)
+            Workbench.show(workspace: wid)
+            Workbench.open(TabURI.session(s.id))
         }
     }
 
@@ -116,7 +111,31 @@ enum AgentActions {
             let text = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { p["prompt"] = .string(text) }
             guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
-            delegate?.content.workspace?.add(session: s)
+            AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id))
+        }
+    }
+
+    static func rename(_ sid: String) {
+        let cur = AppModel.shared.session(sid)?.title ?? ""
+        guard let t = prompt("Rename", "Leave empty to name it from the task automatically.", initial: cur) else { return }
+        Task { await AppModel.shared.call("session.rename", .obj(["id": .string(sid), "title": .string(t)])) }
+    }
+
+    /// Same command in the same tab; resumes the conversation when the agent supports it.
+    static func restart(_ sid: String) {
+        Task {
+            guard let r = await AppModel.shared.call("session.restart", .obj(["id": .string(sid)])), let s = try? r.decode(Session.self) else { return }
+            AppModel.shared.sessions.removeAll { $0.id == sid }
+            AppModel.shared.upsert(s)
+            Workbench.editor?.replace(session: sid, with: s.id)
+        }
+    }
+
+    static func copyContext(_ sid: String) {
+        Task {
+            guard let t = await AppModel.shared.call("session.context", .obj(["id": .string(sid)]))?.string else { return }
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(t, forType: .string)
+            Banner.show("Context copied")
         }
     }
 
@@ -133,8 +152,9 @@ enum AgentActions {
             if !text.isEmpty { p["prompt"] = .string(text) }
             guard let r = await AppModel.shared.call("session.fork", .object(p)), let s = try? r.decode(Session.self) else { return }
             await AppModel.shared.refresh()
-            if let w = s.worktreeId { delegate?.open(worktree: w) }
-            delegate?.content.workspace?.add(session: s)
+            AppModel.shared.upsert(s)
+            if let w = s.worktreeId { Workbench.show(workspace: w) }
+            Workbench.open(TabURI.session(s.id))
         }
     }
 
@@ -151,7 +171,17 @@ enum AgentActions {
             let text = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { p["prompt"] = .string(text) }
             guard let r = await AppModel.shared.call("session.handoff", .object(p)), let s = try? r.decode(Session.self) else { return }
-            delegate?.content.workspace?.add(session: s, split: true)
+            AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id), split: .right)
         }
     }
+}
+
+/// A one-field question (rename, go to line…).
+@MainActor
+func prompt(_ title: String, _ info: String, initial: String = "") -> String? {
+    let a = NSAlert(); a.messageText = title; a.informativeText = info
+    let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); f.stringValue = initial
+    a.accessoryView = f; a.addButton(withTitle: "OK"); a.addButton(withTitle: "Cancel")
+    a.window.initialFirstResponder = f
+    return a.runModal() == .alertFirstButtonReturn ? f.stringValue : nil
 }

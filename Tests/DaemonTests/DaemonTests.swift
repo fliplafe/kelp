@@ -102,7 +102,9 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     let r = try await c.call("fanout.start", .obj(["repoId": .string(repo.id), "prompt": "true", "agents": .array(["shell", "shell"]), "delay": 1]))
     #expect(r.array?.count == 2)
     let ids = r.array!.compactMap { $0["worktree"]?.string }
-    try "x\n".write(toFile: (try await c.call("worktree.list", .obj(["repoId": .string(repo.id)])).array![0]["path"]!.string!) + "/new.txt", atomically: true, encoding: .utf8)
+    // The list also holds the project's main workspace (the repo itself): write into the first fan-out one.
+    let first = try await c.call("worktree.list", .obj(["repoId": .string(repo.id)])).array?.first { $0["id"]?.string == ids.first }
+    try "x\n".write(toFile: (first?["path"]?.string ?? "") + "/new.txt", atomically: true, encoding: .utf8)
     let cmp = try await c.call("fanout.compare", .obj(["ids": .array(ids.map { .string($0) })]))
     #expect(cmp.array?.count == 2)
     #expect(cmp.array![0]["files"]?.int == 1)
@@ -218,4 +220,17 @@ final class ChatBox: @unchecked Sendable {
     private let l = NSLock(); private var lines: [String] = []
     func add(_ s: String) { l.lock(); lines.append(s); l.unlock() }
     var all: [String] { l.lock(); defer { l.unlock() }; return lines }
+}
+
+/// Every project has a main workspace on the repo itself; "+" makes "Workspace N" instantly; the main one can't be deleted.
+@Test func workspacesMainAndInstant() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let list: [Worktree] = try await c.call("worktree.list", .obj(["repoId": .string(repo.id)]), as: [Worktree].self)
+    let main = list.first { $0.path == repo.path }
+    #expect(main != nil)
+    let w: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "setup": false]), as: Worktree.self)
+    #expect(w.note == "Workspace 2" && w.branch == "ws-2")
+    await #expect(throws: RPCError.self) { _ = try await c.call("worktree.remove", .obj(["id": .string(main?.id ?? "")])) }
 }

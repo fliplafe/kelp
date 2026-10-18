@@ -23,6 +23,9 @@ public final class Daemon: @unchecked Sendable {
     var usageCache: (at: Date, value: JSONValue)?
     var chats: [String: ChatSession] = [:]
     var rawConns = Set<Int>()
+    /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
+    var claudeLimits: [String: (reading: ClaudeLimits.Reading, at: Date)] = [:]
+    func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
     private let wakeLock = NSLock()   // one wake per session even when several clients open it at once
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
@@ -205,6 +208,7 @@ public final class Daemon: @unchecked Sendable {
         rec = ls.snapshot
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
+        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         let sid = rec.id
         ls.onFirstPrompt = { [weak self] text in Task { await self?.autoTitle(session: sid, prompt: text) } }
         lock.lock(); live[rec.id] = ls; lock.unlock()
@@ -270,6 +274,7 @@ public final class Daemon: @unchecked Sendable {
         let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
+        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         lock.withLock { live[rec.id] = ls }
         publish(ls.snapshot)
         return ls

@@ -16,7 +16,7 @@ final class PaneView: NSView, NSDraggingSource {
     private var swiftTerm: RemoteTerminalView?
     private let header = NSView()
     private let title = NSTextField(labelWithString: "")
-    private var dot = StatusDot(status: nil)
+    private let dot = StatusMark(size: 10)
     private let ended = NSStackView()
     private let dropHint = NSView()
     private var headerHeight: NSLayoutConstraint!
@@ -75,7 +75,9 @@ final class PaneView: NSView, NSDraggingSource {
             g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
             g.onExit = { [weak self] in self?.sessionEnded() }
             g.onOpenURL = { url in
-                if url.host == "localhost" || url.host == "127.0.0.1", let d = NSApp.delegate as? AppDelegate { d.openInBrowser(url) } else { NSWorkspace.shared.open(url) }
+                // ⌘-click: local pages open as a browser tab, the rest in the default browser.
+                if url.host == "localhost" || url.host == "127.0.0.1" || url.isFileURL { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
+                else { NSWorkspace.shared.open(url) }
             }
             ghostty = g; termView = g
             return
@@ -142,12 +144,7 @@ final class PaneView: NSView, NSDraggingSource {
 
     func update(_ s: Session) {
         title.stringValue = s.displayTitle
-        let newDot = StatusDot(status: s.agent == "shell" ? nil : s.status)
-        if let row = dot.superview as? NSStackView, let i = row.arrangedSubviews.firstIndex(of: dot) {
-            row.removeArrangedSubview(dot); dot.removeFromSuperview(); row.insertArrangedSubview(newDot, at: i)
-        }
-        dot = newDot
-        dot.isHidden = s.agent == "shell"
+        dot.status = s.agent == "shell" ? nil : s.status
         if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
         if s.status == .done || s.status == .waiting { lastActivity = Date() }
     }

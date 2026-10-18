@@ -148,7 +148,7 @@ final class DashboardController: NSObject, NSTableViewDataSource, NSTableViewDel
         return v
     }
 
-    @objc private func openCard(_ b: NSButton) { if let id = b.identifier?.rawValue { (NSApp.delegate as? AppDelegate)?.openSession(id); NSApp.mainWindow?.makeKeyAndOrderFront(nil) } }
+    @objc private func openCard(_ b: NSButton) { if let id = b.identifier?.rawValue { Workbench.focus(session: id); NSApp.mainWindow?.makeKeyAndOrderFront(nil) } }
 
     private var shown: [AgentEvent] {
         let q = filter.stringValue.lowercased()
@@ -164,5 +164,5 @@ final class DashboardController: NSObject, NSTableViewDataSource, NSTableViewDel
         l.lineBreakMode = .byTruncatingTail; l.font = .systemFont(ofSize: 12)
         return l
     }
-    @objc private func openEvent() { if feed.clickedRow >= 0 { (NSApp.delegate as? AppDelegate)?.openSession(shown[feed.clickedRow].session.id) } }
+    @objc private func openEvent() { if feed.clickedRow >= 0 { Workbench.focus(session: shown[feed.clickedRow].session.id) } }
 }

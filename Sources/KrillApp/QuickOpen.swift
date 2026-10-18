@@ -49,12 +49,10 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             field.topAnchor.constraint(equalTo: effect.topAnchor, constant: 18), field.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 14),
             field.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -14),
             sv.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 10), sv.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 6),
-            sv.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -6), sv.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -6),
+            sv.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -6), sv.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -6)
         ])
         panel.contentView = effect
     }
-
-    private var delegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
     private func collect() {
         var items: [Item] = []
@@ -70,23 +68,26 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             }
         }
         if let m = NSApp.mainMenu { walk(m, path: "") }
-        for qc in QuickCommands.all(repoPath: delegate?.sidebar.selectedRepo?.path) {
+        for c in ExtensionRegistry.shared.all.commands {
+            items.append(Item(kind: "Command", icon: "puzzlepiece.extension", title: c.title, detail: c.key ?? "", action: { c.run([:]) }))
+        }
+        for qc in QuickCommands.all(repoPath: AppModel.shared.repo(AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId)?.path) {
             items.append(Item(kind: "Quick Command", icon: "bolt", title: qc.name, detail: qc.text.prefix(80).description, action: { QuickCommands.run(qc) }))
         }
         if !commandsOnly {
             for w in AppModel.shared.worktrees where !w.archived {
                 let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
-                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.note.isEmpty ? w.branch : w.note, detail: "\(repo)  \(w.note)", action: { [weak self] in self?.delegate?.open(worktree: w.id) }))
+                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)", action: { Workbench.show(workspace: w.id) }))
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: s.displayTitle, detail: "\(s.status.label) · \(wt?.branch ?? "")", action: { [weak self] in self?.delegate?.openSession(s.id) }))
+                items.append(Item(kind: "Agent", icon: "terminal", title: s.displayTitle, detail: "\(s.status.words) · \(wt?.displayName ?? "")", action: { Workbench.focus(session: s.id) }))
             }
-            if let wid = delegate?.content.worktreeId {
+            if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
                     all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f, action: { [weak self] in
-                        self?.delegate?.content.files?.openFile(f)
+                        _ = self; Workbench.open(TabURI.file(root + "/" + f))
                     }) }
                     filter()
                 }
@@ -182,11 +183,10 @@ enum QuickCommands {
     }
     /// Into the focused agent's prompt (submitted), or a new tab when there's none / it asks for one.
     static func run(_ q: QuickCommand) {
-        guard let d = NSApp.delegate as? AppDelegate else { return }
-        if !q.newTab, let sid = d.content.workspace?.currentSession {
+        if !q.newTab, let sid = Workbench.shared.focusedSession {
             Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(q.text)])) }
         } else {
-            d.startSession(agent: nil, command: q.text, newTab: true)
+            Workbench.editor?.run(command: q.text)
         }
     }
 }

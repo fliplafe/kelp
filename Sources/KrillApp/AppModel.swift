@@ -2,24 +2,60 @@ import AppKit
 import Core
 import Agents
 
-/// UI-side mirror of daemon state. The app talks to the daemon only through JSON-RPC.
+/// UI-side mirror of daemon state (observable: SwiftUI views update only what changed).
+/// The app talks to the daemon only through JSON-RPC.
 @MainActor
+@Observable
 final class AppModel {
     static let shared = AppModel()
 
-    var client: RPCClient?
+    @ObservationIgnored var client: RPCClient?
+    var connected = false
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var sessions: [Session] = []
-    var agents: [AgentManifest] = AgentManifest.load()
+    @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
-    var onChange: [() -> Void] = []
-    var onChatLine: ((String, String) -> Void)?
+    @ObservationIgnored var onChange: [() -> Void] = []
+    @ObservationIgnored var onChatLine: ((String, String) -> Void)?
     /// Claude Code subagents per session (title, active), polled while the parent works.
-    var subagents: [String: [(title: String, active: Bool)]] = [:]
-    private var subagentTimer: Timer?
-    var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
-    private var outputHandlers: [String: (Data) -> Void] = [:]
+    var subagents: [String: [Subagent]] = [:]
+    struct Subagent: Equatable { var title: String; var active: Bool }
+    @ObservationIgnored private var subagentTimer: Timer?
+    @ObservationIgnored var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
+    @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
+
+    /// Workspaces of a project: the main one (the repo itself) first, then newest first.
+    func workspaces(of r: Repo) -> [Worktree] {
+        worktrees.filter { $0.repoId == r.id && !$0.archived }.sorted { a, b in
+            if (a.path == r.path) != (b.path == r.path) { return a.path == r.path }
+            return a.createdAt > b.createdAt
+        }
+    }
+
+    func upsert(_ s: Session) {
+        if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
+    }
+
+    /// Tells the daemon what's on screen, so agents can ask (`krill ui state`, MCP).
+    func publishUIState() {
+        guard let c = client else { return }
+        let w = worktree(Workbench.shared.workspaceId)
+        let reg = ExtensionRegistry.shared
+        let state: JSONValue = .obj([
+            "workspace": w.map { .obj(["id": .string($0.id), "name": .string($0.displayName), "path": .string($0.path), "branch": .string($0.branch)]) } ?? .null,
+            "focusedSession": Workbench.shared.focusedSession.map { .string($0) } ?? .null,
+            "focusedFile": Workbench.shared.focusedFile.map { .string($0) } ?? .null,
+            "editor": Workbench.editor?.stateForAgents ?? .null,
+            "extensions": .array(reg.extensions.map { e in
+                .obj(["id": .string(e.id), "name": .string(e.name), "enabled": .bool(e.enabled), "builtin": .bool(e.builtin),
+                      "path": e.path.map { .string($0.path) } ?? .null, "error": e.error.map { .string($0) } ?? .null])
+            }),
+            "commands": .array(reg.all.commands.map { .obj(["id": .string($0.id), "title": .string($0.title)]) }),
+            "panels": .array(reg.all.panels.map { .obj(["id": .string($0.id), "title": .string($0.title)]) })
+        ])
+        c.notify("ui.publish", .obj(["state": state]))
+    }
 
     func connect() async {
         for attempt in 0..<2 {
@@ -31,8 +67,11 @@ final class AppModel {
         guard let c = client else { return }
         if await checkDaemonVersion(c) { return }
         c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
-        c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.reconnectSoon() } }
+        c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.connected = false; self?.reconnectSoon() } }
+        connected = true
+        await SettingsStore.shared.load()
         await refresh()
+        publishUIState()
     }
 
     private var restartAttempted = false
@@ -91,18 +130,18 @@ final class AppModel {
         var changed = false
         for s in sessions where s.agent == "claude" && (s.status == .working || subagents[s.id] != nil) {
             let list = ((try? await client?.call("session.subagents", .obj(["id": .string(s.id)])).array) ?? [])
-                .map { (title: $0["title"]?.string ?? "Subagent", active: $0["active"]?.bool ?? false) }
-            let old = subagents[s.id] ?? []
-            if old.map(\.title) != list.map(\.title) || old.map(\.active) != list.map(\.active) { subagents[s.id] = list.isEmpty ? nil : list; changed = true }
+                .map { Subagent(title: $0["title"]?.string ?? "Subagent", active: $0["active"]?.bool ?? false) }
+            if (subagents[s.id] ?? []) != list { subagents[s.id] = list.isEmpty ? nil : list; changed = true }
         }
         if changed { onChange.forEach { $0() } }
     }
 
     func refresh() async {
         guard let c = client else { return }
-        repos = (try? await c.call("repo.list", as: [Repo].self)) ?? repos
-        worktrees = (try? await c.call("worktree.list", as: [Worktree].self)) ?? worktrees
-        sessions = (try? await c.call("session.list", as: [Session].self)) ?? sessions
+        // Assign only what changed: every assignment re-renders the views that read it.
+        if let r = try? await c.call("repo.list", as: [Repo].self), r != repos { repos = r }
+        if let w = try? await c.call("worktree.list", as: [Worktree].self), w != worktrees { worktrees = w }
+        if let s = try? await c.call("session.list", as: [Session].self), s != sessions { sessions = s }
         onChange.forEach { $0() }
     }
 
@@ -113,7 +152,8 @@ final class AppModel {
         case "event.session":
             guard let s = try? p.decode(Session.self) else { return }
             let old = sessions.first { $0.id == s.id }
-            if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
+            if old != s { upsert(s) }
+            NotificationCenter.default.post(name: .krillSession, object: s.id)
             if old?.status != s.status { DashboardController.events.append(AgentEvent(date: Date(), session: s, status: s.status)); if DashboardController.events.count > 500 { DashboardController.events.removeFirst(100) } }
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
@@ -125,18 +165,23 @@ final class AppModel {
             }
         case "event.changed":
             Task { await refresh() }
+        case "event.settings":
+            if case .object(let o)? = p["settings"] { SettingsStore.shared.apply(o) }
+        case "event.ui":
+            UIRequests.handle(p)
         default: break
         }
     }
 
     // MARK: calls
 
+    /// Errors show as a banner, never a blocking alert.
     @discardableResult
     func call(_ method: String, _ params: JSONValue? = nil) async -> JSONValue? {
         do { return try await client?.call(method, params) }
         catch {
-            let a = NSAlert(); a.messageText = "krill: \(method) failed"; a.informativeText = "\((error as? RPCError)?.message ?? "\(error)")"
-            a.runModal(); return nil
+            Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error)
+            return nil
         }
     }
 

@@ -4,47 +4,6 @@ import Core
 import Agents
 import LocalAI
 
-struct GeneralSettings: View {
-    @AppStorage("defaultAgent") private var defaultAgent = "claude"
-    @AppStorage("permissionMode") private var permissionMode = "manual"
-    @AppStorage("branchPrefix") private var branchPrefix = ""
-    @AppStorage("localAIEnabled") private var localAI = true
-    @AppStorage("lspEnabled") private var lsp = true
-    @State private var keepAwake = "agents"
-    @State private var hibernate = 0
-
-    var body: some View {
-        Form {
-            Picker("Default agent", selection: $defaultAgent) {
-                ForEach(AgentManifest.load(), id: \.id) { Text($0.name).tag($0.id) }
-            }
-            Picker("Permissions", selection: $permissionMode) {
-                Text("Ask before actions").tag("manual"); Text("Yolo (skip approvals)").tag("yolo")
-            }
-            TextField("Branch prefix", text: $branchPrefix, prompt: Text("e.g. niko/"))
-            Picker("Keep Mac awake", selection: $keepAwake) {
-                Text("While agents work").tag("agents"); Text("Always").tag("always"); Text("Never").tag("off")
-            }
-            .onChange(of: keepAwake) { _, v in Task { await AppModel.shared.call("config.set", .obj(["keepAwake": .string(v)])) } }
-            Picker("Pause idle agents after", selection: $hibernate) {
-                Text("Never").tag(0); Text("15 minutes").tag(15); Text("30 minutes").tag(30); Text("1 hour").tag(60); Text("3 hours").tag(180)
-            }
-            .onChange(of: hibernate) { _, v in Task { await AppModel.shared.call("config.set", .obj(["hibernateMinutes": .int(v)])) } }
-            Text("Paused agents free their memory and resume the same conversation when you open them (Claude Code, Codex, OpenCode, Cursor).")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("On-device model for titles, branch names, summaries and drafts", isOn: $localAI)
-            Text(LocalAI.isAvailable || !localAI ? "Runs locally with Apple Intelligence. Nothing leaves your Mac." : "Apple Intelligence is not available on this Mac; Krill uses simple fallbacks.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Language servers (errors, jump to definition, completion)", isOn: $lsp)
-        }
-        .formStyle(.grouped)
-        .task {
-            let c = await AppModel.shared.call("config.get")
-            keepAwake = c?["keepAwake"]?.string ?? "agents"; hibernate = c?["hibernateMinutes"]?.int ?? 0
-        }
-    }
-}
-
 /// Per-agent overrides: binary, arguments, Yolo flags, environment. Reset deletes the override.
 struct AgentsSettings: View {
     @State private var agents = AgentManifest.load()
@@ -93,59 +52,6 @@ struct AgentsSettings: View {
         }, uniquingKeysWith: { $1 })
         try? AgentManifest.saveOverride(m); reload(); saved = true
         AppModel.shared.agents = AgentManifest.load()
-    }
-}
-
-struct AppearanceSettings: View {
-    @AppStorage("terminalFont") private var font = ""
-    @AppStorage("terminalFontSize") private var size = 13.0
-    @AppStorage("ghosttyTheme") private var useGhostty = true
-    var body: some View {
-        Form {
-            TextField("Terminal font", text: $font, prompt: Text("System monospaced"))
-            Stepper("Font size: \(Int(size)) pt", value: $size, in: 8...32)
-            Toggle("Use colors and font from Ghostty config", isOn: $useGhostty)
-            Text("Reads ~/.config/ghostty/config (background, foreground, font-family, font-size).").font(.caption).foregroundStyle(.secondary)
-            LabeledContent("Keyboard shortcuts") {
-                Button("Customize in System Settings…") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts")!)
-                }
-            }
-            Text("Any menu command can be rebound under Keyboard › Keyboard Shortcuts › App Shortcuts.").font(.caption).foregroundStyle(.secondary)
-        }
-        .formStyle(.grouped)
-    }
-}
-
-/// Standard macOS preferences window: toolbar tabs with SF Symbols, each pane a SwiftUI form.
-@MainActor
-enum SettingsWindow {
-    static var window: NSWindow?
-    /// Later features can add panes here.
-    static var extraTabs: [(String, String, AnyView)] = []
-
-    static func show() {
-        if window == nil {
-            let tabs = NSTabViewController(); tabs.tabStyle = .toolbar
-            func add(_ title: String, _ symbol: String, _ view: some View) {
-                let host = NSHostingController(rootView: view.frame(width: 640).fixedSize(horizontal: false, vertical: true))
-                host.sizingOptions = [.preferredContentSize]   // the window resizes to each pane, like System Settings
-                let item = NSTabViewItem(viewController: host); item.label = title
-                item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-                tabs.addTabViewItem(item)
-            }
-            add("General", "gearshape", GeneralSettings())
-            add("Agents", "cpu", AgentsSettings().frame(height: 380))
-            add("Accounts", "person.2", AccountsSettings().frame(height: 340))
-            add("Integrations", "link", IntegrationsSettings().frame(height: 560))
-            add("Commands", "bolt", QuickCommandsSettings().frame(height: 340))
-            add("Appearance", "paintpalette", AppearanceSettings())
-            for t in extraTabs { add(t.0, t.1, t.2) }
-            let w = NSWindow(contentViewController: tabs)
-            w.styleMask = [.titled, .closable]; w.isReleasedWhenClosed = false; w.title = "Settings"
-            window = w
-        }
-        window?.center(); window?.makeKeyAndOrderFront(nil)
     }
 }
 

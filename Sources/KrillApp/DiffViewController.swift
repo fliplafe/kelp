@@ -107,6 +107,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         return .object(p)
     }
 
+    /// Shows the diff of one file (from the Changes panel).
+    var pendingFile: String?
+    func focus(file: String) {
+        if let i = diffs.firstIndex(where: { $0.path == file }) { files.selectRowIndexes([i], byExtendingSelection: false); files.scrollRowToVisible(i) }
+        else { pendingFile = file }
+    }
+
     func load() async {
         guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         if source.indexOfSelectedItem == 4, askCommit {
@@ -123,6 +130,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         comments = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
         humanLines = Dictionary(uniqueKeysWithValues: diffs.map { ($0.path, Attribution.humanLines(worktree: wid, file: $0.path)) })
         files.reloadData(); rebuildRows()
+        if let f = pendingFile { pendingFile = nil; focus(file: f) }
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         status.stringValue = "\(diffs.count) files  +\(add) −\(del)  ·  \(comments.filter { $0.state == .open }.count) open comments"
     }

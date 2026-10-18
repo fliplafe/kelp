@@ -49,7 +49,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     func show(worktree id: String?) {
         worktreeId = id
-        let r = AppModel.shared.worktree(id)?.repoId ?? (NSApp.delegate as? AppDelegate)?.sidebar.selectedRepo?.id
+        let r = AppModel.shared.worktree(id)?.repoId ?? AppModel.shared.repos.first?.id
         if r != repoId { repoId = r; if isViewLoaded { reload() } }
     }
 
@@ -182,7 +182,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         let wt = worktreeFor(branch: branch)
         let actions = NSStackView(); actions.spacing = 8
         if let wt {
-            actions.addArrangedSubview(button("Open Worktree", "arrow.triangle.branch") { (NSApp.delegate as? AppDelegate)?.open(worktree: wt.id) })
+            actions.addArrangedSubview(button("Open Worktree", "arrow.triangle.branch") { Workbench.show(workspace: wt.id) })
             actions.addArrangedSubview(button("Send Review Comments to Agent", "text.bubble") { [weak self] in self?.sendReview(n, wt) })
         }
         actions.addArrangedSubview(button("Merge (squash)", "arrow.triangle.merge") { [weak self] in self?.merge(n, wt) })
@@ -254,8 +254,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             guard let res = await AppModel.shared.call("task.fromIssue", .object(p)), let wid = res["worktree"]?["id"]?.string,
                   let s = try? res["session"]?.decode(Session.self) else { return }
             await AppModel.shared.refresh()
-            let d = NSApp.delegate as? AppDelegate
-            d?.open(worktree: wid); d?.content.workspace?.add(session: s)
+            AppModel.shared.upsert(s); Workbench.show(workspace: wid); Workbench.open(TabURI.session(s.id))
         }
     }
 

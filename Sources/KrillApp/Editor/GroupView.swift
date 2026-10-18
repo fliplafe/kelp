@@ -1,0 +1,74 @@
+import AppKit
+
+/// One editor group: its tab strip over the selected tab's content. Dropping a tab on an edge splits the group.
+@MainActor
+final class GroupView: NSView {
+    let groupId: String
+    let strip = TabStrip()
+    private let container = NSView()
+    private let hint = NSView()
+    private weak var shown: NSView?
+    var onDropTab: ((String, NSRectEdge?) -> Void)?   // nil edge = into this group
+
+    init(groupId: String) {
+        self.groupId = groupId
+        super.init(frame: .zero)
+        for v in [strip, container] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        hint.wantsLayer = true; hint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+        hint.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; hint.layer?.borderWidth = 1
+        hint.layer?.cornerRadius = 6; hint.isHidden = true; addSubview(hint)
+        NSLayoutConstraint.activate([
+            strip.topAnchor.constraint(equalTo: topAnchor), strip.leadingAnchor.constraint(equalTo: leadingAnchor), strip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            container.topAnchor.constraint(equalTo: strip.bottomAnchor), container.leadingAnchor.constraint(equalTo: leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor), container.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        registerForDraggedTypes([.krillTab])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(_ v: NSView?) {
+        guard v !== shown else { return }
+        shown?.removeFromSuperview()
+        shown = v
+        guard let v else { return }
+        v.removeFromSuperview()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(v)
+        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: container.topAnchor), v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                                     v.leadingAnchor.constraint(equalTo: container.leadingAnchor), v.trailingAnchor.constraint(equalTo: container.trailingAnchor)])
+    }
+
+    // MARK: tab dropped on the content: an edge splits, the middle moves the tab here
+    private func edge(_ s: NSDraggingInfo) -> NSRectEdge? {
+        let p = container.convert(s.draggingLocation, from: nil), b = container.bounds
+        guard b.width > 0, b.height > 0 else { return nil }
+        let fx = p.x / b.width, fy = p.y / b.height
+        let m = min(fx, 1 - fx, fy, 1 - fy)
+        guard m < 0.25 else { return nil }
+        if m == fx { return .minX }
+        if m == 1 - fx { return .maxX }
+        return m == fy ? .minY : .maxY
+    }
+    private func showHint(_ e: NSRectEdge?) {
+        var r = container.frame.insetBy(dx: 6, dy: 6)
+        switch e {
+        case .minX?: r.size.width /= 2
+        case .maxX?: r.origin.x += r.width / 2; r.size.width /= 2
+        case .minY?: r.size.height /= 2
+        case .maxY?: r.origin.y += r.height / 2; r.size.height /= 2
+        default: break
+        }
+        hint.frame = r; hint.isHidden = false
+    }
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { draggingUpdated(s) }
+    override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation {
+        guard s.draggingPasteboard.string(forType: .krillTab) != nil else { return [] }
+        showHint(edge(s)); return .move
+    }
+    override func draggingExited(_ s: NSDraggingInfo?) { hint.isHidden = true }
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
+        hint.isHidden = true
+        guard let id = s.draggingPasteboard.string(forType: .krillTab) else { return false }
+        onDropTab?(id, edge(s)); return true
+    }
+}

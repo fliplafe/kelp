@@ -23,7 +23,7 @@ final class FanoutController: NSObject, NSTableViewDataSource, NSTableViewDelega
         var steppers: [(String, NSStepper, NSTextField)] = []
         for ag in AppModel.shared.agents {
             let row = NSStackView(); let label = NSTextField(labelWithString: "0 × \(ag.name)")
-            let st = NSStepper(); st.minValue = 0; st.maxValue = 4; st.integerValue = ag.id == ((NSApp.delegate as? AppDelegate)?.defaultAgent ?? "claude") ? 2 : 0
+            let st = NSStepper(); st.minValue = 0; st.maxValue = 4; st.integerValue = ag.id == AgentCatalog.defaultAgent ? 2 : 0
             label.stringValue = "\(st.integerValue) × \(ag.name)"
             st.target = StepperSink.shared; st.action = #selector(StepperSink.changed(_:)); StepperSink.shared.labels[ObjectIdentifier(st)] = (label, ag.name)
             row.addArrangedSubview(st); row.addArrangedSubview(label); box.addArrangedSubview(row)

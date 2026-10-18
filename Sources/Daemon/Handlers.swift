@@ -113,8 +113,9 @@ extension Daemon {
 
         // MARK: sessions
         case "session.create":
-            var dir = p["cwd"]?.string; let wid = p["worktreeId"]?.string
-            if let wid { dir = try cwd(forWorktree: wid).path }
+            // cwd wins when both are given (e.g. an agent building an extension, shown in the current workspace).
+            var dir = p["cwd"]?.string.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }; let wid = p["worktreeId"]?.string
+            if let wid, dir == nil { dir = try cwd(forWorktree: wid).path }
             guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
             let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
             let s = try spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p))

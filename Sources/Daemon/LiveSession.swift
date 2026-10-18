@@ -19,6 +19,9 @@ final class LiveSession: @unchecked Sendable {
     var onFirstPrompt: (@Sendable (String) -> Void)?
     /// First local URL a process prints (dev servers): the app opens it in the worktree's browser.
     var onLocalURL: (@Sendable (String) -> Void)?
+    /// Plan usage the agent printed (Claude Code's "used 80% of your weekly limit").
+    var onLimits: (@Sendable ([ClaudeLimits.Reading]) -> Void)?
+    private var lastLimits: [ClaudeLimits.Reading] = []
     private var sawURL = false
     // swiftlint:disable:next force_try
     static let urlRegex = try! NSRegularExpression(pattern: #"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(:\d+)?[^\s\x1b'"]*"#)
@@ -78,9 +81,15 @@ final class LiveSession: @unchecked Sendable {
                 sawURL = true; url = String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
             }
         }
+        var limits: [ClaudeLimits.Reading] = []
+        if onLimits != nil, text.contains("limit") {
+            let found = ClaudeLimits.parse(StatusDetector.stripANSI(String(decoding: ring.suffix(1200), as: UTF8.self)))
+            if !found.isEmpty, found != lastLimits { lastLimits = found; limits = found }
+        }
         let subs = attached
         let changed = sync()
         lock.unlock()
+        if !limits.isEmpty { onLimits?(limits) }
         if let url { onLocalURL?(url) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
         onOutput?(record.id, d, subs)

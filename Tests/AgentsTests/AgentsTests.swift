@@ -91,3 +91,12 @@ import Core
     let u = String(decoding: ChatEvent.userLine("hi"), as: UTF8.self)
     #expect(u.hasSuffix("\n") && u.contains(#""type":"user""#))
 }
+
+@Test func claudeLimitMessagesParse() {
+    let a = ClaudeLimits.parse("⏵⏵ auto mode on · You've used 80% of your weekly limit · resets Oct 20 at 5am (Europe/Helsinki)")
+    #expect(a == [.init(kind: "weekly", percent: 80, resets: "Oct 20 at 5am")])
+    let b = ClaudeLimits.parse("You've used 93% of your session limit · resets 3pm")
+    #expect(b.first?.kind == "session" && b.first?.percent == 93 && b.first?.resets == "3pm")
+    #expect(ClaudeLimits.parse("5-hour limit reached ∙ resets 11pm").first?.percent == 100)
+    #expect(ClaudeLimits.parse("nothing to see").isEmpty)
+}

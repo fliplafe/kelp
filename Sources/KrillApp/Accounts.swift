@@ -61,11 +61,11 @@ struct AccountsSettings: View {
 
     /// Opens the agent in that profile so the user can run its login flow once.
     private func login() {
-        guard let p = profiles.first(where: { $0.id == selection }), let d = NSApp.delegate as? AppDelegate, let wid = d.content.worktreeId else { NSSound.beep(); return }
+        guard let p = profiles.first(where: { $0.id == selection }), let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         Task {
             guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "agent": .string(p.agent), "profile": .string(p.name), "title": .string("Log in: \(p.name)")])),
                   let s = try? r.decode(Session.self) else { return }
-            d.content.workspace?.add(session: s)
+            AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }

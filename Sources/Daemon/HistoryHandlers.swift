@@ -27,7 +27,7 @@ extension Daemon {
         case "usage.get":   // per account: Claude 5h block / today / week, Codex limits
             // Limit: one cached answer for 60 s (a scan reads GBs of transcripts); per-file incremental parsing if it gets slow
             let cached = lock.withLock { usageCache }
-            if let c = cached, Date().timeIntervalSince(c.at) < 60, p["force"]?.bool != true { return c.value }
+            if let c = cached, Date().timeIntervalSince(c.at) < 60, p["force"]?.bool != true { return withLimits(c.value) }
             let roots = agentRoots()
             var claude: [JSONValue] = [], codex: [JSONValue] = []
             let names = ["Default"] + (settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
@@ -49,7 +49,7 @@ extension Daemon {
             }
             let v = JSONValue.obj(["claude": .array(claude), "codex": .array(codex)])
             lock.withLock { usageCache = (Date(), v) }
-            return v
+            return withLimits(v)
 
         case "history.list":
             let roots = agentRoots()
@@ -75,5 +75,16 @@ extension Daemon {
             return try .from(spawn(cwd: cwd, manifest: m, worktreeId: wid, o))
         default: return nil
         }
+    }
+
+    /// Claude's own percentages from the last 12 hours (they reset; older readings mislead).
+    private func withLimits(_ v: JSONValue) -> JSONValue {
+        guard case .object(var o) = v else { return v }
+        let fresh = lock.withLock { claudeLimits.values.filter { Date().timeIntervalSince($0.at) < 12 * 3600 } }
+        o["claudeLimits"] = .array(fresh.sorted { $0.reading.kind < $1.reading.kind }.map { x in
+            .obj(["kind": .string(x.reading.kind), "percent": .double(x.reading.percent), "resets": x.reading.resets.map { .string($0) } ?? .null,
+                  "observedAt": .double(x.at.timeIntervalSince1970)])
+        })
+        return .object(o)
     }
 }

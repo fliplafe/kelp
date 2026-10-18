@@ -1,10 +1,9 @@
 import Foundation
-import Core
 
 /// The PATH agents need. A daemon started from Finder only has /usr/bin:/bin, while agent CLIs live where the
 /// user's shell profile points (~/.local/bin, Homebrew, npm…). Read once from a login shell, plus well-known dirs.
-enum LoginPath {
-    static let value: String = {
+public enum LoginPath {
+    public static let value: String = {
         let home = NSHomeDirectory()
         let known = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.bun/bin", "\(home)/.npm-global/bin",
                      "\(home)/.claude/local", "\(home)/.cargo/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
@@ -16,7 +15,7 @@ enum LoginPath {
     }()
 
     /// Absolute path of `command`, or a message the UI can show as is.
-    static func resolve(_ command: String) throws -> String {
+    public static func resolve(_ command: String) throws -> String {
         if command.contains("/") {
             guard FileManager.default.isExecutableFile(atPath: command) else { throw RPCError.invalidParams("\(command) doesn't exist or isn't executable.") }
             return command

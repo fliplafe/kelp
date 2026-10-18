@@ -61,13 +61,13 @@ final class NotebookTab: NSViewController {
     }
 
     @objc private func openKernel() {
-        guard let wid = worktreeId, let d = NSApp.delegate as? AppDelegate else { return }
+        guard let wid = worktreeId else { return }
         guard Self.jupyter() != nil else { status.stringValue = "Jupyter not found — pip install jupyter"; return }
         Task {
             guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "command": .string("jupyter lab --no-browser '\(path.replacingOccurrences(of: "'", with: "'\\''"))'"),
                                                                             "title": "Jupyter", "openURLs": true])) else { return }
             if let s = try? r.decode(Core.Session.self) { AppModel.shared.sessions.append(s) }
-            d.content.select(named: "Browser")   // Jupyter's URL arrives as a dev-server URL
+            // Jupyter's URL arrives as a dev-server URL and opens in a browser tab
             status.stringValue = "Starting Jupyter Lab… it opens in the Browser tab"
         }
     }
