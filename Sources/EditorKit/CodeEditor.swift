@@ -14,16 +14,25 @@ public final class CodeEditor: NSObject {
     public var onSelection: (() -> Void)?
     private var suppress = false
 
+    /// Big documents re-parse off the main thread so typing never waits for tree-sitter (highlighting catches up a frame later).
+    private static let tuned: Void = { TreeSitterClient.Constants.maxSyncContentLength = 100_000 }()
+
     public init(text: String, url: URL, editable: Bool = true, fontSize: CGFloat = 13) {
+        _ = Self.tuned
+        let t0 = Date()
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
+        let t1 = Date()
         let cfg = SourceEditorConfiguration(
             appearance: .init(theme: Self.theme, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular), wrapLines: false),
-            behavior: .init(isEditable: editable)
+            behavior: .init(isEditable: editable),
+            peripherals: .init(showMinimap: ProcessInfo.processInfo.environment["KRILL_NO_MINIMAP"] == nil,
+                               showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
         )
         let relay = Relay()
         controller = TextViewController(string: text, language: lang, configuration: cfg, cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
         super.init()
         relay.owner = self
+        if ProcessInfo.processInfo.environment["KRILL_EDITOR_TIMING"] != nil { print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms") }
     }
 
     public var view: NSView { controller.view }

@@ -52,6 +52,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let m = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_MODE"] { content.select(named: m) }
             if let f = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_OPEN"] { content.files.openFile(f, line: 3) }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_RUN"] != nil { runDevServer() }
+            if ProcessInfo.processInfo.environment["KRILL_TYPING_BENCH"] != nil, let f = content.files.current {
+                // Dev aid: simulated typing in the middle of the open file.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    if ProcessInfo.processInfo.environment["KRILL_TYPING_BENCH"] == "raw" { f.editor.onChange = nil }
+                    let tv = f.editor.controller.textView!
+                    let mid = (tv.string as NSString).length / 2
+                    let t0 = Date()
+                    for i in 0..<(ProcessInfo.processInfo.environment["KRILL_TYPING_N"].flatMap(Int.init) ?? 300) { tv.replaceCharacters(in: NSRange(location: mid + i, length: 0), with: "x") }
+                    let t1 = Date()
+                    for i in 0..<100 { tv.replaceCharacters(in: NSRange(location: mid + 300 + i, length: 0), with: "y"); tv.displayIfNeeded() }
+                    print("TYPING edit-only \(String(format: "%.2f", t1.timeIntervalSince(t0) * 1000 / 300)) ms, edit+display \(String(format: "%.2f", Date().timeIntervalSince(t1) * 1000 / 100)) ms")
+                }
+            }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "dashboard" { showDashboard() }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "history" { showHistory() }
             if let sel = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DESIGN"] {

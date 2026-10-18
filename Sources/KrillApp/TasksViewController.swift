@@ -57,7 +57,13 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         switch source.selectedSegment {
         case 0: filter.addItems(withTitles: ["Open", "Mine", "Review requested"])
         case 1: filter.addItems(withTitles: ["Open", "Assigned to me"])
-        case 2: filter.addItems(withTitles: ["My issues"])
+        case 2:
+            filter.addItems(withTitles: ["My issues"])
+            Task {   // team boards
+                for t in (try? await AppModel.shared.client?.call("linear.teams").array) ?? [] {
+                    filter.addItem(withTitle: "Team: \(t["name"]?.string ?? "")"); filter.lastItem?.representedObject = t["id"]?.string
+                }
+            }
         default: filter.addItems(withTitles: ["Loading projects…"])
         }
         reload()
@@ -73,7 +79,10 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
                 switch src {
                 case 0: rows = try await c?.call("github.prs", .obj(["repoId": .string(repoId), "filter": .string(["open", "mine", "review"][max(0, f)])])).array ?? []
                 case 1: rows = try await c?.call("github.issues", .obj(["repoId": .string(repoId), "filter": .string(f == 1 ? "mine" : "open")])).array ?? []
-                case 2: rows = try await c?.call("linear.issues").array ?? []
+                case 2:
+                    let team = filter.selectedItem?.representedObject as? String
+                    rows = try await c?.call("linear.issues", team.map { .obj(["teamId": .string($0)]) }).array ?? []
+                    if team != nil { rows.sort { ($0["state"]?["name"]?.string ?? "") < ($1["state"]?["name"]?.string ?? "") } }
                 default:
                     if filter.itemTitles.first == "Loading projects…" {
                         let ps = try await c?.call("github.projects", .obj(["repoId": .string(repoId)])).array ?? []
