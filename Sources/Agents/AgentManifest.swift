@@ -56,15 +56,17 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var autoAnswers: [AutoAnswer] = []
     /// Args that resume the latest conversation in this directory (restart / hibernation).
     public var resumeArgs: [String] = []
+    /// If set, `{mcpConfigFlag} <file>` is appended and the file registers the `krill` MCP server.
+    public var mcpConfigFlag: String?
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
                 yoloArgs: [String] = [], modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
-                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = []) {
+                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], mcpConfigFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
         self.yoloArgs = yoloArgs; self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
-        self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs
+        self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.mcpConfigFlag = mcpConfigFlag
     }
 
     public init(from decoder: Decoder) throws {
@@ -83,11 +85,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
         autoAnswers = try c.decodeIfPresent([AutoAnswer].self, forKey: .autoAnswers) ?? []
         resumeArgs = try c.decodeIfPresent([String].self, forKey: .resumeArgs) ?? []
+        mcpConfigFlag = try c.decodeIfPresent(String.self, forKey: .mcpConfigFlag)
     }
 
     public static let defaultWaiting = [
         #"(?i)\[y/n\]"#, #"(?i)\(y/n\)"#, #"(?i)do you want to"#, #"(?i)press enter"#,
-        #"(?i)allow .* to"#, #"(?i)approve"#, #"❯ ?1\."#,
+        #"(?i)allow .* to"#, #"(?i)approve"#, #"❯ ?1\."#
     ]
 
     public var commandLine: [String] { [command] + args }
@@ -108,7 +111,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public static let presets: [AgentManifest] = [
         .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",
               yoloArgs: ["--dangerously-skip-permissions"], modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
-              autoAnswers: [trust], resumeArgs: ["--continue"]),
+              autoAnswers: [trust], resumeArgs: ["--continue"], mcpConfigFlag: "--mcp-config"),
         .init(id: "codex", name: "Codex", command: "codex", yoloArgs: ["--dangerously-bypass-approvals-and-sandbox"],
               modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
               effortArgs: ["low": ["-c", "model_reasoning_effort=low"], "medium": ["-c", "model_reasoning_effort=medium"], "high": ["-c", "model_reasoning_effort=high"]],
@@ -117,7 +120,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "gemini", name: "Gemini CLI", command: "gemini", yoloArgs: ["--yolo"], modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", yoloArgs: ["--force"], modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
         .init(id: "pi", name: "Pi", command: "pi"),
-        .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"]),
+        .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"])
     ]
 
     /// Presets overridden/extended by `*.json` files in `dir`. Bad files are skipped, never fatal.

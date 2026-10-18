@@ -112,12 +112,6 @@ extension Daemon {
             if vars["stagedPatch"] == nil { vars["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path)) ?? "").prefix(4000)) }
             return .string(Recipes.render(try p.req("name"), config: cfg, vars: vars))
 
-        case "config.get": return .object(config)
-        case "config.set":
-            if case .object(let o) = p { for (k, v) in o { config[k] = v } }
-            try saveConfig(); applyKeepAwake()
-            return .object(config)
-
         default: return nil
         }
     }
@@ -142,15 +136,11 @@ extension Daemon {
         return u
     }
 
-    // MARK: config + keep awake
-
-    func saveConfig() throws {
-        try JSONEncoder().encode(JSONValue.object(config)).write(to: root.appendingPathComponent("config.json"))
-    }
+    // MARK: keep awake
 
     /// keepAwake: "always" | "agents" (only while an agent is working) | "off".
     func applyKeepAwake() {
-        let mode = config["keepAwake"]?.string ?? "agents"
+        let mode = settings["power.keepAwake"]?.string ?? "agents"
         lock.lock(); let working = live.values.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }; lock.unlock()
         let want = mode == "always" || (mode == "agents" && working)
         if want, sleepAssertion == 0 {
