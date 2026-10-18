@@ -14,6 +14,7 @@ final class AppModel {
     var agents: [AgentManifest] = AgentManifest.load()
 
     var onChange: [() -> Void] = []
+    var onChatLine: ((String, String) -> Void)?
     /// Claude Code subagents per session (title, active), polled while the parent works.
     var subagents: [String: [(title: String, active: Bool)]] = [:]
     private var subagentTimer: Timer?
@@ -113,6 +114,8 @@ final class AppModel {
             if old?.status != s.status { DashboardController.events.append(AgentEvent(date: Date(), session: s, status: s.status)); if DashboardController.events.count > 500 { DashboardController.events.removeFirst(100) } }
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
+        case "event.chat":
+            if let id = p["id"]?.string, let line = p["line"]?.string { onChatLine?(id, line) }
         case "event.devserver":
             if let w = p["worktree"]?.string, let u = p["url"]?.string {
                 NotificationCenter.default.post(name: .krillDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])

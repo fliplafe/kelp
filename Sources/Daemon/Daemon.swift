@@ -19,6 +19,7 @@ public final class Daemon: @unchecked Sendable {
     var config: [String: JSONValue] = [:]
     var sleepAssertion: UInt32 = 0
     var usageCache: (at: Date, value: JSONValue)?
+    var chats: [String: ChatSession] = [:]
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {

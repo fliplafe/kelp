@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newAgent() { startSession(agent: nil, newTab: true) }
+    @objc func newChat() { if let w = AppModel.shared.worktree(content.worktreeId) { ChatWindow.start(worktree: w) } else { NSSound.beep() } }
     @objc func newTask() { if let r = sidebar.selectedRepo { AgentActions.newTask(repo: r) } else { addProject() } }
     @objc func newAgentSheet() { if let w = content.worktreeId { AgentActions.newAgent(worktree: w) } else { NSSound.beep() } }
     @objc func newAgentNamed(_ m: NSMenuItem) { startSession(agent: m.representedObject as? String, newTab: true) }
@@ -186,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(agent, "New Task…", #selector(newTask), "n")
         _ = item(agent, "New Agent…", #selector(newAgentSheet), "n", [.command, .option])
         _ = item(agent, "New Default Agent", #selector(newAgent), "n", [.command, .control])
+        _ = item(agent, "New Chat…", #selector(newChat), "c", [.command, .option])
         for a in AppModel.shared.agents { let i = item(agent, "New \(a.name)", #selector(newAgentNamed(_:))); i.representedObject = a.id }
         agent.addItem(.separator())
         _ = item(agent, "New Shell Tab", #selector(newShellTab), "t")

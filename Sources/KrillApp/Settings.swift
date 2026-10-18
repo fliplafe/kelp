@@ -137,7 +137,7 @@ enum SettingsWindow {
             add("General", "gearshape", GeneralSettings())
             add("Agents", "cpu", AgentsSettings().frame(height: 380))
             add("Accounts", "person.2", AccountsSettings().frame(height: 340))
-            add("Integrations", "link", IntegrationsSettings())
+            add("Integrations", "link", IntegrationsSettings().frame(height: 560))
             add("Commands", "bolt", QuickCommandsSettings().frame(height: 340))
             add("Appearance", "paintpalette", AppearanceSettings())
             for t in extraTabs { add(t.0, t.1, t.2) }

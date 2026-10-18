@@ -180,3 +180,42 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await waitFor(10) { box.output(s.id).contains("STARTED") && box.output(s.id).contains("--resume") })
     #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status != .hibernated)
 }
+
+@Test func chatRoundTrip() async throws {
+    // A fake `claude` speaking stream-json: echoes each user message back as text + one tool call + a result.
+    let bin = tmp()
+    let fake = """
+    #!/bin/zsh
+    echo '{"type":"system","subtype":"init","model":"fake-model","session_id":"s1"}'
+    while read -r line; do
+      t=$(printf '%s' "$line" | sed -E 's/.*"text":"([^"]*)".*/\\1/')
+      echo "{\\"type\\":\\"assistant\\",\\"message\\":{\\"content\\":[{\\"type\\":\\"text\\",\\"text\\":\\"echo: $t\\"},{\\"type\\":\\"tool_use\\",\\"id\\":\\"t1\\",\\"name\\":\\"Bash\\",\\"input\\":{\\"command\\":\\"ls\\"}}]}}"
+      echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.001,"num_turns":1}'
+    done
+    """
+    try fake.write(to: bin.appendingPathComponent("claude"), atomically: true, encoding: .utf8)
+    chmod(bin.appendingPathComponent("claude").path, 0o755)
+    setenv("PATH", bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? ""), 1)
+
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let box = ChatBox(); c.onNotification = { m, p in if m == "event.chat", let l = p["line"]?.string { box.add(l) } }
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "chat", "setup": false]), as: Worktree.self)
+    let id = try #require(try await c.call("chat.start", .obj(["worktreeId": .string(wt.id)]))["id"]?.string)
+    _ = try await c.call("chat.send", .obj(["id": .string(id), "text": "hello"]))
+    #expect(try await waitFor(10) { box.all.contains { $0.contains("echo: hello") } })
+    let events = box.all.flatMap { ChatEvent.parse(Data($0.utf8)) }
+    #expect(events.contains(.started(model: "fake-model", sessionId: "s1")))
+    #expect(events.contains(.tool(id: "t1", name: "Bash", summary: "Bash ls")))
+    #expect(events.contains(.finished(ok: true, costUSD: 0.001, turns: 1)))
+    let hist = try await c.call("chat.history", .obj(["id": .string(id)])).array ?? []
+    #expect(hist.count >= 4)   // init, user, assistant, result
+    _ = try await c.call("chat.stop", .obj(["id": .string(id)]))
+}
+
+final class ChatBox: @unchecked Sendable {
+    private let l = NSLock(); private var lines: [String] = []
+    func add(_ s: String) { l.lock(); lines.append(s); l.unlock() }
+    var all: [String] { l.lock(); defer { l.unlock() }; return lines }
+}

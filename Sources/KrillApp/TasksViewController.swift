@@ -6,7 +6,7 @@ import Core
 /// issue → worktree + agent, failed check / review comments → agent, PR merge, Linear state.
 @MainActor
 final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDataSource, NSTableViewDelegate {
-    private let source = NSSegmentedControl(labels: ["Pull Requests", "Issues", "Linear", "Projects"], trackingMode: .selectOne, target: nil, action: nil)
+    private let source = NSSegmentedControl(labels: ["Pull Requests", "Issues", "Linear", "Jira", "Projects"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSPopUpButton()
     private let status = NSTextField(labelWithString: "")
     private let table = NSTableView()
@@ -15,6 +15,7 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
     private var repoId: String?
     private var worktreeId: String?
     private var projectOwner: String?
+    private var jiraJQL = "project = ENG AND statusCategory != Done ORDER BY priority DESC"
 
     override func loadView() {
         source.selectedSegment = 0; source.target = self; source.action = #selector(sourceChanged)
@@ -57,6 +58,7 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         switch source.selectedSegment {
         case 0: filter.addItems(withTitles: ["Open", "Mine", "Review requested"])
         case 1: filter.addItems(withTitles: ["Open", "Assigned to me"])
+        case 3: filter.addItems(withTitles: ["My open issues", "Custom JQL…"])
         case 2:
             filter.addItems(withTitles: ["My issues"])
             Task {   // team boards
@@ -83,6 +85,10 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
                     let team = filter.selectedItem?.representedObject as? String
                     rows = try await c?.call("linear.issues", team.map { .obj(["teamId": .string($0)]) }).array ?? []
                     if team != nil { rows.sort { ($0["state"]?["name"]?.string ?? "") < ($1["state"]?["name"]?.string ?? "") } }
+                case 3:
+                    var p: [String: JSONValue] = [:]
+                    if f == 1, let jql = prompt("Jira search", "JQL", initial: jiraJQL) { jiraJQL = jql; p["jql"] = .string(jql) }
+                    rows = try await c?.call("jira.issues", .object(p)).array ?? []
                 default:
                     if filter.itemTitles.first == "Loading projects…" {
                         let ps = try await c?.call("github.projects", .obj(["repoId": .string(repoId)])).array ?? []
@@ -99,7 +105,8 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
             } catch {
                 rows = []; status.stringValue = (error as? RPCError)?.message ?? "\(error)"
                 if src == 2 { status.stringValue = "Connect Linear in Settings › Integrations" }
-                if src == 3 { status.stringValue = "Projects need `gh auth refresh -s read:project`" }
+                if src == 3 { status.stringValue = "Connect Jira in Settings › Integrations" }
+                if src == 4 { status.stringValue = "Projects need `gh auth refresh -s read:project`" }
             }
             table.reloadData(); showDetail(nil)
         }
@@ -112,6 +119,7 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         case 0: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", "\(r["author"]?.string ?? "") · \(r["headRefName"]?.string ?? "")\(Self.checksText(r))")
         case 1: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", (r["labels"]?.array ?? []).compactMap(\.string).joined(separator: ", "))
         case 2: ("\(r["identifier"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["state"]?["name"]?.string ?? "") · \(r["team"]?["name"]?.string ?? "")")
+        case 3: ("\(r["key"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["status"]?.string ?? "") · \(r["type"]?.string ?? "") · \(r["project"]?.string ?? "")")
         default: (r["title"]?.string ?? "", "\(r["status"]?.string ?? "No status") · \(r["type"]?.string ?? "")")
         }
         let t1 = NSTextField(labelWithString: title); t1.font = .systemFont(ofSize: 13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
@@ -143,6 +151,13 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         let url = r["url"]?.string
         switch source.selectedSegment {
         case 0: prDetail(r)
+        case 3:
+            let key = r["key"]?.string ?? ""
+            detail.addArrangedSubview(label("\(key)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
+            detail.addArrangedSubview(jiraTransitions(key, current: r["status"]?.string ?? ""))
+            detail.addArrangedSubview(button("Start Task in New Worktree", "arrow.triangle.branch") { [weak self] in self?.startTask(r, linear: false, jira: true) })
+            let body = r["description"]?.string ?? ""
+            detail.addArrangedSubview(label(body.isEmpty ? "No description." : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         case 1, 2:
             let linear = source.selectedSegment == 2
             let ref = linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
@@ -208,7 +223,22 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         return row
     }
 
-    private func startTask(_ r: JSONValue, linear: Bool) {
+    private func jiraTransitions(_ key: String, current: String) -> NSView {
+        let pop = NSPopUpButton(); pop.addItem(withTitle: current.isEmpty ? "Status" : current)
+        Task {
+            let ts = (try? await AppModel.shared.client?.call("jira.transitions", .obj(["key": .string(key)])).array) ?? []
+            for t in ts { pop.addItem(withTitle: "→ " + (t["name"]?.string ?? "")); pop.lastItem?.representedObject = t["id"]?.string }
+        }
+        let sink = ClosureTarget { [weak pop, weak self] in
+            guard let id = pop?.selectedItem?.representedObject as? String else { return }
+            Task { if await AppModel.shared.call("jira.transition", .obj(["key": .string(key), "id": .string(id)])) != nil { self?.status.stringValue = "Moved \(key)" } }
+        }
+        pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
+        let row = NSStackView(views: [NSTextField(labelWithString: "Status:"), pop]); row.spacing = 6
+        return row
+    }
+
+    private func startTask(_ r: JSONValue, linear: Bool, jira: Bool = false) {
         guard let repoId else { return }
         let form = LaunchForm(withPrompt: true, promptPlaceholder: "Optional extra instructions. The task description is sent automatically.")
         let a = NSAlert(); a.messageText = "Start Task"; a.informativeText = "Creates a branch named after the task, a worktree, and an agent briefed with the description."
@@ -216,8 +246,8 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             var p = form.params; p["repoId"] = .string(repoId)
-            p["ref"] = .string(linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)")
-            p["title"] = r["title"] ?? ""; p["body"] = (linear ? r["description"] : r["body"]) ?? ""; p["url"] = r["url"] ?? ""
+            p["ref"] = .string(jira ? (r["key"]?.string ?? "") : linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)")
+            p["title"] = r["title"] ?? ""; p["body"] = ((linear || jira) ? r["description"] : r["body"]) ?? ""; p["url"] = r["url"] ?? ""
             if linear { p["linearId"] = r["id"] ?? ""; if let b = r["branchName"]?.string { p["branch"] = .string(b) } }
             if let pre = UserDefaults.standard.string(forKey: "branchPrefix") { p["branchPrefix"] = .string(pre) }
             let extra = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines); if !extra.isEmpty { p["prompt"] = .string(extra) }
@@ -292,11 +322,41 @@ struct IntegrationsSettings: View {
     @State private var key = ""
     @State private var linearStatus = "Checking…"
     @State private var ghStatus = "Checking…"
+    @State private var jiraStatus = "Checking…"
+    @State private var jiraSite = ""
+    @State private var jiraEmail = ""
+    @State private var jiraToken = ""
+    @State private var bbStatus = ""
+    @State private var bbUser = ""
+    @State private var bbToken = ""
     var body: some View {
         Form {
             Section("GitHub") {
                 Text(ghStatus).foregroundStyle(.secondary)
                 Text("Krill uses the GitHub CLI and its login (`gh auth login`). Project boards need `gh auth refresh -s read:project`.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Jira") {
+                Text(jiraStatus).foregroundStyle(.secondary)
+                TextField("Site", text: $jiraSite, prompt: Text("acme.atlassian.net"))
+                TextField("Email", text: $jiraEmail)
+                SecureField("API token", text: $jiraToken)
+                HStack {
+                    Button("Connect") { Task {
+                        if let r = await AppModel.shared.call("jira.setCredentials", .obj(["site": .string(jiraSite), "email": .string(jiraEmail), "token": .string(jiraToken)])) {
+                            jiraStatus = "Connected as \(r["name"]?.string ?? "")"; jiraToken = ""
+                        }
+                    } }.disabled(jiraSite.isEmpty || jiraEmail.isEmpty || jiraToken.isEmpty)
+                    Button("Disconnect") { Task { await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])); jiraStatus = "Not connected" } }
+                }
+                Text("API token from id.atlassian.com › Security. Stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Bitbucket") {
+                Text(bbStatus).foregroundStyle(.secondary)
+                TextField("Username or email", text: $bbUser)
+                SecureField("API token / app password", text: $bbToken)
+                Button("Save") { Task { await AppModel.shared.call("bitbucket.setCredentials", .obj(["user": .string(bbUser), "token": .string(bbToken)])); bbStatus = "Saved"; bbToken = "" } }
+                    .disabled(bbUser.isEmpty || bbToken.isEmpty)
+                Text("Used for pull requests in repos whose origin is on bitbucket.org.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Linear") {
                 Text(linearStatus).foregroundStyle(.secondary)
@@ -312,6 +372,9 @@ struct IntegrationsSettings: View {
         .task {
             let s = await AppModel.shared.call("linear.status")
             linearStatus = s?["connected"]?.bool == true ? "Connected as \(s?["name"]?.string ?? "")" : "Not connected"
+            let j = await AppModel.shared.call("jira.status")
+            jiraStatus = j?["connected"]?.bool == true ? "Connected to \(j?["site"]?.string ?? "") as \(j?["name"]?.string ?? "")" : "Not connected"
+            bbStatus = (await AppModel.shared.call("bitbucket.status"))?["connected"]?.bool == true ? "Credentials saved" : "Not connected"
             let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/zsh"); p.arguments = ["-lc", "gh auth status 2>&1 | head -3"]
             let pipe = Pipe(); p.standardOutput = pipe; try? p.run(); p.waitUntilExit()
             ghStatus = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)

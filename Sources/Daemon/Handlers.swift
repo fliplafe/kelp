@@ -16,7 +16,7 @@ extension Daemon {
         do {
             if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await handleHistory(method, p) { return r }
-            if method.hasPrefix("github.") || method.hasPrefix("linear.") || method == "task.fromIssue",
+            if ["github.", "linear.", "jira.", "bitbucket."].contains(where: method.hasPrefix) || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
         }
         catch let e as GitError { throw RPCError.internalError(e.description) }
@@ -25,6 +25,7 @@ extension Daemon {
     }
 
     private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
+        if method.hasPrefix("chat."), let r = try handleChat(method, p) { return r }
         switch method {
         case "ping": return "pong"
         case "daemon.info":   // the app compares this with the krilld it ships to detect updates

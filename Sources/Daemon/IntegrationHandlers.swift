@@ -16,6 +16,25 @@ extension Daemon {
 
     var linear: LinearClient? { Keychain.get(Self.linearKeyAccount).map(LinearClient.init(apiKey:)) }
 
+    /// Jira / Bitbucket credentials: one JSON blob each in the keychain.
+    static let jiraAccount = "jira", bitbucketAccount = "bitbucket"
+    var jira: JiraClient? {
+        guard let s = Keychain.get(Self.jiraAccount), let v = try? JSONDecoder().decode([String: String].self, from: Data(s.utf8)),
+              let site = v["site"], let email = v["email"], let token = v["token"] else { return nil }
+        return JiraClient(site: site, email: email, token: token)
+    }
+    var bitbucket: BitbucketClient? {
+        guard let s = Keychain.get(Self.bitbucketAccount), let v = try? JSONDecoder().decode([String: String].self, from: Data(s.utf8)),
+              let u = v["user"], let t = v["token"] else { return nil }
+        return BitbucketClient(user: u, token: t)
+    }
+
+    /// Jira issues linked to a worktree ("ENG-12") move along with the PR, like Linear.
+    func moveJira(_ w: Worktree, toName hint: String, category: String) async {
+        guard let j = jira, w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil, w.linearIssueId.isEmpty else { return }
+        try? await j.move(key: w.issue, toName: hint, category: category)
+    }
+
     /// Move a linked Linear issue to a workflow state kind; quiet no-op without a key or link.
     func moveLinear(_ w: Worktree, to kind: LinearClient.StateKind) async {
         guard !w.linearIssueId.isEmpty, let l = linear,
@@ -30,12 +49,18 @@ extension Daemon {
         do { return try await integration(method, p, conn: conn) }
         catch let e as GitHubError { throw RPCError.internalError(e.description) }
         catch let e as LinearError { throw RPCError.internalError(e.description) }
+        catch let e as JiraError { throw RPCError.internalError(e.description) }
+        catch let e as BitbucketError { throw RPCError.internalError(e.description) }
     }
 
     private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
         switch method {
         case "github.prs":
             let (_, path) = try repoPath(p)
+            if let slug = BitbucketClient.slug(cwd: path) {
+                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
+                return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
+            }
             let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
             return try .from(GitHub.pullRequests(cwd: path, filter: f))
         case "github.issues":
@@ -73,17 +98,29 @@ extension Daemon {
             // Stacked: a worktree cut from another feature branch opens its PR against that branch.
             let prBase = w.base.isEmpty ? r.baseBranch : w.base
             if prBase != r.baseBranch, !body.contains("Stacked on") { body = "Stacked on `\(prBase)`.\n\n" + body }
-            let url = try GitHub.createPR(cwd: w.path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true)
+            let url: String
+            if let slug = BitbucketClient.slug(cwd: w.path) {
+                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
+                url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: w.branch, destination: prBase)
+            } else {
+                url = try GitHub.createPR(cwd: w.path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true)
+            }
             w.prURL = url; w.prNumber = Int(url.split(separator: "/").last ?? "")
             try store.save(w); notify("event.changed", "worktree")
             await moveLinear(w, to: .inReview)
+            await moveJira(w, toName: "review", category: "indeterminate")
             return .obj(["url": .string(url), "title": .string(title)])
 
         case "github.pr-merge":
             guard let w = try store.worktree(p.req("worktreeId")), let n = p["pr"]?.int ?? w.prNumber else { throw RPCError.invalidParams("no PR linked") }
-            let m = GitHub.MergeMethod(rawValue: p["method"]?.string ?? "squash") ?? .squash
-            try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false)
+            if let slug = BitbucketClient.slug(cwd: w.path), let bb = bitbucket {
+                try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
+            } else {
+                let m = GitHub.MergeMethod(rawValue: p["method"]?.string ?? "squash") ?? .squash
+                try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false)
+            }
             await moveLinear(w, to: .done)
+            await moveJira(w, toName: "done", category: "done")
             notify("event.changed", "worktree")
             return .null
 
@@ -109,6 +146,32 @@ extension Daemon {
             guard let l = linear else { throw RPCError.invalidParams("Linear is not connected") }
             try await l.setState(issueId: p.req("issueId"), stateId: p.req("stateId")); return .null
 
+        case "jira.setCredentials":
+            let site = try p.req("site"), email = try p.req("email"), token = try p.req("token")
+            if token.isEmpty { Keychain.delete(Self.jiraAccount); return .null }
+            let name = try await JiraClient(site: site, email: email, token: token).myself()   // validate before saving
+            try Keychain.set(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Self.jiraAccount)
+            return .obj(["name": .string(name)])
+        case "jira.status":
+            guard let j = jira else { return .obj(["connected": false]) }
+            let n = try? await j.myself()
+            return .obj(["connected": .bool(n != nil), "name": .string(n ?? ""), "site": .string(j.site)])
+        case "jira.issues":
+            guard let j = jira else { throw RPCError.invalidParams("Jira is not connected (Settings › Integrations)") }
+            return try .from(await j.search(jql: p["jql"]?.string ?? JiraClient.myOpenJQL))
+        case "jira.transitions":
+            guard let j = jira else { return .array([]) }
+            return try .from(await j.transitions(key: p.req("key")))
+        case "jira.transition":
+            guard let j = jira else { throw RPCError.invalidParams("Jira is not connected") }
+            try await j.transition(key: p.req("key"), id: p.req("id")); return .null
+        case "bitbucket.setCredentials":
+            let u = try p.req("user"), t = try p.req("token")
+            if t.isEmpty { Keychain.delete(Self.bitbucketAccount); return .null }
+            try Keychain.set(String(decoding: try JSONEncoder().encode(["user": u, "token": t]), as: UTF8.self), account: Self.bitbucketAccount)
+            return .null
+        case "bitbucket.status": return .obj(["connected": .bool(bitbucket != nil)])
+
         case "task.fromIssue":   // issue / Linear task -> branch with its number, worktree, agent briefed with the description
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
             let ref = try p.req("ref"), title = try p.req("title"), body = p["body"]?.string ?? "", url = p["url"]?.string ?? ""
@@ -128,6 +191,7 @@ extension Daemon {
             var o = Launch(p); o.prompt = prompt; o.title = "\(ref) \(title)".prefix(48).description
             let s = try spawn(cwd: w.path, manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: w.id, o)
             await moveLinear(w, to: .inProgress)
+            await moveJira(w, toName: "progress", category: "indeterminate")
             notify("event.changed", "worktree")
             return .obj(["worktree": try .from(w), "session": try .from(s)])
         default: return nil

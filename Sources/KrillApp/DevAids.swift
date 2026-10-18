@@ -30,6 +30,13 @@ extension AppDelegate {
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "dashboard" { showDashboard() }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "history" { showHistory() }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "settings" { openSettings() }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "chat", let w = AppModel.shared.worktree(content.worktreeId) {
+                Task {
+                    guard let id = (await AppModel.shared.call("chat.start", .obj(["worktreeId": .string(w.id)])))?["id"]?.string else { return }
+                    ChatWindow.debugOpen(id: id, worktree: w)
+                    await AppModel.shared.call("chat.send", .obj(["id": .string(id), "text": "Add a unit test for the parser"]))
+                }
+            }
             if let sel = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DESIGN"] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.content.browser.toggleDesign()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.content.browser.debugClick(sel) } }
@@ -39,8 +46,8 @@ extension AppDelegate {
                 if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
-                let want = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History", "settings": "Settings"][$0] ?? $0 }
-                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") || $0.title == want } ?? window).contentView else { exit(2) }
+                let want = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History", "settings": "Settings", "chat": "Chat"][$0] ?? $0 }
+                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") || (want != nil && $0.title.hasPrefix(want!)) } ?? window).contentView else { exit(2) }
                 if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] != nil { print("WINDOW", v.window?.title ?? "", v.window?.frame ?? .zero, v.bounds) }
                 // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
                 v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
