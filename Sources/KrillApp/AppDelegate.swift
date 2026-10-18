@@ -164,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         with.addItem(.separator())
         _ = item(with, "Agent with Options…", #selector(newAgentSheet), "n", [.command, .option])
         for e in ExtensionRegistry.shared.all.editors {
-            with.add(e.title, symbol: e.icon) { if let uri = e.uri(IDEContext.current) { Workbench.open(uri) } }
+            with.add(e.title, symbol: e.icon) { e.open(IDEContext.current) }
         }
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
         _ = item(file, "Add Project…", #selector(addProject), "o")

@@ -24,10 +24,19 @@ struct PanelSpec: Identifiable {
     let make: @MainActor () -> NSViewController
 }
 
-/// An entry of the editor area's "+" menu: opening it opens `uri`.
+/// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).
 struct EditorSpec: Identifiable {
     let id: String, title: String, icon: String, extensionId: String
-    let uri: @MainActor (IDEContext) -> String?
+    let open: @MainActor (IDEContext) -> Void
+
+    /// The common case: the entry opens a tab for a URI.
+    init(id: String, title: String, icon: String, extensionId: String, uri: @escaping @MainActor (IDEContext) -> String?) {
+        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId
+        open = { ctx in if let u = uri(ctx) { Workbench.open(u) } }
+    }
+    init(id: String, title: String, icon: String, extensionId: String, open: @escaping @MainActor (IDEContext) -> Void) {
+        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId; self.open = open
+    }
 }
 
 /// Command palette entry.

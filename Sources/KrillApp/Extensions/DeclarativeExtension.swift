@@ -72,9 +72,8 @@ enum DeclarativeExtension {
         }
         for v in x?.editors ?? [] {
             views["\(m.id)/\(v.id)"] = (m, v, folder)
-            c.editors.append(EditorSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id) { _ in
-                "ext:\(m.id)/\(v.id)"
-            })
+            c.editors.append(EditorSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id,
+                                        uri: { _ in "ext:\(m.id)/\(v.id)" }))
         }
         for a in x?.commands ?? [] {
             c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, extensionId: m.id, key: a.key) { _ in

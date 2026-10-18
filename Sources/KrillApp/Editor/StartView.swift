@@ -7,7 +7,7 @@ final class StartView: NSView, NSTextViewDelegate {
     var onStart: ((String, String) -> Void)?
     var onOpen: ((String) -> Void)?
     private let input = NSTextView()
-    private let placeholder = NSTextField(labelWithString: "What should the agent do?")
+    private let placeholder = NSTextField(labelWithString: "What should the agent do? (the workspace is named from it)")
     private let agent = NSPopUpButton()
     private let agents = AgentCatalog.installed(AgentCatalog.all)
     private let card = NSView()
@@ -43,15 +43,14 @@ final class StartView: NSView, NSTextViewDelegate {
         card.wantsLayer = true; card.layer?.cornerRadius = 12; card.layer?.borderWidth = 1; card.addSubview(cardStack)
         card.translatesAutoresizingMaskIntoConstraints = false
 
-        func action(_ t: String, _ sym: String, _ uri: String) -> NSButton {
-            let b = ClosureButton(title: t) { [weak self] in self?.onOpen?(uri) }
+        func action(_ t: String, _ sym: String, _ run: @escaping () -> Void) -> NSButton {
+            let b = ClosureButton(title: t) { run() }
             b.image = .symbol(sym); b.bezelStyle = .accessoryBarAction; b.imagePosition = .imageLeading
             b.contentTintColor = .secondaryLabelColor; b.font = .systemFont(ofSize: 12)
             return b
         }
-        var quick = [action("Terminal", "terminal", "terminal:")]
-        let ctx = IDEContext.current
-        for e in ExtensionRegistry.shared.all.editors.prefix(4) { if let uri = e.uri(ctx) { quick.append(action(e.title, e.icon, uri)) } }
+        var quick = [action("Terminal", "terminal") { [weak self] in self?.onOpen?("terminal:") }]
+        for e in ExtensionRegistry.shared.all.editors.prefix(4) { quick.append(action(e.title, e.icon) { e.open(IDEContext.current) }) }
         let actions = NSStackView(views: quick); actions.spacing = 6
 
         let stack = NSStackView(views: [title, sub, card, actions])
@@ -67,7 +66,8 @@ final class StartView: NSView, NSTextViewDelegate {
             cardStack.topAnchor.constraint(equalTo: card.topAnchor), cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             cardStack.leadingAnchor.constraint(equalTo: card.leadingAnchor), cardStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
-            placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 13), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 10)
+            placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 13), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 10),
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: scroll.trailingAnchor, constant: -13)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }

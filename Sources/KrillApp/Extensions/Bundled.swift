@@ -4,7 +4,7 @@ import Core
 /// Extensions that ship with Krill, written in the same extension.json format users and agents write.
 /// They're materialized under ~/.krill/bundled-extensions and loaded like any other folder.
 enum BundledExtensions {
-    static let manifests: [[String: Any]] = [ports, docker, iosSimulators, android]
+    static let manifests: [[String: Any]] = [ports, docker, iosSimulators, android, utm, tart]
 
     static var dir: URL { Paths.root.appendingPathComponent("bundled-extensions") }
 
@@ -105,6 +105,45 @@ enum BundledExtensions {
                 "toolbar": [
                     ["title": "Devices", "icon": "list.bullet", "terminal": "adb devices -l"],
                     ["title": "Logcat", "icon": "text.alignleft", "terminal": "adb logcat"]
+                ]
+            ]
+        ]]]
+    ]
+
+    static let utm: [String: Any] = [
+        "id": "utm", "name": "Virtual Machines (UTM)", "version": "1.0.0", "icon": "desktopcomputer",
+        "requires": ["/Applications/UTM.app/Contents/MacOS/utmctl"],
+        "description": "Start, stop and suspend UTM virtual machines.",
+        "contributes": ["panels": [[
+            "id": "vms", "title": "Virtual Machines", "icon": "desktopcomputer",
+            "list": [
+                "command": #"/Applications/UTM.app/Contents/MacOS/utmctl list | awk 'NR>1 {u=$1; st=$2; $1=""; $2=""; sub(/^ +/, ""); printf "{\"uuid\":\"%s\",\"status\":\"%s\",\"name\":\"%s\"}\n", u, st, $0}'"#,
+                "refresh": 5, "title": "${name}", "subtitle": "${status}", "icon": "desktopcomputer", "empty": "No virtual machines",
+                "status": ["field": "status", "map": ["started": "working", "paused": "idle", "stopped": "done", "starting": "waiting"]],
+                "actions": [
+                    ["title": "Start", "icon": "play", "run": "/Applications/UTM.app/Contents/MacOS/utmctl start ${uuid}"],
+                    ["title": "Stop", "icon": "stop", "run": "/Applications/UTM.app/Contents/MacOS/utmctl stop ${uuid}"],
+                    ["title": "Suspend", "icon": "pause", "run": "/Applications/UTM.app/Contents/MacOS/utmctl suspend ${uuid}"],
+                    ["title": "Show in UTM", "icon": "macwindow", "run": "open -a UTM"]
+                ]
+            ]
+        ]]]
+    ]
+
+    static let tart: [String: Any] = [
+        "id": "tart", "name": "Virtual Machines (Tart)", "version": "1.0.0", "icon": "shippingbox.circle", "requires": ["tart"],
+        "description": "macOS and Linux VMs with Tart: run, stop, SSH in.",
+        "contributes": ["panels": [[
+            "id": "vms", "title": "Tart VMs", "icon": "shippingbox.circle",
+            "list": [
+                "command": "tart list --format json", "refresh": 5,
+                "title": "${Name}", "subtitle": "${Source} · ${State} · ${Disk} GB", "icon": "shippingbox.circle", "empty": "No VMs — `tart clone` one",
+                "status": ["field": "State", "map": ["running": "working", "stopped": "done", "suspended": "idle"]],
+                "actions": [
+                    ["title": "Run", "icon": "play", "terminal": "tart run ${Name}"],
+                    ["title": "SSH", "icon": "terminal", "terminal": "ssh admin@$(tart ip ${Name})"],
+                    ["title": "Stop", "icon": "stop", "run": "tart stop ${Name}"],
+                    ["title": "Delete", "icon": "trash", "run": "tart delete ${Name}", "confirm": "Delete the VM ${Name}?"]
                 ]
             ]
         ]]]

@@ -295,7 +295,7 @@ final class EditorArea: NSViewController {
         for e in editors {
             m.add(e.title, symbol: e.icon) { [weak self] in
                 if let group { self?.layout.focused = group }
-                if let uri = e.uri(ctx) { self?.open(uri) }
+                e.open(ctx)
             }
         }
         return m

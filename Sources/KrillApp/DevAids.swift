@@ -15,7 +15,13 @@ extension AppDelegate {
                 let sent = Date()
                 let sem = DispatchSemaphore(value: 0)
                 DispatchQueue.main.async { sem.signal() }
-                sem.wait()
+                if sem.wait(timeout: .now() + 1) == .timedOut {   // stuck: record where the main thread is
+                    let out = FileManager.default.temporaryDirectory.appendingPathComponent("krill-hang-\(getpid()).txt").path
+                    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+                    p.arguments = ["\(getpid())", "1", "-file", out]; try? p.run(); p.waitUntilExit()
+                    print("HANG-SAMPLE " + out)
+                    sem.wait()
+                }
                 let ms = Date().timeIntervalSince(sent) * 1000
                 if ms > 150 { print(String(format: "HANG %.0f ms", ms)) }
                 Thread.sleep(forTimeInterval: 0.1)
@@ -31,6 +37,18 @@ extension AppDelegate {
             if let p = env["KRILL_SNAPSHOT_INSPECTOR"] { main.showInspector(panel: p) }
             if let u = env["KRILL_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
+            // KRILL_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
+            if let names = env["KRILL_SWITCH"]?.split(separator: ",") {
+                for (i, n) in names.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 + Double(i) * 0.7) {
+                        guard let w = AppModel.shared.worktrees.first(where: { $0.displayName == n || $0.branch == n }) else { print("SWITCH no \(n)"); return }
+                        let t0 = Date()
+                        Workbench.show(workspace: w.id)
+                        self.main.window?.contentView?.layoutSubtreeIfNeeded(); self.main.window?.displayIfNeeded()
+                        print(String(format: "SWITCH %@ %.0f ms", String(n), Date().timeIntervalSince(t0) * 1000))
+                    }
+                }
+            }
             switch env["KRILL_SNAPSHOT_WINDOW"] {
             case "dashboard": showDashboard()
             case "history": showHistory()

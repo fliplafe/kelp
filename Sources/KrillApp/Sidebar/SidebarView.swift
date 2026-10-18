@@ -15,7 +15,10 @@ struct SidebarView: View {
                 set: { tag in
                     guard let tag else { return }
                     let id = String(tag.dropFirst(2))
-                    if tag.hasPrefix("w:") { Workbench.show(workspace: id) } else { Workbench.focus(session: id) }
+                    // After the list finishes its selection pass: changing what it shows from inside it is reentrant.
+                    DispatchQueue.main.async {
+                        if tag.hasPrefix("w:") { Workbench.show(workspace: id) } else { Workbench.focus(session: id) }
+                    }
                 })
     }
 

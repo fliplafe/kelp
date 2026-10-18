@@ -71,7 +71,7 @@ enum Builtins {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["diff"], extensionId: "krill.git") { DiffTab(uri: $0) }]
         c.panels = [PanelSpec(id: "git.changes", title: "Changes", icon: "arrow.triangle.branch", extensionId: "krill.git") { hosting(ChangesPanel()) }]
-        c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "krill.git") { ctx in ctx.workspace.map { DiffTab.uri($0.id) } }]
+        c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "krill.git", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", extensionId: "krill.git", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Krill names, e.g. “niko/”.")
         ])]
@@ -92,7 +92,7 @@ enum Builtins {
     static let browser = Builtin("krill.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["http", "https", "about"], extensionId: "krill.browser") { BrowserTab(uri: $0) }]
-        c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", extensionId: "krill.browser") { _ in "about:blank#\(UUID().uuidString.prefix(6))" }]
+        c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", extensionId: "krill.browser", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
         c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", extensionId: "krill.browser", key: "shift+cmd+b") { args in
             Workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
         }]
@@ -114,10 +114,9 @@ enum Builtins {
     static let chat = Builtin("krill.chat", "Chat", "Structured chat with Claude Code: Markdown answers, tool calls, plans, costs.", icon: "bubble.left.and.text.bubble.right") {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["chat"], extensionId: "krill.chat") { ChatTab(uri: $0) }]
-        c.editors = [EditorSpec(id: "chat.new", title: "Chat with Claude", icon: "bubble.left.and.text.bubble.right", extensionId: "krill.chat") { ctx in
+        c.editors = [EditorSpec(id: "chat.new", title: "Chat with Claude", icon: "bubble.left.and.text.bubble.right", extensionId: "krill.chat", open: { ctx in
             if let w = ctx.workspace { ChatViewController.start(worktree: w) { Workbench.open("chat:\($0)") } }
-            return nil
-        }]
+        })]
         return c
     }
 
