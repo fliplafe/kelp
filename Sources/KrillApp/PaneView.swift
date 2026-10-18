@@ -14,6 +14,9 @@ final class PaneView: NSView, NSDraggingSource {
     private let title = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
+    private let micButton = NSButton()
+    private var lastOutput = Date()
+    private var cacheTimer: Timer?
     private let summary = NSTextField(labelWithString: "")
     var onRestart: ((PaneView) -> Void)?
     private let dropHint = NSView()
@@ -36,10 +39,12 @@ final class PaneView: NSView, NSDraggingSource {
         closeButton.toolTip = "Close pane and end the session"
         restartButton.bezelStyle = .inline; restartButton.controlSize = .small; restartButton.target = self; restartButton.action = #selector(restartTapped)
         restartButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); restartButton.imagePosition = .imageLeading
+        micButton.bezelStyle = .inline; micButton.isBordered = false; micButton.target = self; micButton.action = #selector(dictate)
+        micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Dictate prompt"); micButton.toolTip = "Dictate into the prompt (on-device)"
         summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor; summary.lineBreakMode = .byTruncatingTail
         summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        for v in [dot, title, summary, restartButton, closeButton] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(v) }
+        for v in [dot, title, summary, restartButton, micButton, closeButton] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(v) }
         let menu = NSMenu()
         for (t, a) in [("Rename…", #selector(renameTapped)), ("Restart", #selector(restartTapped)), ("Copy Context", #selector(copyContext)),
                        ("Fork to New Worktree…", #selector(forkTapped)), ("Hand Off to Another Agent…", #selector(handoffTapped)), ("Close", #selector(closeTapped))] {
@@ -57,7 +62,8 @@ final class PaneView: NSView, NSDraggingSource {
             title.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6), title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             summary.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 10), summary.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             summary.trailingAnchor.constraint(lessThanOrEqualTo: restartButton.leadingAnchor, constant: -6),
-            restartButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -6), restartButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            restartButton.trailingAnchor.constraint(equalTo: micButton.leadingAnchor, constant: -6), restartButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            micButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -6), micButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             closeButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -6), closeButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 16),
             terminal.topAnchor.constraint(equalTo: header.bottomAnchor), terminal.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -72,11 +78,42 @@ final class PaneView: NSView, NSDraggingSource {
         terminal.onInput = { AppModel.shared.write(session: id, $0) }
         terminal.onResize = { AppModel.shared.resize(session: id, cols: $0, rows: $1) }
         terminal.onFocus = { [weak self] in if let s = self { s.onFocus?(s) } }
-        Task { await AppModel.shared.attach(session: id) { [weak self] in self?.terminal.feed($0) } }
+        Task { await AppModel.shared.attach(session: id) { [weak self] in self?.terminal.feed($0); self?.lastOutput = Date() } }
+        cacheTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tickCache() } }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    isolated deinit { AppModel.shared.detach(session: sessionId) }
+    isolated deinit { cacheTimer?.invalidate(); AppModel.shared.detach(session: sessionId) }
+
+    /// Claude's prompt cache lives ~5 minutes after the last activity; show what's left while the agent waits.
+    private func tickCache() {
+        guard let s = AppModel.shared.session(sessionId), s.agent == "claude", s.status == .done || s.status == .waiting || s.status == .idle, !Dictation.shared.isRecording else { return }
+        let left = 300 - Date().timeIntervalSince(lastOutput)
+        let base = s.summary.isEmpty ? s.status.label : s.summary
+        summary.stringValue = left > 0 ? "\(base)  ·  cache \(Int(left) / 60):\(String(format: "%02d", Int(left) % 60))" : base
+        summary.toolTip = "Prompt cache: replying within 5 minutes of the last message is cheaper and faster."
+    }
+
+    @objc private func dictate() {
+        let d = Dictation.shared
+        if d.isRecording {
+            let t = d.stop(); micButton.contentTintColor = nil; micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
+            if let s = AppModel.shared.session(sessionId) { update(s) }
+            guard !t.isEmpty else { return }
+            Task { await AppModel.shared.call("session.send", .obj(["id": .string(sessionId), "text": .string(t), "enter": false])) }
+            focus(); return
+        }
+        d.onUpdate = { [weak self] t in self?.summary.stringValue = "🎙 " + t }
+        Task {
+            do {
+                try await d.start()
+                micButton.contentTintColor = .systemRed; micButton.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
+                summary.stringValue = "🎙 Listening… click the mic again to insert"
+            } catch {
+                let a = NSAlert(error: error); _ = await runSheet(a)
+            }
+        }
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()

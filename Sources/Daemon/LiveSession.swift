@@ -17,6 +17,11 @@ final class LiveSession: @unchecked Sendable {
     var onOutput: (@Sendable (String, Data, Set<Int>) -> Void)?
     var onStatus: (@Sendable (Session) -> Void)?
     var onFirstPrompt: (@Sendable (String) -> Void)?
+    /// First local URL a process prints (dev servers): the app opens it in the worktree's browser.
+    var onLocalURL: (@Sendable (String) -> Void)?
+    private var sawURL = false
+    // swiftlint:disable:next force_try
+    static let urlRegex = try! NSRegularExpression(pattern: #"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(:\d+)?[^\s\x1b'"]*"#)
 
     private let started = Date()
     private var lastOutputAt: Date?
@@ -54,9 +59,17 @@ final class LiveSession: @unchecked Sendable {
             let r = NSRange(tail.startIndex..., in: tail)
             if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) { answer = autoAnswers[i].1; autoAnswers.remove(at: i) }
         }
+        var url: String?
+        if !sawURL, onLocalURL != nil {
+            let plain = StatusDetector.stripANSI(text)
+            if let m = Self.urlRegex.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)), let r = Range(m.range, in: plain) {
+                sawURL = true; url = String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
+            }
+        }
         let subs = attached
         let changed = sync()
         lock.unlock()
+        if let url { onLocalURL?(url) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
         onOutput?(record.id, d, subs)
         if let changed { onStatus?(changed) }

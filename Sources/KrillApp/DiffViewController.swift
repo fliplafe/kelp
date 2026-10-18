@@ -266,7 +266,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
 
     @objc private func setCommentState(_ m: NSMenuItem) {
         guard table.clickedRow >= 0, case .comment(let c) = rows[table.clickedRow] else { NSSound.beep(); return }
-        Task { await AppModel.shared.call("comment.setState", .obj(["id": .string(c.id), "state": .string(m.representedObject as! String)])); await load() }
+        Task { await AppModel.shared.call("comment.setState", .obj(["id": .string(c.id), "state": .string(m.representedObject as? String ?? "")])); await load() }
     }
 
     @objc private func sendComments() {

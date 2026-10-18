@@ -113,6 +113,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             AgentsSettings().tabItem { Label("Agents", systemImage: "cpu") }
+            AccountsSettings().tabItem { Label("Accounts", systemImage: "person.2") }
+            QuickCommandsSettings().tabItem { Label("Commands", systemImage: "bolt") }
             AppearanceSettings().tabItem { Label("Appearance", systemImage: "paintpalette") }
             ForEach(extraTabs, id: \.0) { t in t.2.tabItem { Label(t.0, systemImage: t.1) } }
         }
@@ -131,5 +133,27 @@ enum SettingsWindow {
             w.title = "Settings"; w.styleMask = [.titled, .closable]; w.isReleasedWhenClosed = false; window = w
         }
         window?.center(); window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+struct QuickCommandsSettings: View {
+    @State private var items: [QuickCommand] = []
+    @State private var name = ""
+    @State private var text = ""
+    @State private var newTab = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            List { ForEach(items, id: \.self) { q in HStack { Text(q.name).bold(); Text(q.text).foregroundStyle(.secondary).lineLimit(1); Spacer(); if q.newTab { Text("new tab").font(.caption) } } }
+                .onDelete { items.remove(atOffsets: $0); QuickCommands.global = items } }
+            HStack {
+                TextField("Name", text: $name).frame(width: 140)
+                TextField("Prompt or shell command", text: $text)
+                Toggle("Run in new tab", isOn: $newTab)
+                Button("Add") { guard !name.isEmpty, !text.isEmpty else { return }; items.append(QuickCommand(name: name, text: text, newTab: newTab)); QuickCommands.global = items; name = ""; text = "" }
+            }
+            Text("Run from the Command Palette (⇧⌘P). Per-project commands: `command.<name>: text` in .krill.yaml.").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .onAppear { items = QuickCommands.global }
     }
 }

@@ -103,6 +103,7 @@ public final class Daemon: @unchecked Sendable {
     struct Launch {
         var yolo = false, model: String?, effort: String?, resume = false
         var prompt: String?, title: String?
+        var profile: String?
         var cols: UInt16 = 120, rows: UInt16 = 32
         var argv: [String]?   // restart: reuse exactly
 
@@ -110,7 +111,7 @@ public final class Daemon: @unchecked Sendable {
         init(_ p: JSONValue) {
             yolo = p["mode"]?.string == "yolo" || p["yolo"]?.bool == true
             model = p["model"]?.string; effort = p["effort"]?.string; resume = p["resume"]?.bool == true
-            prompt = p["prompt"]?.string; title = p["title"]?.string
+            prompt = p["prompt"]?.string; title = p["title"]?.string; profile = p["profile"]?.string
             cols = UInt16(p["cols"]?.int ?? 120); rows = UInt16(p["rows"]?.int ?? 32)
         }
     }
@@ -127,6 +128,7 @@ public final class Daemon: @unchecked Sendable {
             rec.argv = argv
         }
         var env = manifest.env
+        if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
         let binDir = Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
         env["PATH"] = [binDir, ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
@@ -147,6 +149,16 @@ public final class Daemon: @unchecked Sendable {
         try store.save(rec)
         notify("event.session", try .from(rec))
         return rec
+    }
+
+    /// Account profiles keep each agent login in its own config dir: switching needs no re-login.
+    static let configDirEnv = ["claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME"]
+    func profile(_ name: String, agent: String) -> (key: String, dir: String)? {
+        guard let key = Self.configDirEnv[agent] else { return nil }
+        for p in config["profiles"]?.array ?? [] where p["name"]?.string == name && p["agent"]?.string == agent {
+            if let d = p["dir"]?.string { try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true); return (key, d) }
+        }
+        return nil
     }
 
     func publish(_ s: Session) {

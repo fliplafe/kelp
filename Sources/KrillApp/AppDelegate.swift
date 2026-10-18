@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import Agents
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let sidebar = SidebarViewController()
     let content = ContentViewController()
     let notifier = Notifier()
+    /// Sparkle needs a real app bundle (feed URL and keys live in Info.plist); dev runs skip it.
+    lazy var updater: SPUStandardUpdaterController? = Bundle.main.bundleIdentifier == nil ? nil
+        : SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     var defaultAgent: String { UserDefaults.standard.string(forKey: "defaultAgent") ?? "claude" }
 
     func applicationDidFinishLaunching(_ n: Notification) {
@@ -29,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
         Task {
             await AppModel.shared.connect()
+            _ = await Accounts.load()
             sidebar.reload()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b } }
             if let w = pick ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }
@@ -46,11 +51,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.setContentSize(NSSize(width: 1320, height: 840)); window.contentView?.layoutSubtreeIfNeeded()
             if let m = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_MODE"] { content.select(named: m) }
             if let f = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_OPEN"] { content.files.openFile(f, line: 3) }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_RUN"] != nil { runDevServer() }
+            if let sel = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DESIGN"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.content.browser.toggleDesign()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.content.browser.debugClick(sel) } }
+            }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"] != nil, let g = FanoutController.groups().first {
                 FanoutController.show(ids: g.value.map(\.id), title: g.key)
                 if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
                 guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") } ?? window).contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(2) }
                 v.cacheDisplay(in: v.bounds, to: rep)
                 print("DIFF", content.diff.debugInfo)
@@ -119,8 +129,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func splitDown() { if content.workspace.split(vertical: false) { startSession(agent: nil, newTab: false, shell: true) } }
     @objc func closePane() {
         if content.currentMode == "Files" { content.files.closeTab(); return }
+        if content.currentMode == "Browser" { content.browser.closeTab(); return }
         if let s = content.workspace.currentSessionId { content.workspace.close(pane: s) }
     }
+    @objc func showBrowser() { content.select(named: "Browser") }
+    @objc func toggleDesign() { content.select(named: "Browser"); content.browser.toggleDesign() }
     @objc func showFiles() { content.select(named: "Files") }
     @objc func goToLine() { content.select(named: "Files"); content.files.goToLine() }
     @objc func findInWorktree() { content.select(named: "Files"); content.files.focusSearch() }
@@ -131,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func nextPane() { content.workspace.focusNeighbor(step: 1) }
     @objc func prevPane() { content.workspace.focusNeighbor(step: -1) }
     @objc func selectTab(_ m: NSMenuItem) { content.workspace.selectTab(m.tag - 1) }
+    @objc func floatingTerminal() { FloatingTerminal.shared.toggle() }
+    @objc func quickOpen() { QuickOpen.shared.show(commandsOnly: false) }
+    @objc func commandPalette() { QuickOpen.shared.show(commandsOnly: true) }
     @objc func showDashboard() { DashboardController.shared.show() }
     @objc func showTerminals() { content.select(named: "Terminals") }
     @objc func showReview() { content.select(named: "Review") }
@@ -167,6 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let app = sub("Krill")
         app.addItem(withTitle: "About Krill", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        if let u = updater {
+            let i = app.addItem(withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: ""); i.target = u
+        }
         app.addItem(.separator())
         let prefs = item(app, "Settings…", #selector(openSettings), ","); _ = prefs
         app.addItem(.separator())
@@ -217,10 +236,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Next Pane", #selector(nextPane), "]")
         _ = item(view, "Previous Pane", #selector(prevPane), "[")
         view.addItem(.separator())
+        _ = item(view, "Floating Terminal", #selector(floatingTerminal), "`", [.control])
+        _ = item(view, "Quick Open…", #selector(quickOpen), "p")
+        _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
         _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
         _ = item(view, "Terminals", #selector(showTerminals), "0")
         _ = item(view, "Review Changes", #selector(showReview), "r", [.command, .shift])
         _ = item(view, "Files", #selector(showFiles), "e", [.command, .shift])
+        _ = item(view, "Browser", #selector(showBrowser), "b", [.command, .shift])
+        _ = item(view, "Design Mode", #selector(toggleDesign), "d", [.command, .control])
         view.addItem(.separator())
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i }
         registerMoreMenus?(main)

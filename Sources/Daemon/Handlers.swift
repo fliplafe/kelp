@@ -64,7 +64,13 @@ extension Daemon {
             guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
             let cfg = RepoConfig.load(repoPath: r.path)
             guard let cmd = method == "worktree.run" ? cfg.run : cfg.test else { throw RPCError.invalidParams("no \(method.dropFirst(9)) script in .krill.yaml") }
-            if method == "worktree.run" { var o = Launch(); o.title = "dev server"; return try .from(spawn(cwd: w.path, manifest: .custom(cmd), worktreeId: w.id, o)) }
+            if method == "worktree.run" {
+                var o = Launch(); o.title = "dev server"
+                let s = try spawn(cwd: w.path, manifest: .custom(cmd), worktreeId: w.id, o)
+                let wid = w.id
+                try liveSession(s.id).onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(s.id)])) }
+                return try .from(s)
+            }
             let pr = Process(); pr.executableURL = URL(fileURLWithPath: "/bin/zsh"); pr.arguments = ["-lc", cmd]
             pr.currentDirectoryURL = URL(fileURLWithPath: w.path)
             pr.standardOutput = FileHandle.nullDevice; pr.standardError = FileHandle.nullDevice

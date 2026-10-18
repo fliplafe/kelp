@@ -196,8 +196,11 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
     // MARK: editor tabs
     func openFile(_ rel: String, line: Int? = nil) {
         guard worktree != nil else { return }
-        if let i = open.firstIndex(where: { $0.path == rel }) { tabs.selectTabViewItem(at: i); if let line { open[i].editor.goTo(line: line) }; return }
+        if let f = open.first(where: { $0.path == rel }), let item = tabs.tabViewItems.first(where: { $0.viewController === f.editor.controller }) {
+            tabs.selectTabViewItem(item); if let line { f.editor.goTo(line: line) }; return
+        }
         let url = URL(fileURLWithPath: root).appendingPathComponent(rel)
+        if Preview.canPreview(url) { openPreview(rel, url); return }
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         guard let data = FileManager.default.contents(atPath: url.path) else { return }
         guard let text = String(data: data, encoding: .utf8) else {
@@ -286,6 +289,15 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         }
     }
 
+    /// Images, PDFs and documents open as read-only preview tabs (no editor, nothing to save).
+    private var previews: [String: NSTabViewItem] = [:]
+    private func openPreview(_ rel: String, _ url: URL) {
+        if let item = previews[rel], tabs.tabViewItems.contains(item) { tabs.selectTabViewItem(item); return }
+        let item = NSTabViewItem(identifier: "preview:" + rel); item.label = (rel as NSString).lastPathComponent; item.toolTip = rel
+        item.view = Preview.view(for: url)
+        previews[rel] = item; tabs.addTabViewItem(item); tabs.selectTabViewItem(item)
+    }
+
     private func scheduleSave(_ f: OpenFile) {
         f.saveTask?.cancel()
         f.saveTask = Task { [weak self] in
@@ -304,7 +316,9 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
     private func flush(_ f: OpenFile) { f.saveTask?.cancel(); save(f) }
 
     @objc func closeTab() {
-        guard let item = tabs.selectedTabViewItem, let i = tabs.tabViewItems.firstIndex(of: item) else { return }
+        guard let item = tabs.selectedTabViewItem else { return }
+        if let key = previews.first(where: { $0.value === item })?.key { previews[key] = nil; tabs.removeTabViewItem(item); return }
+        guard let i = open.firstIndex(where: { $0.editor.controller === item.viewController }) else { return }
         let f = open[i]; flush(f); open.remove(at: i); tabs.removeTabViewItem(item); saveOpenList()
         let rootPath = root; Task { await LSPManager.shared.client(root: rootPath, path: f.url.path)?.close(f.url.path) }
     }
@@ -315,7 +329,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         UserDefaults.standard.set(open.map(\.path), forKey: "files.\(id)")
     }
 
-    var current: OpenFile? { tabs.selectedTabViewItem.flatMap { tabs.tabViewItems.firstIndex(of: $0) }.map { open[$0] } }
+    var current: OpenFile? { tabs.selectedTabViewItem.flatMap { item in open.first { $0.editor.controller === item.viewController } } }
 
     @objc func goToLine() {
         guard let f = current, let s = prompt("Go to line", ""), let n = Int(s) else { return }

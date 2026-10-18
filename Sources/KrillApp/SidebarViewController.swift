@@ -139,7 +139,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         guard let it = outline.item(atRow: outline.clickedRow) as? SidebarItem else { return }
-        let d = NSApp.delegate as! AppDelegate
+        guard let d = NSApp.delegate as? AppDelegate else { return }
         switch it.kind {
         case .repo(let r):
             menu.addItem(withTitle: "New Worktree…", action: #selector(AppDelegate.newWorktree), keyEquivalent: "").target = d
@@ -152,16 +152,16 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let m = menu.addItem(withTitle: "Kill Session", action: #selector(kill(_:)), keyEquivalent: ""); m.target = self; m.representedObject = s.id
         }
     }
-    @objc private func removeRepo(_ m: NSMenuItem) { Task { await AppModel.shared.call("repo.remove", .obj(["id": .string(m.representedObject as! String)])) } }
-    @objc private func kill(_ m: NSMenuItem) { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(m.representedObject as! String)])) } }
-    @objc private func archive(_ m: NSMenuItem) { Task { await AppModel.shared.call("worktree.archive", .obj(["id": .string(m.representedObject as! String)])) } }
+    @objc private func removeRepo(_ m: NSMenuItem) { Task { await AppModel.shared.call("repo.remove", .obj(["id": .string(m.representedObject as? String ?? "")])) } }
+    @objc private func kill(_ m: NSMenuItem) { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(m.representedObject as? String ?? "")])) } }
+    @objc private func archive(_ m: NSMenuItem) { Task { await AppModel.shared.call("worktree.archive", .obj(["id": .string(m.representedObject as? String ?? "")])) } }
     @objc private func editNote(_ m: NSMenuItem) {
-        let id = m.representedObject as! String
+        let id = m.representedObject as? String ?? ""
         guard let text = prompt("Worktree note", "Short progress note", initial: AppModel.shared.worktree(id)?.note ?? "") else { return }
         Task { await AppModel.shared.call("worktree.note", .obj(["id": .string(id), "note": .string(text)])) }
     }
     @objc private func remove(_ m: NSMenuItem) {
-        let id = m.representedObject as! String
+        let id = m.representedObject as? String ?? ""
         Task {
             let dirty = await AppModel.shared.call("worktree.dirty", .obj(["id": .string(id)]))?.bool ?? false
             let a = NSAlert(); a.messageText = "Delete worktree and its branch?"

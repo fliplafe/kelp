@@ -11,7 +11,8 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
-  <key>NSMicrophoneUsageDescription</key><string>Terminal programs may request microphone access.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Krill uses the microphone only while you dictate a prompt.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Dictated prompts are transcribed on this Mac.</string>
   <key>NSAppleEventsUsageDescription</key><string>Terminal programs may request automation access.</string>
   <key>SUFeedURL</key><string>https://raw.githubusercontent.com/krill-app/krill/main/appcast.xml</string>
   <key>SUEnableAutomaticChecks</key><true/>

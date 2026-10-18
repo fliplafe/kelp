@@ -15,6 +15,7 @@ final class LaunchForm {
     let agent = NSPopUpButton()
     let model = NSComboBox()
     let effort = NSPopUpButton()
+    let account = NSPopUpButton()
     let mode = NSSegmentedControl(labels: ["Ask before actions", "Yolo"], trackingMode: .selectOne, target: nil, action: nil)
     let prompt = NSTextView()
     let view: NSView
@@ -29,6 +30,7 @@ final class LaunchForm {
         model.placeholderString = "Default model"; model.completes = true
         let grid = NSGridView(views: [
             [NSTextField(labelWithString: "Agent:"), agent],
+            [NSTextField(labelWithString: "Account:"), account],
             [NSTextField(labelWithString: "Model:"), model],
             [NSTextField(labelWithString: "Effort:"), effort],
             [NSTextField(labelWithString: "Permissions:"), mode],
@@ -55,6 +57,9 @@ final class LaunchForm {
         model.removeAllItems(); model.addItems(withObjectValues: m.models); model.isEnabled = m.modelFlag != nil
         effort.isEnabled = !m.effortArgs.isEmpty
         mode.setEnabled(!m.yoloArgs.isEmpty, forSegment: 1)
+        account.removeAllItems(); account.addItem(withTitle: "Default")
+        for p in Accounts.profiles(for: m.id) { account.addItem(withTitle: p.name) }
+        account.isEnabled = account.numberOfItems > 1
         if m.yoloArgs.isEmpty { mode.selectedSegment = 0 }
     }
 
@@ -65,6 +70,7 @@ final class LaunchForm {
         var p: [String: JSONValue] = ["agent": .string(selected.id), "mode": .string(mode.selectedSegment == 1 ? "yolo" : "manual")]
         if !model.stringValue.isEmpty { p["model"] = .string(model.stringValue) }
         if effort.indexOfSelectedItem > 0 { p["effort"] = .string(effort.titleOfSelectedItem ?? "") }
+        if account.indexOfSelectedItem > 0 { p["profile"] = .string(account.titleOfSelectedItem ?? "") }
         return p
     }
 }

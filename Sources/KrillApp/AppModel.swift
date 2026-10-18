@@ -60,6 +60,10 @@ final class AppModel {
             if old?.status != s.status { DashboardController.events.append(AgentEvent(date: Date(), session: s, status: s.status)); if DashboardController.events.count > 500 { DashboardController.events.removeFirst(100) } }
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
+        case "event.devserver":
+            if let w = p["worktree"]?.string, let u = p["url"]?.string {
+                NotificationCenter.default.post(name: .krillDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])
+            }
         case "event.changed":
             Task { await refresh() }
         default: break
