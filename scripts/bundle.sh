@@ -6,6 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG=${CONFIG:-release}
+export KRILL_NO_GHOSTTY=1   # the libghostty probe isn't part of the app (and its library is arm64-only)
 swift build -c "$CONFIG" --arch arm64 --arch x86_64
 BIN=$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path)
 APP=dist/Krill.app

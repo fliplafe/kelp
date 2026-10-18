@@ -3,7 +3,9 @@ import PackageDescription
 import Foundation
 
 /// libghostty is built locally by scripts/build-ghostty.sh (too big for git); its targets exist only when it's there.
+/// KRILL_NO_GHOSTTY=1 leaves them out (release builds: the probe isn't shipped and libghostty is arm64-only).
 let hasGhostty = FileManager.default.fileExists(atPath: Context.packageDirectory + "/Vendor/GhosttyKit.xcframework")
+    && Context.environment["KRILL_NO_GHOSTTY"] == nil
 
 let package = Package(
     name: "Krill",
