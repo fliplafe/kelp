@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let m = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_MODE"] { content.select(named: m) }
             if let f = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_OPEN"] { content.files.openFile(f, line: 3) }
             if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_RUN"] != nil { runDevServer() }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "dashboard" { showDashboard() }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "history" { showHistory() }
             if let sel = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DESIGN"] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.content.browser.toggleDesign()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.content.browser.debugClick(sel) } }
@@ -61,7 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
-                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") } ?? window).contentView else { exit(2) }
+                let want = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History"][$0] ?? $0 }
+                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") || $0.title == want } ?? window).contentView else { exit(2) }
                 // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
                 v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
                 let scale = window.backingScaleFactor, size = v.bounds.size
@@ -157,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func floatingTerminal() { FloatingTerminal.shared.toggle() }
     @objc func quickOpen() { QuickOpen.shared.show(commandsOnly: false) }
     @objc func commandPalette() { QuickOpen.shared.show(commandsOnly: true) }
+    @objc func showHistory() { HistoryWindow.shared.show() }
     @objc func showDashboard() { DashboardController.shared.show() }
     @objc func showTerminals() { content.select(named: "Terminals") }
     @objc func showReview() { content.select(named: "Review") }
@@ -250,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Quick Open…", #selector(quickOpen), "p")
         _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
         _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
+        _ = item(view, "Session History", #selector(showHistory), "h", [.command, .shift])
         _ = item(view, "Terminals", #selector(showTerminals), "0")
         _ = item(view, "Review Changes", #selector(showReview), "r", [.command, .shift])
         _ = item(view, "Files", #selector(showFiles), "e", [.command, .shift])

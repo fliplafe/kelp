@@ -69,7 +69,7 @@ final class PaneView: NSView, NSDraggingSource {
             terminal.topAnchor.constraint(equalTo: header.bottomAnchor), terminal.leadingAnchor.constraint(equalTo: leadingAnchor),
             terminal.trailingAnchor.constraint(equalTo: trailingAnchor), terminal.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        registerForDraggedTypes([.krillPane, .fileURL, .png, .tiff])
+        registerForDraggedTypes([.krillPane, .fileURL, .png, .tiff, .string])
         applyAppearance()
         NotificationCenter.default.addObserver(self, selector: #selector(applyAppearance), name: UserDefaults.didChangeNotification, object: nil)
         update(session)
@@ -218,6 +218,7 @@ final class PaneView: NSView, NSDraggingSource {
             let u = FileManager.default.temporaryDirectory.appendingPathComponent("krill-\(UUID().uuidString.prefix(8)).png")
             try? png.write(to: u); paths = [u.path]
         }
+        if paths.isEmpty, let text = pb.string(forType: .string) { AppModel.shared.write(session: sessionId, Data(text.utf8)); return true }
         guard !paths.isEmpty else { return false }
         AppModel.shared.write(session: sessionId, Data((paths.map { "'\($0.replacingOccurrences(of: "'", with: "'\\''"))'" }.joined(separator: " ") + " ").utf8))
         return true

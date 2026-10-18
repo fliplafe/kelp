@@ -100,6 +100,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         case .worktree(let w):
             tf.stringValue = w.branch
             cell.toolTip = w.note.isEmpty ? w.path : "\(w.note)\n\(w.path)"
+            // Task ↔ worktree ↔ PR at a glance.
+            let links = [w.issue.isEmpty ? nil : w.issue, w.prNumber.map { "PR #\($0)" }].compactMap { $0 }
+            if !links.isEmpty {
+                let badge = NSTextField(labelWithString: links.joined(separator: " · "))
+                badge.font = .systemFont(ofSize: 10, weight: .medium); badge.textColor = .secondaryLabelColor
+                badge.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(badge)
+                badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+                tf.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                NSLayoutConstraint.activate([badge.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                                             badge.centerYAnchor.constraint(equalTo: tf.centerYAnchor),
+                                             tf.trailingAnchor.constraint(lessThanOrEqualTo: badge.leadingAnchor, constant: -6)])
+                cell.toolTip = (cell.toolTip ?? "") + ([w.issueURL, w.prURL].filter { !$0.isEmpty }.map { "\n" + $0 }.joined())
+            }
             if !w.note.isEmpty {   // second line: the progress note
                 let note = NSTextField(labelWithString: w.note); note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor
                 note.lineBreakMode = .byTruncatingTail; note.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(note)

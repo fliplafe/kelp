@@ -12,6 +12,12 @@ final class FloatingTerminal {
         Task { await show() }
     }
 
+    /// Show a specific session (e.g. a resumed conversation outside any worktree) in the floating panel.
+    func show(session s: Session) {
+        UserDefaults.standard.set(s.id, forKey: "floatingSession"); panel = nil
+        Task { await show() }
+    }
+
     private func show() async {
         let saved = UserDefaults.standard.string(forKey: "floatingSession")
         var session = saved.flatMap { AppModel.shared.session($0) }.flatMap { $0.status == .exited ? nil : $0 }

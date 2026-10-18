@@ -15,6 +15,7 @@ extension Daemon {
         if let e = extra[method] { return try await e(self, p) }
         do {
             if let r = try await handleAsync(method, p, conn: conn) { return r }
+            if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await handleHistory(method, p) { return r }
             if method.hasPrefix("github.") || method.hasPrefix("linear.") || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
         }
