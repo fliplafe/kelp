@@ -52,6 +52,9 @@ public final class Store: @unchecked Sendable {
                 t.add(column: "prURL", .text).notNull().defaults(to: "")
             }
         }
+        m.registerMigration("v4") { db in
+            try db.alter(table: "worktree") { t in t.add(column: "base", .text).notNull().defaults(to: "") }
+        }
         try m.migrate(db)
     }
 

@@ -204,6 +204,12 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         }
         let url = URL(fileURLWithPath: root).appendingPathComponent(rel)
         if Preview.canPreview(url) { openPreview(rel, url); return }
+        if url.pathExtension.lowercased() == "ipynb" {
+            if let item = previews[rel], tabs.tabViewItems.contains(item) { tabs.selectTabViewItem(item); return }
+            let nb = NotebookTab(url: url, path: rel, worktreeId: worktree?.id); nb.currentSession = currentSession
+            let item = NSTabViewItem(identifier: "nb:" + rel); item.label = (rel as NSString).lastPathComponent; item.viewController = nb
+            previews[rel] = item; tabs.addTabViewItem(item); tabs.selectTabViewItem(item); return
+        }
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         guard let data = FileManager.default.contents(atPath: url.path) else { return }
         guard let text = String(data: data, encoding: .utf8) else {

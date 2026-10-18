@@ -63,13 +63,17 @@ extension Daemon {
             var title = p["title"]?.string ?? "", body = p["body"]?.string ?? ""
             let link = w.issue.isEmpty ? nil : (w.issue.hasPrefix("#") ? "Fixes \(w.issue)" : "Refs \(w.issue)")
             if title.isEmpty || body.isEmpty {
-                let commits = try Git.log(w.path, base: r.baseBranch).map(\.subject)
-                let stat = (try? Git.run(["diff", "--stat", "\(r.baseBranch)...HEAD"], cwd: w.path)) ?? ""
+                let cmpBase = w.base.isEmpty ? r.baseBranch : w.base
+                let commits = try Git.log(w.path, base: cmpBase).map(\.subject)
+                let stat = (try? Git.run(["diff", "--stat", "\(cmpBase)...HEAD"], cwd: w.path)) ?? ""
                 let d = await LocalAI.pullRequest(branch: w.branch, commits: commits, diffStat: stat, issue: link)
                 if title.isEmpty { title = d?.title ?? commits.last ?? w.branch }
                 if body.isEmpty { body = d?.body ?? (commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "")) }
             } else if let link, !body.contains(w.issue) { body += "\n\n\(link)" }
-            let url = try GitHub.createPR(cwd: w.path, title: title, body: body, base: r.baseBranch, draft: p["draft"]?.bool == true)
+            // Stacked: a worktree cut from another feature branch opens its PR against that branch.
+            let prBase = w.base.isEmpty ? r.baseBranch : w.base
+            if prBase != r.baseBranch, !body.contains("Stacked on") { body = "Stacked on `\(prBase)`.\n\n" + body }
+            let url = try GitHub.createPR(cwd: w.path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true)
             w.prURL = url; w.prNumber = Int(url.split(separator: "/").last ?? "")
             try store.save(w); notify("event.changed", "worktree")
             await moveLinear(w, to: .inReview)

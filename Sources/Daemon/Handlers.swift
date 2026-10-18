@@ -44,6 +44,10 @@ extension Daemon {
             try store.save(r); notify("event.changed", "repo")
             return try .from(r)
         case "repo.list": return try .from(store.repos())
+        case "repo.branches":   // local branches, for "based on" pickers (stacked work)
+            guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
+            return .array(try Git.run(["for-each-ref", "--format=%(refname:short)", "--sort=-committerdate", "refs/heads"], cwd: r.path)
+                .split(separator: "\n").map { .string(String($0)) })
         case "repo.remove":
             guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
             try store.delete(r); notify("event.changed", "repo"); return .null
@@ -52,9 +56,10 @@ extension Daemon {
         case "worktree.create":
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
             let branch = try p.req("branch")
-            let path = try Git.addWorktree(repo: r.path, branch: branch, base: p["base"]?.string ?? r.baseBranch,
+            let base = p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? r.baseBranch
+            let path = try Git.addWorktree(repo: r.path, branch: branch, base: base,
                                            into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
-            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? "")
+            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? "", base: base)
             try store.save(w)
             var result = try JSONValue.from(w)
             let cfg = RepoConfig.load(repoPath: r.path)
@@ -108,6 +113,9 @@ extension Daemon {
             guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
             let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
             let s = try spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p))
+            if p["openURLs"]?.bool == true, let wid {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
+                existing(s.id)?.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(s.id)])) }
+            }
             return try .from(s)
         case "session.list":
             let live = try store.sessions().map { s -> Session in existing(s.id)?.snapshot ?? s }

@@ -72,12 +72,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newWorktree() {
         guard let repo = sidebar.selectedRepo else { addProject(); return }
-        guard let branch = prompt("New worktree", "Branch name (created from \(repo.baseBranch)):"), !branch.isEmpty else { return }
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); name.placeholderString = "feature/login"
+        let base = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26)); base.addItem(withTitle: repo.baseBranch)
+        let grid = NSGridView(views: [[NSTextField(labelWithString: "Branch:"), name], [NSTextField(labelWithString: "Based on:"), base]])
+        grid.column(at: 0).xPlacement = .trailing; grid.frame = NSRect(x: 0, y: 0, width: 400, height: 60)
+        let a = NSAlert(); a.messageText = "New Worktree"; a.informativeText = "Base it on another branch to stack it: its PR will target that branch."
+        a.accessoryView = grid; a.addButton(withTitle: "Create"); a.addButton(withTitle: "Cancel"); a.window.initialFirstResponder = name
         Task {
-            guard let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": .string(branch)])),
+            for b in (await AppModel.shared.call("repo.branches", .obj(["id": .string(repo.id)]))?.array ?? []).compactMap(\.string) where b != repo.baseBranch { base.addItem(withTitle: b) }
+            guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty else { return }
+            guard let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": .string(name.stringValue), "base": .string(base.titleOfSelectedItem ?? repo.baseBranch)])),
                   let id = w["id"]?.string else { return }
             await AppModel.shared.refresh()
-            sidebar.reload(); sidebar.select(worktree: id); content.show(worktree: id)
+            open(worktree: id)
         }
     }
 

@@ -28,8 +28,11 @@ public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, Persistab
     public var linearIssueId: String
     public var prNumber: Int?
     public var prURL: String
+    /// Branch this one was cut from; when it isn't the repo's base the worktree is part of a PR stack.
+    public var base: String
     public init(id: String = UUID().uuidString, repoId: String, branch: String, path: String, note: String = "", archived: Bool = false, createdAt: Date = Date(),
-                issue: String = "", issueURL: String = "", linearIssueId: String = "", prNumber: Int? = nil, prURL: String = "") {
+                issue: String = "", issueURL: String = "", linearIssueId: String = "", prNumber: Int? = nil, prURL: String = "", base: String = "") {
+        self.base = base
         self.id = id; self.repoId = repoId; self.branch = branch; self.path = path
         self.note = note; self.archived = archived; self.createdAt = createdAt
         self.issue = issue; self.issueURL = issueURL; self.linearIssueId = linearIssueId; self.prNumber = prNumber; self.prURL = prURL

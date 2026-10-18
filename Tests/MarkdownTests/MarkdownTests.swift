@@ -198,3 +198,22 @@ private func sel(_ t: String, _ s: String) -> NSRange { (t as NSString).range(of
     #expect((e.text as NSString).substring(with: e.selection) == "Column")
     #expect(MarkdownHTML.render(e.text).contains("<table data-line=\"2\">"))
 }
+
+@Test func notebookRender() throws {
+    let nb = """
+    {"cells":[{"cell_type":"markdown","source":["# Title\\n","Some *text*"]},
+     {"cell_type":"code","execution_count":3,"source":"print('<hi>')","outputs":[
+       {"output_type":"stream","name":"stdout","text":["<hi>\\n"]},
+       {"output_type":"display_data","data":{"image/png":"iVBORw0KGgo=","text/plain":"<Figure>"}},
+       {"output_type":"error","ename":"ValueError","evalue":"bad","traceback":["\\u001b[31mValueError\\u001b[0m: bad"]}]}],
+     "metadata":{"language_info":{"name":"python"}},"nbformat":4}
+    """
+    let html = try #require(NotebookHTML.render(Data(nb.utf8)))
+    #expect(html.contains("<h1"))
+    #expect(html.contains("In [3]:"))
+    #expect(html.contains("print(&#39;&lt;hi&gt;&#39;)") || html.contains("print('&lt;hi&gt;')"))
+    #expect(html.contains("data:image/png;base64,iVBORw0KGgo="))
+    #expect(html.contains("ValueError: bad") && !html.contains("\u{1B}"))
+    #expect(!html.contains("<hi>"))
+    #expect(NotebookHTML.summary(Data(nb.utf8)) == .init(cells: 2, language: "python"))
+}
