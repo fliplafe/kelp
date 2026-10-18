@@ -23,7 +23,7 @@ public final class CodeEditor: NSObject {
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
         let t1 = Date()
         let cfg = SourceEditorConfiguration(
-            appearance: .init(theme: Self.theme, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular), wrapLines: false),
+            appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),
             peripherals: .init(showMinimap: ProcessInfo.processInfo.environment["KRILL_NO_MINIMAP"] == nil,
                                showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
@@ -103,8 +103,54 @@ public final class CodeEditor: NSObject {
 
     fileprivate func changed() { if !suppress { onChange?(controller.text) } }
 
-    /// Xcode-like default themes; colors must be concrete RGB (the editor reads brightness components).
+    /// Colors from the IDE theme (hex strings); nil keeps the Xcode-like defaults.
+    public struct Palette: Equatable, Sendable {
+        public var background, text: String
+        public var keyword, string, comment, type, number, function, selection, lineHighlight: String?
+        public init(background: String, text: String, keyword: String? = nil, string: String? = nil, comment: String? = nil, type: String? = nil,
+                    number: String? = nil, function: String? = nil, selection: String? = nil, lineHighlight: String? = nil) {
+            self.background = background; self.text = text; self.keyword = keyword; self.string = string; self.comment = comment
+            self.type = type; self.number = number; self.function = function; self.selection = selection; self.lineHighlight = lineHighlight
+        }
+    }
+    public static var palette: Palette?
+    public static var fontSize: CGFloat = 13
+    public static var fontName: String?
+
+    /// Re-applies theme and font (after Settings change them).
+    public func refreshAppearance() {
+        var c = controller.configuration
+        c.appearance.theme = Self.theme
+        c.appearance.font = Self.font
+        controller.configuration = c
+    }
+
+    static var font: NSFont {
+        Self.fontName.flatMap { NSFont(name: $0, size: Self.fontSize) } ?? .monospacedSystemFont(ofSize: Self.fontSize, weight: .regular)
+    }
+
+    private static func hex(_ s: String?) -> NSColor? {
+        guard var h = s?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let v = UInt32(h, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat(v >> 16 & 0xff) / 255, green: CGFloat(v >> 8 & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: 1)
+    }
+
     static var theme: EditorTheme {
+        let base = defaultTheme
+        guard let p = palette, let bg = hex(p.background), let fg = hex(p.text) else { return base }
+        func a(_ s: String?, _ fallback: EditorTheme.Attribute, bold: Bool = false) -> EditorTheme.Attribute { hex(s).map { .init(color: $0, bold: bold) } ?? fallback }
+        return EditorTheme(text: .init(color: fg), insertionPoint: fg, invisibles: base.invisibles, background: bg,
+                           lineHighlight: hex(p.lineHighlight) ?? bg.blended(withFraction: 0.06, of: fg) ?? bg,
+                           selection: hex(p.selection) ?? bg.blended(withFraction: 0.25, of: .controlAccentColor) ?? bg,
+                           keywords: a(p.keyword, base.keywords, bold: true), commands: a(p.function, base.commands), types: a(p.type, base.types),
+                           attributes: a(p.type, base.attributes), variables: .init(color: fg), values: a(p.number, base.values),
+                           numbers: a(p.number, base.numbers), strings: a(p.string, base.strings), characters: a(p.string, base.characters),
+                           comments: a(p.comment, base.comments))
+    }
+
+    /// Xcode-like default themes; colors must be concrete RGB (the editor reads brightness components).
+    static var defaultTheme: EditorTheme {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         func c(_ hex: UInt32) -> NSColor { NSColor(srgbRed: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1) }
         func a(_ hex: UInt32, bold: Bool = false) -> EditorTheme.Attribute { .init(color: c(hex), bold: bold) }

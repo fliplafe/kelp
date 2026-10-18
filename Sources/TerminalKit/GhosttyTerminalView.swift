@@ -1,3 +1,30 @@
+import Foundation
+
+/// Colors and font from the IDE's theme and settings (nil = keep Ghostty's config / defaults).
+public struct TerminalAppearance: Equatable, Sendable {
+    public var useGhosttyConfig = true
+    public var background: String?, foreground: String?, cursor: String?, selection: String?
+    public var palette: [String] = []
+    public var fontFamily: String?, fontSize: Double?
+    public var cursorStyle: String?
+    public var optionAsAlt = false
+    public init() {}
+
+    var configText: String {
+        var lines: [String] = []
+        if let v = background { lines.append("background = \(v)") }
+        if let v = foreground { lines.append("foreground = \(v)") }
+        if let v = cursor { lines.append("cursor-color = \(v)") }
+        if let v = selection { lines.append("selection-background = \(v)") }
+        for (i, c) in palette.prefix(16).enumerated() { lines.append("palette = \(i)=\(c)") }
+        if let v = fontFamily, !v.isEmpty { lines.append("font-family = \(v)") }
+        if let v = fontSize { lines.append("font-size = \(v)") }
+        if let v = cursorStyle { lines.append("cursor-style = \(v)") }
+        if optionAsAlt { lines.append("macos-option-as-alt = true") }
+        return lines.joined(separator: "\n")
+    }
+}
+
 #if canImport(GhosttyKit)
 import AppKit
 import GhosttyKit
@@ -10,13 +37,42 @@ import GhosttyKit
 public final class GhosttyRuntime {
     public static let shared = GhosttyRuntime()
     public private(set) var app: ghostty_app_t?
+    private let surfaces = NSHashTable<GhosttyTerminalView>.weakObjects()
+    /// Set before the first terminal opens; `configure` changes it later.
+    public static var appearance = TerminalAppearance()
+    public private(set) static var started = false
+
+    /// Applies a new appearance to every open terminal.
+    public func configure(_ a: TerminalAppearance) {
+        Self.appearance = a
+        guard let app else { return }
+        let cfg = Self.makeConfig()
+        ghostty_app_update_config(app, cfg)
+        for v in surfaces.allObjects { if let s = v.surface { ghostty_surface_update_config(s, cfg) } }
+        ghostty_config_free(cfg)
+    }
+
+    func register(_ v: GhosttyTerminalView) { surfaces.add(v) }
+
+    private static func makeConfig() -> ghostty_config_t? {
+        let cfg = ghostty_config_new()
+        if appearance.useGhosttyConfig { ghostty_config_load_default_files(cfg) }   // the user's Ghostty theme, font, cursor…
+        let f = FileManager.default.temporaryDirectory.appendingPathComponent("krill-ghostty-\(getpid()).conf")
+        try? (overrides + "\n" + appearance.configText).write(to: f, atomically: true, encoding: .utf8)
+        ghostty_config_load_file(cfg, f.path)
+        ghostty_config_finalize(cfg)
+        return cfg
+    }
 
     private init() {
         guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else { return }
-        let cfg = ghostty_config_new()
-        ghostty_config_load_default_files(cfg)          // the user's Ghostty theme, font, cursor…
-        // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Krill; Ghostty keeps only terminal ones.
-        let overrides = """
+        Self.started = true
+        let cfg = Self.makeConfig()
+        setUp(cfg)
+    }
+
+    // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Krill; Ghostty keeps only terminal ones.
+    private static let overrides = """
         keybind = clear
         keybind = super+c=copy_to_clipboard
         keybind = super+v=paste_from_clipboard
@@ -35,11 +91,8 @@ public final class GhosttyRuntime {
         window-padding-x = 6
         window-padding-y = 4
         """
-        let f = FileManager.default.temporaryDirectory.appendingPathComponent("krill-ghostty-\(getpid()).conf")
-        try? overrides.write(to: f, atomically: true, encoding: .utf8)
-        ghostty_config_load_file(cfg, f.path)
-        ghostty_config_finalize(cfg)
 
+    private func setUp(_ cfg: ghostty_config_t?) {
         var rt = ghostty_runtime_config_s()
         rt.userdata = nil
         rt.supports_selection_clipboard = false
@@ -116,6 +169,8 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     private var trackingArea: NSTrackingArea?
 
     public static var isAvailable: Bool { GhosttyRuntime.shared.app != nil }
+    /// True once a terminal has started libghostty (so appearance changes don't start it just to apply).
+    public static var isLoaded: Bool { GhosttyRuntime.started }
 
     /// Runs `command` (through the login shell, like Ghostty) in `cwd` with extra environment.
     public init(command: String, cwd: String, env: [String: String] = [:]) {
@@ -131,6 +186,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         let cKeys = env.keys.map { strdup($0) }, cValues = env.keys.map { strdup(env[$0] ?? "") }
         defer { (cKeys + cValues).forEach { free($0) } }
         var vars = zip(cKeys, cValues).map { ghostty_env_var_s(key: $0, value: $1) }
+        GhosttyRuntime.shared.register(self)
         surface = command.withCString { c in cwd.withCString { d in
             vars.withUnsafeMutableBufferPointer { vp in
                 cfg.command = c; cfg.working_directory = d

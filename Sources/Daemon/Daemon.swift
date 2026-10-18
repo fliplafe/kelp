@@ -274,8 +274,11 @@ public final class Daemon: @unchecked Sendable {
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(s)
         // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
-        if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled)(-\d+)?$"#, options: .regularExpression) != nil,
-           let r = try? store.repo(w.repoId) {
+        if var w = try? store.worktree(s.worktreeId ?? ""), w.note.range(of: Self.placeholderName, options: .regularExpression) != nil {
+            w.note = title; try? store.save(w); notify("event.changed", "worktree")
+        }
+        if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
+           let r = try? store.repo(w.repoId), w.path != r.path {
             let base = naming?.branch ?? Fallback.slug(prompt)
             var b = base, n = 2
             while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }

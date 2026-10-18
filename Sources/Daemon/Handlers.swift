@@ -42,7 +42,7 @@ extension Daemon {
             let root = try Git.root(of: p.req("path"))
             if let r = try store.repos().first(where: { $0.path == root }) { return try .from(r) }
             let r = Repo(name: p["name"]?.string ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
-            try store.save(r); notify("event.changed", "repo")
+            try store.save(r); try syncMainWorkspaces(); notify("event.changed", "repo")
             return try .from(r)
         case "repo.list": return try .from(store.repos())
         case "repo.branches":   // local branches, for "based on" pickers (stacked work)
@@ -56,11 +56,12 @@ extension Daemon {
         // MARK: worktrees
         case "worktree.create":
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let branch = try p.req("branch")
+            let auto = try nextWorkspace(in: r)
+            let branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? auto.branch
             let base = p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? r.baseBranch
             let path = try Git.addWorktree(repo: r.path, branch: branch, base: base,
                                            into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
-            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? "", base: base)
+            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? (p["branch"] == nil ? auto.name : ""), base: base)
             try store.save(w)
             var result = try JSONValue.from(w)
             let cfg = RepoConfig.load(repoPath: r.path)
@@ -74,6 +75,7 @@ extension Daemon {
             notify("event.changed", "worktree")
             return result
         case "worktree.list":
+            try syncMainWorkspaces()
             return try .from(store.worktrees(repo: p["repoId"]?.string).filter { p["archived"]?.bool == true || !$0.archived })
         case "worktree.note":
             guard var w = try store.worktree(p.req("id")) else { throw RPCError.invalidParams("no worktree") }
@@ -97,6 +99,7 @@ extension Daemon {
             return .obj(["exit": .int(Int(pr.terminationStatus)), "passed": .bool(pr.terminationStatus == 0)])
         case "worktree.archive", "worktree.remove":
             guard var w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
+            if isMain(w, r) { throw RPCError.invalidParams("The main workspace is the repository itself; remove the project instead.") }
             let remove = method == "worktree.remove"
             if FileManager.default.fileExists(atPath: w.path) {
                 try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)
