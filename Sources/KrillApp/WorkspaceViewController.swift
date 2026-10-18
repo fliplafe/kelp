@@ -34,7 +34,7 @@ final class WorkspaceViewController: NSViewController {
         NSLayoutConstraint.activate([
             tabBar.topAnchor.constraint(equalTo: v.topAnchor), tabBar.leadingAnchor.constraint(equalTo: v.leadingAnchor), tabBar.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             body.topAnchor.constraint(equalTo: tabBar.bottomAnchor), body.leadingAnchor.constraint(equalTo: v.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: v.trailingAnchor), body.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+            body.trailingAnchor.constraint(equalTo: v.trailingAnchor), body.bottomAnchor.constraint(equalTo: v.bottomAnchor)
         ])
         view = v
         tabBar.onSelect = { [weak self] id in self?.model.selectedId = id; self?.model.save(); self?.render() }

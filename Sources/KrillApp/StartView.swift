@@ -49,7 +49,7 @@ final class StartView: NSView, NSTextViewDelegate {
         self.card = card
 
         func action(_ t: String, _ sym: String, _ key: String, _ sel: Selector) -> NSButton {
-            let b = NSButton(title: "\(t)  \(key)", image: NSImage(systemSymbolName: sym, accessibilityDescription: nil)!, target: self, action: sel)
+            let b = NSButton(title: "\(t)  \(key)", image: .symbol(sym), target: self, action: sel)
             b.bezelStyle = .accessoryBarAction; b.imagePosition = .imageLeading; b.contentTintColor = .secondaryLabelColor
             b.font = .systemFont(ofSize: 12); return b
         }
@@ -57,7 +57,7 @@ final class StartView: NSView, NSTextViewDelegate {
             action("Terminal", "terminal", "⌘T", #selector(terminalTapped)),
             action("Changes", "plusminus", "⇧⌘R", #selector(changesTapped)),
             action("Files", "doc.text", "⇧⌘E", #selector(filesTapped)),
-            action("Browser", "safari", "⇧⌘B", #selector(browserTapped)),
+            action("Browser", "safari", "⇧⌘B", #selector(browserTapped))
         ])
         actions.spacing = 6
 
@@ -72,7 +72,7 @@ final class StartView: NSView, NSTextViewDelegate {
             card.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(equalToConstant: 96),
             title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
             placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 13), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 10),
-            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: scroll.trailingAnchor, constant: -13), sub.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: scroll.trailingAnchor, constant: -13), sub.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor)
         ])
         if let c = stack.constraints.first(where: { $0.firstAttribute == .width && $0.constant == 620 }) { c.priority = .defaultHigh }
         updateColors()
@@ -91,7 +91,7 @@ final class StartView: NSView, NSTextViewDelegate {
     func focus() { window?.makeFirstResponder(input) }
     func textDidChange(_ n: Notification) { placeholder.isHidden = !input.string.isEmpty }
     func textView(_ tv: NSTextView, doCommandBy sel: Selector) -> Bool {
-        if sel == #selector(NSResponder.insertNewline(_:)), NSApp.currentEvent?.modifierFlags.intersection([.shift, .option]).isEmpty ?? true {
+        if sel == #selector(NSResponder.insertNewline(_:)), NSApp.currentEvent?.modifierFlags.isDisjoint(with: [.shift, .option]) ?? true {
             startTapped(); return true
         }
         return false

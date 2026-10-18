@@ -52,7 +52,7 @@ final class ChatViewController: NSViewController, NSTextViewDelegate {
         let send = NSButton(title: "Send", target: self, action: #selector(sendTapped)); send.bezelStyle = .rounded
         send.keyEquivalent = "\r"; send.keyEquivalentModifierMask = .command
         let stop = NSButton(title: "Stop", target: self, action: #selector(stopTapped)); stop.bezelStyle = .rounded
-        let attach = NSButton(image: NSImage(systemSymbolName: "at", accessibilityDescription: "Mention a file")!, target: self, action: #selector(attachFile)); attach.bezelStyle = .rounded
+        let attach = NSButton(image: .symbol("at", "Mention a file"), target: self, action: #selector(attachFile)); attach.bezelStyle = .rounded
         attach.toolTip = "Mention a file (@path)"
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
         let buttons = NSStackView(views: [attach, status, NSView(), stop, send]); buttons.spacing = 8
@@ -63,7 +63,7 @@ final class ChatViewController: NSViewController, NSTextViewDelegate {
             isv.topAnchor.constraint(equalTo: web.bottomAnchor, constant: 8), isv.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
             isv.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12), isv.heightAnchor.constraint(equalToConstant: 76),
             buttons.topAnchor.constraint(equalTo: isv.bottomAnchor, constant: 8), buttons.leadingAnchor.constraint(equalTo: isv.leadingAnchor),
-            buttons.trailingAnchor.constraint(equalTo: isv.trailingAnchor), buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
+            buttons.trailingAnchor.constraint(equalTo: isv.trailingAnchor), buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10)
         ])
         view = root
         render()

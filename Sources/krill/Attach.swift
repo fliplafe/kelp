@@ -44,7 +44,7 @@ enum Attach {
         while true {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { break }
-            _ = buf.withUnsafeBytes { Darwin.write(1, $0.baseAddress!, n) }
+            _ = buf.withUnsafeBytes { p in p.baseAddress.map { Darwin.write(1, $0, n) } }
         }
         winch.cancel()
         restore()

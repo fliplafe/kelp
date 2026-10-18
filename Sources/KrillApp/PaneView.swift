@@ -9,7 +9,7 @@ extension NSPasteboard.PasteboardType { static let krillPane = NSPasteboard.Past
 @MainActor
 final class PaneView: NSView, NSDraggingSource {
     let sessionId: String
-    private var termView: NSView!
+    private var termView = NSView()
     #if canImport(GhosttyKit)
     private var ghostty: GhosttyTerminalView?
     #endif
@@ -45,7 +45,7 @@ final class PaneView: NSView, NSDraggingSource {
         buildTerminal(session)
         buildHeader()
         buildEndedOverlay()
-        for v in [header, termView!, ended, dropHint] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [header, termView, ended, dropHint] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         dropHint.translatesAutoresizingMaskIntoConstraints = true
         dropHint.wantsLayer = true; dropHint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor
         dropHint.layer?.cornerRadius = 6; dropHint.isHidden = true
@@ -55,7 +55,7 @@ final class PaneView: NSView, NSDraggingSource {
             header.trailingAnchor.constraint(equalTo: trailingAnchor), headerHeight,
             termView.topAnchor.constraint(equalTo: header.bottomAnchor), termView.leadingAnchor.constraint(equalTo: leadingAnchor),
             termView.trailingAnchor.constraint(equalTo: trailingAnchor), termView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            ended.centerXAnchor.constraint(equalTo: termView.centerXAnchor), ended.centerYAnchor.constraint(equalTo: termView.centerYAnchor),
+            ended.centerXAnchor.constraint(equalTo: termView.centerXAnchor), ended.centerYAnchor.constraint(equalTo: termView.centerYAnchor)
         ])
         header.isHidden = true
         registerForDraggedTypes([.krillPane, .fileURL, .png, .tiff, .string])
@@ -69,7 +69,7 @@ final class PaneView: NSView, NSDraggingSource {
         let id = s.id
         #if canImport(GhosttyKit)
         if Self.useGhostty {
-            let krill = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("krill").path
+            let krill = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "krill" : "Contents/MacOS/krill").path
             let cmd = "'\(krill.replacingOccurrences(of: "'", with: "'\\''"))' attach \(id)"
             let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KRILL_SOCKET": Paths.socket.path, "KRILL_HOME": Paths.root.path])
             g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
@@ -94,7 +94,7 @@ final class PaneView: NSView, NSDraggingSource {
     private func buildHeader() {
         header.wantsLayer = true
         title.font = .systemFont(ofSize: 11, weight: .medium); title.lineBreakMode = .byTruncatingTail; title.textColor = .secondaryLabelColor
-        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close pane")!, target: self, action: #selector(closeTapped))
+        let close = NSButton(image: .symbol("xmark", "Close pane"), target: self, action: #selector(closeTapped))
         close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold); close.contentTintColor = .secondaryLabelColor
         let row = NSStackView(views: [dot, title, NSView(), close]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 8)
         row.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(row)

@@ -44,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let out = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] { snapshotLater(out) }
     }
 
-
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // daemon keeps sessions alive
 
     func isViewing(session id: String) -> Bool {
@@ -163,9 +162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: menu
     private func item(_ menu: NSMenu, _ title: String, _ sel: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
         // Shifted letters as capitals: the form AppKit matches reliably (⇧⌘D, not ⌘D).
-        let k = mods.contains(.shift) && key.count == 1 && key.first!.isLetter ? key.uppercased() : key
+        let k = mods.contains(.shift) && key.count == 1 && key.first?.isLetter == true ? key.uppercased() : key
         let i = menu.addItem(withTitle: title, action: sel, keyEquivalent: k); i.keyEquivalentModifierMask = mods
-        if sel != nil, i.target == nil, sel!.description.hasPrefix("terminate") == false { i.target = self }
+        if let sel, i.target == nil, !sel.description.hasPrefix("terminate") { i.target = self }
         return i
     }
 
@@ -269,4 +268,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension Notification.Name { static let krillDevServer = Notification.Name("krill.devserver") }
-

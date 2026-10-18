@@ -29,7 +29,7 @@ final class TabBar: NSView {
             add.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10), add.centerYAnchor.constraint(equalTo: centerYAnchor),
             add.widthAnchor.constraint(equalToConstant: 24),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor),
-            heightAnchor.constraint(equalToConstant: 40),
+            heightAnchor.constraint(equalToConstant: 40)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -83,7 +83,7 @@ private final class TabButton: NSView, NSDraggingSource {
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
             heightAnchor.constraint(equalToConstant: 26), widthAnchor.constraint(lessThanOrEqualToConstant: 240), widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
-            close.widthAnchor.constraint(equalToConstant: 14),
+            close.widthAnchor.constraint(equalToConstant: 14)
         ])
         dot.isHidden = item.status == nil
         toolTip = item.title + (item.status.map { " — \($0.label)" } ?? "")

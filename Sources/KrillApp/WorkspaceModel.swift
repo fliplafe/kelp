@@ -45,7 +45,8 @@ final class WorkspaceTabs {
             var t = t; t.kind = .terminal(l); return t
         }
         // A session shown in a split doesn't also get a tab of its own.
-        tabs.removeAll { t in t.sessions.count == 1 && tabs.contains { $0.id != t.id && $0.sessions.count > 1 && $0.sessions.contains(t.sessions[0]) } }
+        let inSplits = Set(tabs.filter { $0.sessions.count > 1 }.flatMap(\.sessions))
+        tabs.removeAll { $0.sessions.count == 1 && inSplits.contains($0.sessions[0]) }
         let placed = Set(tabs.flatMap(\.sessions))
         for s in live where alive.contains(s.id) && !placed.contains(s.id) { tabs.append(WorkTab(kind: .terminal(.pane(s.id)))) }
         if selected == nil || !tabs.contains(where: { $0.id == selectedId }) { selectedId = tabs.first?.id }

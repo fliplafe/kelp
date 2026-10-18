@@ -33,7 +33,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let sv = NSScrollView(); sv.documentView = outline; sv.hasVerticalScroller = true; sv.drawsBackground = false
         sv.automaticallyAdjustsContentInsets = true
 
-        let add = NSButton(title: "Add Repository", image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!,
+        let add = NSButton(title: "Add Repository", image: .symbol("plus"),
                            target: NSApp.delegate, action: #selector(AppDelegate.addProject))
         add.isBordered = false; add.imagePosition = .imageLeading; add.contentTintColor = .secondaryLabelColor; add.font = .systemFont(ofSize: 12)
         add.toolTip = "Add a git repository (⌘O)"
@@ -46,7 +46,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             sep.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
             sep.bottomAnchor.constraint(equalTo: add.topAnchor, constant: -6),
             add.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14), add.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -8),
-            add.heightAnchor.constraint(equalToConstant: 22),
+            add.heightAnchor.constraint(equalToConstant: 22)
         ])
         view = v
         AppModel.shared.onChange.append { [weak self] in self?.reload() }
@@ -89,7 +89,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     // MARK: data source
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { ((item as? SidebarItem).map { kids[$0.id]?.count } ?? items.count) ?? 0 }
-    func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { (item as? SidebarItem).map { kids[$0.id]![index] } ?? items[index] }
+    func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { (item as? SidebarItem).map { kids[$0.id]?[index] ?? $0 } ?? items[index] }
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { if case .repo? = (item as? SidebarItem)?.kind { true } else { false } }
     func outlineView(_ o: NSOutlineView, isGroupItem item: Any) -> Bool { if case .repo? = (item as? SidebarItem)?.kind { true } else { false } }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { if case .worktree? = (item as? SidebarItem)?.kind { true } else { false } }
@@ -181,7 +181,7 @@ private final class RepoHeader: NSTableCellView {
         NSLayoutConstraint.activate([
             t.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4), t.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
             add.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: t.centerYAnchor),
-            t.trailingAnchor.constraint(lessThanOrEqualTo: add.leadingAnchor, constant: -4),
+            t.trailingAnchor.constraint(lessThanOrEqualTo: add.leadingAnchor, constant: -4)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -198,7 +198,7 @@ private final class WorkspaceRow: NSTableCellView {
         let top = ss.min { (order.firstIndex(of: $0.status) ?? 9) < (order.firstIndex(of: $1.status) ?? 9) }
         let dot = StatusDot(status: top?.status)
         dot.isHidden = top == nil
-        let branchIcon = NSImageView(image: NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)!)
+        let branchIcon = NSImageView(image: .symbol("arrow.triangle.branch"))
         branchIcon.symbolConfiguration = .init(pointSize: 10, weight: .regular); branchIcon.contentTintColor = .tertiaryLabelColor
         branchIcon.isHidden = top != nil
 
@@ -229,7 +229,7 @@ private final class WorkspaceRow: NSTableCellView {
             title.trailingAnchor.constraint(lessThanOrEqualTo: badge.leadingAnchor, constant: -6),
             badge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), badge.centerYAnchor.constraint(equalTo: title.centerYAnchor),
             sub.leadingAnchor.constraint(equalTo: title.leadingAnchor), sub.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1),
-            sub.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
+            sub.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6)
         ])
         textField = title
         toolTip = ([w.note, w.path] + [w.issueURL, w.prURL]).filter { !$0.isEmpty }.joined(separator: "\n")

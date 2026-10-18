@@ -2,6 +2,11 @@ import AppKit
 import Core
 import Agents
 
+extension NSImage {
+    /// SF Symbol, or an empty image if the name is unknown on this macOS.
+    static func symbol(_ name: String, _ label: String? = nil) -> NSImage { NSImage(systemSymbolName: name, accessibilityDescription: label) ?? NSImage() }
+}
+
 /// Present an alert as a sheet on the main window and await the answer (native, non-blocking).
 @MainActor
 func runSheet(_ a: NSAlert) async -> NSApplication.ModalResponse {
@@ -33,7 +38,7 @@ final class LaunchForm {
             [NSTextField(labelWithString: "Account:"), account],
             [NSTextField(labelWithString: "Model:"), model],
             [NSTextField(labelWithString: "Effort:"), effort],
-            [NSTextField(labelWithString: "Permissions:"), mode],
+            [NSTextField(labelWithString: "Permissions:"), mode]
         ])
         grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 8
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12

@@ -18,7 +18,7 @@ final class ContentViewController: NSViewController {
             host.topAnchor.constraint(equalTo: v.topAnchor), host.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: v.trailingAnchor), host.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
             statusBar.leadingAnchor.constraint(equalTo: v.leadingAnchor), statusBar.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            statusBar.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+            statusBar.bottomAnchor.constraint(equalTo: v.bottomAnchor)
         ])
         view = v
         showWelcome()
@@ -84,7 +84,7 @@ final class WelcomeView: NSView {
     init(hasRepos: Bool) {
         self.hasRepos = hasRepos
         super.init(frame: .zero)
-        let icon = NSImageView(image: NSImage(systemSymbolName: hasRepos ? "square.stack.3d.up" : "folder.badge.plus", accessibilityDescription: nil)!)
+        let icon = NSImageView(image: .symbol(hasRepos ? "square.stack.3d.up" : "folder.badge.plus"))
         icon.symbolConfiguration = .init(pointSize: 40, weight: .light); icon.contentTintColor = .tertiaryLabelColor
         let title = NSTextField(labelWithString: hasRepos ? "Start a workspace" : "Welcome to Krill")
         title.font = .systemFont(ofSize: 20, weight: .semibold)
@@ -123,7 +123,7 @@ final class StatusBar: NSView {
             sep.topAnchor.constraint(equalTo: topAnchor), sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor),
             location.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12), location.centerYAnchor.constraint(equalTo: centerYAnchor),
             location.trailingAnchor.constraint(lessThanOrEqualTo: counts.leadingAnchor, constant: -12),
-            counts.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12), counts.centerYAnchor.constraint(equalTo: centerYAnchor),
+            counts.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12), counts.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }

@@ -12,7 +12,8 @@ public final class PTY: @unchecked Sendable {
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onExit: (@Sendable (Int32) -> Void)?
 
-    public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32) throws {
+    /// `trampoline`: the `krill` binary that makes the PTY the child's controlling terminal (nil spawns directly).
+    public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32, trampoline: String? = PTY.trampoline) throws {
         var m: Int32 = 0, s: Int32 = 0
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
@@ -46,7 +47,7 @@ public final class PTY: @unchecked Sendable {
         defer { cargv.forEach { free($0) }; cenv.forEach { free($0) } }
         var pid: pid_t = 0
         let rc: Int32
-        if let tramp = Self.trampoline {
+        if let tramp = trampoline {
             // krill __ctty: claims the tty as controlling terminal, then execs the agent (PATH from the child env).
             let targv = ([strdup(tramp), strdup("__ctty")] + cargv.dropLast() + [nil]) as [UnsafeMutablePointer<CChar>?]
             rc = posix_spawn(&pid, tramp, &fa, &attr, targv, cenv)
@@ -90,7 +91,7 @@ public final class PTY: @unchecked Sendable {
     }
 
     /// The `krill` CLI next to the daemon binary.
-    nonisolated(unsafe) static var trampoline: String? = {
+    public static let trampoline: String? = {
         let dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
         let p = dir.appendingPathComponent("krill").path
         return FileManager.default.isExecutableFile(atPath: p) ? p : nil

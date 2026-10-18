@@ -24,9 +24,8 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
 
     static func show(repo: Repo? = nil, task text: String = "") {
         guard current == nil, let win = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else { return }
-        let repo = repo ?? AppModel.shared.repos.first
-        guard repo != nil else { (NSApp.delegate as? AppDelegate)?.addProject(); return }
-        let c = WorkspaceComposer(repo: repo!, text: text)
+        guard let repo = repo ?? AppModel.shared.repos.first else { (NSApp.delegate as? AppDelegate)?.addProject(); return }
+        let c = WorkspaceComposer(repo: repo, text: text)
         current = c
         win.beginSheet(c.sheet) { _ in current = nil }
         c.sheet.makeFirstResponder(c.task)
@@ -76,7 +75,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
             [label("Agent:"), agentRow],
             [label("Branch from:"), base],
             [label("Name:"), name],
-            [NSGridCell.emptyContentView, yolo],
+            [NSGridCell.emptyContentView, yolo]
         ])
         grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 8
         grid.rowAlignment = .firstBaseline
@@ -102,7 +101,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
             scroll.heightAnchor.constraint(equalToConstant: 110), scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             sub.widthAnchor.constraint(equalTo: scroll.widthAnchor), footer.widthAnchor.constraint(equalTo: scroll.widthAnchor),
             placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 11), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 9),
-            placeholder.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -11),
+            placeholder.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -11)
         ])
         sheet.contentView = root
         projectChanged(); agentChanged()
@@ -132,7 +131,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
 
     /// Return creates; Shift/Option-Return adds a line.
     func textView(_ tv: NSTextView, doCommandBy sel: Selector) -> Bool {
-        if sel == #selector(NSResponder.insertNewline(_:)), NSApp.currentEvent?.modifierFlags.intersection([.shift, .option]).isEmpty ?? true {
+        if sel == #selector(NSResponder.insertNewline(_:)), NSApp.currentEvent?.modifierFlags.isDisjoint(with: [.shift, .option]) ?? true {
             createTapped(); return true
         }
         return false

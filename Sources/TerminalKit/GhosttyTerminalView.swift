@@ -59,7 +59,7 @@ public final class GhosttyRuntime {
             for i in 0..<count {
                 let c = contents[i]
                 guard let mime = c.mime.map({ String(cString: $0) }), mime.hasPrefix("text/plain"), let data = c.data else { continue }
-                text = String(decoding: UnsafeRawBufferPointer(start: data, count: c.len), as: UTF8.self)
+                text = String(bytes: UnsafeRawBufferPointer(start: data, count: c.len), encoding: .utf8)
             }
             if let text { DispatchQueue.main.async { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) } }
         }
@@ -85,11 +85,10 @@ public final class GhosttyRuntime {
         case GHOSTTY_ACTION_OPEN_URL:
             let u = action.action.open_url
             guard let p = u.url else { return false }
-            let s = String(decoding: UnsafeRawBufferPointer(start: p, count: Int(u.len)), as: UTF8.self)
-            if let url = URL(string: s) { if let h = view?.onOpenURL { h(url) } else { NSWorkspace.shared.open(url) } }
+            if let s = String(bytes: UnsafeRawBufferPointer(start: p, count: Int(u.len)), encoding: .utf8), let url = URL(string: s) { if let h = view?.onOpenURL { h(url) } else { NSWorkspace.shared.open(url) } }
             return true
         case GHOSTTY_ACTION_MOUSE_SHAPE:
-            view?.cursor = GhosttyTerminalView.cursor(for: action.action.mouse_shape); view?.window?.invalidateCursorRects(for: view!)
+            if let view { view.cursor = GhosttyTerminalView.cursor(for: action.action.mouse_shape); view.window?.invalidateCursorRects(for: view) }
             return true
         case GHOSTTY_ACTION_CELL_SIZE:
             view?.cellSize = NSSize(width: Double(action.action.cell_size.width), height: Double(action.action.cell_size.height))
@@ -129,8 +128,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
         cfg.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
         cfg.wait_after_command = false
-        let keys = Array(env.keys), values = keys.map { env[$0]! }
-        let cKeys = keys.map { strdup($0) }, cValues = values.map { strdup($0) }
+        let cKeys = env.keys.map { strdup($0) }, cValues = env.keys.map { strdup(env[$0] ?? "") }
         defer { (cKeys + cValues).forEach { free($0) } }
         var vars = zip(cKeys, cValues).map { ghostty_env_var_s(key: $0, value: $1) }
         surface = command.withCString { c in cwd.withCString { d in
@@ -284,9 +282,8 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         var x = e.scrollingDeltaX, y = e.scrollingDeltaY
         let precise = e.hasPreciseScrollingDeltas
         if precise { x *= 2; y *= 2 }
-        let momentum: Int32 = switch e.momentumPhase {
-        case .began: 1; case .stationary: 2; case .changed: 3; case .ended: 4; case .cancelled: 5; case .mayBegin: 6; default: 0
-        }
+        let phases: [(NSEvent.Phase, Int32)] = [(.began, 1), (.stationary, 2), (.changed, 3), (.ended, 4), (.cancelled, 5), (.mayBegin, 6)]
+        let momentum = phases.first { $0.0 == e.momentumPhase }?.1 ?? 0
         ghostty_surface_mouse_scroll(surface, x, y, (precise ? 1 : 0) | (momentum << 1))
     }
     public override func pressureChange(with e: NSEvent) {
