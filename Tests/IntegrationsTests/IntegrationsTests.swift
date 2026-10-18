@@ -1,0 +1,134 @@
+import Foundation
+import Testing
+@testable import Integrations
+
+private func d(_ s: String) -> Data { Data(s.utf8) }
+
+@Test func parsePullRequestsSummarizesChecks() throws {
+    let json = """
+    [{"author":{"id":"U_1","is_bot":false,"login":"alice","name":"Alice"},"headRefName":"123-fix","isDraft":false,"number":7,
+      "reviewDecision":"REVIEW_REQUIRED","state":"OPEN","title":"Fix","url":"https://github.com/o/r/pull/7",
+      "statusCheckRollup":[
+        {"__typename":"CheckRun","conclusion":"FAILURE","name":"lint","startedAt":"2026-10-14T04:39:00Z","status":"COMPLETED","workflowName":"Lint"},
+        {"__typename":"CheckRun","conclusion":"SUCCESS","name":"lint","startedAt":"2026-10-15T04:39:00Z","status":"COMPLETED","workflowName":"Lint"},
+        {"__typename":"CheckRun","conclusion":"FAILURE","name":"test","startedAt":"2026-10-15T04:39:00Z","status":"COMPLETED","workflowName":"CI"},
+        {"__typename":"CheckRun","conclusion":"","name":"build","startedAt":"2026-10-15T04:39:00Z","status":"IN_PROGRESS","workflowName":"CI"},
+        {"__typename":"CheckRun","conclusion":"SKIPPED","name":"triage","startedAt":"2026-10-15T04:39:00Z","status":"COMPLETED","workflowName":"T"},
+        {"__typename":"StatusContext","context":"ci/circle","state":"PENDING"}]},
+     {"author":{"login":"bob"},"headRefName":"b","isDraft":true,"number":8,"reviewDecision":"","state":"OPEN","title":"WIP",
+      "url":"https://github.com/o/r/pull/8","statusCheckRollup":[]}]
+    """
+    let prs = try GitHub.parsePullRequests(d(json))
+    #expect(prs.count == 2)
+    #expect(prs[0] == GitHub.PullRequest(number: 7, title: "Fix", url: "https://github.com/o/r/pull/7", author: "alice", headRefName: "123-fix",
+                                         isDraft: false, state: "OPEN", reviewDecision: "REVIEW_REQUIRED",
+                                         checks: .init(passed: 1, failed: 1, pending: 2)))
+    #expect(prs[1].reviewDecision == nil && prs[1].isDraft && prs[1].checks == .init())
+}
+
+@Test func parseIssuesFlattensLabelsAndAssignees() throws {
+    let json = """
+    [{"assignees":[{"id":"U_1","login":"alice","name":"Alice"}],"body":"Steps","labels":[{"id":"L","name":"bug","description":"","color":"D6393F"}],
+      "number":12,"state":"OPEN","title":"Crash","url":"https://github.com/o/r/issues/12"}]
+    """
+    #expect(try GitHub.parseIssues(d(json)) == [GitHub.Issue(number: 12, title: "Crash", body: "Steps", url: "https://github.com/o/r/issues/12",
+                                                            labels: ["bug"], assignees: ["alice"], state: "OPEN")])
+}
+
+@Test func parseChecksExtractsRunId() throws {
+    let json = """
+    [{"bucket":"fail","link":"https://github.com/cli/cli/actions/runs/39045086480/job/117432139361","name":"test","state":"FAILURE","workflow":"CI"},
+     {"bucket":"pass","link":"https://ci.example.com/x","name":"ext","state":"SUCCESS","workflow":""}]
+    """
+    let c = try GitHub.parseChecks(d(json))
+    #expect(c.map(\.runId) == [39045086480, nil])
+    #expect(c[0].bucket == "fail" && c[0].workflow == "CI")
+}
+
+@Test func parseReviewCommentsAndReviews() throws {
+    let comments = """
+    [[{"path":"a.go","line":null,"original_line":10,"body":"nit","user":{"login":"bob","id":1},"html_url":"https://github.com/o/r/pull/1#discussion_r1"}],
+     [{"path":"b.go","line":3,"original_line":3,"body":"why?","user":{"login":"amy"},"html_url":"https://github.com/o/r/pull/1#discussion_r2"}]]
+    """
+    let c = try GitHub.parseReviewComments(d(comments))
+    #expect(c.map(\.line) == [10, 3] && c[1].author == "amy" && c[0].path == "a.go")
+
+    let reviews = """
+    {"reviews":[{"id":"PRR_1","author":{"login":"bob"},"body":"Please fix","state":"CHANGES_REQUESTED","submittedAt":"2026-10-16T21:22:40Z"},
+                {"id":"PRR_2","author":{"login":"amy"},"body":"","state":"APPROVED"}]}
+    """
+    #expect(try GitHub.parseReviews(d(reviews)) == [GitHub.ReviewComment(path: nil, line: nil, body: "Please fix", author: "bob", url: nil)])
+}
+
+@Test func parseProjectsAndItems() throws {
+    #expect(try GitHub.parseOwner(d(#"{"owner":{"id":"O_1","login":"acme"}}"#)) == "acme")
+    let projects = """
+    {"projects":[{"closed":false,"fields":{"totalCount":9},"id":"PVT_1","items":{"totalCount":2},"number":3,
+      "owner":{"login":"acme","type":"Organization"},"public":false,"readme":"","shortDescription":"","title":"Roadmap",
+      "url":"https://github.com/orgs/acme/projects/3"}],"totalCount":1}
+    """
+    #expect(try GitHub.parseProjects(d(projects)) == [GitHub.Project(number: 3, title: "Roadmap", url: "https://github.com/orgs/acme/projects/3")])
+    let items = """
+    {"items":[{"content":{"body":"","number":5,"repository":"acme/r","title":"Login","type":"Issue","url":"https://github.com/acme/r/issues/5"},
+               "id":"PVTI_1","repository":"https://github.com/acme/r","status":"In Progress","title":"Login"},
+              {"content":{"body":"","title":"Idea","type":"DraftIssue"},"id":"PVTI_2","title":"Idea"}],"totalCount":2}
+    """
+    #expect(try GitHub.parseProjectItems(d(items)) == [
+        GitHub.ProjectItem(title: "Login", type: "Issue", status: "In Progress", url: "https://github.com/acme/r/issues/5"),
+        GitHub.ProjectItem(title: "Idea", type: "DraftIssue", status: nil, url: nil),
+    ])
+}
+
+@Test func tailKeepsLastBytesFromLineStart() {
+    #expect(GitHub.tail("short") == "short")
+    let s = (1...5000).map { "line \($0)" }.joined(separator: "\n")
+    let t = GitHub.tail(s)
+    #expect(t.utf8.count <= 12_288 + 4 && t.hasPrefix("…\nline ") && t.hasSuffix("line 5000"))
+}
+
+@Test func linearParseIssues() throws {
+    let json = """
+    {"data":{"viewer":{"assignedIssues":{"nodes":[{"id":"uuid-1","identifier":"ENG-123","title":"Fix login","description":null,
+      "url":"https://linear.app/acme/issue/ENG-123/fix-login","branchName":"alice/eng-123-fix-login",
+      "state":{"id":"s1","name":"Todo","type":"unstarted"},"team":{"id":"t1","key":"ENG","name":"Engineering"}}]}}}}
+    """
+    let issues = try LinearClient.parse([LinearIssue].self, from: d(json), at: "viewer", "assignedIssues", "nodes")
+    #expect(issues == [LinearIssue(id: "uuid-1", identifier: "ENG-123", title: "Fix login", description: nil,
+                                   url: "https://linear.app/acme/issue/ENG-123/fix-login",
+                                   state: LinearState(id: "s1", name: "Todo", type: "unstarted"),
+                                   team: LinearTeam(id: "t1", key: "ENG", name: "Engineering"), branchName: "alice/eng-123-fix-login")])
+    #expect(try LinearClient.parse(Bool.self, from: d(#"{"data":{"issueUpdate":{"success":true}}}"#), at: "issueUpdate", "success"))
+}
+
+@Test func linearParseErrors() {
+    let err = #"{"errors":[{"message":"Authentication required","extensions":{"code":"AUTHENTICATION_ERROR"}}],"data":null}"#
+    #expect(throws: LinearError.self) { try LinearClient.parse([LinearTeam].self, from: d(err), at: "teams", "nodes") }
+    #expect(throws: LinearError.self) { try LinearClient.parse([LinearTeam].self, from: d(#"{"data":{"team":null}}"#), at: "team", "states") }
+}
+
+@Test func linearStateFor() throws {
+    let json = """
+    {"data":{"team":{"states":{"nodes":[{"id":"1","name":"Backlog","type":"backlog"},{"id":"2","name":"In Review","type":"started"},
+      {"id":"3","name":"In Progress","type":"started"},{"id":"4","name":"Canceled","type":"canceled"},{"id":"5","name":"Done","type":"completed"}]}}}}
+    """
+    let states = try LinearClient.parse([LinearState].self, from: d(json), at: "team", "states", "nodes")
+    #expect(LinearClient.stateFor(kind: .inProgress, in: states)?.id == "3")
+    #expect(LinearClient.stateFor(kind: .inReview, in: states)?.id == "2")
+    #expect(LinearClient.stateFor(kind: .done, in: states)?.id == "5")
+    let bare = states.filter { $0.id != "2" && $0.id != "3" } + [LinearState(id: "6", name: "Doing", type: "started")]
+    #expect(LinearClient.stateFor(kind: .inProgress, in: bare)?.id == "6")
+    #expect(LinearClient.stateFor(kind: .inReview, in: bare) == nil)
+}
+
+@Test func issueRefBranchNames() {
+    #expect(IssueRef.branchName(123, title: "Fix the login crash on macOS Sonoma 14.5!") == "123-fix-the-login-crash-on-macos")
+    #expect(IssueRef.branchName("#45", title: "Café résumé — naïve") == "45-cafe-resume-naive")
+    #expect(IssueRef.branchName("ENG-9", title: "") == "eng-9")
+    #expect(IssueRef.parse(fromBranch: "eng-123-foo") == "ENG-123")
+    #expect(IssueRef.parse(fromBranch: "alice/eng-123-fix-login") == "ENG-123")
+    #expect(IssueRef.parse(fromBranch: "123-foo") == "#123")
+    #expect(IssueRef.parse(fromBranch: "456") == "#456")
+    #expect(IssueRef.parse(fromBranch: "main") == nil)
+    #expect(IssueRef.parse(fromBranch: "v2-release") == nil)
+    #expect(IssueRef.parse(fromBranch: "123abc") == nil)
+}
