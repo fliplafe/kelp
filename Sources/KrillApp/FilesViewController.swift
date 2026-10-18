@@ -3,6 +3,7 @@ import Core
 import GitKit
 import EditorKit
 import LSPKit
+import Markdown
 
 final class FileNode: NSObject {
     let name: String, path: String   // path relative to worktree root
@@ -37,6 +38,8 @@ final class OpenFile {
     var lastSaved: String
     var saveTask: Task<Void, Never>?
     var lspTask: Task<Void, Never>?
+    var markdown: MarkdownTab?
+    var tabController: NSViewController { markdown ?? editor.controller }
     init(path: String, url: URL, text: String, editable: Bool) {
         self.path = path; self.url = url; lastSaved = text
         editor = CodeEditor(text: text, url: url, editable: editable)
@@ -72,7 +75,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         outline.registerForDraggedTypes([.fileURL]); outline.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
         let m = NSMenu()
         for (t, a) in [("Open", #selector(openSelected)), ("New File…", #selector(newFile)), ("New Folder…", #selector(newFolder)),
-                       ("Rename…", #selector(rename)), ("Move to Trash", #selector(trash)), ("Reveal in Finder", #selector(reveal)),
+                       ("New from Template…", #selector(newFromTemplate)), ("Rename…", #selector(rename)), ("Move to Trash", #selector(trash)), ("Reveal in Finder", #selector(reveal)),
                        ("Insert Path into Agent Prompt", #selector(insertPath))] {
             m.addItem(withTitle: t, action: a, keyEquivalent: "").target = self
         }
@@ -196,7 +199,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
     // MARK: editor tabs
     func openFile(_ rel: String, line: Int? = nil) {
         guard worktree != nil else { return }
-        if let f = open.first(where: { $0.path == rel }), let item = tabs.tabViewItems.first(where: { $0.viewController === f.editor.controller }) {
+        if let f = open.first(where: { $0.path == rel }), let item = tabs.tabViewItems.first(where: { $0.viewController === f.tabController }) {
             tabs.selectTabViewItem(item); if let line { f.editor.goTo(line: line) }; return
         }
         let url = URL(fileURLWithPath: root).appendingPathComponent(rel)
@@ -209,7 +212,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         let t0 = Date()
         let f = OpenFile(path: rel, url: url, text: text, editable: size <= CodeEditor.readOnlyLimit)
         defer { if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] != nil { print("OPEN \(rel) lines=\(text.split(separator: "\n").count) in \(String(format: "%.0f", Date().timeIntervalSince(t0) * 1000)) ms") } }
-        f.editor.onChange = { [weak self, weak f] t in if let f { self?.scheduleSave(f); self?.lspChange(f, t) } }
+        f.editor.onChange = { [weak self, weak f] t in if let f { self?.scheduleSave(f); self?.lspChange(f, t); f.markdown?.textChanged() } }
         f.editor.onSelection = { [weak self] in self?.updateProblems() }
         let rootPath = root, abs = url.path
         Task { [weak f] in
@@ -222,7 +225,12 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         open.append(f)
         let item = NSTabViewItem(identifier: rel); item.label = (rel as NSString).lastPathComponent + (size > CodeEditor.readOnlyLimit ? " (read-only)" : "")
         item.toolTip = rel
-        item.viewController = f.editor.controller
+        if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
+            let md = MarkdownTab(editor: f.editor, url: url, path: rel); md.currentSession = currentSession
+            f.markdown = md; item.viewController = md
+        } else {
+            item.viewController = f.editor.controller
+        }
         f.editor.view.clipsToBounds = true   // the gutter otherwise draws past the tab into the problems bar
         tabs.addTabViewItem(item); tabs.selectTabViewItem(item)
         if let line { DispatchQueue.main.async { f.editor.goTo(line: line) } }
@@ -321,7 +329,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
     @objc func closeTab() {
         guard let item = tabs.selectedTabViewItem else { return }
         if let key = previews.first(where: { $0.value === item })?.key { previews[key] = nil; tabs.removeTabViewItem(item); return }
-        guard let i = open.firstIndex(where: { $0.editor.controller === item.viewController }) else { return }
+        guard let i = open.firstIndex(where: { $0.tabController === item.viewController }) else { return }
         let f = open[i]; flush(f); open.remove(at: i); tabs.removeTabViewItem(item); saveOpenList()
         let rootPath = root; Task { await LSPManager.shared.client(root: rootPath, path: f.url.path)?.close(f.url.path) }
     }
@@ -332,12 +340,16 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         UserDefaults.standard.set(open.map(\.path), forKey: "files.\(id)")
     }
 
-    var current: OpenFile? { tabs.selectedTabViewItem.flatMap { item in open.first { $0.editor.controller === item.viewController } } }
+    var current: OpenFile? { tabs.selectedTabViewItem.flatMap { item in open.first { $0.tabController === item.viewController } } }
 
     @objc func goToLine() {
         guard let f = current, let s = prompt("Go to line", ""), let n = Int(s) else { return }
         f.editor.goTo(line: n)
     }
+
+    @objc func markdownNote() { current?.markdown?.noteToAgent() }
+    @objc func markdownBold() { current?.markdown?.bold() }
+    @objc func markdownItalic() { current?.markdown?.italic() }
 
     /// Selected code → agent prompt (not submitted, so you can add the question).
     @objc func sendSelectionToAgent() {
@@ -410,6 +422,32 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         FileManager.default.createFile(atPath: u.path, contents: Data())
         reloadTree(); openFile(rel)
     }
+    /// Markdown templates from <repo>/.krill/templates and ~/.krill/templates with {{date}}, {{branch}}, {{title}}…
+    @objc private func newFromTemplate() {
+        let repo = AppModel.shared.repo(worktree?.repoId)
+        let dirs = [URL(fileURLWithPath: root).appendingPathComponent(".krill/templates"), Paths.root.appendingPathComponent("templates")]
+        let all = dirs.flatMap { Templates.list(in: $0) }
+        guard !all.isEmpty else {
+            let a = NSAlert(); a.messageText = "No templates yet"; a.informativeText = "Add Markdown files to .krill/templates in the repo or ~/.krill/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}."
+            Task { _ = await runSheet(a) }; return
+        }
+        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26)); for t in all { pop.addItem(withTitle: t.deletingPathExtension().lastPathComponent) }
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); name.placeholderString = "File name, e.g. plan-login.md"
+        let box = NSStackView(views: [pop, name]); box.orientation = .vertical; box.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
+        let a = NSAlert(); a.messageText = "New from Template"; a.accessoryView = box; a.addButton(withTitle: "Create"); a.addButton(withTitle: "Cancel")
+        Task {
+            guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty, let text = try? String(contentsOf: all[pop.indexOfSelectedItem], encoding: .utf8) else { return }
+            var file = name.stringValue; if (file as NSString).pathExtension.isEmpty { file += ".md" }
+            let title = (file as NSString).deletingPathExtension.replacingOccurrences(of: "-", with: " ")
+            let body = Templates.expand(text, vars: ["branch": worktree?.branch ?? "", "title": title, "repo": repo?.name ?? ""])
+            let rel = selectedDir.isEmpty ? file : selectedDir + "/" + file
+            let u = URL(fileURLWithPath: root).appendingPathComponent(rel)
+            try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            do { try body.write(to: u, atomically: true, encoding: .utf8) } catch { presentError(error); return }
+            reloadTree(); openFile(rel)
+        }
+    }
+
     @objc private func newFolder() {
         guard let name = prompt("New folder", "In /\(selectedDir)"), !name.isEmpty else { return }
         do { try FileManager.default.createDirectory(at: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).appendingPathComponent(name), withIntermediateDirectories: true) }

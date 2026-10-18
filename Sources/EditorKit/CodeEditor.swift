@@ -79,6 +79,16 @@ public final class CodeEditor: NSObject {
         tv.replaceCharacters(in: NSRange(location: start, length: c.range.location - start), with: text)
     }
 
+    /// Primary selection in UTF-16 units.
+    public var selectedRange: NSRange { controller.textView?.selectionManager.textSelections.first?.range ?? NSRange(location: 0, length: 0) }
+
+    /// Replace everything as one undoable edit and set the selection (formatting toolbar).
+    public func apply(text: String, selection: NSRange) {
+        guard let tv = controller.textView else { return }
+        tv.replaceCharacters(in: NSRange(location: 0, length: (tv.string as NSString).length), with: text)
+        tv.selectionManager.setSelectedRanges([selection])
+    }
+
     public func goTo(line: Int) { controller.setCursorPositions([CursorPosition(line: max(1, line), column: 1)], scrollToVisible: true) }
     public func focus() { controller.view.window?.makeFirstResponder(controller.textView) }
 

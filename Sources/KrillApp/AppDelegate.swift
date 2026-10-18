@@ -152,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func findInWorktree() { content.select(named: "Files"); content.files.focusSearch() }
     @objc func sendSelection() { content.files.sendSelectionToAgent() }
     @objc func openExternal() { content.files.openInExternalEditor() }
+    @objc func markdownNote() { content.files.markdownNote() }
     @objc func jumpToDefinition() { content.files.jumpToDefinition() }
     @objc func showHover() { content.files.showHover() }
     @objc func nextPane() { content.workspace.focusNeighbor(step: 1) }
@@ -238,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(edit, "Go to Line…", #selector(goToLine), "l")
         _ = item(edit, "Send Selection to Agent", #selector(sendSelection), "\r", [.command, .option])
         _ = item(edit, "Open in External Editor", #selector(openExternal), "o", [.command, .option])
+        _ = item(edit, "Note to Agent on Selection", #selector(markdownNote), "a", [.command, .shift])
         _ = item(edit, "Jump to Definition", #selector(jumpToDefinition), "j", [.command, .control])
         _ = item(edit, "Show Quick Help", #selector(showHover), "h", [.command, .control])
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
