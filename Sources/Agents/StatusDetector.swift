@@ -18,7 +18,7 @@ public struct StatusDetector: Sendable {
     public mutating func output(_ chunk: String, at now: Date = Date()) {
         lastOutput = now
         tail = String((tail + Self.stripANSI(chunk)).suffix(600))
-        if !hooked { status = .working }
+        if !hooked, manifest.quietSeconds < 1e8 { status = .working }   // plain shells don't track status
     }
 
     /// Call periodically; returns the (possibly new) status.
@@ -42,6 +42,9 @@ public struct StatusDetector: Sendable {
     }
 
     public mutating func exited() { status = .exited }
+
+    /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
+    public mutating func override(_ s: AgentStatus) { if status != .exited { status = s } }
 
     public static func stripANSI(_ s: String) -> String {
         s.replacingOccurrences(of: #"\u{1B}\[[0-9;?]*[ -/]*[@-~]|\u{1B}\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\)"#, with: "", options: .regularExpression)

@@ -36,7 +36,7 @@ public enum DiffRows {
                 rows.append(.hunk(file: fi, index: hi, header: h.header))
                 if sideBySide { for (l, r) in pairs(h.lines) { rows.append(.pair(file: fi, left: l, right: r)) } }
                 else { for l in h.lines { rows.append(.line(file: fi, l)) } }
-                prevEnd = h.lines.last?.newLine.map { $0 + 1 } ?? h.newStart
+                prevEnd = h.newStart + h.lines.filter { $0.newLine != nil }.count
             }
         }
         return rows

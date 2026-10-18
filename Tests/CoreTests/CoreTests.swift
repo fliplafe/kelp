@@ -38,3 +38,9 @@ import Testing
     #expect(l.removing("a")?.removing("b")?.removing("c") == nil)
     #expect(l.neighbor(of: "c", step: 1) == "a")
 }
+
+@Test func ghosttyConfigParse() {
+    let c = GhosttyConfig.parse("# comment\nbackground = #1e1e2e\nforeground=cdd6f4\nfont-family = \"JetBrains Mono\"\nfont-size = 14\npalette = 1=#f38ba8\n")
+    #expect(c.background == "#1e1e2e" && c.foreground == "cdd6f4" && c.fontFamily == "JetBrains Mono" && c.fontSize == 14 && c.palette[1] == "#f38ba8")
+    #expect(GhosttyConfig.rgb("#ff0000")! == (1, 0, 0))
+}

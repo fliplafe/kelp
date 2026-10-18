@@ -49,9 +49,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         files.menu = fm
         let fs = NSScrollView(); fs.documentView = files; fs.hasVerticalScroller = true; fs.drawsBackground = false
 
-        table.dataSource = self; table.delegate = self; table.rowHeight = 17; table.intercellSpacing = .zero
+        table.dataSource = self; table.delegate = self; table.rowHeight = 17; table.intercellSpacing = .zero; table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.allowsMultipleSelection = true; table.headerView = nil; table.usesAlternatingRowBackgroundColors = false
         table.onKey = { [weak self] e in self?.key(e) ?? false }
+        let cm = NSMenu()
+        for (t, st) in [("Mark Resolved", "resolved"), ("Reopen", "open")] { let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st }
+        table.menu = cm
         let ts = NSScrollView(); ts.documentView = table; ts.hasVerticalScroller = true; ts.hasHorizontalScroller = true
         setColumns()
 
@@ -261,6 +264,11 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         }
     }
 
+    @objc private func setCommentState(_ m: NSMenuItem) {
+        guard table.clickedRow >= 0, case .comment(let c) = rows[table.clickedRow] else { NSSound.beep(); return }
+        Task { await AppModel.shared.call("comment.setState", .obj(["id": .string(c.id), "state": .string(m.representedObject as! String)])); await load() }
+    }
+
     @objc private func sendComments() {
         guard let wid = worktreeId else { return }
         guard comments.contains(where: { $0.state == .open }) else { status.stringValue = "No open comments"; return }
@@ -284,27 +292,47 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     @objc private func commit() {
-        guard let wid = worktreeId else { return }
-        let a = NSAlert(); a.messageText = "Commit"; a.informativeText = "Commits staged changes. If nothing is staged, all changes are committed."
-        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24)); a.accessoryView = f
-        a.addButton(withTitle: "Commit"); a.addButton(withTitle: "Ask Agent to Write Message"); a.addButton(withTitle: "Cancel")
-        switch a.runModal() {
-        case .alertFirstButtonReturn:
-            guard !f.stringValue.isEmpty else { return }
-            let anyStaged = changes.contains(where: \.staged)
+        guard let wid = worktreeId, let w = view.window else { return }
+        let anyStaged = changes.contains(where: \.staged)
+        CommitSheet(worktreeId: wid).present(on: w) { [weak self] msg, askAgent in
+            guard let self else { return }
+            if askAgent { self.runRecipe("commit", vars: [:]); return }
+            guard let msg else { return }
             Task {
-                if let h = await AppModel.shared.call("git.commit", .obj(["id": .string(wid), "message": .string(f.stringValue), "all": .bool(!anyStaged)])) { status.stringValue = "Committed \(h.string ?? "")" }
-                await load()
+                do {
+                    let h = try await AppModel.shared.client?.call("git.commit", .obj(["id": .string(wid), "message": .string(msg), "all": .bool(!anyStaged)]))
+                    self.status.stringValue = "Committed \(h?.string ?? "")"
+                } catch { await self.offerFix("fixCommit", title: "Commit failed", error: error) }
+                await self.load()
             }
-        case .alertSecondButtonReturn:
-            guard let sid = pickAgentSession(wid) else { return }
-            Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": "Write a concise commit message for the staged changes (or all changes if nothing is staged) and run git commit."])) }
-        default: break
         }
     }
+
+    /// Send an action recipe (prompt template, overridable per repo) to the agent in this worktree.
+    func runRecipe(_ name: String, vars: [String: String]) {
+        guard let wid = worktreeId, let sid = pickAgentSession(wid) else { return }
+        Task {
+            var v: [String: JSONValue] = [:]; for (k, x) in vars { v[k] = .string(x) }
+            guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wid), "name": .string(name), "vars": .object(v)]))?.string else { return }
+            await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text)]))
+            status.stringValue = "Sent to agent"
+        }
+    }
+
+    /// A failed git step: show the error and offer to let the agent fix it.
+    func offerFix(_ recipe: String, title: String, error: Error) async {
+        let msg = (error as? RPCError)?.message ?? "\(error)"
+        let a = NSAlert(); a.messageText = title; a.informativeText = String(msg.suffix(1500)); a.alertStyle = .warning
+        a.addButton(withTitle: "Fix with Agent"); a.addButton(withTitle: "Close")
+        if await runSheet(a) == .alertFirstButtonReturn { runRecipe(recipe, vars: ["error": String(msg.suffix(6000))]) }
+    }
+
     @objc private func push() {
         guard let wid = worktreeId else { return }
-        Task { if await AppModel.shared.call("git.push", .obj(["id": .string(wid)])) != nil { status.stringValue = "Pushed" } }
+        Task {
+            do { _ = try await AppModel.shared.client?.call("git.push", .obj(["id": .string(wid)])); status.stringValue = "Pushed" }
+            catch { await offerFix("fixPush", title: "Push failed", error: error) }
+        }
     }
     @objc private func createPR() {
         guard let wid = worktreeId, let title = prompt("Create pull request", "Title (the body is generated from the branch commits):", initial: AppModel.shared.worktree(wid)?.branch ?? "") else { return }
@@ -316,11 +344,10 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             guard let r = await AppModel.shared.call("git.merge", .obj(["id": .string(wid)])) else { return }
             if r["merged"]?.bool == true { status.stringValue = "Merged into base branch"; NotificationCenter.default.post(name: .krillRefresh, object: nil); return }
             let files = (r["conflicts"]?.array ?? []).compactMap(\.string)
-            let a = NSAlert(); a.messageText = "Merge conflicts"; a.informativeText = files.joined(separator: "\n") + "\n\nThe merge was aborted; nothing changed."
+            let a = NSAlert(); a.messageText = "Merge conflicts"; a.informativeText = files.joined(separator: "\n") + "\n\nThe merge was aborted; nothing changed."; a.alertStyle = .warning
             a.addButton(withTitle: "Ask Agent to Resolve"); a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn, let sid = pickAgentSession(wid) else { return }
-            let base = AppModel.shared.repo(AppModel.shared.worktree(wid)?.repoId)?.baseBranch ?? "main"
-            await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string("Merge \(base) into this branch, resolve all conflicts (\(files.joined(separator: ", "))), run the tests, and commit.")]))
+            guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            runRecipe("resolveConflicts", vars: ["files": files.joined(separator: ", ")])
         }
     }
 }

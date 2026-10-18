@@ -33,11 +33,39 @@ extension Git {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try run(["worktree", "add", "-b", branch, path, base], cwd: repo)
         let fm = FileManager.default
-        for f in copyFiles {
-            let src = (repo as NSString).appendingPathComponent(f)
-            if fm.fileExists(atPath: src) { try? fm.copyItem(atPath: src, toPath: (path as NSString).appendingPathComponent(f)) }
+        for f in Array(Set(copyFiles + includedIgnoredFiles(repo: repo))) {
+            let src = (repo as NSString).appendingPathComponent(f), dst = (path as NSString).appendingPathComponent(f)
+            guard fm.fileExists(atPath: src), !fm.fileExists(atPath: dst) else { continue }
+            try? fm.createDirectory(atPath: (dst as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try? fm.copyItem(atPath: src, toPath: dst)
         }
         return path
+    }
+
+    /// Gitignored files matching `.worktreeinclude` globs (e.g. `.env*`, `config/*.local.json`) — copied into new worktrees.
+    public static func includedIgnoredFiles(repo: String) -> [String] {
+        guard let text = try? String(contentsOfFile: repo + "/.worktreeinclude", encoding: .utf8) else { return [] }
+        let pats = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        let ignored = ((try? run(["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], cwd: repo)) ?? "").split(separator: "\0").map(String.init)
+        return ignored.filter { f in pats.contains { fnmatch($0, f, 0) == 0 || fnmatch($0, (f as NSString).lastPathComponent, 0) == 0 } }
+    }
+
+    /// Symlink shared directories (node_modules, .venv…) from the main checkout instead of reinstalling.
+    public static func linkShared(_ dirs: [String], repo: String, worktree: String) {
+        for d in dirs {
+            let src = (repo as NSString).appendingPathComponent(d), dst = (worktree as NSString).appendingPathComponent(d)
+            guard FileManager.default.fileExists(atPath: src), !FileManager.default.fileExists(atPath: dst) else { continue }
+            try? FileManager.default.createDirectory(atPath: (dst as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try? FileManager.default.createSymbolicLink(atPath: dst, withDestinationPath: src)
+        }
+    }
+
+    public static func renameBranch(_ path: String, from old: String, to new: String) throws {
+        try run(["branch", "-m", old, new], cwd: path)
+    }
+
+    public static func branchExists(_ repo: String, _ b: String) -> Bool {
+        (try? run(["rev-parse", "--verify", "--quiet", "refs/heads/" + b], cwd: repo)) != nil
     }
 
     public static func isDirty(_ path: String) throws -> Bool {

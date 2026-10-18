@@ -30,7 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await AppModel.shared.connect()
             sidebar.reload()
-            if let w = AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }
+            let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b } }
+            if let w = pick ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }
             if AppModel.shared.repos.isEmpty { addProject() }
         }
         NSApp.activate()
@@ -44,8 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [self] in
             window.setContentSize(NSSize(width: 1320, height: 840)); window.contentView?.layoutSubtreeIfNeeded()
             if let m = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_MODE"] { content.select(named: m) }
+            if let f = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_OPEN"] { content.files.openFile(f, line: 3) }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"] != nil, let g = FanoutController.groups().first {
+                FanoutController.show(ids: g.value.map(\.id), title: g.key)
+                if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
-                guard let v = window.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(2) }
+                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") } ?? window).contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(2) }
                 v.cacheDisplay(in: v.bounds, to: rep)
                 print("DIFF", content.diff.debugInfo)
                 for p in content.workspace.view.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.terminal.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300)) }
@@ -59,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func isViewing(session id: String) -> Bool {
         window.isKeyWindow && content.currentMode == "Terminals" && content.workspace.currentSessionId == id
+    }
+
+    func open(worktree id: String) {
+        sidebar.reload(); sidebar.select(worktree: id); content.show(worktree: id)
     }
 
     func openSession(_ id: String) {
@@ -89,8 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func startSession(agent: String?, command: String? = nil, newTab: Bool, shell: Bool = false) {
         guard let wid = content.worktreeId else { NSSound.beep(); return }
-        var p: [String: JSONValue] = ["worktreeId": .string(wid), "cols": .int(content.workspace.currentSessionId.flatMap { _ in nil } ?? 120), "rows": 32]
+        var p: [String: JSONValue] = ["worktreeId": .string(wid)]
         if let command { p["command"] = .string(command) } else if !shell { p["agent"] = .string(agent ?? defaultAgent) } else { p["agent"] = "shell" }
+        if !shell, command == nil, UserDefaults.standard.string(forKey: "permissionMode") == "yolo" { p["mode"] = "yolo" }
         Task {
             guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
             content.select(named: "Terminals")
@@ -99,15 +110,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newAgent() { startSession(agent: nil, newTab: true) }
+    @objc func newTask() { if let r = sidebar.selectedRepo { AgentActions.newTask(repo: r) } else { addProject() } }
+    @objc func newAgentSheet() { if let w = content.worktreeId { AgentActions.newAgent(worktree: w) } else { NSSound.beep() } }
     @objc func newAgentNamed(_ m: NSMenuItem) { startSession(agent: m.representedObject as? String, newTab: true) }
     @objc func newShellTab() { startSession(agent: nil, newTab: true, shell: true) }
     @objc func newCustom() { if let c = prompt("Run command", "Any CLI agent or command:"), !c.isEmpty { startSession(agent: nil, command: c, newTab: true) } }
     @objc func splitRight() { if content.workspace.split(vertical: true) { startSession(agent: nil, newTab: false, shell: true) } }
     @objc func splitDown() { if content.workspace.split(vertical: false) { startSession(agent: nil, newTab: false, shell: true) } }
-    @objc func closePane() { if let s = content.workspace.currentSessionId { content.workspace.close(pane: s) } }
+    @objc func closePane() {
+        if content.currentMode == "Files" { content.files.closeTab(); return }
+        if let s = content.workspace.currentSessionId { content.workspace.close(pane: s) }
+    }
+    @objc func showFiles() { content.select(named: "Files") }
+    @objc func goToLine() { content.select(named: "Files"); content.files.goToLine() }
+    @objc func findInWorktree() { content.select(named: "Files"); content.files.focusSearch() }
+    @objc func sendSelection() { content.files.sendSelectionToAgent() }
+    @objc func openExternal() { content.files.openInExternalEditor() }
+    @objc func jumpToDefinition() { content.files.jumpToDefinition() }
+    @objc func showHover() { content.files.showHover() }
     @objc func nextPane() { content.workspace.focusNeighbor(step: 1) }
     @objc func prevPane() { content.workspace.focusNeighbor(step: -1) }
     @objc func selectTab(_ m: NSMenuItem) { content.workspace.selectTab(m.tag - 1) }
+    @objc func showDashboard() { DashboardController.shared.show() }
     @objc func showTerminals() { content.select(named: "Terminals") }
     @objc func showReview() { content.select(named: "Review") }
     @objc func runDevServer() {
@@ -117,6 +141,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             content.workspace.add(session: s, newTab: true)
             NotificationCenter.default.post(name: .krillDevServer, object: wid)
         }
+    }
+    @objc func fanout() { if let r = sidebar.selectedRepo { FanoutController.start(repo: r) } else { addProject() } }
+    @objc func compareFanout() {
+        let g = FanoutController.groups()
+        guard !g.isEmpty else { let a = NSAlert(); a.messageText = "No fan-out in progress"; a.runModal(); return }
+        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26)); pop.addItems(withTitles: g.keys.sorted())
+        let a = NSAlert(); a.messageText = "Compare which fan-out?"; a.accessoryView = pop; a.addButton(withTitle: "Compare"); a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn, let k = pop.titleOfSelectedItem, let ws = g[k] else { return }
+        FanoutController.show(ids: ws.map(\.id), title: k)
     }
     @objc func setDefaultAgent(_ m: NSMenuItem) { UserDefaults.standard.set(m.representedObject as? String, forKey: "defaultAgent") }
 
@@ -146,12 +179,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(file, "Close Pane", #selector(closePane), "w")
 
         let agent = sub("Agent")
-        _ = item(agent, "New Agent (default)", #selector(newAgent), "n")
+        _ = item(agent, "New Task…", #selector(newTask), "n")
+        _ = item(agent, "New Agent…", #selector(newAgentSheet), "n", [.command, .option])
+        _ = item(agent, "New Default Agent", #selector(newAgent), "n", [.command, .control])
         for a in AppModel.shared.agents { let i = item(agent, "New \(a.name)", #selector(newAgentNamed(_:))); i.representedObject = a.id }
         agent.addItem(.separator())
         _ = item(agent, "New Shell Tab", #selector(newShellTab), "t")
         _ = item(agent, "Run Command…", #selector(newCustom), "t", [.command, .shift])
         _ = item(agent, "Run Dev Server", #selector(runDevServer), "r", [.command, .control])
+        agent.addItem(.separator())
+        _ = item(agent, "Fan-out…", #selector(fanout), "f", [.command, .option])
+        _ = item(agent, "Compare Fan-out…", #selector(compareFanout))
         agent.addItem(.separator())
         let def = NSMenu(); for a in AppModel.shared.agents { let i = item(def, a.name, #selector(setDefaultAgent(_:))); i.representedObject = a.id }
         let di = agent.addItem(withTitle: "Default Agent", action: nil, keyEquivalent: ""); agent.setSubmenu(def, for: di)
@@ -161,14 +199,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f").tag = Int(NSFindPanelAction.showFindPanel.rawValue)
+        _ = item(edit, "Find in Worktree…", #selector(findInWorktree), "f", [.command, .shift])
+        _ = item(edit, "Go to Line…", #selector(goToLine), "l")
+        _ = item(edit, "Send Selection to Agent", #selector(sendSelection), "\r", [.command, .option])
+        _ = item(edit, "Open in External Editor", #selector(openExternal), "o", [.command, .option])
+        _ = item(edit, "Jump to Definition", #selector(jumpToDefinition), "j", [.command, .control])
+        _ = item(edit, "Show Quick Help", #selector(showHover), "h", [.command, .control])
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+
         let view = sub("View")
         _ = item(view, "Split Right", #selector(splitRight), "d")
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
         _ = item(view, "Next Pane", #selector(nextPane), "]")
         _ = item(view, "Previous Pane", #selector(prevPane), "[")
         view.addItem(.separator())
+        _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
         _ = item(view, "Terminals", #selector(showTerminals), "0")
         _ = item(view, "Review Changes", #selector(showReview), "r", [.command, .shift])
+        _ = item(view, "Files", #selector(showFiles), "e", [.command, .shift])
         view.addItem(.separator())
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i }
         registerMoreMenus?(main)

@@ -57,6 +57,7 @@ final class AppModel {
             guard let s = try? p.decode(Session.self) else { return }
             let old = sessions.first { $0.id == s.id }
             if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
+            if old?.status != s.status { DashboardController.events.append(AgentEvent(date: Date(), session: s, status: s.status)); if DashboardController.events.count > 500 { DashboardController.events.removeFirst(100) } }
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
         case "event.changed":

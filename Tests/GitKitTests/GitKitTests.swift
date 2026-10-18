@@ -90,5 +90,24 @@ func tempRepo() throws -> String {
     #expect(p[2].0?.text == "c" && p[2].1 == nil)
     let h2 = Hunk(header: "@@ -20 +20 @@", oldStart: 20, newStart: 20, lines: [l(.add, "z", n: 20)])
     let rows = DiffRows.build([FileDiff(path: "f", header: "", hunks: [h1, h2], binary: false)], sideBySide: false)
-    #expect(rows.contains(.gap(lines: 18)))
+    #expect(rows.contains(.gap(lines: 17)))
+}
+
+@Test func projectFilesAndSearch() throws {
+    let repo = try tempRepo()
+    try "ignored.txt\n".write(toFile: repo + "/.gitignore", atomically: true, encoding: .utf8)
+    try "needle here\n".write(toFile: repo + "/ignored.txt", atomically: true, encoding: .utf8)
+    try FileManager.default.createDirectory(atPath: repo + "/src", withIntermediateDirectories: true)
+    try "let x = 1\nfind the needle\n".write(toFile: repo + "/src/main.swift", atomically: true, encoding: .utf8)
+    let files = try ProjectFiles.list(repo)
+    #expect(files.contains("src/main.swift") && !files.contains("ignored.txt"))
+    let m = try ProjectFiles.search(repo, query: "needle")
+    #expect(m == [SearchMatch(path: "src/main.swift", line: 2, text: "find the needle")])
+}
+
+@Test func fuzzyPrefersFileNames() {
+    let a = ProjectFiles.fuzzyScore("Sources/KrillApp/AppDelegate.swift", "appdel")!
+    let b = ProjectFiles.fuzzyScore("Sources/a/p/p/d/e/l.swift", "appdel")!
+    #expect(a > b)
+    #expect(ProjectFiles.fuzzyScore("abc", "abd") == nil)
 }

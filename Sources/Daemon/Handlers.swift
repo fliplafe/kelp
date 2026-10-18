@@ -13,6 +13,8 @@ extension JSONValue {
 extension Daemon {
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if let e = extra[method] { return try await e(self, p) }
+        do { if let r = try await handleAsync(method, p, conn: conn) { return r } }
+        catch let e as GitError { throw RPCError.internalError(e.description) }
         do { return try handleSync(method, p, conn: conn) }
         catch let e as GitError { throw RPCError.internalError(e.description) }
     }
@@ -42,8 +44,12 @@ extension Daemon {
             let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? "")
             try store.save(w)
             var result = try JSONValue.from(w)
-            if let setup = RepoConfig.load(repoPath: r.path).setup, p["setup"]?.bool != false {
-                let s = try spawn(cwd: path, manifest: .custom(setup), worktreeId: w.id)
+            let cfg = RepoConfig.load(repoPath: r.path)
+            Git.linkShared(cfg.shared, repo: r.path, worktree: path)
+            if p["tabs"]?.bool != false { for t in cfg.tabs { _ = try? spawn(cwd: path, manifest: manifest(t, command: nil), worktreeId: w.id) } }
+            if let setup = cfg.setup, p["setup"]?.bool != false {
+                var o = Launch(); o.title = "setup"
+                let s = try spawn(cwd: path, manifest: .custom(setup), worktreeId: w.id, o)
                 if case .object(var o) = result { o["setupSession"] = .string(s.id); result = .object(o) }
             }
             notify("event.changed", "worktree")
@@ -58,7 +64,7 @@ extension Daemon {
             guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
             let cfg = RepoConfig.load(repoPath: r.path)
             guard let cmd = method == "worktree.run" ? cfg.run : cfg.test else { throw RPCError.invalidParams("no \(method.dropFirst(9)) script in .krill.yaml") }
-            if method == "worktree.run" { return try .from(spawn(cwd: w.path, manifest: .custom(cmd), worktreeId: w.id)) }
+            if method == "worktree.run" { var o = Launch(); o.title = "dev server"; return try .from(spawn(cwd: w.path, manifest: .custom(cmd), worktreeId: w.id, o)) }
             let pr = Process(); pr.executableURL = URL(fileURLWithPath: "/bin/zsh"); pr.arguments = ["-lc", cmd]
             pr.currentDirectoryURL = URL(fileURLWithPath: w.path)
             pr.standardOutput = FileHandle.nullDevice; pr.standardError = FileHandle.nullDevice
@@ -82,8 +88,7 @@ extension Daemon {
             if let wid { dir = try cwd(forWorktree: wid).path }
             guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
             let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
-            let s = try spawn(cwd: dir, manifest: m, worktreeId: wid,
-                              cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32))
+            let s = try spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p))
             return try .from(s)
         case "session.list":
             let live = try store.sessions().map { s -> Session in (try? liveSession(s.id).snapshot) ?? s }
@@ -96,13 +101,11 @@ extension Daemon {
         case "session.detach": try liveSession(p.req("id")).detach(conn); return .null
         case "session.write":
             let s = try liveSession(p.req("id"))
-            if let b = p["base64"]?.string, let d = Data(base64Encoded: b) { s.pty.write(d) }
+            if let b = p["base64"]?.string, let d = Data(base64Encoded: b) { s.userInput(d) }
             else { s.pty.write(Data(try p.req("text").utf8)) }
             return .null
         case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
-            let s = try liveSession(p.req("id"))
-            s.pty.write(Data(try p.req("text").utf8))
-            if p["enter"]?.bool != false { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { s.pty.write(Data("\r".utf8)) } }
+            try liveSession(p.req("id")).send(p.req("text"), enter: p["enter"]?.bool != false)
             return .null
         case "session.resize": try liveSession(p.req("id")).pty.resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
         case "session.kill": try liveSession(p.req("id")).pty.kill(); return .null
@@ -156,6 +159,12 @@ extension Daemon {
             let res = try Git.merge(branch: w.branch, into: r.path, keepConflicts: p["keepConflicts"]?.bool == true)
             return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
 
+        // MARK: files
+        case "files.list": return try .from(ProjectFiles.list(cwd(forWorktree: p.req("id")).path))
+        case "files.search":
+            return try .from(ProjectFiles.search(cwd(forWorktree: p.req("id")).path, query: p.req("query"),
+                                                 regex: p["regex"]?.bool == true, caseSensitive: p["case"]?.bool == true))
+
         // MARK: review comments
         case "comment.add":
             let c = DiffComment(worktreeId: try p.req("id"), file: try p.req("file"), startLine: p["start"]?.int ?? 1,
@@ -184,11 +193,8 @@ extension Daemon {
                 let br = "\(tag)-\(i + 1)-\(a)"
                 let path = try Git.addWorktree(repo: r.path, branch: br, base: r.baseBranch, into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
                 let w = Worktree(repoId: r.id, branch: br, path: path, note: "fan-out: \(prompt.prefix(60))"); try store.save(w)
-                let s = try spawn(cwd: path, manifest: manifest(a, command: nil), worktreeId: w.id)
-                let ls = try liveSession(s.id)
-                DispatchQueue.global().asyncAfter(deadline: .now() + (p["delay"].flatMap { $0.int }.map(Double.init) ?? 3)) {
-                    ls.pty.write(Data(prompt.utf8)); DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { ls.pty.write(Data("\r".utf8)) }
-                }
+                var o = Launch(p); o.prompt = prompt; o.title = "\(a) #\(i + 1)"
+                let s = try spawn(cwd: path, manifest: manifest(a, command: nil), worktreeId: w.id, o)
                 out.append(.obj(["worktree": .string(w.id), "session": .string(s.id), "agent": .string(a)]))
             }
             notify("event.changed", "worktree")

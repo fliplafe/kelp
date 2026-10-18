@@ -16,10 +16,19 @@ final class LiveSession: @unchecked Sendable {
 
     var onOutput: (@Sendable (String, Data, Set<Int>) -> Void)?
     var onStatus: (@Sendable (Session) -> Void)?
+    var onFirstPrompt: (@Sendable (String) -> Void)?
+
+    private let started = Date()
+    private var lastOutputAt: Date?
+    private var autoAnswers: [(NSRegularExpression, String)]
+    private var pendingPrompt: String?
+    private var inputLine = ""
+    private var sawFirstPrompt = false
 
     init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16) throws {
         var rec = record
         detector = StatusDetector(manifest: manifest)
+        autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a.input) } }
         try Paths.ensure(historyDir)
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -36,10 +45,19 @@ final class LiveSession: @unchecked Sendable {
         ring.append(d)
         if ring.count > Self.ringLimit { ring.removeFirst(ring.count - Self.ringLimit) }
         try? log?.write(contentsOf: d)
-        detector.output(String(decoding: d, as: UTF8.self))
+        let text = String(decoding: d, as: UTF8.self)
+        detector.output(text)
+        lastOutputAt = Date()
+        var answer: String?
+        if !autoAnswers.isEmpty, Date().timeIntervalSince(started) < 90 {
+            let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
+            let r = NSRange(tail.startIndex..., in: tail)
+            if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) { answer = autoAnswers[i].1; autoAnswers.remove(at: i) }
+        }
         let subs = attached
         let changed = sync()
         lock.unlock()
+        if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
         onOutput?(record.id, d, subs)
         if let changed { onStatus?(changed) }
     }
@@ -63,7 +81,52 @@ final class LiveSession: @unchecked Sendable {
     }
 
     func tick() {
-        lock.lock(); detector.tick(); let c = sync(); lock.unlock()
+        lock.lock(); detector.tick(); let c = sync()
+        // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
+        var prompt: String?
+        if let p = pendingPrompt {
+            let quiet = lastOutputAt.map { Date().timeIntervalSince($0) > 1.5 } ?? false
+            if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompt = nil }
+        }
+        lock.unlock()
+        if let c { onStatus?(c) }
+        if let prompt { send(prompt, enter: true) }
+    }
+
+    func queuePrompt(_ p: String) { lock.lock(); pendingPrompt = p; sawFirstPrompt = true; lock.unlock() }
+
+    /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
+    func send(_ text: String, enter: Bool) {
+        let body = text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
+        pty.write(Data(body.utf8))
+        if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
+    }
+
+    /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
+    func userInput(_ d: Data) {
+        pty.write(d)
+        lock.lock(); defer { lock.unlock() }
+        guard !sawFirstPrompt else { return }
+        var s = String(decoding: d, as: UTF8.self)
+        if s.hasPrefix("\u{1B}[200~") { s = s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "") }
+        else if s.hasPrefix("\u{1B}") { return }   // arrows, function keys
+        for ch in s {
+            switch ch {
+            case "\r", "\n":
+                let line = inputLine.trimmingCharacters(in: .whitespaces); inputLine = ""
+                if line.count >= 8 { sawFirstPrompt = true; let cb = onFirstPrompt; DispatchQueue.global().async { cb?(line) } }
+            case "\u{7F}", "\u{08}": if !inputLine.isEmpty { inputLine.removeLast() }
+            default: if !ch.isASCII || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " " { inputLine.append(ch) }
+            }
+        }
+    }
+
+    func update(_ f: (inout Session) -> Void) -> Session {
+        lock.lock(); f(&record); let r = record; lock.unlock(); return r
+    }
+
+    func overrideStatus(_ s: AgentStatus) {
+        lock.lock(); detector.override(s); let c = sync(); lock.unlock()
         if let c { onStatus?(c) }
     }
 

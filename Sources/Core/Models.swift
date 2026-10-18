@@ -31,6 +31,9 @@ public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, Persistab
 
 public enum AgentStatus: String, Codable, Sendable {
     case idle, working, waiting, done, exited
+    public var label: String {
+        switch self { case .idle: "Idle"; case .working: "Working"; case .waiting: "Needs you"; case .done: "Done"; case .exited: "Exited" }
+    }
 }
 
 public struct Session: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord, Identifiable {
@@ -43,10 +46,20 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var unread: Bool
     public var pid: Int32
     public var createdAt: Date
-    public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date()) {
+    /// Tab title (from the first prompt, or set by hand — a manual name wins).
+    public var title: String
+    public var titleManual: Bool
+    /// One-line summary of what the agent did / is asking (local model or hooks).
+    public var summary: String
+    /// Launch options, kept so "Restart" reproduces the session.
+    public var argv: [String]
+    public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
+                title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent
         self.status = status; self.unread = unread; self.pid = pid; self.createdAt = createdAt
+        self.title = title; self.titleManual = titleManual; self.summary = summary; self.argv = argv
     }
+    public var displayTitle: String { title.isEmpty ? (agent ?? "shell") : title }
     public static let databaseTableName = "session"
 }
 

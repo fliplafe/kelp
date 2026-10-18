@@ -35,6 +35,14 @@ public final class Store: @unchecked Sendable {
                 t.column("text", .text).notNull(); t.column("state", .text).notNull()
             }
         }
+        m.registerMigration("v2") { db in
+            try db.alter(table: "session") { t in
+                t.add(column: "title", .text).notNull().defaults(to: "")
+                t.add(column: "titleManual", .boolean).notNull().defaults(to: false)
+                t.add(column: "summary", .text).notNull().defaults(to: "")
+                t.add(column: "argv", .jsonText).notNull().defaults(to: "[]")
+            }
+        }
         try m.migrate(db)
     }
 

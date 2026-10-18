@@ -72,8 +72,19 @@ final class WorkspaceViewController: NSViewController, NSTabViewDelegate {
     /// Re-sync after daemon changes (new/exited sessions) without losing the layout.
     func refresh() {
         guard let id = currentKey, let st = states[id] else { return }
+        let before = st.tabs
         st.reconcile(live: AppModel.shared.sessions.filter { $0.worktreeId == id })
-        rebuild()
+        if st.tabs == before && tabView.numberOfTabViewItems == st.tabs.count { relabel() } else { rebuild() }
+    }
+
+    /// Titles change often (status, auto-naming); only touch labels, not views.
+    private func relabel() {
+        guard let st = state else { return }
+        for (i, t) in st.tabs.enumerated() where i < tabView.numberOfTabViewItems {
+            let first = t.root.sessions.first.flatMap { AppModel.shared.session($0) }
+            let l = (first?.displayTitle ?? "shell") + (t.root.sessions.count > 1 ? "  +\(t.root.sessions.count - 1)" : "")
+            if tabView.tabViewItems[i].label != l { tabView.tabViewItems[i].label = l }
+        }
     }
 
     private func pane(_ sid: String) -> PaneView? {
@@ -81,6 +92,12 @@ final class WorkspaceViewController: NSViewController, NSTabViewDelegate {
         guard let s = AppModel.shared.session(sid) else { return nil }
         let p = PaneView(session: s)
         p.onClose = { [weak self] in self?.close(pane: $0.sessionId) }
+        p.onRestart = { [weak self] pane in
+            Task { @MainActor in
+                guard let r = await AppModel.shared.call("session.restart", .obj(["id": .string(pane.sessionId)])), let s = try? r.decode(Session.self) else { return }
+                self?.replace(pane.sessionId, with: s)
+            }
+        }
         p.onFocus = { [weak self] in self?.focused = $0.sessionId }
         p.onDrop = { [weak self] dragged, target, edge in self?.move(dragged, to: target.sessionId, edge: edge) }
         panes[sid] = p
@@ -104,8 +121,9 @@ final class WorkspaceViewController: NSViewController, NSTabViewDelegate {
         for item in tabView.tabViewItems { tabView.removeTabViewItem(item) }
         for (i, t) in st.tabs.enumerated() {
             let item = NSTabViewItem(identifier: t.id)
-            let agent = t.root.sessions.first.flatMap { AppModel.shared.session($0)?.agent } ?? "shell"
-            item.label = "\(agent)\(t.root.sessions.count > 1 ? " ×\(t.root.sessions.count)" : "") \(i + 1)"
+            let first = t.root.sessions.first.flatMap { AppModel.shared.session($0) }
+            item.label = (first?.displayTitle ?? "shell") + (t.root.sessions.count > 1 ? "  +\(t.root.sessions.count - 1)" : "")
+            _ = i
             item.view = build(t.root)
             tabView.addTabViewItem(item)
         }
@@ -137,6 +155,14 @@ final class WorkspaceViewController: NSViewController, NSTabViewDelegate {
         Task { _ = await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
         if let r = st.tabs[i].root.removing(sid) { st.tabs[i].root = r } else { st.tabs.remove(at: i) }
         panes[sid] = nil; st.save(); rebuild()
+    }
+
+    /// Swap a pane's session in place (restart keeps the layout).
+    func replace(_ old: String, with s: Session) {
+        AppModel.shared.sessions.removeAll { $0.id == old || $0.id == s.id }; AppModel.shared.sessions.append(s)
+        guard let st = state, let i = st.tabIndex(of: old) else { add(session: s, newTab: true); return }
+        st.tabs[i].root = st.tabs[i].root.inserting(s.id, beside: old, vertical: true, before: true).removing(old) ?? .pane(s.id)
+        panes[old] = nil; focused = s.id; st.save(); rebuild()
     }
 
     func move(_ dragged: String, to target: String, edge: PaneView.DropEdge) {

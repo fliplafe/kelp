@@ -1,16 +1,18 @@
 import Foundation
 import Daemon
 
-// krilld: background daemon. Run by launchd (see `krill install`) or directly.
+// krilld: background daemon. Run by launchd (see `krill install`) or started on demand by the app/CLI.
 signal(SIGPIPE, SIG_IGN)
+nonisolated(unsafe) var signalSources: [DispatchSourceSignal] = []   // must outlive this scope or the handlers vanish
 do {
     let d = try Daemon()
     try d.start()
-    for s in [SIGTERM, SIGINT] {
+    for s in [SIGTERM, SIGINT, SIGHUP] {
         signal(s, SIG_IGN)
         let src = DispatchSource.makeSignalSource(signal: s, queue: .main)
-        src.setEventHandler { d.stop(); exit(0) }
+        src.setEventHandler { @Sendable in d.stop(); exit(0) }
         src.resume()
+        signalSources.append(src)
     }
     dispatchMain()
 } catch {

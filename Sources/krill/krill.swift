@@ -12,6 +12,9 @@ usage: krill <command>
   terminal list | read <session> [bytes] | send <session> <text> [--no-enter]
   diff [--source unstaged|staged|all|branch] | commit <msg> | merge | push
   comment add <file> <line[-line]> <text> | send <session>
+  task <prompt> [--agent id] [--model m] [--yolo]   new branch (named on-device) + worktree + agent
+  session restart|rename <id> [title]|handoff <id> [--agent a]|fork <id>
+  terminal context <session>          bounded transcript (for pasting elsewhere)
   fanout <prompt> --agents claude,codex [--repo id]
   hook <working|waiting|done>          (called by agent hooks inside a session)
   install | uninstall                  launchd agent for the daemon
@@ -171,6 +174,24 @@ func plist() -> String {
             show(try await c.call("comment.add", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(args.dropFirst(2).joined(separator: " "))])))
         case ("comment", "send"):
             show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+        case ("task", _):
+            var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
+            if let a = flag("--agent") { p["agent"] = .string(a) }
+            if let m = flag("--model") { p["model"] = .string(m) }
+            if has("--yolo") { p["mode"] = "yolo" }
+            p["prompt"] = .string(([sub].compactMap { $0 } + args).joined(separator: " "))
+            let r = try await c.call("task.create", .object(p))
+            print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")  session \(r["session"]?["id"]?.string?.prefix(8) ?? "")")
+        case ("session", "restart"), ("session", "fork"):
+            show(try await c.call("session.\(sub!)", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+        case ("session", "rename"):
+            show(try await c.call("session.rename", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")), "title": .string(args.dropFirst().joined(separator: " "))])))
+        case ("session", "handoff"):
+            var p: [String: JSONValue] = ["id": .string(try await resolve(c, args.first ?? "", "session.list"))]
+            if let a = flag("--agent") { p["agent"] = .string(a) }
+            show(try await c.call("session.handoff", .object(p)))
+        case ("terminal", "context"):
+            show(try await c.call("session.context", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("fanout", _):
             let agents = (flag("--agents") ?? "claude").split(separator: ",").map { JSONValue.string(String($0)) }
             let repo = try await currentRepoID(c)

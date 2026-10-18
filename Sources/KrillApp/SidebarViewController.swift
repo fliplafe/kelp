@@ -91,25 +91,39 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             img.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2), img.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             img.widthAnchor.constraint(equalToConstant: 14),
             tf.leadingAnchor.constraint(equalTo: img.trailingAnchor, constant: 4), tf.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-            tf.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
+        let tfCenter: NSLayoutConstraint? = tf.centerYAnchor.constraint(equalTo: cell.centerYAnchor); tfCenter?.isActive = true
         switch it.kind {
         case .repo(let r):
             tf.stringValue = r.name; tf.font = .systemFont(ofSize: 12, weight: .semibold)
             img.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
         case .worktree(let w):
-            tf.stringValue = w.branch + (w.note.isEmpty ? "" : "  — \(w.note)")
+            tf.stringValue = w.branch
+            cell.toolTip = w.note.isEmpty ? w.path : "\(w.note)\n\(w.path)"
+            if !w.note.isEmpty {   // second line: the progress note
+                let note = NSTextField(labelWithString: w.note); note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor
+                note.lineBreakMode = .byTruncatingTail; note.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(note)
+                NSLayoutConstraint.activate([note.leadingAnchor.constraint(equalTo: tf.leadingAnchor), note.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                                             note.topAnchor.constraint(equalTo: tf.bottomAnchor, constant: 1)])
+                tfCenter?.constant = -7
+            }
             img.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)
             let ss = AppModel.shared.sessions.filter { $0.worktreeId == w.id && $0.status != .exited }
             if ss.contains(where: \.unread) { tf.font = .boldSystemFont(ofSize: 12) }
             img.contentTintColor = ss.contains { $0.status == .waiting } ? .systemOrange : ss.contains { $0.status == .working } ? .systemBlue : .secondaryLabelColor
         case .session(let s):
-            tf.stringValue = "\(s.agent ?? "shell")  \(s.status.rawValue)"; tf.font = .systemFont(ofSize: 11, weight: s.unread ? .bold : .regular)
+            tf.stringValue = s.displayTitle; tf.font = .systemFont(ofSize: 12, weight: s.unread ? .semibold : .regular)
+            cell.toolTip = "\(s.agent ?? "shell") · \(s.status.label)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
             img.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: s.status.rawValue)
             img.symbolConfiguration = .init(pointSize: 7, weight: .regular)
             img.contentTintColor = [AgentStatus.working: .systemBlue, .waiting: .systemOrange, .done: .systemGreen, .idle: .systemGray, .exited: .systemRed][s.status]
         }
         return cell
+    }
+
+    func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        if case .worktree(let w)? = (item as? SidebarItem)?.kind, !w.note.isEmpty { return 38 }
+        return 24
     }
 
     func outlineViewSelectionDidChange(_ n: Notification) {

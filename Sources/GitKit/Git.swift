@@ -8,7 +8,7 @@ public struct GitError: Error, CustomStringConvertible, Sendable {
 /// Thin wrapper over the system git. Behaviour matches what you'd see in a terminal.
 public enum Git {
     @discardableResult
-    public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git") throws -> String {
+    public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0]) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
         p.arguments = args
@@ -27,7 +27,7 @@ public enum Git {
         DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
         let outData = out.fileHandleForReading.readDataToEndOfFile()
         g.wait(); p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
+        guard ok.contains(p.terminationStatus) else {
             throw GitError(args: args, status: p.terminationStatus, stderr: String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return String(decoding: outData, as: UTF8.self)
