@@ -27,6 +27,14 @@ extension Daemon {
     private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         switch method {
         case "ping": return "pong"
+        case "daemon.info":   // the app compares this with the krilld it ships to detect updates
+            let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+            let mtime = (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            let liveCount = lock.withLock { live.values.filter { $0.snapshot.status != .exited }.count }
+            return .obj(["path": .string(exe.resolvingSymlinksInPath().path), "mtime": .double(mtime), "pid": .int(Int(getpid())), "liveSessions": .int(liveCount)])
+        case "daemon.shutdown":
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.stop(); exit(0) }
+            return .null
 
         // MARK: repos
         case "repo.add":

@@ -25,9 +25,43 @@ final class AppModel {
             if client != nil { break }
         }
         guard let c = client else { return }
+        if await checkDaemonVersion(c) { return }
         c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
         c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.reconnectSoon() } }
         await refresh()
+    }
+
+    private var restartAttempted = false
+    private var bundledDaemon: URL { Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("krilld") }
+
+    /// After an app update the running daemon may be older. Restart it right away when no agent is running;
+    /// otherwise ask, because restarting ends running sessions. Returns true when a restart is in progress.
+    private func checkDaemonVersion(_ c: RPCClient) async -> Bool {
+        guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return false }
+        var info: JSONValue = .null
+        do { info = try await c.call("daemon.info") } catch let e as RPCError where e.code == RPCError.methodNotFound.code {
+            info = .obj(["liveSessions": .int(((try? await c.call("session.list").array) ?? []).filter { $0["status"]?.string != "exited" }.count)])   // predates daemon.info
+        } catch { return false }
+        let theirs: Double = { if case .double(let d)? = info["mtime"] { return d }; return Double(info["mtime"]?.int ?? 0) }()
+        let samePath = info["path"]?.string == bundledDaemon.resolvingSymlinksInPath().path
+        guard !(samePath && abs(theirs - mine) < 1), !restartAttempted else { return false }
+        restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
+        if (info["liveSessions"]?.int ?? 0) > 0 {
+            let a = NSAlert(); a.messageText = "Krill was updated"
+            a.informativeText = "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu."
+            a.addButton(withTitle: "Restart Service"); a.addButton(withTitle: "Later")
+            guard a.runModal() == .alertFirstButtonReturn else { return false }
+        }
+        _ = try? await c.call("daemon.shutdown")
+        c.close(); client = nil
+        try? await Task.sleep(for: .milliseconds(600))
+        await connect()
+        return true
+    }
+
+    func restartDaemon() async {
+        _ = try? await client?.call("daemon.shutdown"); client?.close(); client = nil
+        try? await Task.sleep(for: .milliseconds(600)); await connect()
     }
 
     private func reconnectSoon() {

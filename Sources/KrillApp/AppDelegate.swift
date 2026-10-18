@@ -43,58 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let out = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] { snapshotLater(out) }
     }
 
-    /// Dev aid: KRILL_SNAPSHOT=/path.png writes the window contents and quits (works without screen-recording permission).
-    /// KRILL_SNAPSHOT_MODE=Review|Terminals picks the mode first.
-    private func snapshotLater(_ path: String) {
-        NSApp.appearance = NSAppearance(named: .aqua)   // cacheDisplay mixes appearances otherwise
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [self] in
-            window.setContentSize(NSSize(width: 1320, height: 840)); window.contentView?.layoutSubtreeIfNeeded()
-            if let m = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_MODE"] { content.select(named: m) }
-            if let f = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_OPEN"] { content.files.openFile(f, line: 3) }
-            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_RUN"] != nil { runDevServer() }
-            if ProcessInfo.processInfo.environment["KRILL_TYPING_BENCH"] != nil, let f = content.files.current {
-                // Dev aid: simulated typing in the middle of the open file.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    if ProcessInfo.processInfo.environment["KRILL_TYPING_BENCH"] == "raw" { f.editor.onChange = nil }
-                    let tv = f.editor.controller.textView!
-                    let mid = (tv.string as NSString).length / 2
-                    let t0 = Date()
-                    for i in 0..<(ProcessInfo.processInfo.environment["KRILL_TYPING_N"].flatMap(Int.init) ?? 300) { tv.replaceCharacters(in: NSRange(location: mid + i, length: 0), with: "x") }
-                    let t1 = Date()
-                    for i in 0..<100 { tv.replaceCharacters(in: NSRange(location: mid + 300 + i, length: 0), with: "y"); tv.displayIfNeeded() }
-                    print("TYPING edit-only \(String(format: "%.2f", t1.timeIntervalSince(t0) * 1000 / 300)) ms, edit+display \(String(format: "%.2f", Date().timeIntervalSince(t1) * 1000 / 100)) ms")
-                }
-            }
-            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "dashboard" { showDashboard() }
-            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"] == "history" { showHistory() }
-            if let sel = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DESIGN"] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.content.browser.toggleDesign()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.content.browser.debugClick(sel) } }
-            }
-            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"] != nil, let g = FanoutController.groups().first {
-                FanoutController.show(ids: g.value.map(\.id), title: g.key)
-                if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
-                let want = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History"][$0] ?? $0 }
-                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") || $0.title == want } ?? window).contentView else { exit(2) }
-                // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
-                v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
-                let scale = window.backingScaleFactor, size = v.bounds.size
-                if let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
-                                                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-                    ctx.scaleBy(x: scale, y: scale)
-                    var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }; ctx.setFillColor(bg); ctx.fill(CGRect(origin: .zero, size: size))   // the window frame paints this on screen
-                    if !v.isFlipped { } else { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
-                    layer.render(in: ctx)
-                    if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
-                }
-                print("DIFF", content.diff.debugInfo)
-                for p in content.workspace.view.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.terminal.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300)) }
-                exit(0)
-            }
-        }
-    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // daemon keeps sessions alive
 
@@ -216,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         app.addItem(.separator())
         let prefs = item(app, "Settings…", #selector(openSettings), ","); _ = prefs
+        _ = item(app, "Restart Background Service…", #selector(restartService))
         app.addItem(.separator())
         app.addItem(withTitle: "Quit Krill", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -286,11 +235,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = main
     }
     var registerMoreMenus: ((NSMenu) -> Void)?
+    @objc func restartService() {
+        let a = NSAlert(); a.messageText = "Restart the background service?"; a.informativeText = "Running agent sessions will end. Worktrees, history and settings are kept."
+        a.addButton(withTitle: "Restart"); a.addButton(withTitle: "Cancel")
+        Task { if await runSheet(a) == .alertFirstButtonReturn { await AppModel.shared.restartDaemon() } }
+    }
     @objc func openSettings() { SettingsWindow.show() }
 }
 
 extension Notification.Name { static let krillDevServer = Notification.Name("krill.devserver") }
 
-extension NSView {
-    func allSubviews<T: NSView>(of t: T.Type) -> [T] { subviews.flatMap { ($0 as? T).map { [$0] } ?? [] + $0.allSubviews(of: t) } }
-}
