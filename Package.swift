@@ -27,10 +27,11 @@ let package = Package(
         .target(name: "LSPKit", dependencies: ["Core"]),
         .target(name: "LocalAI"),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
+        .target(name: "Markdown"),
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KrillApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "LocalAI", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "LocalAI", "Markdown", .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
@@ -42,5 +43,6 @@ let package = Package(
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
         .testTarget(name: "LocalAITests", dependencies: ["LocalAI"]),
         .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
+        .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
     ]
 )

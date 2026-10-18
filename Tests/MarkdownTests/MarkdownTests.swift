@@ -1,0 +1,200 @@
+import Foundation
+import Testing
+@testable import Markdown
+
+private func r(_ md: String) -> String { MarkdownHTML.render(md) }
+
+// MARK: blocks
+
+@Test func headingsWithSlugs() {
+    let h = r("# Hello, World!\n## Hello, World!\n### `code` *x* ###\n#nope")
+    #expect(h.contains(#"<h1 id="hello-world" data-line="1">Hello, World!</h1>"#))
+    #expect(h.contains(#"<h2 id="hello-world-1" data-line="2">"#))
+    #expect(h.contains(#"<h3 id="code-x" data-line="3"><code>code</code> <em>x</em></h3>"#))
+    #expect(h.contains(#"<p data-line="4">#nope</p>"#))
+    #expect(r("Title\n=====\n\nSub\n---").contains(#"<h2 id="sub" data-line="4">Sub</h2>"#))
+}
+
+@Test func paragraphsAndBreaks() {
+    let h = r("one\ntwo  \nthree\\\nfour\n\nnext")
+    #expect(h.contains("<p data-line=\"1\">one\ntwo<br>\nthree<br>\nfour</p>"))
+    #expect(h.contains(#"<p data-line="6">next</p>"#))
+}
+
+@Test func emphasis() {
+    #expect(r("*a* _b_ **c** __d__ ~~e~~ ***f***") ==
+            #"<p data-line="1"><em>a</em> <em>b</em> <strong>c</strong> <strong>d</strong> <del>e</del> <em><strong>f</strong></em></p>"#)
+    #expect(r("snake_case_name and 2*3*4") == #"<p data-line="1">snake_case_name and 2<em>3</em>4</p>"#)
+    #expect(r("**bold *nested* bold**") == #"<p data-line="1"><strong>bold <em>nested</em> bold</strong></p>"#)
+    #expect(r("a * b * c") == #"<p data-line="1">a * b * c</p>"#)
+    #expect(r(#"\*not\*"#) == #"<p data-line="1">*not*</p>"#)
+}
+
+@Test func inlineCode() {
+    #expect(r("use `a <b> & *c*` and `` x`y ``") == #"<p data-line="1">use <code>a &lt;b&gt; &amp; *c*</code> and <code>x`y</code></p>"#)
+}
+
+@Test func fencedAndIndentedCode() {
+    let h = r("```swift\nlet x = 1 < 2\n\n```\n\n~~~\nplain\n~~~\n\n    indented\n    <tag>")
+    #expect(h.contains("<pre data-line=\"1\"><code class=\"language-swift\">let x = 1 &lt; 2\n\n</code></pre>"))
+    #expect(h.contains("<pre data-line=\"6\"><code>plain\n</code></pre>"))
+    #expect(h.contains("<pre data-line=\"10\"><code>indented\n&lt;tag&gt;\n</code></pre>"))
+    #expect(r("```\nunclosed *x*").contains("<code>unclosed *x*\n</code>"))
+}
+
+@Test func blockquotesNest() {
+    let h = r("> outer\nlazy\n> > inner\n> back")
+    #expect(h.hasPrefix("<blockquote data-line=\"1\">\n<p data-line=\"1\">outer\nlazy</p>\n<blockquote data-line=\"3\">"))
+    #expect(h.contains("<p data-line=\"3\">inner\nback</p>"))
+}
+
+@Test func listsNestByIndent() {
+    let h = r("- a\n  - b\n    - c\n- d\n\n3. x\n4. y")
+    #expect(h.contains("<ul data-line=\"1\">\n<li data-line=\"1\">a\n<ul data-line=\"2\">\n<li data-line=\"2\">b\n<ul data-line=\"3\">\n<li data-line=\"3\">c</li>"))
+    #expect(h.contains("<li data-line=\"4\">d</li>\n</ul>"))
+    #expect(h.contains("<ol data-line=\"6\" start=\"3\">\n<li data-line=\"6\">x</li>\n<li data-line=\"7\">y</li>\n</ol>"))
+    #expect(r("1. one\n   - sub\n2. two").contains("<li data-line=\"1\">one\n<ul data-line=\"2\">"))
+}
+
+@Test func looseListsWrapParagraphs() {
+    let h = r("- a\n\n- b\n\n  more")
+    #expect(h.contains(#"<li data-line="1"><p data-line="1">a</p></li>"#))
+    #expect(h.contains("<p data-line=\"5\">more</p>"))
+}
+
+@Test func taskLists() {
+    let h = r("- [ ] todo\n- [x] done\n- plain")
+    #expect(h.contains(#"<li data-line="1" class="task-list-item"><input type="checkbox" disabled> todo</li>"#))
+    #expect(h.contains(#"<li data-line="2" class="task-list-item"><input type="checkbox" disabled checked> done</li>"#))
+    #expect(h.contains(#"<li data-line="3">plain</li>"#))
+}
+
+@Test func tablesWithAlignment() {
+    let h = r("| L | C | R | N |\n|:--|:-:|--:|---|\n| a | `b\\|c` | **r** |\n\nafter")
+    #expect(h.contains("<table data-line=\"1\">\n<thead>\n<tr data-line=\"1\"><th style=\"text-align:left\">L</th><th style=\"text-align:center\">C</th><th style=\"text-align:right\">R</th><th>N</th></tr>"))
+    #expect(h.contains(#"<tr data-line="3"><td style="text-align:left">a</td><td style="text-align:center"><code>b|c</code></td><td style="text-align:right"><strong>r</strong></td><td></td></tr>"#))
+    #expect(h.contains(#"<p data-line="5">after</p>"#))
+    #expect(!r("a | b\n---").contains("<table"))
+}
+
+@Test func linksImagesAutolinks() {
+    #expect(r("[x *y*](https://a.b/c?d=1&e=2 \"T\")") == #"<p data-line="1"><a href="https://a.b/c?d=1&amp;e=2" title="T">x <em>y</em></a></p>"#)
+    #expect(r("![alt *t*](img/a.png)") == #"<p data-line="1"><img src="img/a.png" alt="alt t"></p>"#)
+    #expect(r("<https://x.io> and <me@x.io>") == #"<p data-line="1"><a href="https://x.io">https://x.io</a> and <a href="mailto:me@x.io">me@x.io</a></p>"#)
+    #expect(r("see https://x.io/a_(b). or www.y.com,") == #"<p data-line="1">see <a href="https://x.io/a_(b)">https://x.io/a_(b)</a>. or <a href="http://www.y.com">www.y.com</a>,</p>"#)
+    #expect(r("[ref] and [t][Ref]\n\n[ref]: /r \"tt\"") == #"<p data-line="1"><a href="/r" title="tt">ref</a> and <a href="/r" title="tt">t</a></p>"#)
+    #expect(r("[x](javascript:alert(1))").contains(##"href="#""##))
+}
+
+@Test func horizontalRules() {
+    #expect(r("a\n\n***\n- - -\n___") == "<p data-line=\"1\">a</p>\n<hr data-line=\"3\">\n<hr data-line=\"4\">\n<hr data-line=\"5\">")
+}
+
+@Test func escapesHTMLEverywhere() {
+    let h = r("<script>alert('x')</script>\n\n# <b>h</b>\n\n> <img src=x onerror=y>\n\n| <i> |\n|---|\n| & |")
+    #expect(!h.contains("<script"))
+    #expect(h.contains("&lt;script&gt;alert('x')&lt;/script&gt;"))
+    #expect(h.contains("&lt;b&gt;h&lt;/b&gt;"))
+    #expect(!h.contains("<img"))
+    #expect(h.contains("<th>&lt;i&gt;</th>") && h.contains("<td>&amp;</td>"))
+    #expect(r("a <!-- hidden --> b") == #"<p data-line="1">a  b</p>"#)
+    #expect(r("&copy; & co") == #"<p data-line="1">&copy; &amp; co</p>"#)
+}
+
+@Test func pageDocument() {
+    let p = MarkdownHTML.page(body: "<p>x</p>", baseURL: URL(fileURLWithPath: "/r/README.md"), dark: true)
+    #expect(p.hasPrefix("<!doctype html>"))
+    #expect(p.contains(#"<html class="dark">"#) && p.contains(#"<base href="file:///r/README.md">"#))
+    #expect(p.contains("prefers-color-scheme") && p.contains("-apple-system") && p.contains("max-width:860px"))
+    #expect(!p.contains("http"))
+    #expect(!MarkdownHTML.page(body: "", baseURL: nil, dark: false).contains("class=\"dark\""))
+}
+
+// MARK: templates
+
+@Test func templateExpansion() throws {
+    let now = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 5, hour: 9, minute: 7)))
+    let out = Templates.expand("{{date}} {{time}} {{ datetime }} {{branch}}/{{repo}}: {{title}} {{who}} {{unknown}}",
+                               vars: ["branch": "feat", "repo": "krill", "title": "Plan", "who": "me"], now: now)
+    #expect(out == "2026-03-05 09:07 2026-03-05 09:07 feat/krill: Plan me {{unknown}}")
+}
+
+@Test func templateListing() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    for n in ["b.md", "a.md", "c.txt", "A10.md", "A2.md"] { try Data().write(to: dir.appendingPathComponent(n)) }
+    #expect(Templates.list(in: dir).map(\.lastPathComponent) == ["a.md", "A2.md", "A10.md", "b.md"])
+    #expect(Templates.list(in: dir.appendingPathComponent("missing")).isEmpty)
+}
+
+// MARK: formatting
+
+private func sel(_ t: String, _ s: String) -> NSRange { (t as NSString).range(of: s) }
+
+@Test func boldItalicToggle() {
+    let t = "say hi now"
+    let on = MarkdownFormat.toggleBold(t, sel(t, "hi"))
+    #expect(on.text == "say **hi** now" && on.selection == NSRange(location: 6, length: 2))
+    let off = MarkdownFormat.toggleBold(on.text, on.selection)
+    #expect(off.text == t && off.selection == NSRange(location: 4, length: 2))
+    #expect(MarkdownFormat.toggleBold("**hi**", NSRange(location: 0, length: 6)).text == "hi")
+    let caret = MarkdownFormat.toggleBold("ab", NSRange(location: 1, length: 0))
+    #expect(caret.text == "a****b" && caret.selection == NSRange(location: 3, length: 0))
+    #expect(MarkdownFormat.toggleBold(caret.text, caret.selection).text == "ab")
+    let it = MarkdownFormat.toggleItalic(t, sel(t, "hi"))
+    #expect(it.text == "say _hi_ now")
+    #expect(MarkdownFormat.toggleItalic(it.text, it.selection).text == t)
+}
+
+@Test func codeToggle() {
+    let on = MarkdownFormat.toggleCode("run x", NSRange(location: 4, length: 1))
+    #expect(on.text == "run `x`")
+    #expect(MarkdownFormat.toggleCode(on.text, on.selection).text == "run x")
+    let block = MarkdownFormat.toggleCode("a\nb", NSRange(location: 0, length: 3))
+    #expect(block.text == "```\na\nb\n```" && block.selection == NSRange(location: 4, length: 3))
+    #expect(MarkdownFormat.toggleCode(block.text, block.selection).text == "a\nb")
+}
+
+@Test func linkToggle() {
+    let on = MarkdownFormat.makeLink("go home", NSRange(location: 3, length: 4))
+    #expect(on.text == "go [home](url)" && (on.text as NSString).substring(with: on.selection) == "url")
+    let off = MarkdownFormat.makeLink(on.text, NSRange(location: 3, length: 11))
+    #expect(off.text == "go home" && off.selection == NSRange(location: 3, length: 4))
+    let u = MarkdownFormat.makeLink("https://x.io", NSRange(location: 0, length: 12))
+    #expect(u.text == "[](https://x.io)" && u.selection == NSRange(location: 1, length: 0))
+}
+
+@Test func headingToggle() {
+    let on = MarkdownFormat.heading("title", NSRange(location: 2, length: 0), level: 2)
+    #expect(on.text == "## title" && on.selection == NSRange(location: 5, length: 0))
+    #expect(MarkdownFormat.heading(on.text, on.selection, level: 1).text == "# title")
+    #expect(MarkdownFormat.heading(on.text, on.selection, level: 2).text == "title")
+    let multi = MarkdownFormat.heading("a\n\nb\nc", NSRange(location: 0, length: 4), level: 3)
+    #expect(multi.text == "### a\n\n### b\nc" && multi.selection == NSRange(location: 0, length: 12))
+}
+
+@Test func listToggles() {
+    let t = "a\nb\n\nc"
+    let all = NSRange(location: 0, length: (t as NSString).length)
+    let b = MarkdownFormat.toggleBullet(t, all)
+    #expect(b.text == "- a\n- b\n\n- c" && b.selection == NSRange(location: 0, length: 12))
+    #expect(MarkdownFormat.toggleBullet(b.text, b.selection).text == t)
+    let n = MarkdownFormat.toggleNumbered(b.text, b.selection)
+    #expect(n.text == "1. a\n2. b\n\n3. c")
+    #expect(MarkdownFormat.toggleNumbered(n.text, n.selection).text == t)
+    let k = MarkdownFormat.toggleTask("  - x\n- [x] y", NSRange(location: 0, length: 13))
+    #expect(k.text == "  - [ ] x\n- [x] y")
+    #expect(MarkdownFormat.toggleTask(k.text, k.selection).text == "  x\ny")
+    let caret = MarkdownFormat.toggleBullet("one\ntwo", NSRange(location: 5, length: 0))
+    #expect(caret.text == "one\n- two" && caret.selection == NSRange(location: 7, length: 0))
+    let nl = MarkdownFormat.toggleBullet("a\nb\nc", NSRange(location: 0, length: 4)) // selection ends after "b\n"
+    #expect(nl.text == "- a\n- b\nc")
+}
+
+@Test func tableInsert() {
+    let e = MarkdownFormat.insertTable("text", NSRange(location: 4, length: 0))
+    #expect(e.text == "text\n| Column | Column |\n| ------ | ------ |\n|        |        |\n|        |        |\n")
+    #expect((e.text as NSString).substring(with: e.selection) == "Column")
+    #expect(MarkdownHTML.render(e.text).contains("<table data-line=\"2\">"))
+}
