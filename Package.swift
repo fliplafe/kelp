@@ -25,6 +25,7 @@ let package = Package(
         .executableTarget(name: "krill", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
         .target(name: "LocalAI"),
+        .target(name: "Markdown"),
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KrillApp",
@@ -38,5 +39,6 @@ let package = Package(
         .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents"]),
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
         .testTarget(name: "LocalAITests", dependencies: ["LocalAI"]),
+        .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
     ]
 )
