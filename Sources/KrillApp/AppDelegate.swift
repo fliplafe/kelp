@@ -61,11 +61,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let row = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_FANOUT"].flatMap(Int.init) { FanoutController.open.last?.select(row) }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
-                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") } ?? window).contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { exit(2) }
-                v.cacheDisplay(in: v.bounds, to: rep)
+                guard let v = (NSApp.windows.filter(\.isVisible).last { $0.title.hasPrefix("Fan-out") } ?? window).contentView else { exit(2) }
+                // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
+                v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
+                let scale = window.backingScaleFactor, size = v.bounds.size
+                if let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                                                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                    ctx.scaleBy(x: scale, y: scale)
+                    var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }; ctx.setFillColor(bg); ctx.fill(CGRect(origin: .zero, size: size))   // the window frame paints this on screen
+                    if !v.isFlipped { } else { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
+                    layer.render(in: ctx)
+                    if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
+                }
                 print("DIFF", content.diff.debugInfo)
                 for p in content.workspace.view.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.terminal.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300)) }
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                 exit(0)
             }
         }

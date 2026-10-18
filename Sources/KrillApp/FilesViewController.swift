@@ -206,7 +206,9 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         guard let text = String(data: data, encoding: .utf8) else {
             NSWorkspace.shared.open(url); return   // binary: let the system preview it
         }
+        let t0 = Date()
         let f = OpenFile(path: rel, url: url, text: text, editable: size <= CodeEditor.readOnlyLimit)
+        defer { if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] != nil { print("OPEN \(rel) lines=\(text.split(separator: "\n").count) in \(String(format: "%.0f", Date().timeIntervalSince(t0) * 1000)) ms") } }
         f.editor.onChange = { [weak self, weak f] t in if let f { self?.scheduleSave(f); self?.lspChange(f, t) } }
         f.editor.onSelection = { [weak self] in self?.updateProblems() }
         let rootPath = root, abs = url.path
@@ -221,6 +223,7 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         let item = NSTabViewItem(identifier: rel); item.label = (rel as NSString).lastPathComponent + (size > CodeEditor.readOnlyLimit ? " (read-only)" : "")
         item.toolTip = rel
         item.viewController = f.editor.controller
+        f.editor.view.clipsToBounds = true   // the gutter otherwise draws past the tab into the problems bar
         tabs.addTabViewItem(item); tabs.selectTabViewItem(item)
         if let line { DispatchQueue.main.async { f.editor.goTo(line: line) } }
         saveOpenList()
