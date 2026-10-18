@@ -10,6 +10,7 @@ public enum Paths {
     public static var history: URL { root.appendingPathComponent("history") }
     public static var worktrees: URL { root.appendingPathComponent("worktrees") }
     public static var agents: URL { root.appendingPathComponent("agents") }
+    public static var extensions: URL { root.appendingPathComponent("extensions") }
 
     public static func ensure(_ u: URL) throws {
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)

@@ -21,6 +21,12 @@ usage: krill <command>
   install | uninstall                  launchd agent for the daemon
   github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
   linear login <key> | tasks | start <ENG-123>
+  open <path[:line]|url> [--split right|down]   open a tab in the app (relative paths are fine)
+  settings | settings get <key> | set <key> <json-or-text> | unset <key>
+  ui state                             what the app shows: workspace, tabs, extensions, commands
+  run <command-id> [json-args]         run an app command (ids from `krill ui state`)
+  ext list | new <id> [--name N] [--description D] | enable <id> | disable <id> | reload | path
+  mcp                                  MCP server on stdio (Claude Code sessions get it automatically)
 """
 
 // Internal: the daemon starts agents through this so the PTY becomes their controlling terminal
@@ -54,12 +60,28 @@ func connect() throws -> RPCClient {
     p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
     try? p.run()
     for _ in 0..<50 { usleep(100_000); if let c = try? RPCClient() { return c } }
-    fail("cannot reach daemon at \(Paths.socket.path)")
+    throw RPCError.internalError("cannot reach the Krill daemon at \(Paths.socket.path)")
 }
 
 func show(_ v: JSONValue) {
     let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    if case .string(let s) = v { print(s) } else if v != .null, let d = try? e.encode(v) { print(String(decoding: d, as: UTF8.self)) }
+    if case .string(let s) = v { print(s) } else if v != .null, let d = try? e.encode(v), let s = String(bytes: d, encoding: .utf8) { print(s) }
+}
+
+/// A CLI value: JSON when it parses (3, true, [1], "x"), else the text itself.
+func jsonOrText(_ s: String) -> JSONValue { (try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))) ?? .string(s) }
+
+/// `krill mcp`: one daemon connection per tool call, so a restarted daemon (app update) doesn't break the agent's server.
+func serveMCP() async {
+    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    let server = MCPServer(version: version, call: { method, params in
+        let c = try connect(); defer { c.close() }
+        return try await c.call(method, params)
+    }, scaffold: { try IDE.scaffoldExtension(id: $0, name: $1, description: $2) })
+    while let line = readLine() {
+        guard !line.trimmingCharacters(in: .whitespaces).isEmpty, let reply = await server.handle(line) else { continue }
+        FileHandle.standardOutput.write(Data((reply + "\n").utf8))
+    }
 }
 
 func inside(_ cwd: String, _ path: String) -> Bool {
@@ -72,15 +94,15 @@ func inside(_ cwd: String, _ path: String) -> Bool {
 func currentWorktree(_ c: RPCClient) async throws -> JSONValue {
     let cwd = FileManager.default.currentDirectoryPath
     let all = try await c.call("worktree.list").array ?? []
-    guard let w = all.first(where: { w in w["path"]?.string.map { inside(cwd, $0) } ?? false }) else { fail("not inside a krill worktree") }
+    guard let w = all.first(where: { w in w["path"]?.string.map { inside(cwd, $0) } ?? false }) else { throw RPCError.invalidParams("not inside a krill worktree") }   // throws: callers use try? to fall back
     return w
 }
 func currentRepoID(_ c: RPCClient) async throws -> String {
     if let r = flag("--repo") { return r }
     let cwd = FileManager.default.currentDirectoryPath
     let repos = try await c.call("repo.list").array ?? []
-    if let r = repos.first(where: { r in r["path"]?.string.map { inside(cwd, $0) } ?? false }) { return r["id"]!.string! }
-    if let w = try? await currentWorktree(c) { return w["repoId"]!.string! }
+    if let id = repos.first(where: { r in r["path"]?.string.map { inside(cwd, $0) } ?? false })?["id"]?.string { return id }
+    if let id = (try? await currentWorktree(c))?["repoId"]?.string { return id }
     fail("no repo here; pass --repo <id> or run `krill repo add`")
 }
 
@@ -125,6 +147,7 @@ func plist() -> String {
                     if let t = v["transcript_path"]?.string { p["transcript"] = .string(t) }
                 }
                 _ = try await c.call("session.hook", .object(p))
+            case "mcp": await serveMCP()
             default:
                 let c = try connect()
                 try await run(cmd, c)
@@ -166,7 +189,7 @@ func plist() -> String {
             show(try await c.call("worktree.note", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "note": .string(args.joined(separator: " "))])))
         case ("worktree", "remove"), ("worktree", "archive"):
             let force = has("--force")
-            show(try await c.call("worktree.\(sub!)", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")), "force": .bool(force)])))
+            show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")), "force": .bool(force)])))
         case ("session", "new"):
             var p: [String: JSONValue] = [:]
             if let a = flag("--agent") { p["agent"] = .string(a) }
@@ -204,7 +227,7 @@ func plist() -> String {
             let r = try await c.call("task.create", .object(p))
             print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")  session \(r["session"]?["id"]?.string?.prefix(8) ?? "")")
         case ("session", "restart"), ("session", "fork"):
-            show(try await c.call("session.\(sub!)", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            show(try await c.call("session.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("session", "rename"):
             show(try await c.call("session.rename", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")), "title": .string(args.dropFirst().joined(separator: " "))])))
         case ("session", "handoff"):
@@ -220,7 +243,7 @@ func plist() -> String {
         case ("github", "prs"), ("github", "issues"):
             var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
             if let f = flag("--filter") { p["filter"] = .string(f) }
-            for x in try await c.call("github.\(sub!)", .object(p)).array ?? [] {
+            for x in try await c.call("github.\(sub ?? "")", .object(p)).array ?? [] {
                 print("#\(x["number"]?.int ?? 0)  \(x["title"]?.string ?? "")  \(x["url"]?.string ?? "")")
             }
         case ("github", "checks"):
@@ -258,6 +281,55 @@ func plist() -> String {
         case ("linear", "login"):
             guard let k = args.first else { fail("linear login <api-key>") }
             show(try await c.call("linear.setKey", .obj(["key": .string(k)])))
+        case ("open", _):
+            let split = flag("--split")
+            guard let target = sub ?? args.first else { fail("open <path|url> [--split right|down]") }
+            show(try await IDE.open(target, split: split, cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }))
+        case ("settings", _), ("ui", _), ("run", _): try await settingsAndUI(cmd, sub, c)
+        case ("ext", _): try await ext(sub, c)
+        default: print(usage)
+        }
+    }
+
+    static func settingsAndUI(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
+        switch (cmd, sub) {
+        case ("settings", nil): show(try await c.call("settings.get"))
+        case ("settings", "get"):
+            guard let k = args.first else { fail("settings get <key>") }
+            show(try await c.call("settings.get")[k] ?? .null)
+        case ("settings", "set"):
+            guard args.count >= 2 else { fail("settings set <key> <value>") }
+            _ = try await c.call("settings.set", .obj(["key": .string(args[0]), "value": jsonOrText(args.dropFirst().joined(separator: " "))]))
+        case ("settings", "unset"):
+            guard let k = args.first else { fail("settings unset <key>") }
+            _ = try await c.call("settings.set", .obj(["key": .string(k)]))
+        case ("ui", "state"): show(try await c.call("ui.state"))
+        case ("run", let id?):
+            var p: [String: JSONValue] = ["id": .string(id)]
+            if !args.isEmpty { p["args"] = jsonOrText(args.joined(separator: " ")) }
+            show(try await c.call("ui.command", .object(p)))
+        default: print(usage)
+        }
+    }
+
+    static func ext(_ sub: String?, _ c: RPCClient) async throws {
+        let call: IDE.Call = { try await c.call($0, $1) }
+        switch sub {
+        case "list":
+            for e in try await IDE.extensions(call: call).array ?? [] {
+                let tags = [e["builtin"]?.bool == true ? "(built-in)" : nil, e["enabled"]?.bool == false ? "(disabled)" : nil].compactMap { $0 }
+                print(([e["id"]?.string ?? "", e["name"]?.string ?? ""] + tags).joined(separator: "\t"))
+            }
+        case "new":
+            let name = flag("--name"), description = flag("--description")
+            guard let id = args.first else { fail("ext new <id> [--name N] [--description D]") }
+            let folder = try IDE.scaffoldExtension(id: id, name: name, description: description)
+            print("created \(folder.path)\nguide:   \(folder.deletingLastPathComponent().appendingPathComponent("EXTENSIONS.md").path)")
+        case "enable", "disable":
+            guard let id = args.first else { fail("ext enable|disable <id>") }
+            try await IDE.setExtension(id, enabled: sub == "enable", call: call)
+        case "reload": show(try await c.call("ui.command", .obj(["id": "extensions.reload"])))
+        case "path": print(Paths.extensions.path)
         default: print(usage)
         }
     }

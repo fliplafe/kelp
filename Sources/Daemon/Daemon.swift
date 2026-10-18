@@ -16,7 +16,9 @@ public final class Daemon: @unchecked Sendable {
     private var listenFD: Int32 = -1
     private var ticker: DispatchSourceTimer?
     let extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue]
-    var config: [String: JSONValue] = [:]
+    let settings: SettingsStore
+    var appConns = Set<Int>()               // connections that called ui.publish: they get event.ui
+    var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     var sleepAssertion: UInt32 = 0
     var usageCache: (at: Date, value: JSONValue)?
     var chats: [String: ChatSession] = [:]
@@ -30,7 +32,7 @@ public final class Daemon: @unchecked Sendable {
         self.store = try store ?? Store(path: root.appendingPathComponent("krill.sqlite").path)
         self.socketPath = root.appendingPathComponent("krill.sock").path
         self.extra = extra
-        if let d = try? Data(contentsOf: root.appendingPathComponent("config.json")), case .object(let o)? = try? JSONDecoder().decode(JSONValue.self, from: d) { config = o }
+        self.settings = SettingsStore(root: root)
         // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
         for var s in (try? self.store.sessions()) ?? [] where s.status != .exited {
             let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
@@ -63,7 +65,7 @@ public final class Daemon: @unchecked Sendable {
         acceptSource = src
         let t = DispatchSource.makeTimerSource(queue: .global())
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle() }
+        t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
         t.resume(); ticker = t
     }
     private var acceptSource: DispatchSourceRead?
@@ -99,7 +101,9 @@ public final class Daemon: @unchecked Sendable {
                     Task { await self.respond(req, conn: id, fd: fd) }
                 }
             }
-            lock.lock(); conns[id] = nil; let all = Array(live.values); lock.unlock()
+            lock.lock(); conns[id] = nil; let all = Array(live.values)
+            if appConns.remove(id) != nil, appConns.isEmpty { uiState = .object([:]) }
+            lock.unlock()
             all.forEach { $0.detach(id) }
             close(fd)
         }
@@ -188,6 +192,10 @@ public final class Daemon: @unchecked Sendable {
             argv += [flag, f.path]
             rec.argv = argv
         }
+        if o.argv == nil, let flag = manifest.mcpConfigFlag, let f = try writeMCPConfig() {
+            argv += [flag, f.path]
+            rec.argv = argv
+        }
         var env = manifest.env
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
@@ -209,11 +217,23 @@ public final class Daemon: @unchecked Sendable {
         return rec
     }
 
+    /// Claude Code's `--mcp-config` file for the `krill` MCP server; nil when no `krill` ships next to this binary.
+    func writeMCPConfig() throws -> URL? {
+        guard let krill = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("krill"),
+              FileManager.default.isExecutableFile(atPath: krill.path) else { return nil }
+        let env: JSONValue = .obj(["KRILL_SOCKET": .string(socketPath), "KRILL_HOME": .string(root.path)])
+        let cfg: JSONValue = .obj(["mcpServers": .obj(["krill": .obj(["command": .string(krill.path), "args": .array(["mcp"]), "env": env])])])
+        let f = root.appendingPathComponent("mcp-krill.json")
+        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try e.encode(cfg).write(to: f, options: .atomic)
+        return f
+    }
+
     /// Account profiles keep each agent login in its own config dir: switching needs no re-login.
     static let configDirEnv = ["claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME"]
     func profile(_ name: String, agent: String) -> (key: String, dir: String)? {
         guard let key = Self.configDirEnv[agent] else { return nil }
-        for p in config["profiles"]?.array ?? [] where p["name"]?.string == name && p["agent"]?.string == agent {
+        for p in settings["accounts.profiles"]?.array ?? [] where p["name"]?.string == name && p["agent"]?.string == agent {
             if let d = p["dir"]?.string { try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true); return (key, d) }
         }
         return nil
@@ -221,13 +241,7 @@ public final class Daemon: @unchecked Sendable {
 
     /// Pause agents that have sat idle (done / waiting) for `hibernateMinutes` with nobody watching.
     func hibernateIdle() {
-        let minutes: Double = {
-            switch config["hibernateMinutes"] {
-            case .int(let i)?: Double(i)
-            case .double(let d)?: d
-            default: 0
-            }
-        }()
+        let minutes = settings.number("sessions.hibernateMinutes") ?? 0
         guard minutes > 0 else { return }
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         let candidates = lock.withLock { Array(live.values) }.filter { ls in

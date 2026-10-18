@@ -26,6 +26,7 @@ extension Daemon {
 
     private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         if method.hasPrefix("chat."), let r = try handleChat(method, p) { return r }
+        if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
         case "ping": return "pong"
         case "daemon.info":   // the app compares this with the krilld it ships to detect updates

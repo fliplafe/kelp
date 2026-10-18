@@ -8,7 +8,7 @@ extension Daemon {
     /// Default roots plus each account profile's config dir.
     func agentRoots() -> (claude: [URL], codex: [URL]) {
         var c = [ClaudeHistory.defaultRoot], x = [CodexHistory.defaultRoot]
-        for p in config["profiles"]?.array ?? [] {
+        for p in settings["accounts.profiles"]?.array ?? [] {
             guard let d = p["dir"]?.string else { continue }
             if p["agent"]?.string == "claude" { c.append(URL(fileURLWithPath: d).appendingPathComponent("projects")) }
             if p["agent"]?.string == "codex" { x.append(URL(fileURLWithPath: d).appendingPathComponent("sessions")) }
@@ -30,7 +30,7 @@ extension Daemon {
             if let c = cached, Date().timeIntervalSince(c.at) < 60, p["force"]?.bool != true { return c.value }
             let roots = agentRoots()
             var claude: [JSONValue] = [], codex: [JSONValue] = []
-            let names = ["Default"] + (config["profiles"]?.array ?? []).compactMap { $0["name"]?.string }
+            let names = ["Default"] + (settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
             for (i, r) in roots.claude.enumerated() where FileManager.default.fileExists(atPath: r.path) {
                 let u = ClaudeUsage(root: r)
                 var o: [String: JSONValue] = ["account": .string(i == 0 ? "Default" : names[min(i, names.count - 1)]),
