@@ -117,31 +117,33 @@ struct AppearanceSettings: View {
     }
 }
 
-struct SettingsView: View {
-    var extraTabs: [(String, String, AnyView)] = SettingsWindow.extraTabs
-    var body: some View {
-        TabView {
-            GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
-            AgentsSettings().tabItem { Label("Agents", systemImage: "cpu") }
-            AccountsSettings().tabItem { Label("Accounts", systemImage: "person.2") }
-            IntegrationsSettings().tabItem { Label("Integrations", systemImage: "link") }
-            QuickCommandsSettings().tabItem { Label("Commands", systemImage: "bolt") }
-            AppearanceSettings().tabItem { Label("Appearance", systemImage: "paintpalette") }
-            ForEach(extraTabs, id: \.0) { t in t.2.tabItem { Label(t.0, systemImage: t.1) } }
-        }
-        .frame(width: 620, height: 420)
-    }
-}
-
+/// Standard macOS preferences window: toolbar tabs with SF Symbols, each pane a SwiftUI form.
 @MainActor
 enum SettingsWindow {
     static var window: NSWindow?
-    /// Later features (Accounts, Integrations) add tabs here.
+    /// Later features can add panes here.
     static var extraTabs: [(String, String, AnyView)] = []
+
     static func show() {
         if window == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-            w.title = "Settings"; w.styleMask = [.titled, .closable]; w.isReleasedWhenClosed = false; window = w
+            let tabs = NSTabViewController(); tabs.tabStyle = .toolbar
+            func add(_ title: String, _ symbol: String, _ view: some View) {
+                let host = NSHostingController(rootView: view.frame(width: 640).fixedSize(horizontal: false, vertical: true))
+                host.sizingOptions = [.preferredContentSize]   // the window resizes to each pane, like System Settings
+                let item = NSTabViewItem(viewController: host); item.label = title
+                item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+                tabs.addTabViewItem(item)
+            }
+            add("General", "gearshape", GeneralSettings())
+            add("Agents", "cpu", AgentsSettings().frame(height: 380))
+            add("Accounts", "person.2", AccountsSettings().frame(height: 340))
+            add("Integrations", "link", IntegrationsSettings())
+            add("Commands", "bolt", QuickCommandsSettings().frame(height: 340))
+            add("Appearance", "paintpalette", AppearanceSettings())
+            for t in extraTabs { add(t.0, t.1, t.2) }
+            let w = NSWindow(contentViewController: tabs)
+            w.styleMask = [.titled, .closable]; w.isReleasedWhenClosed = false; w.title = "Settings"
+            window = w
         }
         window?.center(); window?.makeKeyAndOrderFront(nil)
     }
