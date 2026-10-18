@@ -1,0 +1,219 @@
+import Foundation
+import Core
+import GitKit
+import Agents
+
+extension JSONValue {
+    func req(_ k: String) throws -> String {
+        guard let s = self[k]?.string else { throw RPCError.invalidParams("missing \(k)") }
+        return s
+    }
+}
+
+extension Daemon {
+    func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
+        if let e = extra[method] { return try await e(self, p) }
+        do { return try handleSync(method, p, conn: conn) }
+        catch let e as GitError { throw RPCError.internalError(e.description) }
+    }
+
+    private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
+        switch method {
+        case "ping": return "pong"
+
+        // MARK: repos
+        case "repo.add":
+            let root = try Git.root(of: p.req("path"))
+            if let r = try store.repos().first(where: { $0.path == root }) { return try .from(r) }
+            let r = Repo(name: p["name"]?.string ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
+            try store.save(r); notify("event.changed", "repo")
+            return try .from(r)
+        case "repo.list": return try .from(store.repos())
+        case "repo.remove":
+            guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
+            try store.delete(r); notify("event.changed", "repo"); return .null
+
+        // MARK: worktrees
+        case "worktree.create":
+            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
+            let branch = try p.req("branch")
+            let path = try Git.addWorktree(repo: r.path, branch: branch, base: p["base"]?.string ?? r.baseBranch,
+                                           into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
+            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? "")
+            try store.save(w)
+            var result = try JSONValue.from(w)
+            if let setup = RepoConfig.load(repoPath: r.path).setup, p["setup"]?.bool != false {
+                let s = try spawn(cwd: path, manifest: .custom(setup), worktreeId: w.id)
+                if case .object(var o) = result { o["setupSession"] = .string(s.id); result = .object(o) }
+            }
+            notify("event.changed", "worktree")
+            return result
+        case "worktree.list":
+            return try .from(store.worktrees(repo: p["repoId"]?.string).filter { p["archived"]?.bool == true || !$0.archived })
+        case "worktree.note":
+            guard var w = try store.worktree(p.req("id")) else { throw RPCError.invalidParams("no worktree") }
+            w.note = try p.req("note"); try store.save(w); notify("event.changed", "worktree"); return .null
+        case "worktree.run", "worktree.test":
+            let w = try cwd(forWorktree: p.req("id"))
+            guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
+            let cfg = RepoConfig.load(repoPath: r.path)
+            guard let cmd = method == "worktree.run" ? cfg.run : cfg.test else { throw RPCError.invalidParams("no \(method.dropFirst(9)) script in .krill.yaml") }
+            if method == "worktree.run" { return try .from(spawn(cwd: w.path, manifest: .custom(cmd), worktreeId: w.id)) }
+            let pr = Process(); pr.executableURL = URL(fileURLWithPath: "/bin/zsh"); pr.arguments = ["-lc", cmd]
+            pr.currentDirectoryURL = URL(fileURLWithPath: w.path)
+            pr.standardOutput = FileHandle.nullDevice; pr.standardError = FileHandle.nullDevice
+            try pr.run(); pr.waitUntilExit()
+            return .obj(["exit": .int(Int(pr.terminationStatus)), "passed": .bool(pr.terminationStatus == 0)])
+        case "worktree.archive", "worktree.remove":
+            guard var w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
+            let remove = method == "worktree.remove"
+            if FileManager.default.fileExists(atPath: w.path) {
+                try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)
+            }
+            for s in (try store.sessions()) where s.worktreeId == w.id { (try? liveSession(s.id))?.pty.kill() }
+            if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
+            notify("event.changed", "worktree"); return .null
+        case "worktree.dirty":
+            return .bool(try Git.isDirty(cwd(forWorktree: p.req("id")).path))
+
+        // MARK: sessions
+        case "session.create":
+            var dir = p["cwd"]?.string; let wid = p["worktreeId"]?.string
+            if let wid { dir = try cwd(forWorktree: wid).path }
+            guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
+            let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
+            let s = try spawn(cwd: dir, manifest: m, worktreeId: wid,
+                              cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32))
+            return try .from(s)
+        case "session.list":
+            let live = try store.sessions().map { s -> Session in (try? liveSession(s.id).snapshot) ?? s }
+            return try .from(live.filter { p["worktreeId"]?.string == nil || $0.worktreeId == p["worktreeId"]?.string })
+        case "session.attach":
+            let s = try liveSession(p.req("id"))
+            let hist = s.attach(conn)
+            if let r = s.markRead() { try store.save(r); notify("event.session", try .from(r)) }
+            return .obj(["history": .string(hist.base64EncodedString())])
+        case "session.detach": try liveSession(p.req("id")).detach(conn); return .null
+        case "session.write":
+            let s = try liveSession(p.req("id"))
+            if let b = p["base64"]?.string, let d = Data(base64Encoded: b) { s.pty.write(d) }
+            else { s.pty.write(Data(try p.req("text").utf8)) }
+            return .null
+        case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
+            let s = try liveSession(p.req("id"))
+            s.pty.write(Data(try p.req("text").utf8))
+            if p["enter"]?.bool != false { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { s.pty.write(Data("\r".utf8)) } }
+            return .null
+        case "session.resize": try liveSession(p.req("id")).pty.resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
+        case "session.kill": try liveSession(p.req("id")).pty.kill(); return .null
+        case "session.read":
+            let d = try liveSession(p.req("id")).tail(p["bytes"]?.int ?? 8192)
+            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
+        case "session.markRead":
+            if let r = try liveSession(p.req("id")).markRead() { try store.save(r); notify("event.session", try .from(r)) }
+            return .null
+        case "session.hook":
+            try liveSession(p.req("id")).hook(p.req("event")); return .null
+
+        // MARK: git
+        case "git.status": return try .from(Git.status(cwd(forWorktree: p.req("id")).path))
+        case "git.diff":
+            let w = try cwd(forWorktree: p.req("id"))
+            let src: DiffSource
+            switch p["source"]?.string ?? "all" {
+            case "unstaged": src = .unstaged
+            case "staged": src = .staged
+            case "branch":
+                let base = try store.repo(w.repoId)?.baseBranch ?? "main"
+                src = .branch(base: p["base"]?.string ?? base)
+            case "commit": src = .commit(try p.req("commit"))
+            default: src = .allUncommitted
+            }
+            return try .from(Git.diff(w.path, source: src, file: p["file"]?.string))
+        case "git.log":
+            let w = try cwd(forWorktree: p.req("id"))
+            let base = try store.repo(w.repoId)?.baseBranch
+            return .array(try Git.log(w.path, base: p["all"]?.bool == true ? nil : base).map { .obj(["hash": .string($0.hash), "subject": .string($0.subject)]) })
+        case "git.stage", "git.unstage":
+            let w = try cwd(forWorktree: p.req("id"))
+            let files = (p["files"]?.array ?? []).compactMap(\.string)
+            if method == "git.stage" { try Git.stage(w.path, files: files) } else { try Git.unstage(w.path, files: files) }
+            return .null
+        case "git.hunk":   // stage/unstage one hunk: {id, file, hunk, reverse}
+            let w = try cwd(forWorktree: p.req("id")); let file = try p.req("file")
+            let rev = p["reverse"]?.bool == true
+            guard let d = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first, let i = p["hunk"]?.int, d.hunks.indices.contains(i)
+            else { throw RPCError.invalidParams("no such hunk") }
+            try Git.applyHunk(w.path, diff: d, hunk: i, reverse: rev); return .null
+        case "git.commit":
+            return .string(try Git.commit(cwd(forWorktree: p.req("id")).path, message: p.req("message"), all: p["all"]?.bool == true))
+        case "git.push":
+            let w = try cwd(forWorktree: p.req("id")); try Git.push(w.path, branch: w.branch); return .null
+        case "git.merge":   // merge worktree branch into the repo's base branch (main checkout)
+            let w = try cwd(forWorktree: p.req("id"))
+            guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
+            if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
+            let res = try Git.merge(branch: w.branch, into: r.path, keepConflicts: p["keepConflicts"]?.bool == true)
+            return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
+
+        // MARK: review comments
+        case "comment.add":
+            let c = DiffComment(worktreeId: try p.req("id"), file: try p.req("file"), startLine: p["start"]?.int ?? 1,
+                                endLine: p["end"]?.int ?? p["start"]?.int ?? 1, quote: p["quote"]?.string ?? "", text: try p.req("text"))
+            try store.save(c); return try .from(c)
+        case "comment.list": return try .from(store.comments(worktree: p.req("id")))
+        case "comment.setState":
+            guard var c = try store.db.read({ try DiffComment.fetchOne($0, key: p.req("id")) }) else { throw RPCError.invalidParams("no comment") }
+            c.state = DiffComment.State(rawValue: try p.req("state")) ?? .open; try store.save(c); return .null
+        case "comment.send":   // all open comments -> one message into the agent's terminal
+            let w = try cwd(forWorktree: p.req("id"))
+            let open = try store.comments(worktree: w.id).filter { $0.state == .open }
+            guard !open.isEmpty else { return .int(0) }
+            try handleSync("session.send", .obj(["id": .string(try p.req("session")), "text": .string(ReviewMessage.compose(branch: w.branch, comments: open))]), conn: conn)
+            for var c in open { c.state = .sent; try store.save(c) }
+            return .int(open.count)
+
+        // MARK: fan-out
+        case "fanout.start":   // one prompt -> N agents, each in its own worktree
+            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
+            let prompt = try p.req("prompt"), tag = p["name"]?.string ?? "fanout-\(Int(Date().timeIntervalSince1970) % 100000)"
+            let agents = (p["agents"]?.array ?? []).compactMap(\.string)
+            guard !agents.isEmpty else { throw RPCError.invalidParams("agents required") }
+            var out: [JSONValue] = []
+            for (i, a) in agents.enumerated() {
+                let br = "\(tag)-\(i + 1)-\(a)"
+                let path = try Git.addWorktree(repo: r.path, branch: br, base: r.baseBranch, into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
+                let w = Worktree(repoId: r.id, branch: br, path: path, note: "fan-out: \(prompt.prefix(60))"); try store.save(w)
+                let s = try spawn(cwd: path, manifest: manifest(a, command: nil), worktreeId: w.id)
+                let ls = try liveSession(s.id)
+                DispatchQueue.global().asyncAfter(deadline: .now() + (p["delay"].flatMap { $0.int }.map(Double.init) ?? 3)) {
+                    ls.pty.write(Data(prompt.utf8)); DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { ls.pty.write(Data("\r".utf8)) }
+                }
+                out.append(.obj(["worktree": .string(w.id), "session": .string(s.id), "agent": .string(a)]))
+            }
+            notify("event.changed", "worktree")
+            return .array(out)
+        case "fanout.compare":   // per worktree: size of change + optional test result
+            var rows: [JSONValue] = []
+            for idv in p["ids"]?.array ?? [] {
+                guard let id = idv.string else { continue }
+                let w = try cwd(forWorktree: id)
+                let base = try store.repo(w.repoId)?.baseBranch ?? "main"
+                let d = try Git.diff(w.path, source: .allUncommitted).count > 0 ? Git.diff(w.path, source: .allUncommitted) : Git.diff(w.path, source: .branch(base: base))
+                var row: [String: JSONValue] = ["id": .string(id), "branch": .string(w.branch), "files": .int(d.count),
+                    "additions": .int(d.reduce(0) { $0 + $1.additions }), "deletions": .int(d.reduce(0) { $0 + $1.deletions })]
+                if p["test"]?.bool == true, let t = try? handleSync("worktree.test", .obj(["id": .string(id)]), conn: conn) { row["tests"] = t["passed"] ?? .null }
+                rows.append(.object(row))
+            }
+            return .array(rows)
+        case "fanout.accept":   // merge the winner, archive the rest
+            let winner = try p.req("id")
+            let res = try handleSync("git.merge", .obj(["id": .string(winner)]), conn: conn)
+            guard res["merged"]?.bool == true else { return res }
+            for idv in p["others"]?.array ?? [] { if let id = idv.string { _ = try handleSync("worktree.archive", .obj(["id": .string(id), "force": true]), conn: conn) } }
+            return res
+
+        default: throw RPCError.methodNotFound
+        }
+    }
+}
