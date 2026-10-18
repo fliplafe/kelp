@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await AppModel.shared.connect()
             _ = await Accounts.load()
+            AppModel.shared.startSubagentPolling()
             sidebar.reload()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b } }
             if let w = pick ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }

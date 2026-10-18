@@ -44,7 +44,7 @@ public struct StatusDetector: Sendable {
     public mutating func exited() { status = .exited }
 
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
-    public mutating func override(_ s: AgentStatus) { if status != .exited { status = s } }
+    public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
     public static func stripANSI(_ s: String) -> String {
         s.replacingOccurrences(of: #"\u{1B}\[[0-9;?]*[ -/]*[@-~]|\u{1B}\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\)"#, with: "", options: .regularExpression)

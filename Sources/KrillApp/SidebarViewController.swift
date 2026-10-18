@@ -2,11 +2,16 @@ import AppKit
 import Core
 
 final class SidebarItem: NSObject {
-    enum Kind { case repo(Repo), worktree(Worktree), session(Session) }
+    enum Kind { case repo(Repo), worktree(Worktree), session(Session), subagent(parent: String, index: Int, title: String, active: Bool) }
     let kind: Kind
     init(_ k: Kind) { kind = k }
     var id: String {
-        switch kind { case .repo(let r): "r" + r.id; case .worktree(let w): "w" + w.id; case .session(let s): "s" + s.id }
+        switch kind {
+        case .repo(let r): "r" + r.id
+        case .worktree(let w): "w" + w.id
+        case .session(let s): "s" + s.id
+        case .subagent(let p, let i, _, _): "a" + p + "/\(i)"
+        }
     }
 }
 
@@ -45,6 +50,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         for w in m.worktrees {
             kids["w" + w.id] = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited }.map { SidebarItem(.session($0)) }
         }
+        for (sid, subs) in m.subagents {
+            kids["s" + sid] = subs.enumerated().map { SidebarItem(.subagent(parent: sid, index: $0, title: $1.title, active: $1.active)) }
+        }
         reloading = true
         outline.reloadData()
         for it in allItems() where expanded.contains(it.id) || (expanded.isEmpty && !isSession(it)) { outline.expandItem(it) }
@@ -54,7 +62,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         reloading = false
     }
     private func isSession(_ i: SidebarItem) -> Bool { if case .session = i.kind { true } else { false } }
-    private func allItems() -> [SidebarItem] { items + items.flatMap { kids[$0.id] ?? [] } + items.flatMap { kids[$0.id] ?? [] }.flatMap { kids[$0.id] ?? [] } }
+    private func isLeaf(_ i: SidebarItem) -> Bool {
+        switch i.kind { case .subagent: true; case .session: (kids[i.id] ?? []).isEmpty; default: false }
+    }
+    private func allItems() -> [SidebarItem] {
+        var out: [SidebarItem] = [], stack = items
+        while let i = stack.popLast() { out.append(i); stack += kids[i.id] ?? [] }
+        return out
+    }
 
     func select(worktree id: String) {
         guard let it = allItems().first(where: { $0.id == "w" + id }) else { return }
@@ -72,13 +87,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         case .repo(let r): return r
         case .worktree(let w): return AppModel.shared.repo(w.repoId)
         case .session(let s): return AppModel.shared.repo(AppModel.shared.worktree(s.worktreeId)?.repoId)
+        case .subagent(let p, _, _, _): return AppModel.shared.repo(AppModel.shared.worktree(AppModel.shared.session(p)?.worktreeId)?.repoId)
         }
     }
 
     // MARK: data source
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { ((item as? SidebarItem).map { kids[$0.id]?.count } ?? items.count) ?? 0 }
     func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { (item as? SidebarItem).map { kids[$0.id]![index] } ?? items[index] }
-    func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { !((item as? SidebarItem).map(isSession) ?? false) }
+    func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { !((item as? SidebarItem).map(isLeaf) ?? false) }
 
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let it = item as? SidebarItem else { return nil }
@@ -124,12 +140,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let ss = AppModel.shared.sessions.filter { $0.worktreeId == w.id && $0.status != .exited }
             if ss.contains(where: \.unread) { tf.font = .boldSystemFont(ofSize: 12) }
             img.contentTintColor = ss.contains { $0.status == .waiting } ? .systemOrange : ss.contains { $0.status == .working } ? .systemBlue : .secondaryLabelColor
+        case .subagent(_, _, let title, let active):
+            tf.stringValue = title; tf.font = .systemFont(ofSize: 11); tf.textColor = .secondaryLabelColor
+            img.image = NSImage(systemSymbolName: active ? "circle.dotted" : "checkmark.circle", accessibilityDescription: active ? "running" : "finished")
+            img.contentTintColor = active ? .systemBlue : .tertiaryLabelColor
+            cell.toolTip = "Subagent · " + (active ? "running" : "finished")
         case .session(let s):
             tf.stringValue = s.displayTitle; tf.font = .systemFont(ofSize: 12, weight: s.unread ? .semibold : .regular)
             cell.toolTip = "\(s.agent ?? "shell") · \(s.status.label)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
             img.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: s.status.rawValue)
             img.symbolConfiguration = .init(pointSize: 7, weight: .regular)
-            img.contentTintColor = [AgentStatus.working: .systemBlue, .waiting: .systemOrange, .done: .systemGreen, .idle: .systemGray, .exited: .systemRed][s.status]
+            img.contentTintColor = [AgentStatus.working: .systemBlue, .waiting: .systemOrange, .done: .systemGreen, .idle: .systemGray, .exited: .systemRed, .hibernated: .systemIndigo][s.status]
         }
         return cell
     }
@@ -161,6 +182,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             for (t, a) in [("Edit Note…", #selector(editNote(_:))), ("Archive", #selector(archive(_:))), ("Delete Worktree & Branch…", #selector(remove(_:)))] {
                 let m = menu.addItem(withTitle: t, action: a, keyEquivalent: ""); m.target = self; m.representedObject = w.id
             }
+        case .subagent: break
         case .session(let s):
             let m = menu.addItem(withTitle: "Kill Session", action: #selector(kill(_:)), keyEquivalent: ""); m.target = self; m.representedObject = s.id
         }
@@ -182,6 +204,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             a.addButton(withTitle: "Delete"); a.addButton(withTitle: "Cancel"); a.alertStyle = dirty ? .critical : .warning
             guard a.runModal() == .alertFirstButtonReturn else { return }
             await AppModel.shared.call("worktree.remove", .obj(["id": .string(id), "force": .bool(dirty)]))
+            Attribution.reset(worktree: id)
         }
     }
 }

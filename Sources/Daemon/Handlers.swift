@@ -95,7 +95,7 @@ extension Daemon {
             if FileManager.default.fileExists(atPath: w.path) {
                 try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)
             }
-            for s in (try store.sessions()) where s.worktreeId == w.id { (try? liveSession(s.id))?.pty.kill() }
+            for s in (try store.sessions()) where s.worktreeId == w.id { existing(s.id)?.pty.kill() }
             if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
             notify("event.changed", "worktree"); return .null
         case "worktree.dirty":
@@ -110,14 +110,14 @@ extension Daemon {
             let s = try spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p))
             return try .from(s)
         case "session.list":
-            let live = try store.sessions().map { s -> Session in (try? liveSession(s.id).snapshot) ?? s }
+            let live = try store.sessions().map { s -> Session in existing(s.id)?.snapshot ?? s }
             return try .from(live.filter { p["worktreeId"]?.string == nil || $0.worktreeId == p["worktreeId"]?.string })
         case "session.attach":
             let s = try liveSession(p.req("id"))
             let hist = s.attach(conn)
             if let r = s.markRead() { try store.save(r); notify("event.session", try .from(r)) }
             return .obj(["history": .string(hist.base64EncodedString())])
-        case "session.detach": try liveSession(p.req("id")).detach(conn); return .null
+        case "session.detach": existing(try p.req("id"))?.detach(conn); return .null
         case "session.write":
             let s = try liveSession(p.req("id"))
             if let b = p["base64"]?.string, let d = Data(base64Encoded: b) { s.userInput(d) }
@@ -127,15 +127,36 @@ extension Daemon {
             try liveSession(p.req("id")).send(p.req("text"), enter: p["enter"]?.bool != false)
             return .null
         case "session.resize": try liveSession(p.req("id")).pty.resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
-        case "session.kill": try liveSession(p.req("id")).pty.kill(); return .null
+        case "session.kill":
+            if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.kill() }
+            else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill
+            return .null
         case "session.read":
-            let d = try liveSession(p.req("id")).tail(p["bytes"]?.int ?? 8192)
+            let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 8192)
             return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
         case "session.markRead":
-            if let r = try liveSession(p.req("id")).markRead() { try store.save(r); notify("event.session", try .from(r)) }
+            if let r = existing(try p.req("id"))?.markRead() { try store.save(r); notify("event.session", try .from(r)) }
             return .null
         case "session.hook":
-            try liveSession(p.req("id")).hook(p.req("event")); return .null
+            let ls = try liveSession(p.req("id"))
+            if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
+            ls.hook(try p.req("event")); return .null
+        case "session.subagents":   // Claude Code subagents of a session, from its transcript folder
+            guard let t = existing(try p.req("id"))?.transcriptPath else { return .array([]) }
+            let dir = URL(fileURLWithPath: t).deletingPathExtension().appendingPathComponent("subagents")
+            let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            return .array(files.filter { $0.pathExtension == "jsonl" }.compactMap { f in
+                let mod = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let head = (try? FileHandle(forReadingFrom: f)).flatMap { h in try? h.read(upToCount: 16_384) } ?? Data()
+                var title = "Subagent"
+                for line in head.split(separator: 0x0A) {
+                    guard let v = try? JSONDecoder().decode(JSONValue.self, from: Data(line)), v["type"]?.string == "user" else { continue }
+                    let c = v["message"]?["content"]
+                    if let s = c?.string ?? c?.array?.first(where: { $0["type"]?.string == "text" })?["text"]?.string { title = String(s.prefix(80)); break }
+                }
+                return .obj(["id": .string(f.deletingPathExtension().lastPathComponent), "title": .string(title),
+                             "active": .bool(Date().timeIntervalSince(mod) < 15), "updated": .double(mod.timeIntervalSince1970)])
+            }.sorted { ($0["updated"].flatMap { if case .double(let d) = $0 { d } else { nil } } ?? 0) > ($1["updated"].flatMap { if case .double(let d) = $0 { d } else { nil } } ?? 0) })
 
         // MARK: git
         case "git.status": return try .from(Git.status(cwd(forWorktree: p.req("id")).path))

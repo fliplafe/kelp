@@ -24,12 +24,13 @@ extension Daemon {
             return .obj(["worktree": w, "session": try .from(s)])
 
         case "session.rename":
-            let ls = try liveSession(p.req("id")); let t = try p.req("title")
-            publish(ls.update { $0.title = t; $0.titleManual = !t.isEmpty })
+            let t = try p.req("title")
+            if let ls = existing(try p.req("id")) { publish(ls.update { $0.title = t; $0.titleManual = !t.isEmpty }) }
+            else if var s = try store.session(p.req("id")) { s.title = t; s.titleManual = !t.isEmpty; publish(s) }
             return .null
 
         case "session.annotate":   // local-model summary from the UI, optionally a better status guess
-            let ls = try liveSession(p.req("id"))
+            guard let ls = existing(try p.req("id")) else { return .null }
             if let sum = p["summary"]?.string { publish(ls.update { $0.summary = sum }) }
             if let st = p["status"]?.string.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
             return .null
@@ -40,7 +41,7 @@ extension Daemon {
 
         case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
-            (try? liveSession(old.id))?.pty.kill()
+            existing(old.id)?.pty.kill()
             let m = try manifest(old.agent == "custom" || old.agent == "shell" ? old.agent : old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             if p["resume"]?.bool != false, !m.resumeArgs.isEmpty, !old.argv.contains(where: m.resumeArgs.contains) { o.argv = old.argv + m.resumeArgs }
@@ -114,7 +115,7 @@ extension Daemon {
     }
 
     func liveSessionOrLog(_ id: String, bytes: Int) throws -> Data {
-        if let ls = try? liveSession(id) { return ls.tail(bytes) }
+        if let ls = existing(id) { return ls.tail(bytes) }
         let u = root.appendingPathComponent("history/\(id).log")
         guard let h = try? FileHandle(forReadingFrom: u) else { throw RPCError.invalidParams("no history for \(id)") }
         let size = (try? h.seekToEnd()) ?? 0

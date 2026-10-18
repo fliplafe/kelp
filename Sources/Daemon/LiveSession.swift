@@ -24,6 +24,10 @@ final class LiveSession: @unchecked Sendable {
     static let urlRegex = try! NSRegularExpression(pattern: #"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(:\d+)?[^\s\x1b'"]*"#)
 
     private let started = Date()
+    /// Claude Code transcript (from hook payloads): where its subagents' transcripts live.
+    var transcriptPath: String?
+    var idleSeconds: TimeInterval { lock.withLock { Date().timeIntervalSince(lastOutputAt ?? started) } }
+    var isAttached: Bool { lock.withLock { !attached.isEmpty } }
     private var lastOutputAt: Date?
     private var autoAnswers: [(NSRegularExpression, String)]
     private var pendingPrompt: String?
@@ -77,6 +81,7 @@ final class LiveSession: @unchecked Sendable {
 
     private func handleExit(_ code: Int32) {
         lock.lock()
+        if record.status == .hibernated { try? log?.close(); lock.unlock(); return }
         detector.exited()
         let changed = sync()
         try? log?.close()
@@ -136,6 +141,11 @@ final class LiveSession: @unchecked Sendable {
 
     func update(_ f: (inout Session) -> Void) -> Session {
         lock.lock(); f(&record); let r = record; lock.unlock(); return r
+    }
+
+    /// Hibernation: the PTY dies but the record says so, so the UI shows "Paused" instead of "Exited".
+    func markHibernated() -> Session {
+        lock.lock(); detector.override(.hibernated); record.status = .hibernated; let r = record; lock.unlock(); return r
     }
 
     func overrideStatus(_ s: AgentStatus) {

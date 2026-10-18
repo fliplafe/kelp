@@ -212,7 +212,12 @@ final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOu
         let t0 = Date()
         let f = OpenFile(path: rel, url: url, text: text, editable: size <= CodeEditor.readOnlyLimit)
         defer { if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] != nil { print("OPEN \(rel) lines=\(text.split(separator: "\n").count) in \(String(format: "%.0f", Date().timeIntervalSince(t0) * 1000)) ms") } }
-        f.editor.onChange = { [weak self, weak f] t in if let f { self?.scheduleSave(f); self?.lspChange(f, t); f.markdown?.textChanged() } }
+        let wid = worktree?.id ?? ""
+        f.editor.onChange = { [weak self, weak f] t in
+            guard let f else { return }
+            self?.scheduleSave(f); self?.lspChange(f, t); f.markdown?.textChanged()
+            if let line = f.editor.cursor?.line { Attribution.markHuman(worktree: wid, file: f.path, line: line) }
+        }
         f.editor.onSelection = { [weak self] in self?.updateProblems() }
         let rootPath = root, abs = url.path
         Task { [weak f] in

@@ -39,8 +39,10 @@ public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, Persistab
 
 public enum AgentStatus: String, Codable, Sendable {
     case idle, working, waiting, done, exited
+    /// Process stopped to save memory; resumes its conversation when opened again.
+    case hibernated
     public var label: String {
-        switch self { case .idle: "Idle"; case .working: "Working"; case .waiting: "Needs you"; case .done: "Done"; case .exited: "Exited" }
+        switch self { case .idle: "Idle"; case .working: "Working"; case .waiting: "Needs you"; case .done: "Done"; case .exited: "Exited"; case .hibernated: "Paused" }
     }
 }
 

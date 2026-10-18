@@ -11,6 +11,7 @@ struct GeneralSettings: View {
     @AppStorage("localAIEnabled") private var localAI = true
     @AppStorage("lspEnabled") private var lsp = true
     @State private var keepAwake = "agents"
+    @State private var hibernate = 0
 
     var body: some View {
         Form {
@@ -25,13 +26,22 @@ struct GeneralSettings: View {
                 Text("While agents work").tag("agents"); Text("Always").tag("always"); Text("Never").tag("off")
             }
             .onChange(of: keepAwake) { _, v in Task { await AppModel.shared.call("config.set", .obj(["keepAwake": .string(v)])) } }
+            Picker("Pause idle agents after", selection: $hibernate) {
+                Text("Never").tag(0); Text("15 minutes").tag(15); Text("30 minutes").tag(30); Text("1 hour").tag(60); Text("3 hours").tag(180)
+            }
+            .onChange(of: hibernate) { _, v in Task { await AppModel.shared.call("config.set", .obj(["hibernateMinutes": .int(v)])) } }
+            Text("Paused agents free their memory and resume the same conversation when you open them (Claude Code, Codex, OpenCode, Cursor).")
+                .font(.caption).foregroundStyle(.secondary)
             Toggle("On-device model for titles, branch names, summaries and drafts", isOn: $localAI)
             Text(LocalAI.isAvailable || !localAI ? "Runs locally with Apple Intelligence. Nothing leaves your Mac." : "Apple Intelligence is not available on this Mac; Krill uses simple fallbacks.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Language servers (errors, jump to definition, completion)", isOn: $lsp)
         }
         .formStyle(.grouped)
-        .task { keepAwake = (await AppModel.shared.call("config.get"))?["keepAwake"]?.string ?? "agents" }
+        .task {
+            let c = await AppModel.shared.call("config.get")
+            keepAwake = c?["keepAwake"]?.string ?? "agents"; hibernate = c?["hibernateMinutes"]?.int ?? 0
+        }
     }
 }
 

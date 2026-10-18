@@ -104,7 +104,12 @@ func plist() -> String {
             case "hook":   // inside an agent session: report status to the daemon
                 guard let id = ProcessInfo.processInfo.environment["KRILL_SESSION"], let ev = args.first else { fail("hook: needs KRILL_SESSION and an event") }
                 let c = try RPCClient(socket: ProcessInfo.processInfo.environment["KRILL_SOCKET"] ?? Paths.socket.path)
-                _ = try await c.call("session.hook", .obj(["id": .string(id), "event": .string(ev)]))
+                var p: [String: JSONValue] = ["id": .string(id), "event": .string(ev)]
+                // Claude Code hooks pass a JSON payload on stdin (session id, transcript path).
+                if isatty(0) == 0, let d = try? FileHandle.standardInput.readToEnd(), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
+                    if let t = v["transcript_path"]?.string { p["transcript"] = .string(t) }
+                }
+                _ = try await c.call("session.hook", .object(p))
             default:
                 let c = try connect()
                 try await run(cmd, c)

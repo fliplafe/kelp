@@ -160,3 +160,23 @@ final class NoteBox: @unchecked Sendable {
     let rs: Session = try await c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
     #expect(rs.cwd == s.cwd && rs.argv == s.argv && rs.title == "Mine")
 }
+
+@Test func hibernateAndWake() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("agents"), withIntermediateDirectories: true)
+    // A resumable fake agent: prints whether it was resumed.
+    try JSONEncoder().encode(AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", #"echo "STARTED $*"; sleep 30"#, "x"], resumeArgs: ["--resume"]))
+        .write(to: root.appendingPathComponent("agents/sleepy.json"))
+    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "h", "setup": false]), as: Worktree.self)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
+    _ = try await c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))   // ~2 s
+    #expect(try await waitFor(15) { try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated })
+    // Opening it again resumes the same session id with the resume flag.
+    let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
+    _ = try await c.call("config.set", .obj(["hibernateMinutes": 0]))
+    _ = try await c.call("session.attach", .obj(["id": .string(s.id)]))
+    #expect(try await waitFor(10) { box.output(s.id).contains("STARTED") && box.output(s.id).contains("--resume") })
+    #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status != .hibernated)
+}

@@ -61,6 +61,8 @@ final class WorkspaceViewController: NSViewController, NSTabViewDelegate {
     var currentSessionId: String? { focused ?? state?.tabs[safe: state?.selected ?? 0]?.root.sessions.first }
 
     func show(worktree id: String?) {
+        // Panes of other worktrees let go of their sessions (detach), so idle agents there can hibernate.
+        for (sid, _) in panes where AppModel.shared.session(sid)?.worktreeId != id { panes[sid] = nil }
         currentKey = id
         guard let id else { tabView.isHidden = true; placeholder.isHidden = false; return }
         let st = states[id] ?? WorkspaceState(key: id)

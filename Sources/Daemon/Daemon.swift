@@ -28,9 +28,11 @@ public final class Daemon: @unchecked Sendable {
         self.socketPath = root.appendingPathComponent("krill.sock").path
         self.extra = extra
         if let d = try? Data(contentsOf: root.appendingPathComponent("config.json")), case .object(let o)? = try? JSONDecoder().decode(JSONValue.self, from: d) { config = o }
-        // Sessions from a previous daemon run lost their PTYs.
+        // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
         for var s in (try? self.store.sessions()) ?? [] where s.status != .exited {
-            s.status = .exited; try? self.store.save(s)
+            let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
+            s.status = (m?.resumeArgs.isEmpty == false) ? .hibernated : .exited
+            try? self.store.save(s)
         }
     }
 
@@ -45,7 +47,7 @@ public final class Daemon: @unchecked Sendable {
         acceptSource = src
         let t = DispatchSource.makeTimerSource(queue: .global())
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake() }
+        t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle() }
         t.resume(); ticker = t
     }
     private var acceptSource: DispatchSourceRead?
@@ -95,10 +97,12 @@ public final class Daemon: @unchecked Sendable {
 
     // MARK: sessions
 
+    /// A running session, without waking a paused one.
+    func existing(_ id: String) -> LiveSession? { lock.withLock { live[id] } }
+
     func liveSession(_ id: String) throws -> LiveSession {
-        lock.lock(); defer { lock.unlock() }
-        guard let s = live[id] else { throw RPCError.invalidParams("no live session \(id)") }
-        return s
+        if let s = lock.withLock({ live[id] }) { return s }
+        return try wake(id)   // paused sessions wake on first use
     }
 
     struct Launch {
@@ -162,6 +166,44 @@ public final class Daemon: @unchecked Sendable {
         return nil
     }
 
+    /// Pause agents that have sat idle (done / waiting) for `hibernateMinutes` with nobody watching.
+    func hibernateIdle() {
+        let minutes: Double = { switch config["hibernateMinutes"] { case .int(let i)?: Double(i); case .double(let d)?: d; default: 0 } }()
+        guard minutes > 0 else { return }
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        let candidates = lock.withLock { Array(live.values) }.filter { ls in
+            let s = ls.snapshot
+            guard [.done, .waiting, .idle].contains(s.status), !ls.isAttached, ls.idleSeconds > minutes * 60 else { return false }
+            return manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
+        }
+        for ls in candidates {
+            let s = ls.markHibernated()
+            ls.pty.kill()
+            lock.withLock { live[s.id] = nil }
+            publish(s)
+        }
+    }
+
+    /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
+    func wake(_ id: String) throws -> LiveSession {
+        guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
+        let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
+        var argv = rec.argv
+        if !m.resumeArgs.isEmpty, !argv.contains(where: m.resumeArgs.contains) { argv += m.resumeArgs }
+        var env = m.env
+        env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
+        env["PATH"] = [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
+        rec.status = .idle
+        let ls = try LiveSession(record: rec, manifest: m, argv: argv, env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
+        ls.onOutput = { [weak self] id, data, subs in
+            self?.notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: subs)
+        }
+        ls.onStatus = { [weak self] s in self?.publish(s) }
+        lock.withLock { live[rec.id] = ls }
+        publish(ls.snapshot)
+        return ls
+    }
+
     func publish(_ s: Session) {
         try? store.save(s)
         if let v = try? JSONValue.from(s) { notify("event.session", v) }
@@ -169,7 +211,7 @@ public final class Daemon: @unchecked Sendable {
 
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.
     func autoTitle(session id: String, prompt: String) async {
-        guard let ls = try? liveSession(id), !ls.snapshot.titleManual else { return }
+        guard let ls = existing(id), !ls.snapshot.titleManual else { return }
         let naming = await LocalAI.naming(for: prompt)
         let title = naming?.title ?? Fallback.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }

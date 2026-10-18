@@ -121,6 +121,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         diffs = (try? await AppModel.shared.client?.call("git.diff", srcParams(), as: [FileDiff].self)) ?? []
         changes = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
         comments = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
+        humanLines = Dictionary(uniqueKeysWithValues: diffs.map { ($0.path, Attribution.humanLines(worktree: wid, file: $0.path)) })
         files.reloadData(); rebuildRows()
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         status.stringValue = "\(diffs.count) files  +\(add) −\(del)  ·  \(comments.filter { $0.state == .open }.count) open comments"
@@ -177,19 +178,31 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             case .line(let f, let l):
                 switch id {
                 case "on": return label(l.oldLine.map(String.init) ?? "", font: font, color: .tertiaryLabelColor, align: .right)
-                case "nn": return label(l.newLine.map(String.init) ?? "", font: font, color: .tertiaryLabelColor, align: .right)
+                case "nn": return attributed(l, file: f)
                 default: return codeCell(l, ext: ext(f))
                 }
             case .pair(let f, let l, let r):
                 switch id {
                 case "on": return label(l?.oldLine.map(String.init) ?? "", font: font, color: .tertiaryLabelColor, align: .right)
-                case "nn": return label(r?.newLine.map(String.init) ?? "", font: font, color: .tertiaryLabelColor, align: .right)
+                case "nn": return r.map { attributed($0, file: f) } ?? label("", font: font)
                 case "l": return l.map { codeCell($0, ext: ext(f)) } ?? label("", font: font)
                 default: return r.map { codeCell($0, ext: ext(f)) } ?? label("", font: font)
                 }
             }
         }
     }
+    /// New-side line number; added lines show who wrote them (agent ✦ / you).
+    private func attributed(_ l: DiffLine, file f: Int) -> NSTextField {
+        let n = l.newLine.map(String.init) ?? ""
+        guard l.kind == .add, let line = l.newLine, hasAgent else { return label(n, font: font, color: .tertiaryLabelColor, align: .right) }
+        let human = humanLines[diffs[f].path, default: []].contains(line)
+        let t = label(human ? n : "✦ " + n, font: font, color: human ? .tertiaryLabelColor : .systemPurple, align: .right)
+        t.toolTip = human ? "Edited by you" : "Written by an agent"
+        return t
+    }
+    private var hasAgent: Bool { AppModel.shared.sessions.contains { $0.worktreeId == worktreeId && $0.agent != "shell" && $0.agent != "custom" } }
+    private var humanLines: [String: Set<Int>] = [:]
+
     private func ext(_ f: Int) -> String { (diffs[f].path as NSString).pathExtension }
 
     private func label(_ s: String, font: NSFont, color: NSColor = .labelColor, align: NSTextAlignment = .left) -> NSTextField {

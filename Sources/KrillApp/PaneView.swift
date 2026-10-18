@@ -158,6 +158,7 @@ final class PaneView: NSView, NSDraggingSource {
         case .done: .systemGreen
         case .idle: .systemGray
         case .exited: .systemRed
+        case .hibernated: .systemIndigo
         }
         dot.layer?.backgroundColor = color.cgColor
         dot.toolTip = s.status.label

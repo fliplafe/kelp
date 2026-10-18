@@ -14,6 +14,9 @@ final class AppModel {
     var agents: [AgentManifest] = AgentManifest.load()
 
     var onChange: [() -> Void] = []
+    /// Claude Code subagents per session (title, active), polled while the parent works.
+    var subagents: [String: [(title: String, active: Bool)]] = [:]
+    private var subagentTimer: Timer?
     var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
     private var outputHandlers: [String: (Data) -> Void] = [:]
 
@@ -73,6 +76,22 @@ final class AppModel {
         let p = Process(); p.executableURL = dir.appendingPathComponent("krilld")
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
         try? p.run()
+    }
+
+    func startSubagentPolling() {
+        subagentTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
+            MainActor.assumeIsolated { Task { await AppModel.shared.pollSubagents() } }
+        }
+    }
+    private func pollSubagents() async {
+        var changed = false
+        for s in sessions where s.agent == "claude" && (s.status == .working || subagents[s.id] != nil) {
+            let list = ((try? await client?.call("session.subagents", .obj(["id": .string(s.id)])).array) ?? [])
+                .map { (title: $0["title"]?.string ?? "Subagent", active: $0["active"]?.bool ?? false) }
+            let old = subagents[s.id] ?? []
+            if old.map(\.title) != list.map(\.title) || old.map(\.active) != list.map(\.active) { subagents[s.id] = list.isEmpty ? nil : list; changed = true }
+        }
+        if changed { onChange.forEach { $0() } }
     }
 
     func refresh() async {
