@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if content.currentMode == "Browser" { content.browser.closeTab(); return }
         if let s = content.workspace.currentSessionId { content.workspace.close(pane: s) }
     }
+    @objc func showTasks() { content.select(named: "Tasks") }
     @objc func showBrowser() { content.select(named: "Browser") }
     @objc func toggleDesign() { content.select(named: "Browser"); content.browser.toggleDesign() }
     @objc func showFiles() { content.select(named: "Files") }
@@ -253,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Review Changes", #selector(showReview), "r", [.command, .shift])
         _ = item(view, "Files", #selector(showFiles), "e", [.command, .shift])
         _ = item(view, "Browser", #selector(showBrowser), "b", [.command, .shift])
+        _ = item(view, "Tasks (GitHub & Linear)", #selector(showTasks), "i", [.command, .shift])
         _ = item(view, "Design Mode", #selector(toggleDesign), "d", [.command, .control])
         view.addItem(.separator())
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i }

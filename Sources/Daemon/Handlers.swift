@@ -13,7 +13,11 @@ extension JSONValue {
 extension Daemon {
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if let e = extra[method] { return try await e(self, p) }
-        do { if let r = try await handleAsync(method, p, conn: conn) { return r } }
+        do {
+            if let r = try await handleAsync(method, p, conn: conn) { return r }
+            if method.hasPrefix("github.") || method.hasPrefix("linear.") || method == "task.fromIssue",
+               let r = try await handleIntegration(method, p, conn: conn) { return r }
+        }
         catch let e as GitError { throw RPCError.internalError(e.description) }
         do { return try handleSync(method, p, conn: conn) }
         catch let e as GitError { throw RPCError.internalError(e.description) }

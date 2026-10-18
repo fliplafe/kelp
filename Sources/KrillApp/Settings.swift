@@ -114,6 +114,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             AgentsSettings().tabItem { Label("Agents", systemImage: "cpu") }
             AccountsSettings().tabItem { Label("Accounts", systemImage: "person.2") }
+            IntegrationsSettings().tabItem { Label("Integrations", systemImage: "link") }
             QuickCommandsSettings().tabItem { Label("Commands", systemImage: "bolt") }
             AppearanceSettings().tabItem { Label("Appearance", systemImage: "paintpalette") }
             ForEach(extraTabs, id: \.0) { t in t.2.tabItem { Label(t.0, systemImage: t.1) } }

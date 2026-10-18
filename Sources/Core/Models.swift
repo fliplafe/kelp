@@ -22,9 +22,17 @@ public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, Persistab
     public var note: String
     public var archived: Bool
     public var createdAt: Date
-    public init(id: String = UUID().uuidString, repoId: String, branch: String, path: String, note: String = "", archived: Bool = false, createdAt: Date = Date()) {
+    /// Links to the task it came from and the PR it became: "#123" / "ENG-123".
+    public var issue: String
+    public var issueURL: String
+    public var linearIssueId: String
+    public var prNumber: Int?
+    public var prURL: String
+    public init(id: String = UUID().uuidString, repoId: String, branch: String, path: String, note: String = "", archived: Bool = false, createdAt: Date = Date(),
+                issue: String = "", issueURL: String = "", linearIssueId: String = "", prNumber: Int? = nil, prURL: String = "") {
         self.id = id; self.repoId = repoId; self.branch = branch; self.path = path
         self.note = note; self.archived = archived; self.createdAt = createdAt
+        self.issue = issue; self.issueURL = issueURL; self.linearIssueId = linearIssueId; self.prNumber = prNumber; self.prURL = prURL
     }
     public static let databaseTableName = "worktree"
 }

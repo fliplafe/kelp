@@ -19,7 +19,7 @@ let package = Package(
         .target(name: "Core", dependencies: [.product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "GitKit", dependencies: ["Core"]),
         .target(name: "Agents", dependencies: ["Core"]),
-        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "LocalAI"]),
+        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "LocalAI", "Integrations"]),
         .target(name: "TerminalKit", dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm"), "Core"]),
         .executableTarget(name: "krilld", dependencies: ["Daemon"]),
         .executableTarget(name: "krill", dependencies: ["Core"]),

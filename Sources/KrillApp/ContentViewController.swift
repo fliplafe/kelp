@@ -8,13 +8,14 @@ final class ContentViewController: NSViewController {
     let diff = DiffViewController()
     let files = FilesViewController()
     let browser = BrowserViewController()
+    let tasks = TasksViewController()
     private var modes: [(String, NSViewController)] = []
     private let bar = NSSegmentedControl()
     private let host = NSView()
     private(set) var worktreeId: String?
 
     override func loadView() {
-        modes = [("Terminals", workspace), ("Review", diff), ("Files", files), ("Browser", browser)]
+        modes = [("Terminals", workspace), ("Review", diff), ("Files", files), ("Browser", browser), ("Tasks", tasks)]
         bar.segmentCount = modes.count
         for (i, m) in modes.enumerated() { bar.setLabel(m.0, forSegment: i) }
         bar.selectedSegment = 0; bar.target = self; bar.action = #selector(modeChanged); bar.segmentStyle = .texturedRounded

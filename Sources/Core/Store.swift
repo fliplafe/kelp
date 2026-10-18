@@ -43,6 +43,15 @@ public final class Store: @unchecked Sendable {
                 t.add(column: "argv", .jsonText).notNull().defaults(to: "[]")
             }
         }
+        m.registerMigration("v3") { db in
+            try db.alter(table: "worktree") { t in
+                t.add(column: "issue", .text).notNull().defaults(to: "")
+                t.add(column: "issueURL", .text).notNull().defaults(to: "")
+                t.add(column: "linearIssueId", .text).notNull().defaults(to: "")
+                t.add(column: "prNumber", .integer)
+                t.add(column: "prURL", .text).notNull().defaults(to: "")
+            }
+        }
         try m.migrate(db)
     }
 

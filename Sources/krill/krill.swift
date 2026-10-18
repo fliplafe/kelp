@@ -18,7 +18,8 @@ usage: krill <command>
   fanout <prompt> --agents claude,codex [--repo id]
   hook <working|waiting|done>          (called by agent hooks inside a session)
   install | uninstall                  launchd agent for the daemon
-  github prs|issues|checks|pr-create|pr-merge   linear tasks|task-worktree|status
+  github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
+  linear login <key> | tasks | start <ENG-123>
 """
 
 func fail(_ m: String) -> Never { FileHandle.standardError.write(Data((m + "\n").utf8)); exit(1) }
@@ -196,11 +197,47 @@ func plist() -> String {
             let agents = (flag("--agents") ?? "claude").split(separator: ",").map { JSONValue.string(String($0)) }
             let repo = try await currentRepoID(c)
             show(try await c.call("fanout.start", .obj(["repoId": .string(repo), "prompt": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "agents": .array(agents)])))
-        case ("github", _), ("linear", _):
-            var p: [String: JSONValue] = ["args": .array(args.map { .string($0) })]
-            if let w = try? await currentWorktree(c) { p["worktreeId"] = w["id"] }
-            if let r = flag("--repo") { p["repoId"] = .string(r) }
-            show(try await c.call("\(cmd).\(sub ?? "help")", .object(p)))
+        case ("github", "prs"), ("github", "issues"):
+            var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
+            if let f = flag("--filter") { p["filter"] = .string(f) }
+            for x in try await c.call("github.\(sub!)", .object(p)).array ?? [] {
+                print("#\(x["number"]?.int ?? 0)  \(x["title"]?.string ?? "")  \(x["url"]?.string ?? "")")
+            }
+        case ("github", "checks"):
+            let w = try await currentWorktree(c)
+            let pr = args.first.flatMap(Int.init) ?? w["prNumber"]?.int ?? 0
+            for x in try await c.call("github.checks", .obj(["worktreeId": w["id"] ?? .null, "pr": .int(pr)])).array ?? [] {
+                print("\(x["bucket"]?.string ?? "")\t\(x["name"]?.string ?? "")\t\(x["link"]?.string ?? "")")
+            }
+        case ("github", "pr-create"):
+            let w = try await currentWorktree(c)
+            var p: [String: JSONValue] = ["worktreeId": w["id"] ?? .null]
+            if let t = flag("--title") { p["title"] = .string(t) }
+            if has("--draft") { p["draft"] = true }
+            show(try await c.call("github.pr-create", .object(p))["url"] ?? .null)
+        case ("github", "pr-merge"):
+            show(try await c.call("github.pr-merge", .obj(["worktreeId": try await currentWorktree(c)["id"] ?? .null, "method": .string(flag("--method") ?? "squash")])))
+        case ("github", "issue"), ("linear", "start"):   // krill github issue 123 | krill linear start ENG-123
+            let repo = try await currentRepoID(c)
+            guard let ref = args.first else { fail("issue number / identifier required") }
+            var p: [String: JSONValue] = ["repoId": .string(repo), "agent": .string(flag("--agent") ?? "claude")]
+            if cmd == "github" {
+                let n = Int(ref.trimmingCharacters(in: CharacterSet(charactersIn: "#"))) ?? 0
+                guard let i = (try await c.call("github.issues", .obj(["repoId": .string(repo)])).array ?? []).first(where: { $0["number"]?.int == n }) else { fail("issue #\(n) not found among open issues") }
+                p["ref"] = .string("#\(n)"); p["title"] = i["title"] ?? ""; p["body"] = i["body"] ?? ""; p["url"] = i["url"] ?? ""
+            } else {
+                guard let i = (try await c.call("linear.issues").array ?? []).first(where: { $0["identifier"]?.string?.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
+                p["ref"] = i["identifier"] ?? ""; p["title"] = i["title"] ?? ""; p["body"] = i["description"] ?? ""; p["url"] = i["url"] ?? ""; p["linearId"] = i["id"] ?? ""
+            }
+            let r = try await c.call("task.fromIssue", .object(p))
+            print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")")
+        case ("linear", "tasks"):
+            for x in try await c.call("linear.issues").array ?? [] {
+                print("\(x["identifier"]?.string ?? "")  [\(x["state"]?["name"]?.string ?? "")]  \(x["title"]?.string ?? "")")
+            }
+        case ("linear", "login"):
+            guard let k = args.first else { fail("linear login <api-key>") }
+            show(try await c.call("linear.setKey", .obj(["key": .string(k)])))
         default: print(usage)
         }
     }
