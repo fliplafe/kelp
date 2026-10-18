@@ -6,7 +6,32 @@ import Core
 public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public struct AutoAnswer: Codable, Sendable, Equatable {
         public var pattern: String; public var input: String
-        public init(pattern: String, input: String) { self.pattern = pattern; self.input = input }
+        /// For arrow-key menus: regex of the option to pick; the keys are computed from where the cursor (❯ / >) is.
+        public var choose: String?
+        public init(pattern: String, input: String, choose: String? = nil) { self.pattern = pattern; self.input = input; self.choose = choose }
+
+        /// Text of the option under a TUI menu's cursor. TUIs redraw only changed lines, so it's what follows the last ❯ in the stream.
+        public static func optionAtCursor(_ screen: String) -> String? {
+            guard let mark = screen.range(of: "❯", options: .backwards) ?? screen.range(of: "›", options: .backwards) else { return nil }
+            // split on isNewline: "\r\n" is a single Character, so splitting on "\n" alone would glue options together
+            return String(screen[mark.upperBound...].prefix(80).split(whereSeparator: \.isNewline).first ?? "").trimmingCharacters(in: .whitespaces)
+        }
+
+        /// Keys that move a TUI menu's cursor onto the option matching `choose` and confirm it. nil if no menu is visible yet.
+        public static func menuKeys(screen: String, choose: String) -> String? {
+            guard let re = try? NSRegularExpression(pattern: choose) else { return nil }
+            let lines = screen.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard let cur = lines.lastIndex(where: { $0.hasPrefix("❯") || $0.hasPrefix(">") || $0.hasPrefix("›") }) else { return nil }
+            // The menu is the run of non-empty lines around the cursor line.
+            var lo = cur, hi = cur
+            while lo > 0, !lines[lo - 1].isEmpty { lo -= 1 }
+            while hi + 1 < lines.count, !lines[hi + 1].isEmpty { hi += 1 }
+            let match = { (l: String) in re.firstMatch(in: l, range: NSRange(l.startIndex..., in: l)) != nil }
+            // Options, not the question above them; the nearest match to the cursor wins.
+            guard let target = (lo...hi).filter({ !lines[$0].hasSuffix("?") && match(lines[$0]) }).min(by: { abs($0 - cur) < abs($1 - cur) }) else { return nil }
+            let step = target - cur
+            return String(repeating: step > 0 ? "\u{1B}[B" : "\u{1B}[A", count: abs(step)) + "\r"
+        }
     }
 
     public var id: String
@@ -77,7 +102,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         return a
     }
 
-    static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|allow .* to work in this folder)"#, input: "\r")
+    static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|one you trust|allow .* to work in this folder)"#, input: "\r",
+                                  choose: #"(?i)(yes|trust|allow|proceed)"#)
 
     public static let presets: [AgentManifest] = [
         .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",

@@ -132,3 +132,23 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(IssueRef.parse(fromBranch: "v2-release") == nil)
     #expect(IssueRef.parse(fromBranch: "123abc") == nil)
 }
+
+@Test func jiraParsing() throws {
+    let search = #"{"issues":[{"key":"ENG-7","fields":{"summary":"Fix login","status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"issuetype":{"name":"Bug"},"project":{"key":"ENG"},"description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Steps:"}]},{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"open app"}]}]}]}]}}}]}"#
+    let issues = try JiraClient.parseSearch(Data(search.utf8), site: "https://acme.atlassian.net/")
+    #expect(issues.count == 1)
+    #expect(issues[0].key == "ENG-7" && issues[0].statusCategory == "indeterminate" && issues[0].url == "https://acme.atlassian.net/browse/ENG-7")
+    #expect(issues[0].description.contains("Steps:") && issues[0].description.contains("- open app"))
+    let tr = #"{"transitions":[{"id":"31","name":"In Review","to":{"statusCategory":{"key":"indeterminate"}}},{"id":"41","name":"Done","to":{"statusCategory":{"key":"done"}}}]}"#
+    let ts = try JiraClient.parseTransitions(Data(tr.utf8))
+    #expect(ts.map(\.id) == ["31", "41"] && ts[1].toCategory == "done")
+}
+
+@Test func bitbucketParsing() throws {
+    #expect(BitbucketClient.slug(remote: "git@bitbucket.org:team/repo.git")! == ("team", "repo"))
+    #expect(BitbucketClient.slug(remote: "https://user@bitbucket.org/team/repo")! == ("team", "repo"))
+    #expect(BitbucketClient.slug(remote: "git@github.com:a/b.git") == nil)
+    let prs = #"{"values":[{"id":12,"title":"Add API","state":"OPEN","draft":false,"author":{"display_name":"Ann"},"source":{"branch":{"name":"feat/api"}},"links":{"html":{"href":"https://bitbucket.org/team/repo/pull-requests/12"}}}]}"#
+    let p = try BitbucketClient.parsePullRequests(Data(prs.utf8))
+    #expect(p.count == 1 && p[0].number == 12 && p[0].headRefName == "feat/api" && p[0].author == "Ann")
+}

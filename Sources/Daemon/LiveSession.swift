@@ -29,15 +29,17 @@ final class LiveSession: @unchecked Sendable {
     var idleSeconds: TimeInterval { lock.withLock { Date().timeIntervalSince(lastOutputAt ?? started) } }
     var isAttached: Bool { lock.withLock { !attached.isEmpty } }
     private var lastOutputAt: Date?
-    private var autoAnswers: [(NSRegularExpression, String)]
+    private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     private var pendingPrompt: String?
+    /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
+    private var steering: (choose: NSRegularExpression, since: Date, lastKey: Date)?
     private var inputLine = ""
     private var sawFirstPrompt = false
 
     init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16) throws {
         var rec = record
         detector = StatusDetector(manifest: manifest)
-        autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a.input) } }
+        autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
         try Paths.ensure(historyDir)
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -61,7 +63,12 @@ final class LiveSession: @unchecked Sendable {
         if !autoAnswers.isEmpty, Date().timeIntervalSince(started) < 90 {
             let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
             let r = NSRange(tail.startIndex..., in: tail)
-            if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) { answer = autoAnswers[i].1; autoAnswers.remove(at: i) }
+            if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) {
+                let a = autoAnswers[i].1
+                if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
+                    steering = (re, Date(), .distantPast); autoAnswers.remove(at: i)   // closed loop, see steer()
+                } else { answer = a.input; autoAnswers.remove(at: i) }
+            }
         }
         var url: String?
         if !sawURL, onLocalURL != nil {
@@ -99,6 +106,7 @@ final class LiveSession: @unchecked Sendable {
     }
 
     func tick() {
+        steer()
         lock.lock(); detector.tick(); let c = sync()
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
         var prompt: String?
@@ -109,6 +117,22 @@ final class LiveSession: @unchecked Sendable {
         lock.unlock()
         if let c { onStatus?(c) }
         if let prompt { send(prompt, enter: true) }
+    }
+
+    /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
+    private func steer() {
+        lock.lock()
+        guard let st = steering else { lock.unlock(); return }
+        if Date().timeIntervalSince(st.since) > 30 { steering = nil; lock.unlock(); return }
+        guard Date().timeIntervalSince(st.lastKey) > 0.7 else { lock.unlock(); return }
+        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
+        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { lock.unlock(); return }
+        let onTarget = st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil
+        let key: String
+        if onTarget { key = "\r"; steering = nil }
+        else { key = "\u{1B}[B"; steering?.lastKey = Date() }   // menus wrap, so stepping down always reaches it
+        lock.unlock()
+        pty.write(Data(key.utf8))
     }
 
     func queuePrompt(_ p: String) { lock.lock(); pendingPrompt = p; sawFirstPrompt = true; lock.unlock() }

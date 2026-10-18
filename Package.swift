@@ -1,5 +1,9 @@
 // swift-tools-version:6.0
 import PackageDescription
+import Foundation
+
+/// libghostty is built locally by scripts/build-ghostty.sh (too big for git); its targets exist only when it's there.
+let hasGhostty = FileManager.default.fileExists(atPath: Context.packageDirectory + "/Vendor/GhosttyKit.xcframework")
 
 let package = Package(
     name: "Krill",
@@ -46,3 +50,18 @@ let package = Package(
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
     ]
 )
+
+if hasGhostty {
+    package.targets += [
+        .binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework"),
+        .executableTarget(
+            name: "GhosttyProbe",
+            dependencies: ["GhosttyKit"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("Metal"), .linkedFramework("MetalKit"), .linkedFramework("QuartzCore"), .linkedFramework("CoreText"),
+                             .linkedFramework("CoreGraphics"), .linkedFramework("IOSurface"), .linkedFramework("Carbon"), .linkedFramework("AppKit"),
+                             .linkedFramework("UniformTypeIdentifiers"), .linkedLibrary("c++")]
+        ),
+    ]
+    package.products.append(.executable(name: "GhosttyProbe", targets: ["GhosttyProbe"]))
+}

@@ -47,6 +47,8 @@ public struct StatusDetector: Sendable {
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
     public static func stripANSI(_ s: String) -> String {
-        s.replacingOccurrences(of: #"\u{1B}\[[0-9;?]*[ -/]*[@-~]|\u{1B}\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\)"#, with: "", options: .regularExpression)
+        // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.
+        s.replacingOccurrences(of: #"\x{1B}\[\d*[GC]"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]"#, with: "", options: .regularExpression)
     }
 }

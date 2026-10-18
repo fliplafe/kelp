@@ -38,7 +38,8 @@ public final class PTY: @unchecked Sendable {
         posix_spawnattr_setsigmask(&attr, &none)
         posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
 
-        var e = ProcessInfo.processInfo.environment.merging(env) { $1 }
+        // Don't leak the environment of whatever started the daemon (e.g. an agent's session markers) into new sessions.
+        var e = ProcessInfo.processInfo.environment.filter { k, _ in !Self.scrubbed.contains { k.hasPrefix($0) } }.merging(env) { $1 }
         e["TERM"] = "xterm-256color"; e["COLORTERM"] = "truecolor"
         let cargv = (argv.map { strdup($0) } + [nil]) as [UnsafeMutablePointer<CChar>?]
         let cenv = (e.map { strdup("\($0)=\($1)") } + [nil]) as [UnsafeMutablePointer<CChar>?]
@@ -79,6 +80,8 @@ public final class PTY: @unchecked Sendable {
         close(master)
         onExit?(status)
     }
+
+    static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KRILL_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
     public func write(_ d: Data) { Unix.writeAll(master, d) }
     public func resize(cols: UInt16, rows: UInt16) {
