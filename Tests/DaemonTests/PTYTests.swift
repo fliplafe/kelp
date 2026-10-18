@@ -1,4 +1,5 @@
 import Foundation
+import Core
 import Testing
 @testable import Daemon
 
@@ -37,4 +38,10 @@ final class Box: @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(600))
     #expect(box.text.contains("20 50"), "\(box.text.debugDescription)")
     p.kill()
+}
+
+/// Agents are found on the login-shell PATH even when the daemon itself started with a bare one (from Finder).
+@Test func loginPathFindsToolsAndExplainsMisses() throws {
+    #expect(try LoginPath.resolve("git").hasSuffix("/git"))
+    #expect(throws: RPCError.self) { try LoginPath.resolve("krill-no-such-agent-cli") }
 }

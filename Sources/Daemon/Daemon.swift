@@ -39,7 +39,20 @@ public final class Daemon: @unchecked Sendable {
         }
     }
 
+    /// `krill` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
+    var childPath: String {
+        [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", LoginPath.value].filter { !$0.isEmpty }.joined(separator: ":")
+    }
+
+    /// When this binary was built; the app compares it with the krilld it ships to spot a stale daemon after an update.
+    static let binaryMTime: Double = {
+        let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        return (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+    }()
+
     public func start() throws {
+        _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one
+        DispatchQueue.global().async { _ = LoginPath.value }   // warm up so the first agent doesn't wait for the shell
         listenFD = try Unix.listen(socketPath)
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: .global())
         src.setEventHandler { [self] in
@@ -131,7 +144,7 @@ public final class Daemon: @unchecked Sendable {
 
     func notify(_ method: String, _ params: JSONValue, to only: Set<Int>? = nil) {
         guard let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
-        lock.lock(); let targets = conns.filter { !rawConns.contains($0.key) && (only == nil || only!.contains($0.key)) }.map(\.value); lock.unlock()
+        lock.lock(); let targets = conns.filter { !rawConns.contains($0.key) && only?.contains($0.key) != false }.map(\.value); lock.unlock()
         targets.forEach { Unix.writeAll($0, d) }
     }
 
@@ -178,9 +191,8 @@ public final class Daemon: @unchecked Sendable {
         var env = manifest.env
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
-        let binDir = Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
-        env["PATH"] = [binDir, ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
-        let ls = try LiveSession(record: rec, manifest: manifest, argv: argv, env: env,
+        env["PATH"] = childPath
+        let ls = try LiveSession(record: rec, manifest: manifest, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
         rec = ls.snapshot
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
@@ -209,7 +221,13 @@ public final class Daemon: @unchecked Sendable {
 
     /// Pause agents that have sat idle (done / waiting) for `hibernateMinutes` with nobody watching.
     func hibernateIdle() {
-        let minutes: Double = { switch config["hibernateMinutes"] { case .int(let i)?: Double(i); case .double(let d)?: d; default: 0 } }()
+        let minutes: Double = {
+            switch config["hibernateMinutes"] {
+            case .int(let i)?: Double(i)
+            case .double(let d)?: d
+            default: 0
+            }
+        }()
         guard minutes > 0 else { return }
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         let candidates = lock.withLock { Array(live.values) }.filter { ls in
@@ -233,9 +251,9 @@ public final class Daemon: @unchecked Sendable {
         if !m.resumeArgs.isEmpty, !argv.contains(where: m.resumeArgs.contains) { argv += m.resumeArgs }
         var env = m.env
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
-        env["PATH"] = [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
+        env["PATH"] = childPath
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: m, argv: argv, env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
+        let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
         lock.withLock { live[rec.id] = ls }

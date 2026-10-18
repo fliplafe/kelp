@@ -16,7 +16,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
     private let base = NSPopUpButton()
     private let name = NSTextField()
     private let yolo = NSButton(checkboxWithTitle: "Skip permission prompts", target: nil, action: nil)
-    private let status = NSTextField(labelWithString: "")
+    private let status = NSTextField(wrappingLabelWithString: "")
     private let spinner = NSProgressIndicator()
     private let create = NSButton(title: "Create Workspace", target: nil, action: nil)
     private let agents = AgentCatalog.installed(AppModel.shared.agents)
@@ -83,12 +83,14 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
         name.translatesAutoresizingMaskIntoConstraints = false; name.widthAnchor.constraint(equalToConstant: 260).isActive = true
 
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
-        status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 12); status.lineBreakMode = .byTruncatingTail
+        status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 12); status.isSelectable = true
+        status.isHidden = true
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped)); cancel.keyEquivalent = "\u{1b}"
         create.target = self; create.action = #selector(createTapped); create.keyEquivalent = "\r"; create.bezelStyle = .push
-        let footer = NSStackView(views: [spinner, status, NSView(), cancel, create]); footer.spacing = 8
+        let progress = NSStackView(views: [spinner, status]); progress.spacing = 8; progress.alignment = .top; progress.isHidden = true
+        let footer = NSStackView(views: [NSView(), cancel, create]); footer.spacing = 8
 
-        let stack = NSStackView(views: [title, sub, scroll, grid, footer])
+        let stack = NSStackView(views: [title, sub, scroll, grid, progress, footer])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 20, right: 24)
         stack.setCustomSpacing(4, after: title); stack.setCustomSpacing(18, after: grid)
@@ -100,6 +102,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
             root.widthAnchor.constraint(equalToConstant: 560),
             scroll.heightAnchor.constraint(equalToConstant: 110), scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             sub.widthAnchor.constraint(equalTo: scroll.widthAnchor), footer.widthAnchor.constraint(equalTo: scroll.widthAnchor),
+            progress.widthAnchor.constraint(equalTo: scroll.widthAnchor),
             placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 11), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 9),
             placeholder.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -11)
         ])
@@ -142,7 +145,7 @@ final class WorkspaceComposer: NSObject, NSTextViewDelegate {
     @objc private func createTapped() {
         guard !busy, let r = repo else { return }
         busy = true; create.isEnabled = false; spinner.startAnimation(nil)
-        status.textColor = .secondaryLabelColor
+        status.textColor = .secondaryLabelColor; status.isHidden = false; status.superview?.isHidden = false
         let text = task.string.trimmingCharacters(in: .whitespacesAndNewlines)
         status.stringValue = text.isEmpty || !name.stringValue.isEmpty ? "Creating branch and checkout…" : "Naming the branch on-device…"
         if makeDefault.state == .on { UserDefaults.standard.set(agentId, forKey: "defaultAgent") }

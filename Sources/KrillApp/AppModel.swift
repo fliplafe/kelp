@@ -36,7 +36,9 @@ final class AppModel {
     }
 
     private var restartAttempted = false
-    private var bundledDaemon: URL { Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("krilld") }
+    /// Where krilld and krill sit next to the app binary.
+    private var binDir: URL { (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).deletingLastPathComponent() }
+    private var bundledDaemon: URL { binDir.appendingPathComponent("krilld") }
 
     /// After an app update the running daemon may be older. Restart it right away when no agent is running;
     /// otherwise ask, because restarting ends running sessions. Returns true when a restart is in progress.
@@ -46,7 +48,8 @@ final class AppModel {
         do { info = try await c.call("daemon.info") } catch let e as RPCError where e.code == RPCError.methodNotFound.code {
             info = .obj(["liveSessions": .int(((try? await c.call("session.list").array) ?? []).filter { $0["status"]?.string != "exited" }.count)])   // predates daemon.info
         } catch { return false }
-        let theirs: Double = { if case .double(let d)? = info["mtime"] { return d }; return Double(info["mtime"]?.int ?? 0) }()
+        // Older daemons don't report binaryMTime (and their "mtime" was read from disk, i.e. already the new file): restart them.
+        let theirs: Double = { if case .double(let d)? = info["binaryMTime"] { return d }; return Double(info["binaryMTime"]?.int ?? 0) }()
         let samePath = info["path"]?.string == bundledDaemon.resolvingSymlinksInPath().path
         guard !(samePath && abs(theirs - mine) < 1), !restartAttempted else { return false }
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
@@ -73,7 +76,7 @@ final class AppModel {
     }
 
     private func launchDaemon() {
-        let dir = Bundle.main.executableURL!.deletingLastPathComponent()
+        let dir = binDir
         let p = Process(); p.executableURL = dir.appendingPathComponent("krilld")
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
         try? p.run()

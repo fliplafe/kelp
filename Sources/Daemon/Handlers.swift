@@ -30,9 +30,9 @@ extension Daemon {
         case "ping": return "pong"
         case "daemon.info":   // the app compares this with the krilld it ships to detect updates
             let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-            let mtime = (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
             let liveCount = lock.withLock { live.values.filter { $0.snapshot.status != .exited }.count }
-            return .obj(["path": .string(exe.resolvingSymlinksInPath().path), "mtime": .double(mtime), "pid": .int(Int(getpid())), "liveSessions": .int(liveCount)])
+            return .obj(["path": .string(exe.resolvingSymlinksInPath().path), "binaryMTime": .double(Self.binaryMTime), "pid": .int(Int(getpid())),
+                         "liveSessions": .int(liveCount)])
         case "daemon.shutdown":
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.stop(); exit(0) }
             return .null
@@ -142,7 +142,8 @@ extension Daemon {
             return .null
         case "session.read":
             let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 8192)
-            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
+            // swiftlint:disable:next optional_data_string_conversion
+            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))   // lossy on purpose: windows cut UTF-8
         case "session.markRead":
             if let r = existing(try p.req("id"))?.markRead() { try store.save(r); notify("event.session", try .from(r)) }
             return .null

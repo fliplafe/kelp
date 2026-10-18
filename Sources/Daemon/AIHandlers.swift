@@ -11,6 +11,8 @@ extension Daemon {
         switch method {
         case "task.create":   // workspace: branch (named from the task or name) + worktree + agent that receives the task
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
+            let agent = try manifest(p["agent"]?.string ?? "claude", command: nil)
+            _ = try LoginPath.resolve(agent.command)   // fail before making a branch and checkout for nothing
             let prompt = (p["prompt"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let name = (p["name"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let naming = prompt.isEmpty || !name.isEmpty ? nil : await LocalAI.naming(for: prompt)
@@ -24,7 +26,7 @@ extension Daemon {
             let w = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "base": p["base"] ?? .null,
                                                               "note": .string(title), "tabs": false]), conn: conn)
             var o = Launch(p); o.prompt = prompt.isEmpty ? nil : prompt; o.title = title.isEmpty ? nil : title
-            let s = try spawn(cwd: try w.req("path"), manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: try w.req("id"), o)
+            let s = try spawn(cwd: try w.req("path"), manifest: agent, worktreeId: try w.req("id"), o)
             return .obj(["worktree": w, "session": try .from(s)])
 
         case "session.rename":
@@ -41,6 +43,8 @@ extension Daemon {
 
         case "session.context":    // bounded transcript for "Copy Context"
             let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 24_000)
+            // Lossy on purpose: a byte window can cut a UTF-8 sequence, and the rest of the text still matters.
+            // swiftlint:disable:next optional_data_string_conversion
             return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
 
         case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
@@ -130,7 +134,8 @@ extension Daemon {
     /// Transcript of a session written to ~/.krill/handoff/<id>.md for the next agent to read.
     func handoffFile(_ s: Session, full: Bool) throws -> URL {
         let d = try liveSessionOrLog(s.id, bytes: full ? 400_000 : 40_000)
-        let text = StatusDetector.stripANSI(String(decoding: d, as: UTF8.self))
+        // swiftlint:disable:next optional_data_string_conversion
+        let text = StatusDetector.stripANSI(String(decoding: d, as: UTF8.self))   // lossy on purpose, see session.context
         let dir = root.appendingPathComponent("handoff"); try Paths.ensure(dir)
         let u = dir.appendingPathComponent("\(s.id).md")
         try ("# Previous session (\(s.agent ?? "agent"), \(s.cwd))\n\n```\n" + text + "\n```\n").write(to: u, atomically: true, encoding: .utf8)
