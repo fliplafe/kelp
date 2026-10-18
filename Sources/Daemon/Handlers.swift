@@ -135,7 +135,7 @@ extension Daemon {
         case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
             try liveSession(p.req("id")).send(p.req("text"), enter: p["enter"]?.bool != false)
             return .null
-        case "session.resize": try liveSession(p.req("id")).pty.resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
+        case "session.resize": try liveSession(p.req("id")).resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
         case "session.kill":
             if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.kill() }
             else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill

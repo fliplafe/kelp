@@ -61,4 +61,6 @@ public struct LineBuffer: Sendable {
         }
         return out
     }
+    /// Bytes received after the last complete line (a connection switching to a raw stream keeps them).
+    public mutating func takeRemainder() -> Data { defer { buf = Data() }; return buf }
 }

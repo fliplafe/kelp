@@ -9,17 +9,21 @@ import LocalAI
 extension Daemon {
     func handleAsync(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
         switch method {
-        case "task.create":   // prompt -> named branch + worktree + agent that receives the prompt
+        case "task.create":   // workspace: branch (named from the task or name) + worktree + agent that receives the task
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let prompt = try p.req("prompt")
-            let naming = await LocalAI.naming(for: prompt)
-            var branch = p["branch"]?.string ?? naming?.branch ?? Fallback.slug(prompt)
-            if branch.isEmpty { branch = "task-\(Int(Date().timeIntervalSince1970) % 100000)" }
-            if let prefix = p["branchPrefix"]?.string, !prefix.isEmpty { branch = prefix + branch }
+            let prompt = (p["prompt"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = (p["name"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let naming = prompt.isEmpty || !name.isEmpty ? nil : await LocalAI.naming(for: prompt)
+            var branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? (name.isEmpty ? nil : Fallback.slug(name, words: 8))
+                ?? naming?.branch ?? Fallback.slug(prompt)
+            if branch.isEmpty { branch = "workspace-\(Int(Date().timeIntervalSince1970) % 100000)" }
+            if let prefix = p["branchPrefix"]?.string, !prefix.isEmpty, !branch.hasPrefix(prefix) { branch = prefix + branch }
             var unique = branch, n = 2
             while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
-            let w = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string(naming?.title ?? Fallback.title(prompt)), "tabs": false]), conn: conn)
-            var o = Launch(p); o.prompt = prompt; o.title = naming?.title
+            let title = name.isEmpty ? naming?.title ?? (prompt.isEmpty ? "" : Fallback.title(prompt)) : name
+            let w = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "base": p["base"] ?? .null,
+                                                              "note": .string(title), "tabs": false]), conn: conn)
+            var o = Launch(p); o.prompt = prompt.isEmpty ? nil : prompt; o.title = title.isEmpty ? nil : title
             let s = try spawn(cwd: try w.req("path"), manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: try w.req("id"), o)
             return .obj(["worktree": w, "session": try .from(s)])
 

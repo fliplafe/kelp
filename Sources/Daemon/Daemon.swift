@@ -20,6 +20,8 @@ public final class Daemon: @unchecked Sendable {
     var sleepAssertion: UInt32 = 0
     var usageCache: (at: Date, value: JSONValue)?
     var chats: [String: ChatSession] = [:]
+    var rawConns = Set<Int>()
+    private let wakeLock = NSLock()   // one wake per session even when several clients open it at once
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {
@@ -68,11 +70,19 @@ public final class Daemon: @unchecked Sendable {
         Thread.detachNewThread { [self] in
             var lb = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
-            while true {
+            reading: while true {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
                 for line in lb.append(Data(buf[0..<n])) {
                     guard let req = try? JSONDecoder().decode(RPCRequest.self, from: line) else { continue }
+                    if req.id == nil, req.method == "session.write" {   // keystrokes: in order, on this thread
+                        if let sid = req.params?["id"]?.string, let b = req.params?["base64"]?.string, let d = Data(base64Encoded: b) { existing(sid)?.userInput(d) }
+                        continue
+                    }
+                    if req.method == "session.stream" {   // this connection becomes a raw byte pipe (krill attach)
+                        stream(fd: fd, conn: id, session: req.params?["id"]?.string ?? "", leftover: lb.takeRemainder())
+                        break reading
+                    }
                     Task { await self.respond(req, conn: id, fd: fd) }
                 }
             }
@@ -80,6 +90,35 @@ public final class Daemon: @unchecked Sendable {
             all.forEach { $0.detach(id) }
             close(fd)
         }
+    }
+
+    /// Raw attach (`krill attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
+    /// writes is the user's typing. Terminal replies (DA, kitty keyboard) flow back the same way, so the agent sees a real terminal.
+    private func stream(fd: Int32, conn: Int, session: String, leftover: Data) {
+        lock.withLock { _ = rawConns.insert(conn) }   // before waking: its status events must not land in the byte stream
+        guard let ls = try? liveSession(session) else {
+            _ = Unix.writeAll(fd, Data("krill: no such session\r\n".utf8)); lock.withLock { _ = rawConns.remove(conn) }; return
+        }
+        let history = ls.attach(conn)
+        Unix.writeAll(fd, history)
+        if !leftover.isEmpty { ls.userInput(leftover) }
+        var buf = [UInt8](repeating: 0, count: 65536)
+        while true {
+            let n = read(fd, &buf, buf.count)
+            if n <= 0 { break }
+            ls.userInput(Data(buf[0..<n]))
+        }
+        ls.detach(conn)
+        lock.withLock { _ = rawConns.remove(conn) }
+    }
+
+    /// Output to attached connections: raw ones get bytes, the rest a JSON event.
+    func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
+        let (raw, json): ([Int32], Set<Int>) = lock.withLock {
+            (subs.filter { rawConns.contains($0) }.compactMap { conns[$0] }, subs.subtracting(rawConns))
+        }
+        raw.forEach { Unix.writeAll($0, data) }
+        if !json.isEmpty { notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: json) }
     }
 
     private func respond(_ req: RPCRequest, conn: Int, fd: Int32) async {
@@ -92,7 +131,7 @@ public final class Daemon: @unchecked Sendable {
 
     func notify(_ method: String, _ params: JSONValue, to only: Set<Int>? = nil) {
         guard let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
-        lock.lock(); let targets = conns.filter { only == nil || only!.contains($0.key) }.map(\.value); lock.unlock()
+        lock.lock(); let targets = conns.filter { !rawConns.contains($0.key) && (only == nil || only!.contains($0.key)) }.map(\.value); lock.unlock()
         targets.forEach { Unix.writeAll($0, d) }
     }
 
@@ -103,7 +142,10 @@ public final class Daemon: @unchecked Sendable {
 
     func liveSession(_ id: String) throws -> LiveSession {
         if let s = lock.withLock({ live[id] }) { return s }
-        return try wake(id)   // paused sessions wake on first use
+        return try wakeLock.withLock {   // paused sessions wake on first use
+            if let s = lock.withLock({ live[id] }) { return s }
+            return try wake(id)
+        }
     }
 
     struct Launch {
@@ -141,9 +183,7 @@ public final class Daemon: @unchecked Sendable {
         let ls = try LiveSession(record: rec, manifest: manifest, argv: argv, env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
         rec = ls.snapshot
-        ls.onOutput = { [weak self] id, data, subs in
-            self?.notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: subs)
-        }
+        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
         let sid = rec.id
         ls.onFirstPrompt = { [weak self] text in Task { await self?.autoTitle(session: sid, prompt: text) } }
@@ -196,9 +236,7 @@ public final class Daemon: @unchecked Sendable {
         env["PATH"] = [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
         rec.status = .idle
         let ls = try LiveSession(record: rec, manifest: m, argv: argv, env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
-        ls.onOutput = { [weak self] id, data, subs in
-            self?.notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: subs)
-        }
+        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
         lock.withLock { live[rec.id] = ls }
         publish(ls.snapshot)

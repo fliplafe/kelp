@@ -37,10 +37,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             var p: [String: JSONValue] = ["id": .string(s.id), "summary": .string(st.summary)]
             if st.waitingForUser, s.status == .done { p["status"] = "waiting"; s.status = .waiting }
             _ = try? await AppModel.shared.client?.call("session.annotate", .object(p))
-            // A worktree with no note gets one from what its agent just finished.
-            if s.status == .done, let w = AppModel.shared.worktree(s.worktreeId), w.note.isEmpty {
-                _ = try? await AppModel.shared.client?.call("worktree.note", .obj(["id": .string(w.id), "note": .string(st.summary)]))
-            }
         }
         post(s)
     }

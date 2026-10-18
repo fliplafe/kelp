@@ -29,6 +29,8 @@ final class LiveSession: @unchecked Sendable {
     var idleSeconds: TimeInterval { lock.withLock { Date().timeIntervalSince(lastOutputAt ?? started) } }
     var isAttached: Bool { lock.withLock { !attached.isEmpty } }
     private var lastOutputAt: Date?
+    /// TUIs redraw everything after a resize; that output isn't the agent working.
+    private var redrawUntil = Date.distantPast
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     private var pendingPrompt: String?
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
@@ -57,8 +59,7 @@ final class LiveSession: @unchecked Sendable {
         if ring.count > Self.ringLimit { ring.removeFirst(ring.count - Self.ringLimit) }
         try? log?.write(contentsOf: d)
         let text = String(decoding: d, as: UTF8.self)
-        detector.output(text)
-        lastOutputAt = Date()
+        if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
         var answer: String?
         if !autoAnswers.isEmpty, Date().timeIntervalSince(started) < 90 {
             let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
@@ -133,6 +134,11 @@ final class LiveSession: @unchecked Sendable {
         else { key = "\u{1B}[B"; steering?.lastKey = Date() }   // menus wrap, so stepping down always reaches it
         lock.unlock()
         pty.write(Data(key.utf8))
+    }
+
+    func resize(cols: UInt16, rows: UInt16) {
+        lock.withLock { redrawUntil = Date().addingTimeInterval(1) }
+        pty.resize(cols: cols, rows: rows)
     }
 
     func queuePrompt(_ p: String) { lock.lock(); pendingPrompt = p; sawFirstPrompt = true; lock.unlock() }

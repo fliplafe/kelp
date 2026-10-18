@@ -67,7 +67,7 @@ final class NotebookTab: NSViewController {
             guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "command": .string("jupyter lab --no-browser '\(path.replacingOccurrences(of: "'", with: "'\\''"))'"),
                                                                             "title": "Jupyter", "openURLs": true])) else { return }
             if let s = try? r.decode(Core.Session.self) { AppModel.shared.sessions.append(s) }
-            d.content.select(named: "Browser")
+            d.content.select(named: "Browser")   // Jupyter's URL arrives as a dev-server URL
             status.stringValue = "Starting Jupyter Lab… it opens in the Browser tab"
         }
     }

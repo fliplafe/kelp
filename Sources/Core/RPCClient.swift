@@ -43,6 +43,13 @@ public final class RPCClient: @unchecked Sendable {
         onClose?()
     }
 
+    /// Fire-and-forget, written in call order (keystrokes must not overtake each other).
+    public func notify(_ method: String, _ params: JSONValue? = nil) {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed, let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
+        Unix.writeAll(fd, d)
+    }
+
     public func call(_ method: String, _ params: JSONValue? = nil) async throws -> JSONValue {
         try await withCheckedThrowingContinuation { c in
             lock.lock()

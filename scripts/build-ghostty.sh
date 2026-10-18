@@ -16,7 +16,7 @@ SRC="$CACHE/ghostty"
 if [ ! -d "$SRC/.git" ]; then git clone -q https://github.com/ghostty-org/ghostty "$SRC"; fi
 git -C "$SRC" fetch -q --depth 1 origin "$GHOSTTY_COMMIT" 2>/dev/null || git -C "$SRC" fetch -q origin
 git -C "$SRC" checkout -q "$GHOSTTY_COMMIT"
-(cd "$SRC" && "$ZIG" build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=native -Doptimize=ReleaseFast)
+(cd "$SRC" && "$ZIG" build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast)
 rm -rf Vendor/GhosttyKit.xcframework
 cp -R "$SRC/macos/GhosttyKit.xcframework" Vendor/
 for h in Vendor/GhosttyKit.xcframework/*/Headers; do cp "$SRC/include/module.modulemap" "$h/"; done

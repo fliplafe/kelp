@@ -65,7 +65,7 @@ struct AccountsSettings: View {
         Task {
             guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "agent": .string(p.agent), "profile": .string(p.name), "title": .string("Log in: \(p.name)")])),
                   let s = try? r.decode(Session.self) else { return }
-            d.content.select(named: "Terminals"); d.content.workspace.add(session: s, newTab: true)
+            d.content.workspace?.add(session: s)
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }

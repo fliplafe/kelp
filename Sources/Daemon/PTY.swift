@@ -19,7 +19,7 @@ public final class PTY: @unchecked Sendable {
         var nameBuf = [CChar](repeating: 0, count: 128)
         ptsname_r(m, &nameBuf, nameBuf.count)
         let slavePath = String(cString: nameBuf)
-        close(s)   // child reopens by path after setsid so the tty becomes its controlling terminal
+        // Keep our end of the slave open until the child has it: closing the last fd resets the tty (size becomes 0×0).
 
         var fa: posix_spawn_file_actions_t? = nil
         posix_spawn_file_actions_init(&fa)
@@ -45,8 +45,16 @@ public final class PTY: @unchecked Sendable {
         let cenv = (e.map { strdup("\($0)=\($1)") } + [nil]) as [UnsafeMutablePointer<CChar>?]
         defer { cargv.forEach { free($0) }; cenv.forEach { free($0) } }
         var pid: pid_t = 0
-        // Resolve via PATH of the *child* env.
-        let rc = posix_spawnp(&pid, argv[0], &fa, &attr, cargv, cenv)
+        let rc: Int32
+        if let tramp = Self.trampoline {
+            // krill __ctty: claims the tty as controlling terminal, then execs the agent (PATH from the child env).
+            let targv = ([strdup(tramp), strdup("__ctty")] + cargv.dropLast() + [nil]) as [UnsafeMutablePointer<CChar>?]
+            rc = posix_spawn(&pid, tramp, &fa, &attr, targv, cenv)
+            free(targv[0]); free(targv[1])
+        } else {
+            rc = posix_spawnp(&pid, argv[0], &fa, &attr, cargv, cenv)
+        }
+        close(s)
         guard rc == 0 else { close(m); throw POSIXError(.init(rawValue: rc) ?? .ENOENT) }
         self.pid = pid; self.master = m
 
@@ -80,6 +88,13 @@ public final class PTY: @unchecked Sendable {
         close(master)
         onExit?(status)
     }
+
+    /// The `krill` CLI next to the daemon binary.
+    nonisolated(unsafe) static var trampoline: String? = {
+        let dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+        let p = dir.appendingPathComponent("krill").path
+        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
+    }()
 
     static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KRILL_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 

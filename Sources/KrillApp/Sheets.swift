@@ -96,7 +96,7 @@ enum AgentActions {
                   let s = try? r["session"]?.decode(Session.self) else { return }
             await AppModel.shared.refresh()
             delegate?.open(worktree: wid)
-            delegate?.content.workspace.add(session: s, newTab: true)
+            delegate?.content.workspace?.add(session: s)
         }
     }
 
@@ -111,15 +111,14 @@ enum AgentActions {
             let text = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { p["prompt"] = .string(text) }
             guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
-            delegate?.content.select(named: "Terminals")
-            delegate?.content.workspace.add(session: s, newTab: true)
+            delegate?.content.workspace?.add(session: s)
         }
     }
 
     static func fork(_ sid: String) {
         let form = LaunchForm(withPrompt: true, promptPlaceholder: "What should the fork try? It gets this session's transcript.",
                               defaultAgent: AppModel.shared.session(sid)?.agent)
-        let a = NSAlert(); a.messageText = "Fork to a New Worktree"; a.accessoryView = form.view
+        let a = NSAlert(); a.messageText = "Fork to a New Workspace"; a.accessoryView = form.view
         a.informativeText = "A new branch starts from this one; a new agent continues from this session's transcript."
         a.addButton(withTitle: "Fork"); a.addButton(withTitle: "Cancel")
         Task {
@@ -130,7 +129,7 @@ enum AgentActions {
             guard let r = await AppModel.shared.call("session.fork", .object(p)), let s = try? r.decode(Session.self) else { return }
             await AppModel.shared.refresh()
             if let w = s.worktreeId { delegate?.open(worktree: w) }
-            delegate?.content.workspace.add(session: s, newTab: true)
+            delegate?.content.workspace?.add(session: s)
         }
     }
 
@@ -147,7 +146,7 @@ enum AgentActions {
             let text = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { p["prompt"] = .string(text) }
             guard let r = await AppModel.shared.call("session.handoff", .object(p)), let s = try? r.decode(Session.self) else { return }
-            delegate?.content.workspace.add(session: s, newTab: false)
+            delegate?.content.workspace?.add(session: s, split: true)
         }
     }
 }

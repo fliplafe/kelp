@@ -91,7 +91,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         Task {
             guard let res = await AppModel.shared.call("history.resume", .obj(["session": rows[r]])), let s = try? res.decode(Session.self) else { return }
             AppModel.shared.sessions.append(s)
-            if let w = s.worktreeId { d?.open(worktree: w); d?.content.select(named: "Terminals"); d?.content.workspace.add(session: s, newTab: true) }
+            if let w = s.worktreeId { d?.open(worktree: w); d?.content.workspace?.add(session: s) }
             else { FloatingTerminal.shared.show(session: s) }
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }

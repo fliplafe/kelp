@@ -110,6 +110,12 @@ final class Probe: NSObject, NSApplicationDelegate {
         window.makeFirstResponder(view)
         NSApp.activate()
 
+        if let typed = ProcessInfo.processInfo.environment["PROBE_TYPE"] {   // simulate typing after the program is up
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let t = typed.replacingOccurrences(of: "\\r", with: "\r")
+                t.withCString { ghostty_surface_text(surface, $0, UInt(strlen($0))) }
+            }
+        }
         if let secs = ProcessInfo.processInfo.environment["PROBE_SECONDS"].flatMap(Double.init), secs > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
                 let size = ghostty_surface_size(surface)

@@ -4,176 +4,184 @@ import TerminalKit
 
 extension NSPasteboard.PasteboardType { static let krillPane = NSPasteboard.PasteboardType("dev.krill.pane") }
 
-/// One terminal bound to one daemon session, with a draggable header showing agent status.
+/// One terminal bound to one daemon session. libghostty renders it when available (attached via `krill attach`,
+/// so the daemon keeps the process); SwiftTerm is the fallback. A slim header appears only inside splits.
 @MainActor
 final class PaneView: NSView, NSDraggingSource {
     let sessionId: String
-    let terminal = RemoteTerminalView(frame: .zero)
+    private var termView: NSView!
+    #if canImport(GhosttyKit)
+    private var ghostty: GhosttyTerminalView?
+    #endif
+    private var swiftTerm: RemoteTerminalView?
     private let header = NSView()
-    private let dot = NSView()
     private let title = NSTextField(labelWithString: "")
-    private let closeButton = NSButton()
-    private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
-    private let micButton = NSButton()
-    private var lastOutput = Date()
-    private var cacheTimer: Timer?
-    private let summary = NSTextField(labelWithString: "")
-    var onRestart: ((PaneView) -> Void)?
+    private var dot = StatusDot(status: nil)
+    private let ended = NSStackView()
     private let dropHint = NSView()
+    private var headerHeight: NSLayoutConstraint!
+    private var lastActivity = Date()
+
     var onClose: ((PaneView) -> Void)?
     var onFocus: ((PaneView) -> Void)?
+    var onRestart: ((PaneView) -> Void)?
     var onDrop: ((String, PaneView, DropEdge) -> Void)?
+    var showsHeader = false { didSet { headerHeight.constant = showsHeader ? 24 : 0; header.isHidden = !showsHeader } }
 
     enum DropEdge { case left, right, top, bottom }
+
+    static var useGhostty: Bool {
+        #if canImport(GhosttyKit)
+        return UserDefaults.standard.string(forKey: "terminalBackend") != "swiftterm" && GhosttyTerminalView.isAvailable
+        #else
+        return false
+        #endif
+    }
 
     init(session: Session) {
         sessionId = session.id
         super.init(frame: .zero)
         wantsLayer = true
-        header.wantsLayer = true
-        dot.wantsLayer = true; dot.layer?.cornerRadius = 4
-        title.font = .systemFont(ofSize: 11, weight: .medium); title.lineBreakMode = .byTruncatingTail
-        closeButton.bezelStyle = .inline; closeButton.isBordered = false
-        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close pane")
-        closeButton.target = self; closeButton.action = #selector(closeTapped)
-        closeButton.toolTip = "Close pane and end the session"
-        restartButton.bezelStyle = .inline; restartButton.controlSize = .small; restartButton.target = self; restartButton.action = #selector(restartTapped)
-        restartButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); restartButton.imagePosition = .imageLeading
-        micButton.bezelStyle = .inline; micButton.isBordered = false; micButton.target = self; micButton.action = #selector(dictate)
-        micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Dictate prompt"); micButton.toolTip = "Dictate into the prompt (on-device)"
-        summary.font = .systemFont(ofSize: 11); summary.textColor = .secondaryLabelColor; summary.lineBreakMode = .byTruncatingTail
-        summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        for v in [dot, title, summary, restartButton, micButton, closeButton] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(v) }
-        let menu = NSMenu()
-        for (t, a) in [("Rename…", #selector(renameTapped)), ("Restart", #selector(restartTapped)), ("Copy Context", #selector(copyContext)),
-                       ("Fork to New Worktree…", #selector(forkTapped)), ("Hand Off to Another Agent…", #selector(handoffTapped)), ("Close", #selector(closeTapped))] {
-            menu.addItem(withTitle: t, action: a, keyEquivalent: "").target = self
-        }
-        header.menu = menu
-        for v in [header, terminal, dropHint] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        dropHint.wantsLayer = true; dropHint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor; dropHint.isHidden = true
+        buildTerminal(session)
+        buildHeader()
+        buildEndedOverlay()
+        for v in [header, termView!, ended, dropHint] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         dropHint.translatesAutoresizingMaskIntoConstraints = true
+        dropHint.wantsLayer = true; dropHint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor
+        dropHint.layer?.cornerRadius = 6; dropHint.isHidden = true
+        headerHeight = header.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: topAnchor), header.leadingAnchor.constraint(equalTo: leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor), header.heightAnchor.constraint(equalToConstant: 22),
-            dot.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 8), dot.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8),
-            title.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6), title.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            summary.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 10), summary.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            summary.trailingAnchor.constraint(lessThanOrEqualTo: restartButton.leadingAnchor, constant: -6),
-            restartButton.trailingAnchor.constraint(equalTo: micButton.leadingAnchor, constant: -6), restartButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            micButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -6), micButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -6), closeButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 16),
-            terminal.topAnchor.constraint(equalTo: header.bottomAnchor), terminal.leadingAnchor.constraint(equalTo: leadingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: trailingAnchor), terminal.bottomAnchor.constraint(equalTo: bottomAnchor),
+            header.trailingAnchor.constraint(equalTo: trailingAnchor), headerHeight,
+            termView.topAnchor.constraint(equalTo: header.bottomAnchor), termView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            termView.trailingAnchor.constraint(equalTo: trailingAnchor), termView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ended.centerXAnchor.constraint(equalTo: termView.centerXAnchor), ended.centerYAnchor.constraint(equalTo: termView.centerYAnchor),
         ])
+        header.isHidden = true
         registerForDraggedTypes([.krillPane, .fileURL, .png, .tiff, .string])
-        applyAppearance()
-        NotificationCenter.default.addObserver(self, selector: #selector(applyAppearance), name: UserDefaults.didChangeNotification, object: nil)
         update(session)
-
-        let id = session.id
-        terminal.onInput = { AppModel.shared.write(session: id, $0) }
-        terminal.onResize = { AppModel.shared.resize(session: id, cols: $0, rows: $1) }
-        terminal.onFocus = { [weak self] in if let s = self { s.onFocus?(s) } }
-        Task { await AppModel.shared.attach(session: id) { [weak self] in self?.terminal.feed($0); self?.lastOutput = Date() } }
-        cacheTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tickCache() } }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    isolated deinit { cacheTimer?.invalidate(); AppModel.shared.detach(session: sessionId) }
+    isolated deinit { if swiftTerm != nil { AppModel.shared.detach(session: sessionId) } }
 
-    /// Claude's prompt cache lives ~5 minutes after the last activity; show what's left while the agent waits.
-    private func tickCache() {
-        guard let s = AppModel.shared.session(sessionId), s.agent == "claude", s.status == .done || s.status == .waiting || s.status == .idle, !Dictation.shared.isRecording else { return }
-        let left = 300 - Date().timeIntervalSince(lastOutput)
-        let base = s.summary.isEmpty ? s.status.label : s.summary
-        summary.stringValue = left > 0 ? "\(base)  ·  cache \(Int(left) / 60):\(String(format: "%02d", Int(left) % 60))" : base
-        summary.toolTip = "Prompt cache: replying within 5 minutes of the last message is cheaper and faster."
-    }
-
-    @objc private func dictate() {
-        let d = Dictation.shared
-        if d.isRecording {
-            let t = d.stop(); micButton.contentTintColor = nil; micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
-            if let s = AppModel.shared.session(sessionId) { update(s) }
-            guard !t.isEmpty else { return }
-            Task { await AppModel.shared.call("session.send", .obj(["id": .string(sessionId), "text": .string(t), "enter": false])) }
-            focus(); return
-        }
-        d.onUpdate = { [weak self] t in self?.summary.stringValue = "🎙 " + t }
-        Task {
-            do {
-                try await d.start()
-                micButton.contentTintColor = .systemRed; micButton.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
-                summary.stringValue = "🎙 Listening… click the mic again to insert"
-            } catch {
-                let a = NSAlert(error: error); _ = await runSheet(a)
+    private func buildTerminal(_ s: Session) {
+        let id = s.id
+        #if canImport(GhosttyKit)
+        if Self.useGhostty {
+            let krill = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("krill").path
+            let cmd = "'\(krill.replacingOccurrences(of: "'", with: "'\\''"))' attach \(id)"
+            let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KRILL_SOCKET": Paths.socket.path, "KRILL_HOME": Paths.root.path])
+            g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
+            g.onExit = { [weak self] in self?.sessionEnded() }
+            g.onOpenURL = { url in
+                if url.host == "localhost" || url.host == "127.0.0.1", let d = NSApp.delegate as? AppDelegate { d.openInBrowser(url) } else { NSWorkspace.shared.open(url) }
             }
+            ghostty = g; termView = g
+            return
         }
+        #endif
+        let t = RemoteTerminalView(frame: .zero)
+        t.onInput = { AppModel.shared.write(session: id, $0) }
+        t.onResize = { AppModel.shared.resize(session: id, cols: $0, rows: $1) }
+        t.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
+        Task { await AppModel.shared.attach(session: id) { [weak self] in self?.swiftTerm?.feed($0); self?.lastActivity = Date() } }
+        swiftTerm = t; termView = t
+        applySwiftTermAppearance()
+        NotificationCenter.default.addObserver(self, selector: #selector(applySwiftTermAppearance), name: UserDefaults.didChangeNotification, object: nil)
     }
+
+    private func buildHeader() {
+        header.wantsLayer = true
+        title.font = .systemFont(ofSize: 11, weight: .medium); title.lineBreakMode = .byTruncatingTail; title.textColor = .secondaryLabelColor
+        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close pane")!, target: self, action: #selector(closeTapped))
+        close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold); close.contentTintColor = .secondaryLabelColor
+        let row = NSStackView(views: [dot, title, NSView(), close]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 8)
+        row.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(row)
+        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: header.leadingAnchor), row.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+                                     row.topAnchor.constraint(equalTo: header.topAnchor), row.bottomAnchor.constraint(equalTo: header.bottomAnchor)])
+        header.toolTip = "Drag to move this pane; drop on an edge of another pane to split"
+    }
+
+    private func buildEndedOverlay() {
+        let l = NSTextField(labelWithString: "Session ended"); l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
+        let b = NSButton(title: "Restart", target: self, action: #selector(restartTapped)); b.bezelStyle = .rounded
+        b.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); b.imagePosition = .imageLeading
+        let c = NSButton(title: "Close", target: self, action: #selector(closeTapped)); c.bezelStyle = .rounded
+        let buttons = NSStackView(views: [b, c]); buttons.spacing = 8
+        ended.orientation = .vertical; ended.spacing = 10
+        [l, buttons].forEach { ended.addArrangedSubview($0) }
+        ended.edgeInsets = NSEdgeInsets(top: 16, left: 20, bottom: 16, right: 20)
+        ended.wantsLayer = true; ended.layer?.cornerRadius = 10
+        ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+        ended.isHidden = true
+    }
+
+    private func sessionEnded() { ended.isHidden = false }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         effectiveAppearance.performAsCurrentDrawingAppearance {
             header.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            header.layer?.borderColor = NSColor.separatorColor.cgColor
+            ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         }
     }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance() }
 
-    /// Font and colors: Settings first, then the Ghostty config, then system defaults.
-    @objc private func applyAppearance() {
+    /// SwiftTerm only (Ghostty reads its own config): Settings first, then the Ghostty config, then defaults.
+    @objc private func applySwiftTermAppearance() {
+        guard let t = swiftTerm else { return }
         let d = UserDefaults.standard
         let g = d.object(forKey: "ghosttyTheme") as? Bool ?? true ? GhosttyConfig.load() : nil
         let size = d.object(forKey: "terminalFontSize") as? Double ?? g?.fontSize ?? 13
         let name = (d.string(forKey: "terminalFont")).flatMap { $0.isEmpty ? nil : $0 } ?? g?.fontFamily
-        terminal.setFont(name: name, size: CGFloat(size))
+        t.setFont(name: name, size: CGFloat(size))
         func color(_ h: String?) -> NSColor? { h.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } }
-        if let bg = color(g?.background), let fg = color(g?.foreground) { terminal.apply(theme: TerminalTheme(background: bg, foreground: fg)) }
+        if let bg = color(g?.background), let fg = color(g?.foreground) { t.apply(theme: TerminalTheme(background: bg, foreground: fg)) }
+    }
+
+    func update(_ s: Session) {
+        title.stringValue = s.displayTitle
+        let newDot = StatusDot(status: s.agent == "shell" ? nil : s.status)
+        if let row = dot.superview as? NSStackView, let i = row.arrangedSubviews.firstIndex(of: dot) {
+            row.removeArrangedSubview(dot); dot.removeFromSuperview(); row.insertArrangedSubview(newDot, at: i)
+        }
+        dot = newDot
+        dot.isHidden = s.agent == "shell"
+        if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
+        if s.status == .done || s.status == .waiting { lastActivity = Date() }
+    }
+
+    func focus() {
+        #if canImport(GhosttyKit)
+        if let g = ghostty { g.focus(); return }
+        #endif
+        swiftTerm?.focus()
+    }
+
+    /// What's on screen (tests, "copy context" fallback).
+    var visibleText: String {
+        #if canImport(GhosttyKit)
+        if let g = ghostty { return g.visibleText }
+        #endif
+        return swiftTerm?.text ?? ""
+    }
+
+    /// Text dropped or dictated into the prompt.
+    func insert(_ text: String) {
+        #if canImport(GhosttyKit)
+        if let g = ghostty { g.insert(text); return }
+        #endif
+        AppModel.shared.write(session: sessionId, Data(text.utf8))
     }
 
     @objc private func closeTapped() { onClose?(self) }
     @objc private func restartTapped() { onRestart?(self) }
-    @objc private func renameTapped() {
-        let cur = AppModel.shared.session(sessionId)?.title ?? ""
-        guard let t = prompt("Rename tab", "Leave empty to name it from the prompt automatically.", initial: cur) else { return }
-        Task { await AppModel.shared.call("session.rename", .obj(["id": .string(sessionId), "title": .string(t)])) }
-    }
-    @objc private func copyContext() {
-        Task {
-            guard let t = await AppModel.shared.call("session.context", .obj(["id": .string(sessionId)]))?.string else { return }
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(t, forType: .string)
-        }
-    }
-    @objc private func forkTapped() { AgentActions.fork(sessionId) }
-    @objc private func handoffTapped() { AgentActions.handoff(sessionId) }
-
-    func update(_ s: Session) {
-        let color: NSColor = switch s.status {
-        case .working: .systemBlue
-        case .waiting: .systemOrange
-        case .done: .systemGreen
-        case .idle: .systemGray
-        case .exited: .systemRed
-        case .hibernated: .systemIndigo
-        }
-        dot.layer?.backgroundColor = color.cgColor
-        dot.toolTip = s.status.label
-        title.stringValue = s.displayTitle + (s.unread ? "  •" : "")
-        title.toolTip = s.command
-        summary.stringValue = s.summary.isEmpty ? s.status.label : s.summary
-        restartButton.isHidden = s.status != .exited
-    }
-
-    func focus() { terminal.focus() }
 
     // MARK: dragging this pane by its header
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        guard header.frame.contains(p) else { return super.mouseDragged(with: event) }
+        guard showsHeader, header.frame.contains(p) else { return super.mouseDragged(with: event) }
         let item = NSPasteboardItem(); item.setString(sessionId, forType: .krillPane)
         let di = NSDraggingItem(pasteboardWriter: item)
         di.setDraggingFrame(header.frame, contents: header.snapshot())
@@ -181,7 +189,7 @@ final class PaneView: NSView, NSDraggingSource {
     }
     nonisolated func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .move }
 
-    // MARK: drop target: pane moves (edge zones) and file/image drops into the agent's prompt
+    // MARK: drops: panes (edge = split) and files/images/text into the agent's prompt
     private func edge(_ info: NSDraggingInfo) -> DropEdge {
         let p = convert(info.draggingLocation, from: nil), w = bounds.width, h = bounds.height
         let dx = min(p.x, w - p.x) / w, dy = min(p.y, h - p.y) / h
@@ -189,19 +197,16 @@ final class PaneView: NSView, NSDraggingSource {
         return p.y < h / 2 ? .bottom : .top
     }
     private func hint(_ e: DropEdge) {
-        let b = bounds
+        let b = bounds.insetBy(dx: 4, dy: 4)
         dropHint.frame = switch e {
-        case .left: NSRect(x: 0, y: 0, width: b.width / 2, height: b.height)
-        case .right: NSRect(x: b.width / 2, y: 0, width: b.width / 2, height: b.height)
-        case .top: NSRect(x: 0, y: b.height / 2, width: b.width, height: b.height / 2)
-        case .bottom: NSRect(x: 0, y: 0, width: b.width, height: b.height / 2)
+        case .left: NSRect(x: b.minX, y: b.minY, width: b.width / 2, height: b.height)
+        case .right: NSRect(x: b.midX, y: b.minY, width: b.width / 2, height: b.height)
+        case .top: NSRect(x: b.minX, y: b.midY, width: b.width, height: b.height / 2)
+        case .bottom: NSRect(x: b.minX, y: b.minY, width: b.width, height: b.height / 2)
         }
         dropHint.isHidden = false
     }
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if sender.draggingPasteboard.string(forType: .krillPane) != nil { hint(edge(sender)); return .move }
-        return .copy
-    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         if sender.draggingPasteboard.string(forType: .krillPane) != nil { hint(edge(sender)); return .move }
         return .copy
@@ -211,17 +216,16 @@ final class PaneView: NSView, NSDraggingSource {
         dropHint.isHidden = true
         let pb = sender.draggingPasteboard
         if let id = pb.string(forType: .krillPane) { onDrop?(id, self, edge(sender)); return true }
-        // Text dropped from elsewhere goes into the prompt as-is.
-        // Files and images go into the agent's prompt as paths.
         var paths = (pb.readObjects(forClasses: [NSURL.self]) as? [URL])?.map(\.path) ?? []
         if paths.isEmpty, let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
            let png = rep.representation(using: .png, properties: [:]) {
             let u = FileManager.default.temporaryDirectory.appendingPathComponent("krill-\(UUID().uuidString.prefix(8)).png")
             try? png.write(to: u); paths = [u.path]
         }
-        if paths.isEmpty, let text = pb.string(forType: .string) { AppModel.shared.write(session: sessionId, Data(text.utf8)); return true }
+        if paths.isEmpty, let text = pb.string(forType: .string) { insert(text); return true }
         guard !paths.isEmpty else { return false }
-        AppModel.shared.write(session: sessionId, Data((paths.map { "'\($0.replacingOccurrences(of: "'", with: "'\\''"))'" }.joined(separator: " ") + " ").utf8))
+        insert(paths.map { "'\($0.replacingOccurrences(of: "'", with: "'\\''"))'" }.joined(separator: " ") + " ")
+        focus()
         return true
     }
 }

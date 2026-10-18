@@ -76,7 +76,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         if !commandsOnly {
             for w in AppModel.shared.worktrees where !w.archived {
                 let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
-                items.append(Item(kind: "Worktree", icon: "arrow.triangle.branch", title: w.branch, detail: "\(repo)  \(w.note)", action: { [weak self] in self?.delegate?.open(worktree: w.id) }))
+                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.note.isEmpty ? w.branch : w.note, detail: "\(repo)  \(w.note)", action: { [weak self] in self?.delegate?.open(worktree: w.id) }))
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
@@ -86,7 +86,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                 Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
                     all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f, action: { [weak self] in
-                        self?.delegate?.content.select(named: "Files"); self?.delegate?.content.files.openFile(f)
+                        self?.delegate?.content.files?.openFile(f)
                     }) }
                     filter()
                 }
@@ -183,7 +183,7 @@ enum QuickCommands {
     /// Into the focused agent's prompt (submitted), or a new tab when there's none / it asks for one.
     static func run(_ q: QuickCommand) {
         guard let d = NSApp.delegate as? AppDelegate else { return }
-        if !q.newTab, let sid = d.content.workspace.currentSessionId {
+        if !q.newTab, let sid = d.content.workspace?.currentSession {
             Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(q.text)])) }
         } else {
             d.startSession(agent: nil, command: q.text, newTab: true)

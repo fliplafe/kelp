@@ -48,7 +48,7 @@ final class OpenFile {
 
 /// File tree with git status, editor tabs with autosave, project search, live reload of agent edits.
 @MainActor
-final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTabViewDelegate, WorktreeAware {
+final class FilesViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTabViewDelegate {
     private let outline = NSOutlineView()
     private let results = NSTableView()
     private let search = NSSearchField()

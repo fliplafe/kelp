@@ -24,11 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true; window.titleVisibility = .hidden
         window.makeKeyAndOrderFront(nil)
 
-        sidebar.onSelectWorktree = { [weak self] w in self?.content.show(worktree: w?.id) }
-        sidebar.onSelectSession = { [weak self] s in self?.openSession(s.id) }
+        sidebar.onSelectWorktree = { [weak self] w in self?.content.show(worktree: w?.id); if let w { UserDefaults.standard.set(w.id, forKey: "lastWorktree") } }
         notifier.onOpen = { [weak self] id in self?.openSession(id) }
         notifier.start()
-        AppModel.shared.onChange.append { [weak self] in self?.content.workspace.refresh() }
+        AppModel.shared.onChange.append { [weak self] in self?.content.refresh() }
         NotificationCenter.default.addObserver(forName: .krillRefresh, object: nil, queue: .main) { _ in Task { @MainActor in await AppModel.shared.refresh() } }
         buildMenu()
         Task {
@@ -37,8 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppModel.shared.startSubagentPolling()
             sidebar.reload()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b } }
-            if let w = pick ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }
-            if AppModel.shared.repos.isEmpty { addProject() }
+            let last = UserDefaults.standard.string(forKey: "lastWorktree").flatMap { AppModel.shared.worktree($0) }
+            if let w = pick ?? last ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { sidebar.select(worktree: w.id); content.show(worktree: w.id) }
+            content.refresh()
         }
         NSApp.activate()
         if let out = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] { snapshotLater(out) }
@@ -48,98 +48,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // daemon keeps sessions alive
 
     func isViewing(session id: String) -> Bool {
-        window.isKeyWindow && content.currentMode == "Terminals" && content.workspace.currentSessionId == id
+        guard window.isKeyWindow, let ws = content.workspace, case .terminal(let l)? = ws.selectedKind else { return false }
+        return l.sessions.contains(id)
     }
 
     func open(worktree id: String) {
         sidebar.reload(); sidebar.select(worktree: id); content.show(worktree: id)
+        UserDefaults.standard.set(id, forKey: "lastWorktree")
     }
 
     func openSession(_ id: String) {
         guard let s = AppModel.shared.session(id), let wid = s.worktreeId else { return }
-        if content.worktreeId != wid { sidebar.select(worktree: wid); content.show(worktree: wid) }
-        content.select(named: "Terminals")
-        content.workspace.focus(session: id)
+        if content.worktreeId != wid { open(worktree: wid) }
+        content.workspace?.focus(session: id)
         Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(id)])) }
+    }
+
+    /// Local URLs (dev servers) open in the workspace's browser tab.
+    func openInBrowser(_ url: URL) {
+        guard let w = content.workspace else { NSWorkspace.shared.open(url); return }
+        w.browserController.open(url.absoluteString, in: w.worktree.id, reuse: true)
+    }
+
+    /// Where commands that need a workspace go; beeps when none is open.
+    private var ws: WorkspaceViewController? {
+        if content.workspace == nil { NSSound.beep() }
+        return content.workspace
     }
 
     // MARK: actions
     @objc func addProject() {
-        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.message = "Choose a git repository"
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
+        p.message = "Choose a git repository"; p.prompt = "Add Repository"
         guard p.runModal() == .OK, let u = p.url else { return }
-        Task { _ = await AppModel.shared.call("repo.add", .obj(["path": .string(u.path)])) }
-    }
-
-    @objc func newWorktree() {
-        guard let repo = sidebar.selectedRepo else { addProject(); return }
-        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); name.placeholderString = "feature/login"
-        let base = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26)); base.addItem(withTitle: repo.baseBranch)
-        let grid = NSGridView(views: [[NSTextField(labelWithString: "Branch:"), name], [NSTextField(labelWithString: "Based on:"), base]])
-        grid.column(at: 0).xPlacement = .trailing; grid.frame = NSRect(x: 0, y: 0, width: 400, height: 60)
-        let a = NSAlert(); a.messageText = "New Worktree"; a.informativeText = "Base it on another branch to stack it: its PR will target that branch."
-        a.accessoryView = grid; a.addButton(withTitle: "Create"); a.addButton(withTitle: "Cancel"); a.window.initialFirstResponder = name
         Task {
-            for b in (await AppModel.shared.call("repo.branches", .obj(["id": .string(repo.id)]))?.array ?? []).compactMap(\.string) where b != repo.baseBranch { base.addItem(withTitle: b) }
-            guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty else { return }
-            guard let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": .string(name.stringValue), "base": .string(base.titleOfSelectedItem ?? repo.baseBranch)])),
-                  let id = w["id"]?.string else { return }
+            guard await AppModel.shared.call("repo.add", .obj(["path": .string(u.path)])) != nil else { return }
             await AppModel.shared.refresh()
-            open(worktree: id)
+            if let r = AppModel.shared.repos.first(where: { URL(fileURLWithPath: $0.path).standardized == u.standardized }) { WorkspaceComposer.show(repo: r) }
         }
     }
 
+    @objc func newWorktree() { WorkspaceComposer.show(repo: sidebar.selectedRepo) }
+    @objc func newTask() { newWorktree() }
+
+    /// A command line run in the current workspace (quick commands, Run Command…).
     func startSession(agent: String?, command: String? = nil, newTab: Bool, shell: Bool = false) {
-        guard let wid = content.worktreeId else { NSSound.beep(); return }
-        var p: [String: JSONValue] = ["worktreeId": .string(wid)]
-        if let command { p["command"] = .string(command) } else if !shell { p["agent"] = .string(agent ?? defaultAgent) } else { p["agent"] = "shell" }
-        if !shell, command == nil, UserDefaults.standard.string(forKey: "permissionMode") == "yolo" { p["mode"] = "yolo" }
+        guard let w = ws else { return }
+        guard let command else { w.newAgent(shell ? "shell" : agent ?? defaultAgent, split: !newTab); return }
         Task {
-            guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
-            content.select(named: "Terminals")
-            content.workspace.add(session: s, newTab: newTab)
+            guard let wid = content.worktreeId,
+                  let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "command": .string(command)])),
+                  let s = try? r.decode(Session.self) else { return }
+            content.workspace?.add(session: s)
         }
     }
 
-    @objc func newAgent() { startSession(agent: nil, newTab: true) }
-    @objc func newChat() { if let w = AppModel.shared.worktree(content.worktreeId) { ChatWindow.start(worktree: w) } else { NSSound.beep() } }
-    @objc func newTask() { if let r = sidebar.selectedRepo { AgentActions.newTask(repo: r) } else { addProject() } }
-    @objc func newAgentSheet() { if let w = content.worktreeId { AgentActions.newAgent(worktree: w) } else { NSSound.beep() } }
-    @objc func newAgentNamed(_ m: NSMenuItem) { startSession(agent: m.representedObject as? String, newTab: true) }
-    @objc func newShellTab() { startSession(agent: nil, newTab: true, shell: true) }
-    @objc func newCustom() { if let c = prompt("Run command", "Any CLI agent or command:"), !c.isEmpty { startSession(agent: nil, command: c, newTab: true) } }
-    @objc func splitRight() { if content.workspace.split(vertical: true) { startSession(agent: nil, newTab: false, shell: true) } }
-    @objc func splitDown() { if content.workspace.split(vertical: false) { startSession(agent: nil, newTab: false, shell: true) } }
+    @objc func newAgent() { ws?.newAgent(defaultAgent) }
+    @objc func newChat() { ws?.startChat() }
+    @objc func newAgentSheet() { if let w = ws { AgentActions.newAgent(worktree: w.worktree.id) } }
+    @objc func newAgentNamed(_ m: NSMenuItem) { ws?.newAgent(m.representedObject as? String ?? defaultAgent) }
+    @objc func newShellTab() { ws?.newTerminal() }
+    @objc func newCustom() { if ws != nil, let c = prompt("Run command", "Any CLI agent or command:"), !c.isEmpty { startSession(agent: nil, command: c, newTab: true) } }
+    @objc func splitRight() { ws?.newTerminal(split: true, vertical: true) }
+    @objc func splitDown() { ws?.newTerminal(split: true, vertical: false) }
     @objc func closePane() {
-        if content.currentMode == "Files" { content.files.closeTab(); return }
-        if content.currentMode == "Browser" { content.browser.closeTab(); return }
-        if let s = content.workspace.currentSessionId { content.workspace.close(pane: s) }
+        guard let w = ws else { return }
+        switch w.selectedKind {
+        case .files?: w.filesController.closeTab()
+        default: w.closeCurrent()
+        }
     }
-    @objc func showTasks() { content.select(named: "Tasks") }
-    @objc func showBrowser() { content.select(named: "Browser") }
-    @objc func toggleDesign() { content.select(named: "Browser"); content.browser.toggleDesign() }
-    @objc func showFiles() { content.select(named: "Files") }
-    @objc func goToLine() { content.select(named: "Files"); content.files.goToLine() }
-    @objc func findInWorktree() { content.select(named: "Files"); content.files.focusSearch() }
-    @objc func sendSelection() { content.files.sendSelectionToAgent() }
-    @objc func openExternal() { content.files.openInExternalEditor() }
-    @objc func markdownNote() { content.files.markdownNote() }
-    @objc func jumpToDefinition() { content.files.jumpToDefinition() }
-    @objc func showHover() { content.files.showHover() }
-    @objc func nextPane() { content.workspace.focusNeighbor(step: 1) }
-    @objc func prevPane() { content.workspace.focusNeighbor(step: -1) }
-    @objc func selectTab(_ m: NSMenuItem) { content.workspace.selectTab(m.tag - 1) }
+    @objc func closeTab() { ws?.closeCurrentTab() }
+    @objc func showTasks() { ws?.open(.tasks) }
+    @objc func showBrowser() { ws?.open(.browser) }
+    @objc func toggleDesign() { ws?.browserController.toggleDesign() }
+    @objc func showFiles() { ws?.open(.files) }
+    @objc func goToLine() { ws?.filesController.goToLine() }
+    @objc func findInWorktree() { ws?.filesController.focusSearch() }
+    @objc func sendSelection() { content.workspace?.filesController.sendSelectionToAgent() }
+    @objc func openExternal() { content.workspace?.filesController.openInExternalEditor() }
+    @objc func markdownNote() { content.workspace?.filesController.markdownNote() }
+    @objc func jumpToDefinition() { content.workspace?.filesController.jumpToDefinition() }
+    @objc func showHover() { content.workspace?.filesController.showHover() }
+    @objc func nextPane() { ws?.focusNeighbor(step: 1) }
+    @objc func prevPane() { ws?.focusNeighbor(step: -1) }
+    @objc func nextTab() { ws?.selectTab(offset: 1) }
+    @objc func prevTab() { ws?.selectTab(offset: -1) }
+    @objc func selectTab(_ m: NSMenuItem) { ws?.selectTab(index: m.tag - 1) }
     @objc func floatingTerminal() { FloatingTerminal.shared.toggle() }
     @objc func quickOpen() { QuickOpen.shared.show(commandsOnly: false) }
     @objc func commandPalette() { QuickOpen.shared.show(commandsOnly: true) }
     @objc func showHistory() { HistoryWindow.shared.show() }
     @objc func showDashboard() { DashboardController.shared.show() }
-    @objc func showTerminals() { content.select(named: "Terminals") }
-    @objc func showReview() { content.select(named: "Review") }
+    @objc func showReview() { ws?.open(.changes) }
     @objc func runDevServer() {
-        guard let wid = content.worktreeId else { return }
+        guard let wid = ws?.worktree.id else { return }
         Task {
             guard let r = await AppModel.shared.call("worktree.run", .obj(["id": .string(wid)])), let s = try? r.decode(Session.self) else { return }
-            content.workspace.add(session: s, newTab: true)
+            content.workspace?.add(session: s)
             NotificationCenter.default.post(name: .krillDevServer, object: wid)
         }
     }
@@ -156,7 +162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: menu
     private func item(_ menu: NSMenu, _ title: String, _ sel: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
-        let i = menu.addItem(withTitle: title, action: sel, keyEquivalent: key); i.keyEquivalentModifierMask = mods
+        // Shifted letters as capitals: the form AppKit matches reliably (⇧⌘D, not ⌘D).
+        let k = mods.contains(.shift) && key.count == 1 && key.first!.isLetter ? key.uppercased() : key
+        let i = menu.addItem(withTitle: title, action: sel, keyEquivalent: k); i.keyEquivalentModifierMask = mods
         if sel != nil, i.target == nil, sel!.description.hasPrefix("terminate") == false { i.target = self }
         return i
     }
@@ -178,27 +186,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "Quit Krill", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let file = sub("File")
-        _ = item(file, "Add Project…", #selector(addProject), "o")
-        _ = item(file, "New Worktree…", #selector(newWorktree), "n", [.command, .shift])
+        _ = item(file, "New Workspace…", #selector(newWorktree), "n")
+        _ = item(file, "Add Repository…", #selector(addProject), "o")
         file.addItem(.separator())
-        _ = item(file, "Close Pane", #selector(closePane), "w")
-
-        let agent = sub("Agent")
-        _ = item(agent, "New Task…", #selector(newTask), "n")
-        _ = item(agent, "New Agent…", #selector(newAgentSheet), "n", [.command, .option])
-        _ = item(agent, "New Default Agent", #selector(newAgent), "n", [.command, .control])
-        _ = item(agent, "New Chat…", #selector(newChat), "c", [.command, .option])
-        for a in AppModel.shared.agents { let i = item(agent, "New \(a.name)", #selector(newAgentNamed(_:))); i.representedObject = a.id }
-        agent.addItem(.separator())
-        _ = item(agent, "New Shell Tab", #selector(newShellTab), "t")
-        _ = item(agent, "Run Command…", #selector(newCustom), "t", [.command, .shift])
-        _ = item(agent, "Run Dev Server", #selector(runDevServer), "r", [.command, .control])
-        agent.addItem(.separator())
-        _ = item(agent, "Fan-out…", #selector(fanout), "f", [.command, .option])
-        _ = item(agent, "Compare Fan-out…", #selector(compareFanout))
-        agent.addItem(.separator())
-        let def = NSMenu(); for a in AppModel.shared.agents { let i = item(def, a.name, #selector(setDefaultAgent(_:))); i.representedObject = a.id }
-        let di = agent.addItem(withTitle: "Default Agent", action: nil, keyEquivalent: ""); agent.setSubmenu(def, for: di)
+        _ = item(file, "New Terminal Tab", #selector(newShellTab), "t")
+        _ = item(file, "New Agent Tab", #selector(newAgent), "t", [.command, .option])
+        let newIn = NSMenu()
+        for a in AgentCatalog.installed(AppModel.shared.agents) { let i = item(newIn, a.name, #selector(newAgentNamed(_:))); i.representedObject = a.id }
+        newIn.addItem(.separator())
+        _ = item(newIn, "Agent with Options…", #selector(newAgentSheet), "n", [.command, .option])
+        _ = item(newIn, "Chat with Claude", #selector(newChat), "c", [.command, .option])
+        _ = item(newIn, "Command…", #selector(newCustom), "t", [.command, .shift])
+        let ni = file.addItem(withTitle: "New Tab With", action: nil, keyEquivalent: ""); file.setSubmenu(newIn, for: ni)
+        _ = item(file, "Run Dev Server", #selector(runDevServer), "r", [.command, .control])
+        file.addItem(.separator())
+        _ = item(file, "Fan Out Task…", #selector(fanout), "f", [.command, .option])
+        _ = item(file, "Compare Fan-out…", #selector(compareFanout))
+        let def = NSMenu(); for a in AgentCatalog.installed(AppModel.shared.agents) { let i = item(def, a.name, #selector(setDefaultAgent(_:))); i.representedObject = a.id }
+        let di = file.addItem(withTitle: "Default Agent", action: nil, keyEquivalent: ""); file.setSubmenu(def, for: di)
+        file.addItem(.separator())
+        _ = item(file, "Close", #selector(closePane), "w")
+        _ = item(file, "Close Tab", #selector(closeTab), "w", [.command, .shift])
 
         let edit = sub("Edit")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -207,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         edit.addItem(.separator())
         edit.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f").tag = Int(NSFindPanelAction.showFindPanel.rawValue)
-        _ = item(edit, "Find in Worktree…", #selector(findInWorktree), "f", [.command, .shift])
+        _ = item(edit, "Find in Workspace…", #selector(findInWorktree), "f", [.command, .shift])
         _ = item(edit, "Go to Line…", #selector(goToLine), "l")
         _ = item(edit, "Send Selection to Agent", #selector(sendSelection), "\r", [.command, .option])
         _ = item(edit, "Open in External Editor", #selector(openExternal), "o", [.command, .option])
@@ -223,24 +231,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
         _ = item(view, "Next Pane", #selector(nextPane), "]")
         _ = item(view, "Previous Pane", #selector(prevPane), "[")
+        _ = item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
+        _ = item(view, "Previous Tab", #selector(prevTab), "[", [.command, .shift])
         view.addItem(.separator())
-        _ = item(view, "Floating Terminal", #selector(floatingTerminal), "`", [.control])
-        _ = item(view, "Quick Open…", #selector(quickOpen), "p")
-        _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
-        _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
-        _ = item(view, "Session History", #selector(showHistory), "h", [.command, .shift])
-        _ = item(view, "Terminals", #selector(showTerminals), "0")
-        _ = item(view, "Review Changes", #selector(showReview), "r", [.command, .shift])
+        _ = item(view, "Changes", #selector(showReview), "r", [.command, .shift])
         _ = item(view, "Files", #selector(showFiles), "e", [.command, .shift])
         _ = item(view, "Browser", #selector(showBrowser), "b", [.command, .shift])
-        _ = item(view, "Tasks (GitHub & Linear)", #selector(showTasks), "i", [.command, .shift])
+        _ = item(view, "Issues & Pull Requests", #selector(showTasks), "i", [.command, .shift])
         _ = item(view, "Design Mode", #selector(toggleDesign), "d", [.command, .control])
+        view.addItem(.separator())
+        _ = item(view, "Jump To…", #selector(quickOpen), "j")
+        _ = item(view, "Quick Open…", #selector(quickOpen), "p")
+        _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
+        _ = item(view, "Floating Terminal", #selector(floatingTerminal), "a", [.command, .option])
+        _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
+        _ = item(view, "Session History", #selector(showHistory), "h", [.command, .shift])
+        view.addItem(.separator())
+        view.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s").keyEquivalentModifierMask = [.command, .control]
+        view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
         view.addItem(.separator())
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i }
         registerMoreMenus?(main)
 
         let win = sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        win.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
         NSApp.windowsMenu = win
         NSApp.mainMenu = main
     }

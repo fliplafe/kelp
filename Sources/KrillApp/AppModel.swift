@@ -144,7 +144,7 @@ final class AppModel {
            let h = r["history"]?.string, let d = Data(base64Encoded: h) { sink(d) }
     }
     func detach(session id: String) { outputHandlers[id] = nil; Task { _ = try? await client?.call("session.detach", .obj(["id": .string(id)])) } }
-    func write(session id: String, _ d: Data) { Task { _ = try? await client?.call("session.write", .obj(["id": .string(id), "base64": .string(d.base64EncodedString())])) } }
+    func write(session id: String, _ d: Data) { client?.notify("session.write", .obj(["id": .string(id), "base64": .string(d.base64EncodedString())])) }
     func resize(session id: String, cols: Int, rows: Int) { Task { _ = try? await client?.call("session.resize", .obj(["id": .string(id), "cols": .int(cols), "rows": .int(rows)])) } }
 
     func worktree(_ id: String?) -> Worktree? { worktrees.first { $0.id == id } }

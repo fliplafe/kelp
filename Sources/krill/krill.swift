@@ -16,11 +16,22 @@ usage: krill <command>
   session restart|rename <id> [title]|handoff <id> [--agent a]|fork <id>
   terminal context <session>          bounded transcript (for pasting elsewhere)
   fanout <prompt> --agents claude,codex [--repo id]
+  attach <session>                     make this terminal the session's terminal (detach: close it)
   hook <working|waiting|done>          (called by agent hooks inside a session)
   install | uninstall                  launchd agent for the daemon
   github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
   linear login <key> | tasks | start <ENG-123>
 """
+
+// Internal: the daemon starts agents through this so the PTY becomes their controlling terminal
+// (posix_spawn can't do TIOCSCTTY). Without it no SIGWINCH reaches them and resizes are ignored.
+func ctty() -> Never {
+    _ = ioctl(0, TIOCSCTTY, 0)
+    let rest = Array(CommandLine.arguments.dropFirst(2))
+    let cargs = rest.map { strdup($0) } + [nil]
+    execvp(rest[0], cargs)
+    FileHandle.standardError.write(Data("krill: \(rest[0]): \(String(cString: strerror(errno)))\n".utf8)); exit(127)
+}
 
 func fail(_ m: String) -> Never { FileHandle.standardError.write(Data((m + "\n").utf8)); exit(1) }
 
@@ -87,6 +98,7 @@ func plist() -> String {
 
 @main struct Main {
     static func main() async {
+        if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "__ctty" { ctty() }
         signal(SIGPIPE, SIG_IGN)
         guard !args.isEmpty else { print(usage); return }
         let cmd = args.removeFirst()
@@ -101,6 +113,9 @@ func plist() -> String {
                 let u = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/dev.krill.daemon.plist")
                 _ = try? Process.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["unload", u.path])
                 try? FileManager.default.removeItem(at: u)
+            case "attach":
+                guard let id = args.first else { fail("krill attach <session>") }
+                Attach.run(id)
             case "hook":   // inside an agent session: report status to the daemon
                 guard let id = ProcessInfo.processInfo.environment["KRILL_SESSION"], let ev = args.first else { fail("hook: needs KRILL_SESSION and an event") }
                 let c = try RPCClient(socket: ProcessInfo.processInfo.environment["KRILL_SOCKET"] ?? Paths.socket.path)

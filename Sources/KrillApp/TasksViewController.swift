@@ -5,7 +5,7 @@ import Core
 /// GitHub PRs / issues / Projects and Linear tasks for the selected project, with the actions that close the loop:
 /// issue → worktree + agent, failed check / review comments → agent, PR merge, Linear state.
 @MainActor
-final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDataSource, NSTableViewDelegate {
+final class TasksViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let source = NSSegmentedControl(labels: ["Pull Requests", "Issues", "Linear", "Jira", "Projects"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSPopUpButton()
     private let status = NSTextField(labelWithString: "")
@@ -255,7 +255,7 @@ final class TasksViewController: NSViewController, WorktreeAware, NSTableViewDat
                   let s = try? res["session"]?.decode(Session.self) else { return }
             await AppModel.shared.refresh()
             let d = NSApp.delegate as? AppDelegate
-            d?.open(worktree: wid); d?.content.select(named: "Terminals"); d?.content.workspace.add(session: s, newTab: true)
+            d?.open(worktree: wid); d?.content.workspace?.add(session: s)
         }
     }
 

@@ -7,18 +7,18 @@ import Markdown
 /// Structured chat with Claude Code in a worktree: Markdown answers, one-line tool calls with results, the agent's plan
 /// as a checklist, and the cost of each turn. The conversation lives in the daemon, like terminals do.
 @MainActor
-final class ChatWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
-    static var open: [String: ChatWindow] = [:]
+final class ChatViewController: NSViewController, NSTextViewDelegate {
+    static var open: [String: ChatViewController] = [:]
     private static var subscribed = false
     let chatId: String, worktree: Worktree
-    private var window: NSWindow!
     private let web = WKWebView()
     private let input = NSTextView()
     private let status = NSTextField(labelWithString: "Starting Claude…")
     private var html: [String] = []
     private var tools: [String: Int] = [:]   // tool id -> index of its row, to mark results
 
-    static func start(worktree w: Worktree) {
+    /// Asks for model / permissions, starts the chat in the daemon and hands back its id.
+    static func start(worktree w: Worktree, then: @escaping (String) -> Void) {
         let form = LaunchForm(withPrompt: false, defaultAgent: "claude")
         form.agent.isEnabled = false; form.effort.isEnabled = false
         let a = NSAlert(); a.messageText = "New Chat"; a.informativeText = "A structured conversation with Claude Code in \(w.branch). Edits are applied directly; in Yolo mode it may also run commands."
@@ -27,22 +27,24 @@ final class ChatWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             var p = form.params; p["worktreeId"] = .string(w.id)
             guard let r = await AppModel.shared.call("chat.start", .object(p)), let id = r["id"]?.string else { return }
-            subscribe()
-            let c = ChatWindow(chatId: id, worktree: w); open[id] = c
+            then(id)
         }
     }
 
-    static func debugOpen(id: String, worktree: Worktree) { subscribe(); open[id] = ChatWindow(chatId: id, worktree: worktree) }
-
-    /// One listener routes daemon chat lines to their windows.
-    private static func subscribe() {
+    /// One listener routes daemon chat lines to their views.
+    static func subscribe() {
         guard !subscribed else { return }; subscribed = true
         AppModel.shared.onChatLine = { id, line in open[id]?.receive(line) }
     }
 
     init(chatId: String, worktree: Worktree) {
         self.chatId = chatId; self.worktree = worktree
-        super.init()
+        super.init(nibName: nil, bundle: nil)
+        Self.subscribe(); Self.open[chatId] = self
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
         input.isRichText = false; input.font = .systemFont(ofSize: 13); input.delegate = self
         input.isAutomaticQuoteSubstitutionEnabled = false; input.textContainerInset = NSSize(width: 6, height: 6)
         let isv = NSScrollView(); isv.documentView = input; isv.hasVerticalScroller = true; isv.borderType = .bezelBorder
@@ -63,9 +65,7 @@ final class ChatWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             buttons.topAnchor.constraint(equalTo: isv.bottomAnchor, constant: 8), buttons.leadingAnchor.constraint(equalTo: isv.leadingAnchor),
             buttons.trailingAnchor.constraint(equalTo: isv.trailingAnchor), buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
         ])
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 720), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "Chat — \(worktree.branch)"; window.contentView = root; window.delegate = self; window.isReleasedWhenClosed = false
-        window.center(); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(input)
+        view = root
         render()
         Task {   // replay what happened before this window existed
             for l in (await AppModel.shared.call("chat.history", .obj(["id": .string(chatId)])))?.array ?? [] { if let s = l.string { receive(s) } }
@@ -104,7 +104,7 @@ final class ChatWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func render() {
         let empty = html.isEmpty ? "<p class='hint'>Ask Claude to do something in <b>\(Self.esc(worktree.branch))</b>. ⌘↩ sends.</p>" : ""
         let body = empty + html.joined(separator: "\n") + Self.css
-        let dark = window?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         web.loadHTMLString(MarkdownHTML.page(body: body, baseURL: URL(fileURLWithPath: worktree.path), dark: dark) + "<script>window.scrollTo(0, document.body.scrollHeight)</script>", baseURL: nil)
     }
 
@@ -116,14 +116,15 @@ final class ChatWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     @objc private func stopTapped() { Task { await AppModel.shared.call("chat.stop", .obj(["id": .string(chatId)])) } }
     @objc private func attachFile() {
         let p = NSOpenPanel(); p.directoryURL = URL(fileURLWithPath: worktree.path); p.allowsMultipleSelection = true
-        p.beginSheetModal(for: window) { [weak self] r in
+        guard let w = view.window else { return }
+        p.beginSheetModal(for: w) { [weak self] r in
             guard r == .OK, let self else { return }
             let root = self.worktree.path + "/"
             let refs = p.urls.map { "@" + $0.path.replacingOccurrences(of: root, with: "") }.joined(separator: " ")
             self.input.insertText(refs + " ", replacementRange: self.input.selectedRange())
         }
     }
-    func windowWillClose(_ n: Notification) { Self.open[chatId] = nil }   // the conversation keeps running in the daemon
+    func focusInput() { view.window?.makeFirstResponder(input) }
 
     static func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
     static let css = """

@@ -5,7 +5,8 @@ import Core
 /// Embedded browser: tabs per worktree, dev-server auto-open, and Design Mode (click an element →
 /// its HTML, computed styles and a cropped screenshot go into the agent's prompt).
 @MainActor
-final class BrowserViewController: NSViewController, WorktreeAware, WKNavigationDelegate, WKScriptMessageHandler, NSTextFieldDelegate, NSTabViewDelegate {
+final class BrowserViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler, NSTextFieldDelegate, NSTabViewDelegate {
+    static let shared: BrowserViewController = { let b = BrowserViewController(); _ = b.view; return b }()
     private var tabsByWorktree: [String: [WKWebView]] = [:]
     private var worktreeId: String?
     private let tabs = NSTabView()
@@ -163,8 +164,7 @@ final class BrowserViewController: NSViewController, WorktreeAware, WKNavigation
             Task { _ = await runSheet(a) }; return
         }
         Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(msg), "enter": false])) }
-        (NSApp.delegate as? AppDelegate)?.content.select(named: "Terminals")
-        (NSApp.delegate as? AppDelegate)?.content.workspace.focus(session: sid)
+        (NSApp.delegate as? AppDelegate)?.openSession(sid)
     }
 
     static let designJS = """
