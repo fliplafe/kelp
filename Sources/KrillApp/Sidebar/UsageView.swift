@@ -18,19 +18,20 @@ struct UsageView: View {
         // The loader hangs off a container that always exists: on an EmptyView `.task` never runs.
         VStack(alignment: .leading, spacing: 0) { list }
             .task {
-                var quick = 6   // the daemon reads Claude's /usage in the background the first time: look again soon
+                // Look again soon until the daemon answers (at launch) and has read Claude's /usage (seconds, the first time).
+                var quick = 12
                 while !Task.isCancelled {
                     await load()
                     let waiting = quick > 0 && !rows.contains { $0.agent == "Claude" && $0.used != nil }
                     quick -= 1
-                    try? await Task.sleep(for: .seconds(waiting ? 8 : 60))
+                    try? await Task.sleep(for: .seconds(waiting ? (rows.isEmpty ? 1 : 8) : 60))
                 }
             }
     }
 
     @ViewBuilder private var list: some View {
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
                 Button { expanded.toggle(); UserDefaults.standard.set(expanded, forKey: "usage.expanded") } label: {
                     HStack(spacing: 4) {
                         Text("Limits").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -42,15 +43,17 @@ struct UsageView: View {
                 }
                 .buttonStyle(.plain)
                 if expanded {
+                    // One line each, like a status footer; when it resets is on hover.
                     ForEach(rows) { r in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("\(r.agent) · \(r.kind)").font(.caption)
-                                Spacer()
-                                if let u = r.used { Text("\(Int(u * 100))% used").font(.caption2.monospacedDigit()).foregroundStyle(color(u)) }
+                        HStack(spacing: 6) {
+                            Text("\(r.agent) \(r.kind)").font(.caption).lineLimit(1)
+                            Spacer(minLength: 4)
+                            if let u = r.used {
+                                ProgressView(value: min(u, 1)).progressViewStyle(.linear).tint(color(u)).controlSize(.mini).frame(width: 54)
+                                Text("\(Int(u * 100))%").font(.caption.monospacedDigit()).foregroundStyle(color(u)).frame(width: 32, alignment: .trailing)
+                            } else {
+                                Text(r.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
-                            if let u = r.used { ProgressView(value: min(u, 1)).progressViewStyle(.linear).tint(color(u)).controlSize(.mini) }
-                            Text(r.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         }
                         .help("\(r.agent) \(r.kind): \(r.detail)")
                     }

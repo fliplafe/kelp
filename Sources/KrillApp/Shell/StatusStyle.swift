@@ -10,7 +10,7 @@ extension AgentStatus {
         case .waiting: "questionmark.circle.fill"
         case .done: "checkmark.circle.fill"
         case .idle: "circle"
-        case .hibernated: "moon.zzz.fill"
+        case .hibernated: "moon.zzz"
         case .exited: "xmark.circle.fill"
         }
     }
@@ -20,7 +20,7 @@ extension AgentStatus {
         case .waiting: .systemOrange
         case .done: .systemGreen
         case .idle: .tertiaryLabelColor
-        case .hibernated: .systemIndigo
+        case .hibernated: .tertiaryLabelColor   // nothing to look at: paused agents stay quiet
         case .exited: .secondaryLabelColor
         }
     }

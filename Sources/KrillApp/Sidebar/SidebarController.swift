@@ -126,7 +126,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, isGroupItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { true } else { false } }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
-    func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat { if case .project? = (item as? Node)?.kind { 28 } else { 36 } }
+    // Source-list metrics (Finder, Mail): one line per row.
+    func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        switch (item as? Node)?.kind {
+        case .project?: 26
+        case .workspace?: 28
+        default: 24
+        }
+    }
 
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? Node else { return nil }
@@ -244,7 +251,6 @@ final class SidebarCell: NSTableCellView {
     private let icon = NSImageView()
     private let mark = StatusMark(size: 14)
     private let title = NSTextField(labelWithString: "")
-    private let subtitle = NSTextField(labelWithString: "")
     private let badge = NSTextField(labelWithString: "")
     private let badgeMark = StatusMark(size: 12)
     private var add: NSButton?
@@ -254,7 +260,6 @@ final class SidebarCell: NSTableCellView {
         self.node = node; self.owner = owner
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
-        subtitle.font = .systemFont(ofSize: 11); subtitle.lineBreakMode = .byTruncatingTail
         badge.font = .systemFont(ofSize: 11, weight: .semibold); badge.textColor = .systemOrange
         icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
@@ -265,23 +270,20 @@ final class SidebarCell: NSTableCellView {
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", "New Workspace"); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
             b.toolTip = "New workspace (⌘N)"; add = b
-            layout(row: [title, NSView(), spinner, b], twoLines: false)
+            layout(row: [title, NSView(), spinner, b])
         case .workspace:
             title.font = .systemFont(ofSize: 13)
-            layout(row: [icon, stack([title, subtitle]), NSView(), badge, badgeMark], twoLines: true)
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            layout(row: [icon, title, NSView(), badge, badgeMark])
         case .agent:
-            title.font = .systemFont(ofSize: 12)
-            layout(row: [mark, stack([title, subtitle]), NSView()], twoLines: true)
+            title.font = .systemFont(ofSize: 13)
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            layout(row: [mark, title, NSView()])
         }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    private func stack(_ v: [NSView]) -> NSStackView {
-        let s = NSStackView(views: v); s.orientation = .vertical; s.alignment = .leading; s.spacing = 1
-        v.forEach { $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
-        return s
-    }
-    private func layout(row: [NSView], twoLines: Bool) {
+    private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
         r.translatesAutoresizingMaskIntoConstraints = false; addSubview(r)
         NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2), r.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
@@ -293,7 +295,7 @@ final class SidebarCell: NSTableCellView {
         switch node.kind {
         case .project(let id):
             let r = m.repo(id)
-            title.stringValue = (r?.name ?? "").uppercased(); toolTip = r?.path
+            title.stringValue = r?.name ?? ""; toolTip = r?.path
             let busy = owner?.isCreating(id) == true
             if busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
             add?.isHidden = busy
@@ -301,23 +303,23 @@ final class SidebarCell: NSTableCellView {
             guard let w = m.worktree(id) else { return }
             let isMain = w.path == m.repo(w.repoId)?.path
             let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
-            icon.image = .symbol(isMain ? "house" : "arrow.triangle.branch"); icon.contentTintColor = .secondaryLabelColor
+            icon.image = .symbol(isMain ? "house" : "arrow.triangle.branch"); icon.contentTintColor = .controlAccentColor
             title.stringValue = w.displayName
-            title.font = .systemFont(ofSize: 13, weight: agents.contains(where: \.unread) ? .semibold : .regular)
-            subtitle.stringValue = isMain ? "\(w.branch) · repository" : w.branch; subtitle.textColor = .secondaryLabelColor
+            // Bold = something new to look at (like unread mail); a paused agent has nothing new.
+            title.font = .systemFont(ofSize: 13, weight: agents.contains { $0.unread && $0.status != .hibernated } ? .semibold : .regular)
             let waiting = agents.filter { $0.status == .waiting }.count
             badge.stringValue = waiting > 1 ? "\(waiting)" : ""
             badgeMark.status = waiting > 0 ? .waiting : agents.contains { $0.status == .working } ? .working
                 : agents.contains { $0.status == .done && $0.unread } ? .done : nil
-            toolTip = w.path
+            // The branch and folder are one hover away (and in the title bar for the open workspace).
+            toolTip = (isMain ? "\(w.branch) · the repository itself" : "Branch \(w.branch)") + "\n" + w.path
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
             mark.status = s.agent == "shell" ? nil : s.status
             if s.agent == "shell" { icon.image = .symbol("terminal") }
             title.stringValue = s.title.isEmpty ? AgentCatalog.name(s.agent) : s.title
-            title.font = .systemFont(ofSize: 12, weight: s.unread ? .semibold : .regular)
-            subtitle.stringValue = s.agent == "shell" ? "Terminal" : (s.summary.isEmpty || s.status == .waiting ? s.status.words : s.summary)
-            subtitle.textColor = s.status == .waiting ? .systemOrange : .secondaryLabelColor
+            title.font = .systemFont(ofSize: 13, weight: s.unread && s.status != .hibernated ? .semibold : .regular)
+            title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
             toolTip = "\(AgentCatalog.name(s.agent)) · \(s.status.words)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
         }
     }
