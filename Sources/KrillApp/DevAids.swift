@@ -71,6 +71,9 @@ extension AppDelegate {
                       let v = w.contentView?.superview ?? w.contentView else { exit(2) }
                 if want != nil { print("WINDOW", w.title, w.frame) }
                 if let s = w.attachedSheet { print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty }) }
+                // KRILL_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
+                // reached otherwise without moving the user's pointer).
+                for text in (env["KRILL_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
                 // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
                 v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
                 let scale = w.backingScaleFactor, size = v.bounds.size
@@ -101,6 +104,18 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
+    /// The nearest view above the label `text` that tracks the mouse gets mouseEntered, like a real pointer would send.
+    static func hover(_ text: String, in root: NSView, window: NSWindow) {
+        guard let label = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text }) else { print("HOVER no", text); return }
+        var v: NSView? = label
+        while let x = v, x.trackingAreas.isEmpty { v = x.superview }
+        guard let target = v, let e = NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
+                                                            windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)
+        else { print("HOVER nothing tracks", text); return }
+        target.mouseEntered(with: e)
+        print("HOVER", text, "→", type(of: target))
+    }
+
     /// Dev aid: real key events through NSApp (menus, key equivalents, the terminal's keyDown/IME path).
     /// "echo hi\r" types text; "{cmd+t}" / "{cmd+\\}" press shortcuts; "{wait}" pauses a second (async UI).
     func typeKeys(_ spec: String) {
