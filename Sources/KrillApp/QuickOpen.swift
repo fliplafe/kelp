@@ -67,9 +67,18 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                 }))
             }
         }
-        if let m = NSApp.mainMenu { walk(m, path: "") }
-        for c in ExtensionRegistry.shared.all.commands {
-            items.append(Item(kind: "Command", icon: "puzzlepiece.extension", title: c.title, detail: c.key ?? "", action: { c.run([:]) }))
+        if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
+        // Themes, like VS Code's "Color Theme" command.
+        for (id, name) in [("auto", "Auto (Light / Dark)")] + ThemeManager.shared.themes.map({ ($0.id, $0.name) }) {
+            items.append(Item(kind: "Command", icon: "paintpalette", title: "Color Theme: \(name)", detail: "Settings › Appearance",
+                              action: { SettingsStore.shared.set("workbench.theme", .string(id)) }))
+        }
+        // Every setting, to jump to its page.
+        for section in ExtensionRegistry.shared.all.settings {
+            for spec in section.specs {
+                items.append(Item(kind: "Setting", icon: section.icon, title: "\(section.title): \(spec.title)", detail: spec.description ?? "",
+                                  action: { SettingsWindow.show(section: section.id) }))
+            }
         }
         if !commandsOnly {
             for w in AppModel.shared.worktrees where !w.archived {
@@ -93,6 +102,18 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         all = items
     }
 
+    /// A title matches when it contains the query, or each query word starts a word of the title.
+    static func wordScore(_ title: String, _ query: String) -> Int? {
+        let t = title.lowercased(), q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return 0 }
+        if t.hasPrefix(q) { return 100 }
+        let words = t.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        if words.contains(where: { $0.hasPrefix(q) }) { return 80 }
+        if t.contains(q) { return 60 }
+        let parts = q.split(separator: " ").map(String.init)
+        return parts.count > 1 && parts.allSatisfy({ p in words.contains { $0.hasPrefix(p) } }) ? 40 : nil
+    }
+
     static func shortcut(_ i: NSMenuItem) -> String {
         var s = ""
         let m = i.keyEquivalentModifierMask
@@ -107,13 +128,14 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     private func filter() {
         let q = field.stringValue
-        let pool = commandsOnly ? all.filter { $0.kind == "Command" || $0.kind == "Quick Command" } : all
+        let pool = commandsOnly ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
         if q.isEmpty {
             shown = Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200))
         } else {
             shown = pool.compactMap { it -> (Item, Int)? in
-                let target = it.kind == "File" ? it.detail : it.title + " " + it.detail
-                return ProjectFiles.fuzzyScore(target, q).map { (it, $0 + (it.kind == "Command" && !commandsOnly ? -5 : 0)) }
+                // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
+                if it.kind == "File" { return ProjectFiles.fuzzyScore(it.detail, q).map { (it, $0) } }
+                return Self.wordScore(it.title, q).map { (it, $0 + (it.kind == "Command" ? 2 : 0)) }
             }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0)
         }
         table.reloadData()

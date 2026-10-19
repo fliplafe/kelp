@@ -5,7 +5,7 @@ import Core
 /// Projects → workspaces → agents in a source-list outline (like Finder and Xcode).
 /// Status changes update the visible cells in place; the outline reloads only when the tree's shape changes.
 @MainActor
-final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
+final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate, NSSearchFieldDelegate {
     final class Node: NSObject {
         enum Kind { case project(String), workspace(String), agent(String) }
         let kind: Kind
@@ -27,6 +27,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private var syncing = false
     private var renaming: String?
     private let empty = NSStackView()
+    private let search = NSSearchField()
+    private var query = ""
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
@@ -46,9 +48,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let footer = NSHostingView(rootView: SidebarFooterView())
         footer.sizingOptions = [.intrinsicContentSize]
         let v = NSView()
-        for x in [scroll, footer, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        search.placeholderString = "Workspace or agent"; search.delegate = self; search.controlSize = .small
+        search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
+        for x in [search, scroll, footer, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: v.topAnchor), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            search.topAnchor.constraint(equalTo: v.safeAreaLayoutGuide.topAnchor, constant: 6),
+            search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
+            scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: v.bottomAnchor),
@@ -80,24 +86,36 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     private func build() -> [Node] {
         let m = AppModel.shared
-        return m.repos.map { r in
+        let q = query.lowercased()
+        func hit(_ text: String...) -> Bool { q.isEmpty || text.contains { $0.lowercased().contains(q) } }
+        return m.repos.compactMap { r in
             let p = Node(.project(r.id))
-            p.children = m.workspaces(of: r).map { w in
-                let n = Node(.workspace(w.id))
+            p.children = m.workspaces(of: r).compactMap { w in
                 // Agents only: terminals are tabs, not something to keep an eye on.
-                n.children = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.agent != "shell" }.map { Node(.agent($0.id)) }
+                let agents = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.agent != "shell" }
+                let whole = hit(w.displayName, w.branch, r.name)
+                let kept = whole ? agents : agents.filter { hit($0.title, $0.agent ?? "", $0.summary, $0.status.label) }   // "needs", "working", "done" act as filters
+                guard whole || !kept.isEmpty else { return nil }
+                let n = Node(.workspace(w.id))
+                n.children = kept.map { Node(.agent($0.id)) }
                 return n
             }
-            return p
+            return p.children.isEmpty && !q.isEmpty ? nil : p
         }
     }
+
+    private static let editors = [("VS Code", "com.microsoft.VSCode"), ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Zed", "dev.zed.Zed"),
+                                  ("Xcode", "com.apple.dt.Xcode"), ("Terminal", "com.apple.Terminal")]
+
+    @objc private func searchChanged() { query = search.stringValue.trimmingCharacters(in: .whitespaces); refresh() }
 
     /// Same shape → refresh the visible cells; new shape → reload, keeping expansion and selection.
     private func refresh() {
         let next = build()
         func flat(_ ns: [Node]) -> [String] { ns.flatMap { [$0.key] + flat($0.children) } }
         let nextShape = flat(next)
-        empty.isHidden = !next.isEmpty
+        empty.isHidden = !next.isEmpty || !query.isEmpty
+        search.isHidden = AppModel.shared.repos.isEmpty
         if nextShape == shape {
             for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
             return
@@ -218,6 +236,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add("Rename") { [weak self] in self?.startRename(id) }
             menu.add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
             menu.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
+            // Whatever editors this Mac has, like "Open in…" in Finder.
+            for (name, bundle) in Self.editors {
+                guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { continue }
+                menu.add("Open in \(name)") { NSWorkspace.shared.open([URL(fileURLWithPath: w.path)], withApplicationAt: app, configuration: .init()) }
+            }
             menu.addItem(.separator())
             if w.path == m.repo(w.repoId)?.path {
                 // A desk: closing it ends its agents; the project's folder is untouched.
@@ -233,6 +256,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add("Restart") { AgentActions.restart(sid) }
             menu.addItem(.separator())
             menu.add("Copy Context") { AgentActions.copyContext(sid) }
+            if m.session(sid)?.unread == false { menu.add("Mark as Unread") { Task { await AppModel.shared.call("session.markUnread", .obj(["id": .string(sid)])) } } }
             menu.addItem(.separator())
             menu.add("Stop") { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) } }
         }

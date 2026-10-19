@@ -1,8 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// ⌘-shortcuts on a non-Latin layout (Russian, Greek, Hebrew…): when a ⌘ key comes in with a non-Latin letter, the
-/// menus are tried with the letter that key types on the user's Latin layout — ⌘Ц works as ⌘W, like in most Mac apps.
+/// ⌘-shortcuts on a non-Latin layout (Russian, Greek, Hebrew…): a ⌘ key that comes in with a non-Latin letter goes on
+/// as the letter that key types on the user's Latin layout — ⌘Ц is ⌘W, ⌘С is ⌘C — so menus, the terminal's own
+/// bindings and text views all see the shortcut they know, like in most Mac apps.
 @MainActor
 enum LatinShortcuts {
     static func install() {
@@ -11,9 +12,8 @@ enum LatinShortcuts {
                   typed.unicodeScalars.contains(where: { !$0.isASCII }), let latin = latin(e),
                   let t = NSEvent.keyEvent(with: .keyDown, location: e.locationInWindow, modifierFlags: e.modifierFlags, timestamp: e.timestamp,
                                            windowNumber: e.windowNumber, context: nil, characters: latin, charactersIgnoringModifiers: latin,
-                                           isARepeat: e.isARepeat, keyCode: e.keyCode),
-                  NSApp.mainMenu?.performKeyEquivalent(with: t) == true else { return e }
-            return nil
+                                           isARepeat: e.isARepeat, keyCode: e.keyCode) else { return e }
+            return t
         }
     }
 

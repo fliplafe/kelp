@@ -154,6 +154,9 @@ extension Daemon {
             let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 8192)
             // swiftlint:disable:next optional_data_string_conversion
             return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))   // lossy on purpose: windows cut UTF-8
+        case "session.markUnread":
+            if let r = existing(try p.req("id"))?.markUnread() { try store.save(r); notify("event.session", try .from(r)) }
+            return .null
         case "session.markRead":
             if let r = existing(try p.req("id"))?.markRead() { try store.save(r); notify("event.session", try .from(r)) }
             return .null

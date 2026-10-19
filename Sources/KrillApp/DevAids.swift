@@ -75,6 +75,7 @@ extension AppDelegate {
                 guard let w = picked ?? main.window,
                       let v = w.contentView?.superview ?? w.contentView else { exit(2) }
                 if want != nil { print("WINDOW", w.title, w.frame) }
+                print("WINDOWS", NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? "-" : $0.title)(\(type(of: $0)))" }.joined(separator: ", "))
                 if let s = w.attachedSheet { print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty }) }
                 // KRILL_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
                 // reached otherwise without moving the user's pointer).

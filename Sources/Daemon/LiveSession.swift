@@ -205,6 +205,12 @@ final class LiveSession: @unchecked Sendable {
         record.unread = false; return record
     }
 
+    func markUnread() -> Session? {
+        lock.lock(); defer { lock.unlock() }
+        guard !record.unread else { return nil }
+        record.unread = true; return record
+    }
+
     func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(n) }
     func attach(_ conn: Int) -> Data { lock.lock(); defer { lock.unlock() }; attached.insert(conn); return ring }
     func detach(_ conn: Int) { lock.lock(); attached.remove(conn); lock.unlock() }

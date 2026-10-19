@@ -439,6 +439,16 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         keyAction(pressed ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE, event: event)
     }
 
+    // MARK: Edit menu (Copy / Paste / Select All reach the terminal from the menu bar too, not only as ⌘C / ⌘V)
+
+    private func ghosttyAction(_ name: String) {
+        guard let surface else { return }
+        _ = name.withCString { ghostty_surface_binding_action(surface, $0, UInt(name.utf8.count)) }
+    }
+    @objc public func copy(_ sender: Any?) { ghosttyAction("copy_to_clipboard") }
+    @objc public func paste(_ sender: Any?) { ghosttyAction("paste_from_clipboard") }
+    @objc public override func selectAll(_ sender: Any?) { ghosttyAction("select_all") }
+
     /// ⌘-keys: Ghostty's own bindings (copy, paste, font size) go to the terminal; everything else to the menus.
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, window?.firstResponder === self, let surface else { return false }
