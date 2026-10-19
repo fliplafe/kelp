@@ -106,3 +106,23 @@ import Core
     #expect(!StatusDetector.withoutPromptHints(screen).contains("logging.py"))
     #expect(StatusDetector.withoutPromptHints(screen).contains("Done."))
 }
+
+@Test func claudeUsageScreenParses() {
+    let screen = """
+    Settings    Status   Config      Usage      Stats
+    Current session
+    █                                                    2% used
+    Resets 7:40am (Europe/Helsinki)
+    Current week (all models)
+    █████████████████████████████████████████            82% used
+    Resets Oct 20 at 5am (Europe/Helsinki)
+    Scanning local sessions…
+    Current week (Fable)
+    0% used
+    Resets Oct 20 at 5am (Europe/Helsinki)
+    """
+    let r = ClaudeLimits.parseUsageScreen(screen)
+    #expect(r.map(\.kind) == ["session", "week", "week · Fable"])
+    #expect(r[1].percent == 82 && r[1].resets == "Oct 20 at 5am")
+    #expect(r[0].resets == "7:40am")
+}

@@ -105,4 +105,13 @@ public final class PTY: @unchecked Sendable {
         _ = ioctl(master, TIOCSWINSZ, &ws)
     }
     public func kill() { Darwin.kill(-pid, SIGHUP); Darwin.kill(pid, SIGTERM) }
+
+    /// kill(), then SIGKILL the group if it's still there after `grace` seconds (some TUIs ignore SIGTERM).
+    public func terminate(grace: TimeInterval = 2) {
+        kill()
+        let pid = pid
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
+            if Darwin.kill(pid, 0) == 0 { Darwin.kill(-pid, SIGKILL); Darwin.kill(pid, SIGKILL) }
+        }
+    }
 }

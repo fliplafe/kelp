@@ -15,7 +15,11 @@ final class TabStrip: NSView {
     var addMenu: (() -> NSMenu)?
     var focused = false { didSet { if focused != oldValue { buttons.forEach { $0.groupFocused = focused } } } }
     private let stack = NSStackView()
+    private let scroll = NSScrollView()
     private let add = NSButton()
+    private let overflow = NSButton()
+    private var items: [Item] = []
+    private var selectedId: String?
     private var buttons: [TabButton] = []
     private let insertion = NSView()
 
@@ -27,13 +31,24 @@ final class TabStrip: NSView {
         add.symbolConfiguration = .init(pointSize: 11, weight: .medium)
         add.toolTip = "New agent, terminal, browser…"; add.target = self; add.action = #selector(addTapped)
         insertion.wantsLayer = true; insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; insertion.isHidden = true
+        // Too many tabs to fit: the strip scrolls (trackpad / wheel) and the chevron lists them all, like Safari.
+        overflow.image = .symbol("chevron.down", "All Tabs"); overflow.isBordered = false; overflow.contentTintColor = .secondaryLabelColor
+        overflow.symbolConfiguration = .init(pointSize: 10, weight: .semibold); overflow.toolTip = "All tabs in this group"
+        overflow.target = self; overflow.action = #selector(overflowTapped); overflow.isHidden = true
+        scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
+        scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
+        stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
-        for v in [stack, add, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [scroll, overflow, add, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 30),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: add.leadingAnchor, constant: -2),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            scroll.trailingAnchor.constraint(equalTo: overflow.leadingAnchor, constant: -2),
+            stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            overflow.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -2), overflow.centerYAnchor.constraint(equalTo: centerYAnchor),
+            overflow.widthAnchor.constraint(equalToConstant: 18),
             add.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8), add.centerYAnchor.constraint(equalTo: centerYAnchor),
             add.widthAnchor.constraint(equalToConstant: 22),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
@@ -52,6 +67,31 @@ final class TabStrip: NSView {
             let b = TabButton(); b.strip = self; buttons.append(b); stack.addArrangedSubview(b)
         }
         for (b, it) in zip(buttons, items) { b.set(it, selected: it.id == selected, groupFocused: focused) }
+        self.items = items; selectedId = selected
+        needsLayout = true
+        DispatchQueue.main.async { [weak self] in self?.revealSelected() }
+    }
+
+    override func layout() {
+        super.layout()
+        stack.layoutSubtreeIfNeeded()
+        overflow.isHidden = stack.fittingSize.width <= scroll.bounds.width + 1
+    }
+
+    /// Keeps the selected tab in view when the strip is scrolled or squeezed.
+    private func revealSelected() {
+        guard let i = items.firstIndex(where: { $0.id == selectedId }), buttons.indices.contains(i) else { return }
+        stack.layoutSubtreeIfNeeded()
+        buttons[i].scrollToVisible(buttons[i].bounds.insetBy(dx: -24, dy: 0))
+    }
+
+    @objc private func overflowTapped() {
+        let m = NSMenu()
+        for it in items {
+            let i = m.add(it.title) { [weak self] in self?.onSelect?(it.id) }
+            i.image = it.icon; i.state = it.id == selectedId ? .on : .off
+        }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: overflow.bounds.height + 4), in: overflow)
     }
 
     @objc private func addTapped() {
@@ -63,11 +103,12 @@ final class TabStrip: NSView {
 
     // MARK: drops between tabs
     private func index(at p: NSPoint) -> Int {
-        let x = convert(p, from: nil).x
-        return buttons.firstIndex { $0.frame.midX + stack.frame.minX > x } ?? buttons.count
+        let x = stack.convert(p, from: nil).x
+        return buttons.firstIndex { $0.frame.midX > x } ?? buttons.count
     }
     private func showInsertion(_ i: Int) {
-        let x = i < buttons.count ? buttons[i].frame.minX + stack.frame.minX - 1 : (buttons.last.map { $0.frame.maxX + stack.frame.minX } ?? 6)
+        let local = i < buttons.count ? buttons[i].frame.minX - 1 : (buttons.last?.frame.maxX ?? 6)
+        let x = convert(NSPoint(x: local, y: 0), from: stack).x
         insertion.frame = NSRect(x: x, y: 4, width: 2, height: bounds.height - 8); insertion.isHidden = false
     }
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { draggingUpdated(s) }
@@ -107,7 +148,7 @@ private final class TabButton: NSView, NSDraggingSource {
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor, constant: 3), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
-            widthAnchor.constraint(lessThanOrEqualToConstant: 220), widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 220), widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
             close.widthAnchor.constraint(equalToConstant: 14),
             underline.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8), underline.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             underline.bottomAnchor.constraint(equalTo: bottomAnchor), underline.heightAnchor.constraint(equalToConstant: 2)

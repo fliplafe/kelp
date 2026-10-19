@@ -26,6 +26,10 @@ public final class Daemon: @unchecked Sendable {
     var lastMethod = ""
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
     var claudeLimits: [String: (reading: ClaudeLimits.Reading, at: Date)] = [:]
+    /// From Claude Code's /usage screen (UsageProbe).
+    var claudePlan: [ClaudeLimits.Reading] = []
+    var claudePlanAt: Date?
+    var claudePlanRunning = false
     func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
     private let wakeLock = NSLock()   // one wake per session even when several clients open it at once
 

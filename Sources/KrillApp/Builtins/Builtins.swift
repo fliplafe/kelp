@@ -32,7 +32,9 @@ enum Builtins {
                 s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T) and the start screen.", options: AgentCatalog.all.map(\.id)),
                 s("agents.permissionMode", "Permissions", "enum", "ask", "Yolo skips approval prompts — agents edit and run commands freely in their workspace.", options: ["ask", "yolo"]),
                 s("sessions.hibernateMinutes", "Pause idle agents after (minutes)", "number", 0, "0 = never. Paused agents free memory and resume the same conversation."),
-                s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"])
+                s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
+                s("usage.readClaudePlan", "Show Claude plan limits", "boolean", true,
+                  "Opens Claude Code's /usage in the background every 10 minutes and shows the percentages in the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "krill.agents", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Empty = the theme's / Ghostty's font."),

@@ -68,9 +68,15 @@ struct UsageView: View {
             return s < 60 ? "resets now" : "resets in " + (s >= 86400 ? "\(Int(s) / 86400)d \(Int(s) % 86400 / 3600)h" : "\(Int(s) / 3600)h \(Int(s) % 3600 / 60)m")
         }
         var out: [Row] = []
-        for l in u["claudeLimits"]?.array ?? [] {   // percentages Claude Code printed itself
+        for l in u["claudePlan"]?.array ?? [] {   // Claude Code's own /usage screen
             out.append(Row(agent: "Claude", kind: l["kind"]?.string ?? "limit", used: num(l["percent"]).map { $0 / 100 },
-                           detail: l["resets"]?.string.map { "resets \($0)" } ?? "as reported by Claude Code"))
+                           detail: l["resets"]?.string.map { "resets \($0)" } ?? ""))
+        }
+        if out.isEmpty {
+            for l in u["claudeLimits"]?.array ?? [] {   // percentages Claude Code printed in a session
+                out.append(Row(agent: "Claude", kind: l["kind"]?.string ?? "limit", used: num(l["percent"]).map { $0 / 100 },
+                               detail: l["resets"]?.string.map { "resets \($0)" } ?? "as reported by Claude Code"))
+            }
         }
         if out.isEmpty {
             for cl in u["claude"]?.array ?? [] {
