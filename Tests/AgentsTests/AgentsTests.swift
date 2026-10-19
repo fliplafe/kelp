@@ -170,6 +170,10 @@ import Core
     #expect(d.status == .working)
     d.output("\u{1B}[2K⠋ 12s", at: t0.addingTimeInterval(20))   // a spinner tick
     #expect(d.tick(at: t0.addingTimeInterval(20)) == .done)
+    d.output("Worked for 9.0s", at: t0.addingTimeInterval(22))     // the footer after a finished turn
+    #expect(d.status == .done)
+    d.output("Reading more files", at: t0.addingTimeInterval(30))  // it really went on
+    #expect(d.status == .working)
 }
 
 /// Replayed history keeps the screen but not the agent's questions to its terminal; the terminal's answers aren't typing.

@@ -10,6 +10,8 @@ protocol TabContent: AnyObject {
     var icon: NSImage? { get }
     /// Agent tabs report their status; it shows on the tab.
     var status: AgentStatus? { get }
+    /// Finished and not looked at yet (the filled ✓).
+    var unread: Bool { get }
     var toolTip: String? { get }
     /// Unsaved changes: the tab shows a dot, closing it asks first.
     var isEdited: Bool { get }
@@ -22,6 +24,7 @@ protocol TabContent: AnyObject {
 
 extension TabContent {
     var status: AgentStatus? { nil }
+    var unread: Bool { false }
     var toolTip: String? { nil }
     var isEdited: Bool { false }
     func close() -> Bool { true }

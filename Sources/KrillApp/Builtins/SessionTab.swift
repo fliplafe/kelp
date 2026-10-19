@@ -35,6 +35,7 @@ final class SessionTab: TabContent {
     }
     var icon: NSImage? { AgentCatalog.icon(session?.agent) }
     var status: AgentStatus? { session.flatMap { $0.agent == "shell" ? nil : $0.status } }
+    var unread: Bool { session?.unread ?? false }
     var toolTip: String? { session.map { "\(title) — \($0.status.words)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") } }
     func focus() { pane.focus() }
 

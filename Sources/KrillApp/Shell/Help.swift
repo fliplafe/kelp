@@ -15,19 +15,21 @@ enum Help {
     - **Agent** — Claude Code, Grok, Antigravity, Qwen… whatever is installed and runs on this Mac (found automatically).
 
     ## What the sidebar tells you
-    Each agent shows its own icon with a dot on the corner:
-    | Dot | Means |
+    One line per agent: its icon, name, how long ago its state changed, and a mark:
+    | Mark | Means |
     | --- | --- |
-    | blue, pulsing | working |
-    | orange | asked you something — needs your input (the question is under it) |
-    | green | finished; there's something new to look at (bold until you open it; what it did is under it) |
+    | spinning ring | working |
+    | orange ◎ | asked you something — needs your input (hover for the question) |
+    | filled ✓, bold name | finished and you haven't looked yet |
+    | plain ✓ | finished, seen |
+    | moon, dimmed | paused to save memory — opens where it left off |
     | none | ready for a task |
-    | dimmed icon | paused to save memory — opens where it left off |
 
-    A workspace gets a second line only when there's news: "1 needs you · 1 working", or the branch it's on.
+    A project's header says how many agents need you. A collapsed workspace shows its agents' most urgent mark.
 
-    **Limits** at the bottom: how much of each agent's plan is used, read from the agents' own /usage (Claude Code,
-    Grok, Antigravity) and Codex's logs. Hover for reset times. Settings › Agents › Show plan limits turns it off.
+    **Limits** at the bottom: a ring per agent — how full its fullest limit is (orange from 70 %, red from 90 %), read
+    from the agents' own /usage (Claude Code, Grok, Antigravity) and Codex's logs. Hover or click for every limit and
+    when it resets. Settings › Agents › Show plan limits turns it off.
 
     ## The middle: tabs and splits
     The toolbar **+** opens an agent, a terminal, a browser or what extensions add. ⌘D splits right, ⇧⌘D down; drag a tab to

@@ -9,6 +9,9 @@ public struct StatusDetector: Sendable {
     private var hooked = false
     /// Agents without hooks: nothing counts until the user has typed something — a welcome menu isn't a question.
     private var active = false
+    /// When heuristics last settled on done / waiting: the redraws that follow a finished turn ("Worked for 5.5s")
+    /// aren't new work.
+    private var settledAt: Date?
     private let manifest: AgentManifest
     private let regexes: [NSRegularExpression]
 
@@ -24,7 +27,7 @@ public struct StatusDetector: Sendable {
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
         // Redraws with no words (spinners, timers, borders) aren't the agent doing anything.
-        guard active, Self.hasWords(text) else { return }
+        guard active, Self.hasWords(text), now.timeIntervalSince(settledAt ?? .distantPast) > 4 else { return }
         lastOutput = now
         if !hooked, manifest.quietSeconds < 1e8 { status = .working }   // plain shells don't track status
     }
@@ -39,6 +42,7 @@ public struct StatusDetector: Sendable {
         guard !hooked, status == .working, let last = lastOutput, now.timeIntervalSince(last) >= manifest.quietSeconds else { return status }
         let r = NSRange(tail.startIndex..., in: tail)
         status = regexes.contains { $0.firstMatch(in: tail, range: r) != nil } ? .waiting : .done
+        settledAt = now
         return status
     }
 
@@ -56,7 +60,7 @@ public struct StatusDetector: Sendable {
     public mutating func exited() { status = .exited }
 
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.
-    public mutating func input() { tail = ""; active = true }
+    public mutating func input() { tail = ""; active = true; settledAt = nil }
 
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }

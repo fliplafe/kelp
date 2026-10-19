@@ -133,7 +133,7 @@ final class EditorArea: NSViewController {
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(model.tabs.map { t in
-            if let c = contents[t.id] { return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, toolTip: c.toolTip, edited: c.isEdited) }
+            if let c = contents[t.id] { return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip, edited: c.isEdited) }
             return Self.placeholder(t)
         }, selected: model.selectedTab?.id)
         g.show(visible?.view)
@@ -159,12 +159,12 @@ final class EditorArea: NSViewController {
         case "session":
             let s = AppModel.shared.session(body)
             let title = s.map { $0.title.isEmpty ? AgentCatalog.name($0.agent) : $0.title } ?? "Session"
-            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.status }, toolTip: title)
+            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.status },
+                         unread: s?.unread ?? false, toolTip: title)
         case "file":
             let p = TabURI.filePath(t.uri).path
             return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: NSWorkspace.shared.icon(forFile: p).resized(16), status: nil, toolTip: p)
         case "diff": return .init(id: t.id, title: "Changes", icon: .symbol("plusminus"), status: nil, toolTip: nil)
-        case "chat": return .init(id: t.id, title: "Chat", icon: .symbol("bubble.left.and.text.bubble.right"), status: nil, toolTip: nil)
         case "http", "https", "about":
             return .init(id: t.id, title: URL(string: t.uri)?.host ?? "New Page", icon: .symbol("safari"), status: nil, toolTip: t.uri)
         default:

@@ -7,7 +7,7 @@ extension NSPasteboard.PasteboardType { static let krillTab = NSPasteboard.Paste
 @MainActor
 final class TabStrip: NSView {
     struct Item {
-        let id: String; let title: String; let icon: NSImage?; let status: AgentStatus?; let toolTip: String?
+        let id: String; let title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
     }
 
@@ -161,7 +161,7 @@ private final class TabButton: NSView, NSDraggingSource {
 
     func set(_ it: TabStrip.Item, selected: Bool, groupFocused: Bool) {
         item = it; self.selected = selected; self.groupFocused = groupFocused
-        title.stringValue = it.title; icon.image = it.icon; mark.status = it.status
+        title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread
         toolTip = it.toolTip ?? it.title
         updateLook()
     }

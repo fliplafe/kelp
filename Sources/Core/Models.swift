@@ -55,7 +55,9 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var cwd: String
     public var command: String
     public var agent: String?
-    public var status: AgentStatus
+    public var status: AgentStatus { didSet { if status != oldValue { statusAt = Date() } } }
+    /// When `status` last changed ("working for 4m", "done 2h ago"); nil for sessions from before it was kept.
+    public var statusAt: Date?
     public var unread: Bool
     public var pid: Int32
     public var createdAt: Date
@@ -69,7 +71,7 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent
-        self.status = status; self.unread = unread; self.pid = pid; self.createdAt = createdAt
+        self.status = status; self.statusAt = createdAt; self.unread = unread; self.pid = pid; self.createdAt = createdAt
         self.title = title; self.titleManual = titleManual; self.summary = summary; self.argv = argv
     }
     public var displayTitle: String { title.isEmpty ? (agent ?? "shell") : title }

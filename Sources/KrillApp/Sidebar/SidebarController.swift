@@ -42,7 +42,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.keepOpenInView(onlyIfShown: false) }
+            MainActor.assumeIsolated { self?.keepOpenInView() }
         }
 
         let footer = NSHostingView(rootView: SidebarFooterView())
@@ -67,6 +67,12 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
         track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
         track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
+        // "now" becomes "1m": the times on the right move on their own.
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.updateVisibleCells() } }
+    }
+
+    private func updateVisibleCells() {
+        for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
     }
 
     private func buildEmpty() {
@@ -113,18 +119,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let nextShape = flat(next)
         empty.isHidden = !next.isEmpty || !query.isEmpty
         search.isHidden = AppModel.shared.repos.isEmpty
-        if nextShape == shape {
-            for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
-            // A workspace's second line comes and goes with its agents' state.
-            NSAnimationContext.runAnimationGroup { $0.duration = 0; outline.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outline.numberOfRows)) }
-            keepOpenInView(onlyIfShown: true)
-            return
-        }
+        if nextShape == shape { updateVisibleCells(); return }
         roots = next; shape = nextShape
         syncing = true
         outline.reloadData()
         for p in roots { outline.expandItem(p); for w in p.children where !collapsed.contains(w.key) { outline.expandItem(w) } }
         syncing = false
+        updateVisibleCells()   // cells were made before their rows expanded
         syncSelection()
     }
 
@@ -140,18 +141,18 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         if outline.selectedRow != row, !isAgent(outline.item(atRow: outline.selectedRow), in: id) {
             syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
         }
-        keepOpenInView(onlyIfShown: false)
+        keepOpenInView()
     }
 
-    /// The workspace on screen stays in view with its agents under it — they can show up, and its rows grow a second
-    /// line, after it was selected. `onlyIfShown`: leave it alone when the user scrolled it away.
-    private func keepOpenInView(onlyIfShown: Bool) {
+    /// The workspace on screen stays in view with its agents under it (they can show up after it was selected).
+    private func keepOpenInView() {
         guard let id = Workbench.shared.workspaceId, let n = node("w:" + id) else { return }
         let row = outline.row(forItem: n)
-        guard row >= 0, !onlyIfShown || outline.visibleRect.intersects(outline.rect(ofRow: row)) else { return }
+        guard row >= 0 else { return }
         if let last = n.children.last, outline.isItemExpanded(n) { outline.scrollRowToVisible(outline.row(forItem: last)) }
         outline.scrollRowToVisible(row)
     }
+    func isCollapsed(_ n: Node) -> Bool { !n.children.isEmpty && !outline.isItemExpanded(n) }
     private func isAgent(_ item: Any?, in workspace: String) -> Bool {
         guard let n = item as? Node, case .agent(let sid) = n.kind else { return false }
         return AppModel.shared.session(sid)?.worktreeId == workspace
@@ -165,13 +166,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, isGroupItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { true } else { false } }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
-    // Compact: a row takes a second line only when there's something to say.
+    // One line per row, like Mail's mailbox list; section headers a little taller for air above them.
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        switch (item as? Node)?.kind {
-        case .workspace(let id)?: SidebarCell.workspaceDetail(id) == nil ? 24 : 34
-        case .agent(let id)?: AppModel.shared.session(id).flatMap(SidebarCell.agentDetail) == nil ? 24 : 34
-        default: 24
-        }
+        if case .project? = (item as? Node)?.kind { return 28 }
+        return 26
     }
 
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
@@ -187,6 +185,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard !syncing, let node = n.userInfo?["NSObject"] as? Node, case .workspace = node.kind else { return }
         if c { collapsed.insert(node.key) } else { collapsed.remove(node.key) }
         UserDefaults.standard.set(Array(collapsed), forKey: "sidebar.collapsed")
+        refreshCell(node.key)   // collapsed, the workspace shows its agents' state itself
     }
 
     func outlineViewSelectionDidChange(_ n: Notification) {
@@ -279,42 +278,44 @@ final class SidebarCell: NSTableCellView {
     private let node: SidebarController.Node
     private weak var owner: SidebarController?
     private let icon = NSImageView()
-    private let avatar = AgentAvatar(size: 18)
     private let title = NSTextField(labelWithString: "")
-    /// What's going on, in words: "1 working · 1 needs you", "Needs your input", "Done — fixed the parser tests".
-    private let detail = NSTextField(labelWithString: "")
-    private let badgeMark = StatusMark(size: 12)
+    private let count = NSTextField(labelWithString: "")
+    /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
+    private let trailing = NSTextField(labelWithString: "")
+    private let mark = StatusMark(size: 14)
     private var add: NSButton?
 
     init(node: SidebarController.Node, owner: SidebarController) {
         self.node = node; self.owner = owner
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
-        detail.font = .systemFont(ofSize: 11); detail.lineBreakMode = .byTruncatingTail; detail.textColor = .secondaryLabelColor
-        icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
-        textField = title; imageView = icon
+        trailing.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular); trailing.textColor = .secondaryLabelColor
+        textField = title
         switch node.kind {
         case .project(let id):
             title.font = .systemFont(ofSize: 11, weight: .semibold); title.textColor = .secondaryLabelColor
+            count.font = .systemFont(ofSize: 11); count.textColor = .tertiaryLabelColor
+            trailing.font = .systemFont(ofSize: 11, weight: .medium); trailing.textColor = .systemOrange
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", "New Workspace"); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
-            b.toolTip = "New workspace (⌘N)"; add = b
-            layout(row: [title, NSView(), b])
+            b.toolTip = "New workspace (⌘N)"; b.isHidden = true; add = b   // on hover, like Finder's sidebar
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+            layout(row: [title, count, NSView(), trailing, b])
         case .workspace:
             title.font = .systemFont(ofSize: 13)
-            layout(row: [lines(), NSView(), badgeMark])
+            layout(row: [title, NSView(), trailing, mark])
         case .agent:
             title.font = .systemFont(ofSize: 13)
-            layout(row: [avatar, lines(), NSView()])
+            icon.imageScaling = .scaleProportionallyUpOrDown
+            icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            layout(row: [icon, title, NSView(), trailing, mark])
         }
+        for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    private func lines() -> NSStackView {
-        let s = NSStackView(views: [title, detail]); s.orientation = .vertical; s.alignment = .leading; s.spacing = 1
-        for v in [title, detail, s] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
-        return s
-    }
+    override func mouseEntered(with e: NSEvent) { add?.isHidden = false }
+    override func mouseExited(with e: NSEvent) { add?.isHidden = true }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -325,64 +326,46 @@ final class SidebarCell: NSTableCellView {
 
     func update() {
         let m = AppModel.shared
+        func live(_ wid: String) -> [Session] { m.sessions.filter { $0.worktreeId == wid && $0.status != .exited && $0.agent != "shell" } }
         switch node.kind {
         case .project(let id):
             let r = m.repo(id)
             title.stringValue = r?.name ?? ""; toolTip = r?.path
+            count.stringValue = node.children.isEmpty ? "" : "\(node.children.count)"
+            let waiting = m.worktrees.filter { $0.repoId == id }.flatMap { live($0.id) }.filter { $0.status == .waiting }.count
+            trailing.stringValue = waiting == 0 ? "" : waiting == 1 ? "1 needs you" : "\(waiting) need you"
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
-            let isMain = w.path == m.repo(w.repoId)?.path
-            let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
-            // Every workspace looks the same — a name and, on the right, what its agents need; the agents show their state.
+            let agents = live(id)
             title.stringValue = w.displayName
-            // Bold = something new to look at (like unread mail); a paused agent has nothing new.
-            title.font = .systemFont(ofSize: 13, weight: agents.contains { $0.unread && $0.status != .hibernated } ? .semibold : .regular)
-            let waiting = agents.filter { $0.status == .waiting }.count
-            badgeMark.status = waiting > 0 ? .waiting : agents.contains { $0.status == .working } ? .working
-                : agents.contains { $0.status == .done && $0.unread } ? .done : nil
-            let line = Self.workspaceDetail(id)
-            detail.stringValue = line ?? ""; detail.isHidden = line == nil
-            detail.textColor = waiting > 0 ? .systemOrange : .secondaryLabelColor
-            // The branch and folder are one hover away (and in the title bar for the open workspace).
-            toolTip = w.path + (isMain ? "" : "\nBranch \(w.branch)")
+            title.font = .systemFont(ofSize: 13, weight: agents.contains(where: Self.isNews) ? .semibold : .regular)
+            let paused = !agents.isEmpty && agents.allSatisfy { $0.status == .hibernated }
+            title.textColor = paused ? .tertiaryLabelColor : .labelColor
+            // Expanded, its agents show their own state; collapsed, the workspace sums them up.
+            let collapsed = owner?.isCollapsed(node) ?? false
+            let top = AgentStatus.mostUrgent(agents.map(\.status))
+            let lead = agents.filter { $0.status == top }.max { ($0.statusAt ?? $0.createdAt) < ($1.statusAt ?? $1.createdAt) }
+            mark.status = collapsed ? top : nil; mark.unread = agents.contains { $0.status == top && $0.unread }
+            trailing.stringValue = collapsed ? shortAgo(lead.map { $0.statusAt ?? $0.createdAt }) : ""
+            let isMain = w.path == m.repo(w.repoId)?.path
+            toolTip = ([w.path + (isMain ? "" : "\nBranch \(w.branch)")]
+                       + agents.map { "\(Self.name(of: $0, among: agents)) — \($0.status.words)" + ($0.summary.isEmpty ? "" : ": \($0.summary)") })
+                .joined(separator: "\n")
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
-            avatar.set(agent: s.agent, status: s.status, unread: s.unread)
-            title.stringValue = Self.name(of: s, among: m.sessions.filter { $0.worktreeId == s.worktreeId && $0.status != .exited && $0.agent != "shell" })
-            title.font = .systemFont(ofSize: 13, weight: s.unread && s.status != .hibernated ? .semibold : .regular)
-            title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
-            let line = Self.agentDetail(s)
-            detail.stringValue = line ?? ""; detail.isHidden = line == nil
-            detail.textColor = s.status == .waiting ? .systemOrange : .secondaryLabelColor
-            toolTip = "\(AgentCatalog.name(s.agent)) · \(s.status.words)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
+            icon.image = AgentCatalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
+            icon.alphaValue = s.status == .hibernated ? 0.45 : 1
+            title.stringValue = Self.name(of: s, among: live(s.worktreeId ?? ""))
+            title.font = .systemFont(ofSize: 13, weight: Self.isNews(s) ? .semibold : .regular)
+            title.textColor = s.status == .hibernated ? .tertiaryLabelColor : .labelColor
+            mark.status = s.status; mark.unread = s.unread
+            trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
+            toolTip = "\(AgentCatalog.name(s.agent)) — \(s.status.words)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
         }
     }
 
-    /// What a workspace's second line says — what its agents need, and its branch when it has its own — or nil when
-    /// there's nothing worth a line (agents listed under it already say they're paused or ready).
-    static func workspaceDetail(_ id: String) -> String? {
-        let m = AppModel.shared
-        guard let w = m.worktree(id) else { return nil }
-        let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
-        func count(_ st: AgentStatus) -> Int { agents.filter { $0.status == st }.count }
-        var parts: [String] = []
-        if count(.waiting) > 0 { parts.append(count(.waiting) == 1 ? "1 needs you" : "\(count(.waiting)) need you") }
-        if count(.working) > 0 { parts.append("\(count(.working)) working") }
-        if count(.done) > 0, agents.contains(where: { $0.status == .done && $0.unread }) { parts.append("\(count(.done)) done") }
-        if w.path != m.repo(w.repoId)?.path { parts.append("branch \(w.branch)") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// An agent's second line: what it asks, or what it did (from its own last reply). Working, ready and paused need
-    /// no words — the dot on its icon and its dimming say that (and the tooltip spells it out).
-    static func agentDetail(_ s: Session) -> String? {
-        let about = s.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch s.status {
-        case .waiting: return about.isEmpty ? "Needs your input" : about
-        case .done where !about.isEmpty: return about
-        default: return nil
-        }
-    }
+    /// Something to look at: finished or asking, and not opened since (bold, like unread mail).
+    static func isNews(_ s: Session) -> Bool { s.unread && (s.status == .done || s.status == .waiting) }
 
     /// Its title, or the agent's name — numbered when the same agent runs twice in one workspace.
     static func name(of s: Session, among peers: [Session]) -> String {

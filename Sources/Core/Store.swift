@@ -55,6 +55,9 @@ public final class Store: @unchecked Sendable {
         m.registerMigration("v4") { db in
             try db.alter(table: "worktree") { t in t.add(column: "base", .text).notNull().defaults(to: "") }
         }
+        m.registerMigration("v5") { db in
+            try db.alter(table: "session") { t in t.add(column: "statusAt", .datetime) }
+        }
         try m.migrate(db)
     }
 
