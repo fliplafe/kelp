@@ -248,8 +248,10 @@ struct ExtListView: View {
             Divider()
             if let error {
                 ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: { Text(error).font(.caption).textSelection(.enabled) }
+                    .frame(maxHeight: .infinity)
             } else if items.isEmpty, !loading {
                 ContentUnavailableView(def.empty ?? "Nothing here", systemImage: def.icon ?? "tray")
+                    .frame(maxHeight: .infinity)
             } else {
                 List(selection: $selection) {
                     ForEach(Array(items.enumerated()), id: \.offset) { i, item in

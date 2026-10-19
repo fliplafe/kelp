@@ -152,3 +152,9 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     let p = try BitbucketClient.parsePullRequests(Data(prs.utf8))
     #expect(p.count == 1 && p[0].number == 12 && p[0].headRefName == "feat/api" && p[0].author == "Ann")
 }
+
+@Test func ghErrorsSayWhatToDo() {
+    #expect(GitHubError(args: ["pr", "list"], status: 1, stderr: "no git remotes found").description == "This project has no GitHub remote.")
+    #expect(GitHubError(args: [], status: 4, stderr: "To get started with GitHub CLI, please run:  gh auth login").description.contains("gh auth login"))
+    #expect(!GitHubError(args: ["pr", "list", "--json", "number"], status: 1, stderr: "boom\nmore").description.contains("--json"))
+}

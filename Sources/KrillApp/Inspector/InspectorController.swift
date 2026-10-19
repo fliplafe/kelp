@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class InspectorController: NSViewController {
     private let selector = NSSegmentedControl()
-    private let host = NSView()
+    private let host = NSView()   // clips: see showSelected
     private var panels: [PanelSpec] = []
     private var made: [String: NSViewController] = [:]
     private let empty = NSTextField(labelWithString: "No panels — enable extensions in Settings.")
@@ -15,6 +15,7 @@ final class InspectorController: NSViewController {
         selector.segmentStyle = .automatic; selector.trackingMode = .selectOne; selector.controlSize = .regular
         selector.target = self; selector.action = #selector(selected)
         empty.textColor = .secondaryLabelColor; empty.alignment = .center
+        host.clipsToBounds = true
         let sep = NSBox(); sep.boxType = .separator
         for x in [selector, sep, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
@@ -64,15 +65,19 @@ final class InspectorController: NSViewController {
         host.subviews.forEach { $0.removeFromSuperview() }
         vc.view.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(vc.view)
+        // The panel follows the inspector's width but can't push it: a panel wider than its minimum is clipped instead
+        // of shrinking the editor (extension panels with long lines included).
+        let follow = vc.view.widthAnchor.constraint(equalTo: host.widthAnchor); follow.priority = .defaultHigh
         NSLayoutConstraint.activate([vc.view.topAnchor.constraint(equalTo: host.topAnchor), vc.view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
-                                     vc.view.leadingAnchor.constraint(equalTo: host.leadingAnchor), vc.view.trailingAnchor.constraint(equalTo: host.trailingAnchor)])
+                                     vc.view.leadingAnchor.constraint(equalTo: host.leadingAnchor), follow])
     }
 }
 
 /// SwiftUI panel in an AppKit host.
 @MainActor
 func hosting<V: View>(_ v: V) -> NSViewController {
-    let h = NSHostingController(rootView: v)
+    // Filling the panel from the top: content shorter than the panel would otherwise float in its middle.
+    let h = NSHostingController(rootView: v.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top))
     h.sizingOptions = []   // a panel fills the space it's given; it must never resize the window to its ideal size
     return h
 }

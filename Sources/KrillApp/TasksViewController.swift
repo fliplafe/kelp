@@ -6,7 +6,9 @@ import Core
 /// issue → worktree + agent, failed check / review comments → agent, PR merge, Linear state.
 @MainActor
 final class TasksViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
-    private let source = NSSegmentedControl(labels: ["Pull Requests", "Issues", "Linear", "Jira", "Projects"], trackingMode: .selectOne, target: nil, action: nil)
+    private let source = NSPopUpButton()
+    private let split = NSSplitView()
+    private var dividerPlaced = false
     private let filter = NSPopUpButton()
     private let status = NSTextField(labelWithString: "")
     private let table = NSTableView()
@@ -18,12 +20,18 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private var jiraJQL = "project = ENG AND statusCategory != Done ORDER BY priority DESC"
 
     override func loadView() {
-        source.selectedSegment = 0; source.target = self; source.action = #selector(sourceChanged)
+        source.addItems(withTitles: ["Pull Requests", "Issues", "Linear", "Jira", "Projects"])
+        source.selectItem(at: 0); source.target = self; source.action = #selector(sourceChanged)
         filter.target = self; filter.action = #selector(reload)
         let refresh = NSButton(image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Refresh")!, target: self, action: #selector(reload))
         refresh.bezelStyle = .texturedRounded
-        status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11); status.lineBreakMode = .byTruncatingTail
-        let bar = NSStackView(views: [source, filter, refresh, status]); bar.spacing = 8; bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
+        status.lineBreakMode = .byWordWrapping; status.maximumNumberOfLines = 3; status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for c in [source, filter] as [NSControl] { c.controlSize = .small; c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
+        // An inspector panel: controls on one line, the status under them, list above the details.
+        let controls = NSStackView(views: [source, filter, refresh]); controls.spacing = 6
+        let bar = NSStackView(views: [controls, status]); bar.orientation = .vertical; bar.alignment = .leading; bar.spacing = 4
+        bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
 
         let col = NSTableColumn(identifier: .init("t")); table.addTableColumn(col); table.headerView = nil
         table.rowHeight = 40; table.dataSource = self; table.delegate = self; table.style = .inset
@@ -35,16 +43,18 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         NSLayoutConstraint.activate([detail.topAnchor.constraint(equalTo: flip.topAnchor), detail.leadingAnchor.constraint(equalTo: flip.leadingAnchor),
                                      detail.trailingAnchor.constraint(equalTo: flip.trailingAnchor), detail.bottomAnchor.constraint(equalTo: flip.bottomAnchor),
                                      flip.widthAnchor.constraint(equalTo: ds.contentView.widthAnchor)])
-        let split = NSView()
-        for v in [ts, ds] { v.translatesAutoresizingMaskIntoConstraints = false; split.addSubview(v) }
-        NSLayoutConstraint.activate([
-            ts.topAnchor.constraint(equalTo: split.topAnchor), ts.bottomAnchor.constraint(equalTo: split.bottomAnchor), ts.leadingAnchor.constraint(equalTo: split.leadingAnchor),
-            ts.widthAnchor.constraint(equalTo: split.widthAnchor, multiplier: 0.42),
-            ds.topAnchor.constraint(equalTo: split.topAnchor), ds.bottomAnchor.constraint(equalTo: split.bottomAnchor),
-            ds.leadingAnchor.constraint(equalTo: ts.trailingAnchor), ds.trailingAnchor.constraint(equalTo: split.trailingAnchor),
-        ])
+        split.isVertical = false; split.dividerStyle = .thin
+        split.addArrangedSubview(ts); split.addArrangedSubview(ds)
+        split.setHoldingPriority(.defaultLow + 1, forSubviewAt: 1)
         view = pinned(bar: bar, body: split)
         sourceChanged()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // Once it has a height: the list gets the larger part, details the rest.
+        guard !dividerPlaced, split.bounds.height > 100 else { return }
+        dividerPlaced = true; split.setPosition(split.bounds.height * 0.55, ofDividerAt: 0)
     }
 
     func show(worktree id: String?) {
@@ -55,7 +65,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     @objc private func sourceChanged() {
         filter.removeAllItems()
-        switch source.selectedSegment {
+        switch source.indexOfSelectedItem {
         case 0: filter.addItems(withTitles: ["Open", "Mine", "Review requested"])
         case 1: filter.addItems(withTitles: ["Open", "Assigned to me"])
         case 3: filter.addItems(withTitles: ["My open issues", "Custom JQL…"])
@@ -74,7 +84,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     @objc private func reload() {
         guard let repoId else { rows = []; table.reloadData(); status.stringValue = "Select a project"; return }
         status.stringValue = "Loading…"
-        let src = source.selectedSegment, f = filter.indexOfSelectedItem
+        let src = source.indexOfSelectedItem, f = filter.indexOfSelectedItem
         Task {
             do {
                 let c = AppModel.shared.client
@@ -115,7 +125,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     func numberOfRows(in t: NSTableView) -> Int { rows.count }
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
         let r = rows[row]
-        let (title, sub): (String, String) = switch source.selectedSegment {
+        let (title, sub): (String, String) = switch source.indexOfSelectedItem {
         case 0: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", "\(r["author"]?.string ?? "") · \(r["headRefName"]?.string ?? "")\(Self.checksText(r))")
         case 1: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", (r["labels"]?.array ?? []).compactMap(\.string).joined(separator: ", "))
         case 2: ("\(r["identifier"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["state"]?["name"]?.string ?? "") · \(r["team"]?["name"]?.string ?? "")")
@@ -149,7 +159,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             detail.addArrangedSubview(label(rows.isEmpty ? "" : "Select an item", color: .secondaryLabelColor)); return
         }
         let url = r["url"]?.string
-        switch source.selectedSegment {
+        switch source.indexOfSelectedItem {
         case 0: prDetail(r)
         case 3:
             let key = r["key"]?.string ?? ""
@@ -159,7 +169,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             let body = r["description"]?.string ?? ""
             detail.addArrangedSubview(label(body.isEmpty ? "No description." : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         case 1, 2:
-            let linear = source.selectedSegment == 2
+            let linear = source.indexOfSelectedItem == 2
             let ref = linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
             detail.addArrangedSubview(label("\(ref)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
             if linear { detail.addArrangedSubview(statePicker(r)) }
