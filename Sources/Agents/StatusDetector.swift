@@ -7,6 +7,8 @@ public struct StatusDetector: Sendable {
     private var lastOutput: Date?
     private var tail = ""
     private var hooked = false
+    /// Agents without hooks: nothing counts until the user has typed something — a welcome menu isn't a question.
+    private var active = false
     private let manifest: AgentManifest
     private let regexes: [NSRegularExpression]
 
@@ -19,9 +21,16 @@ public struct StatusDetector: Sendable {
     }
 
     public mutating func output(_ chunk: String, at now: Date = Date()) {
+        let text = Self.stripANSI(chunk)
+        tail = String((tail + text).suffix(600))
+        // Redraws with no words (spinners, timers, borders) aren't the agent doing anything.
+        guard active, Self.hasWords(text) else { return }
         lastOutput = now
-        tail = String((tail + Self.stripANSI(chunk)).suffix(600))
         if !hooked, manifest.quietSeconds < 1e8 { status = .working }   // plain shells don't track status
+    }
+
+    static func hasWords(_ s: String) -> Bool {
+        s.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count >= 3
     }
 
     /// Call periodically; returns the (possibly new) status.
@@ -47,18 +56,10 @@ public struct StatusDetector: Sendable {
     public mutating func exited() { status = .exited }
 
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.
-    public mutating func input() { tail = "" }
+    public mutating func input() { tail = ""; active = true }
 
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
-
-    /// Removes an empty prompt's example text (Claude Code: `❯ Try "create a util logging.py…"`), which reads like a
-    /// task the agent is doing to anyone summarizing the screen.
-    public static func withoutPromptHints(_ s: String) -> String {
-        s.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.range(of: #"^\s*[❯>›]\s*Try ""#, options: .regularExpression) == nil }
-            .joined(separator: "\n")
-    }
 
     public static func stripANSI(_ s: String) -> String {
         // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.

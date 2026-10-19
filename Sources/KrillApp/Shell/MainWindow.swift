@@ -27,7 +27,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
         w.title = "Krill"; w.setFrameAutosaveName("main"); w.delegate = self
         w.titlebarSeparatorStyle = .automatic
         let tb = NSToolbar(identifier: "main"); tb.delegate = self; tb.displayMode = .iconOnly; tb.allowsUserCustomization = false
-        w.toolbar = tb; w.toolbarStyle = .unified
+        w.toolbar = tb; w.toolbarStyle = .unifiedCompact   // the title bar holds a title and two buttons: no need for a tall one
         if w.frame.origin == .zero { w.center() }
         track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
     }
@@ -61,9 +61,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
     // MARK: toolbar
     // The one place to add a tab (like Safari's "+"); the empty workspace offers the same choices.
     private static let newTab = NSToolbarItem.Identifier("newTab"), inspectorToggle = NSToolbarItem.Identifier("inspector")
+    private static let addProject = NSToolbarItem.Identifier("addProject")
 
     func toolbarDefaultItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, Self.newTab, .inspectorTrackingSeparator, .flexibleSpace, Self.inspectorToggle]
+        [.toggleSidebar, .flexibleSpace, Self.addProject, .sidebarTrackingSeparator, .flexibleSpace, Self.newTab,
+         .inspectorTrackingSeparator, .flexibleSpace, Self.inspectorToggle]
     }
     func toolbarAllowedItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(t) }
 
@@ -75,6 +77,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
             i.showsIndicator = false
             i.menu = NSMenu()
             i.menu.delegate = NewTabMenuSource.shared
+            return i
+        case Self.addProject:   // over the projects it adds to, where people look for it
+            let i = NSToolbarItem(itemIdentifier: id)
+            i.image = .symbol("folder.badge.plus", "Add Project"); i.label = "Add Project"; i.toolTip = "Add a project folder (⌘O)"
+            i.target = NSApp.delegate; i.action = #selector(AppDelegate.addProject)
             return i
         case Self.inspectorToggle:
             let i = NSToolbarItem(itemIdentifier: id)
@@ -107,8 +114,6 @@ final class EditorHost: NSViewController {
     private var recent: [String] = []
     private(set) var current: EditorArea?
     var editedFiles: [FileTab] { areas.values.flatMap(\.editedFiles) }
-    /// Tabs open in a workspace: the live layout when it's loaded, else the saved one.
-    func tabCount(_ id: String) -> Int { (areas[id]?.layout ?? WorkspaceLayout.load(id)).allTabs.count }
     private var welcome: NSView?
     private static let keep = 4
 

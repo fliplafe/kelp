@@ -15,7 +15,6 @@ public enum LocalAI {
     }
 
     public struct Naming: Sendable, Equatable { public var title: String; public var branch: String }
-    public struct AgentState: Sendable, Equatable { public var waitingForUser: Bool; public var summary: String }
     public struct PR: Sendable, Equatable { public var title: String; public var body: String }
 
     /// Tab title + branch name for a task prompt.
@@ -26,19 +25,6 @@ public enum LocalAI {
             if let r = try? await s.respond(to: "Task prompt: \(prompt.prefix(1500))", generating: GNaming.self) {
                 let b = Fallback.slug(r.content.branch)
                 return Naming(title: r.content.title, branch: b.isEmpty ? Fallback.slug(prompt) : b)
-            }
-        }
-        #endif
-        return nil
-    }
-
-    /// Read the tail of an agent's terminal: is it asking the user something, and what happened.
-    public static func agentState(tail: String) async -> AgentState? {
-        #if canImport(FoundationModels)
-        if #available(macOS 26, *), isAvailable {
-            let s = LanguageModelSession(instructions: "You read the last lines of a coding agent's terminal (Claude Code, Codex, etc.).")
-            if let r = try? await s.respond(to: "Terminal tail:\n\(tail.suffix(2500))", generating: GState.self) {
-                return AgentState(waitingForUser: r.content.waitingForUser, summary: r.content.summary)
             }
         }
         #endif
@@ -92,11 +78,6 @@ public enum Fallback {
 @Generable struct GNaming {
     @Guide(description: "Short title for this coding task, 2-5 words, Title Case") var title: String
     @Guide(description: "git branch name for this task: lowercase kebab-case, 2-5 words describing the change, no prefix") var branch: String
-}
-@available(macOS 26, *)
-@Generable struct GState {
-    @Guide(description: "true if the agent is asking the user a question, waiting for approval, or showing a choice; false if it finished or is still working") var waitingForUser: Bool
-    @Guide(description: "One short sentence, under 15 words: what the agent did, or what it is asking") var summary: String
 }
 @available(macOS 26, *)
 @Generable struct GPR {

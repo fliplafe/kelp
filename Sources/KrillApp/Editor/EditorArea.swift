@@ -418,7 +418,6 @@ final class EditorArea: NSViewController {
         let w = DispatchWorkItem { [weak self] in
             guard let self else { return }
             layout.save(workspaceId)
-            NotificationCenter.default.post(name: .krillLayout, object: workspaceId)   // the sidebar's "3 tabs"
         }
         saveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
     }
@@ -465,9 +464,4 @@ extension NSMenu {
         if let symbol { i.image = .symbol(symbol) }
         return i
     }
-}
-
-extension Notification.Name {
-    /// A workspace's tabs changed (object: its id).
-    static let krillLayout = Notification.Name("krill.layout")
 }

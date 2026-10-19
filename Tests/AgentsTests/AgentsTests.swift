@@ -7,12 +7,14 @@ import Core
     let t0 = Date()
     let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })   // no hooks: status comes from output
     var d = StatusDetector(manifest: codex)
+    d.input()   // the user gave it a task
     d.output("\u{1B}[1mDo you want to proceed? [y/n]\u{1B}[0m", at: t0)
     #expect(d.status == .working)
     #expect(d.tick(at: t0.addingTimeInterval(1)) == .working)
     #expect(d.tick(at: t0.addingTimeInterval(4)) == .waiting)
 
     var e = StatusDetector(manifest: codex)
+    e.input()
     e.output("all done, 3 files changed", at: t0)
     #expect(e.tick(at: t0.addingTimeInterval(4)) == .done)
 }
@@ -108,12 +110,6 @@ import Core
     #expect(ClaudeLimits.parse("nothing to see").isEmpty)
 }
 
-@Test func promptHintsAreNotTasks() {
-    let screen = "⏺ Done.\n────\n❯ Try \"create a util logging.py that...\"\n────\n  ⏵⏵ auto mode on"
-    #expect(!StatusDetector.withoutPromptHints(screen).contains("logging.py"))
-    #expect(StatusDetector.withoutPromptHints(screen).contains("Done."))
-}
-
 @Test func claudeUsageScreenParses() {
     let screen = """
     Settings    Status   Config      Usage      Stats
@@ -155,9 +151,53 @@ import Core
     let t0 = Date()
     let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })
     var d = StatusDetector(manifest: codex)
+    d.input()
     d.output("Do you want to proceed? (y/n)\n", at: t0)
     #expect(d.tick(at: t0.addingTimeInterval(4)) == .waiting)
     d.input()
     d.output("y\ndone, 2 files changed\n", at: t0.addingTimeInterval(5))
     #expect(d.tick(at: t0.addingTimeInterval(9)) == .done)
+}
+
+/// An agent's welcome menu isn't a question, and redraws without words aren't work.
+@Test func welcomeScreenIsReady() throws {
+    let t0 = Date()
+    let grok = AgentManifest(id: "grok", name: "Grok", command: "grok")
+    var d = StatusDetector(manifest: grok)
+    d.output("New worktree\nResume session\n❯ 1. Quit\nDo you want to enable telemetry? (y/n)", at: t0)
+    #expect(d.tick(at: t0.addingTimeInterval(10)) == .idle)
+    d.input(); d.output("Thinking about your request", at: t0.addingTimeInterval(11))
+    #expect(d.status == .working)
+    d.output("\u{1B}[2K⠋ 12s", at: t0.addingTimeInterval(20))   // a spinner tick
+    #expect(d.tick(at: t0.addingTimeInterval(20)) == .done)
+}
+
+/// Replayed history keeps the screen but not the agent's questions to its terminal; the terminal's answers aren't typing.
+@Test func terminalRepliesAreNotTyping() {
+    let hist = Data("\u{1B}[>0q\u{1B}[c\u{1B}[?u\u{1B}]11;?\u{07}\u{1B}[1mGrok\u{1B}[0m \u{1B}[6n".utf8)
+    #expect(String(bytes: TerminalReplies.withoutQueries(hist), encoding: .utf8) == "\u{1B}[1mGrok\u{1B}[0m ")
+    #expect(TerminalReplies.isReply(Data("\u{1B}P>|ghostty 1.3.2\u{1B}\\\u{1B}[?62;22c\u{1B}[?1u\u{1B}[12;5R".utf8)))
+    #expect(TerminalReplies.isReply(Data("\u{1B}]11;rgb:1e1e/1e1e/2222\u{07}".utf8)))
+    #expect(!TerminalReplies.isReply(Data("\u{1B}[A".utf8)))     // arrow key
+    #expect(!TerminalReplies.isReply(Data("\u{1B}[97;5u".utf8))) // kitty key press
+    #expect(!TerminalReplies.isReply(Data("fix it\r".utf8)))
+}
+
+@Test func grokAndAntigravityUsageScreensParse() {
+    let grok = "Context usage │ Usage limit │ Session info\n Weekly limit (X Premium)\n ██████░░░░ 45%\n Resets: October 24, 19:36\n Loading session usage…"
+    #expect(ClaudeLimits.parseGrokUsage(grok) == [.init(kind: "week", percent: 45, resets: "October 24, 19:36")])
+    let framed = "│ Weekly limit (X Premium)          │\n│ ██████░░░░ 45%                    │\n│ Resets: October 24, 19:36         │"
+    #expect(ClaudeLimits.parseGrokUsage(framed).first?.percent == 45)
+    let agy = """
+    └ Models & Quota
+    GEMINI MODELS
+    Models within this group: Gemini Flash, Gemini Pro
+    Weekly Limit Remaining
+    [████████████] 88.00%
+    Quota available
+    CLAUDE AND GPT MODELS
+    Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+    Within each group, models share a weekly limit.
+    """
+    #expect(ClaudeLimits.parseAntigravityUsage(agy) == [.init(kind: "Gemini week", percent: 12, resets: nil)])
 }

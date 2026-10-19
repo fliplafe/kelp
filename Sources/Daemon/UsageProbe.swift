@@ -2,46 +2,97 @@ import Foundation
 import Core
 import Agents
 
-/// Claude plan limits as Claude Code shows them in `/usage` (session, week, per model). A hidden Claude Code opens
-/// that screen every 10 minutes and closes: no tokens are spent and Krill never touches Claude's credentials.
+/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok Build, Antigravity). A hidden copy of
+/// the agent opens that screen now and then and quits: no tokens are spent and Krill never touches their credentials.
 extension Daemon {
-    static let planRefresh: TimeInterval = 600
+    struct PlanProbe: Sendable {
+        let agent: String, command: String, every: TimeInterval
+        let ready: @Sendable (String) -> Bool    // its prompt is drawn
+        let shown: @Sendable (String) -> Bool    // the usage screen has loaded
+        let parse: @Sendable (String) -> [ClaudeLimits.Reading]
+    }
+    struct PlanState { var readings: [ClaudeLimits.Reading] = []; var at: Date?; var running = false }
 
-    func refreshClaudePlanIfStale() {
-        guard settings["usage.readClaudePlan"]?.bool != false, let claude = try? LoginPath.resolve("claude") else { return }
-        let start: Bool = lock.withLock {
-            guard !claudePlanRunning, Date().timeIntervalSince(claudePlanAt ?? .distantPast) > Self.planRefresh else { return false }
-            claudePlanRunning = true; return true
-        }
-        guard start, let cwd = trustedClaudeDir() else { lock.withLock { claudePlanRunning = false }; return }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let readings = Self.probeClaudeUsage(claude, cwd: cwd)
-            self?.lock.withLock {
-                if !readings.isEmpty { self?.claudePlan = readings }
-                // A failed probe retries in 2 minutes rather than 10.
-                self?.claudePlanAt = readings.isEmpty ? Date().addingTimeInterval(120 - Self.planRefresh) : Date()
-                self?.claudePlanRunning = false
+    static let planProbes = [
+        PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
+                  shown: { $0.contains("Current week") && $0.contains("% used") }, parse: ClaudeLimits.parseUsageScreen),
+        PlanProbe(agent: "grok", command: "grok", every: 1800, ready: { $0.contains("Ctrl+x:shortcuts") },
+                  shown: { $0.contains("Weekly limit") && $0.contains("Resets") }, parse: ClaudeLimits.parseGrokUsage),
+        PlanProbe(agent: "antigravity", command: "agy", every: 1800, ready: { $0.contains("for shortcuts") },
+                  shown: { $0.contains("Weekly Limit Remaining") && $0.contains("%") }, parse: ClaudeLimits.parseAntigravityUsage)
+    ]
+
+    func refreshPlansIfStale() {
+        guard (settings["usage.readPlans"] ?? settings["usage.readClaudePlan"])?.bool != false else { return }
+        for probe in Self.planProbes {
+            let start: Bool = lock.withLock {
+                let s = plans[probe.agent] ?? PlanState()
+                guard !s.running, Date().timeIntervalSince(s.at ?? .distantPast) > probe.every else { return false }
+                plans[probe.agent, default: PlanState()].running = true; return true
+            }
+            guard start else { continue }
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                var readings: [ClaudeLimits.Reading] = []
+                if let path = try? LoginPath.resolve(probe.command), let cwd = probeDir(probe.agent) {
+                    var screen = ""
+                    for argv in probeArgv(probe.agent, path) {
+                        (readings, screen) = Self.probe(probe, argv: argv, cwd: cwd)
+                        if !readings.isEmpty { break }
+                    }
+                    // What a failed probe saw, for whoever fixes the parser when an agent changes its screen.
+                    if readings.isEmpty, (try? Paths.ensure(root.appendingPathComponent("probe"))) != nil { try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8) }
+                }
+                lock.withLock {
+                    if !readings.isEmpty { plans[probe.agent]?.readings = readings }
+                    // A failed probe retries in 2 minutes rather than waiting a whole round.
+                    plans[probe.agent]?.at = readings.isEmpty ? Date().addingTimeInterval(120 - probe.every) : Date()
+                    plans[probe.agent]?.running = false
+                }
             }
         }
     }
 
-    /// A folder Claude Code already ran in (so it won't ask whether to trust it).
-    private func trustedClaudeDir() -> String? {
-        ((try? store.sessions()) ?? []).filter { $0.agent == "claude" }.sorted { $0.createdAt > $1.createdAt }
-            .map(\.cwd).first { FileManager.default.fileExists(atPath: $0) }
+    /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
+    /// per launch: it gets Krill's own folder and always the same session, so its history doesn't fill up.
+    private func probeDir(_ agent: String) -> String? {
+        if agent == "grok" {
+            let d = root.appendingPathComponent("probe"); try? Paths.ensure(d); return d.path
+        }
+        let used = ((try? store.sessions()) ?? []).filter { $0.agent == agent }.sorted { $0.createdAt > $1.createdAt }.map(\.cwd)
+        let trusted = agent == "antigravity" ? Self.antigravityTrusted() : []
+        return (used + trusted).first { FileManager.default.fileExists(atPath: $0) }
     }
 
-    static func probeClaudeUsage(_ claude: String, cwd: String) -> [ClaudeLimits.Reading] {
+    private func probeArgv(_ agent: String, _ path: String) -> [[String]] {
+        guard agent == "grok" else { return [[path]] }
+        let file = root.appendingPathComponent("probe/grok-session")
+        let id = (try? String(contentsOf: file, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            ?? UUID().uuidString.lowercased()
+        try? id.write(to: file, atomically: true, encoding: .utf8)
+        return [[path, "--resume", id], [path, "--session-id", id]]   // the first run creates it
+    }
+
+    /// Folders the user trusted in Antigravity (read only).
+    private static func antigravityTrusted() -> [String] {
+        let f = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/antigravity-cli/settings.json")
+        guard let d = try? Data(contentsOf: f), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [] }
+        return o["trustedWorkspaces"] as? [String] ?? []
+    }
+
+    static func probe(_ p: PlanProbe, argv: [String], cwd: String) -> ([ClaudeLimits.Reading], String) {
         let screen = ScreenBuffer()
-        guard let pty = try? PTY(argv: [claude], cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 60) else { return [] }
+        guard let pty = try? PTY(argv: argv, cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 80) else { return ([], "") }
         pty.onOutput = { screen.append($0) }
         defer { pty.terminate() }
-        // Ready: the prompt is drawn and output went quiet.
-        guard screen.wait(15, until: { $0.contains("❯") && screen.quietFor > 1 }) else { return [] }
-        pty.write(Data("/usage".utf8)); Thread.sleep(forTimeInterval: 0.4); pty.write(Data("\r".utf8))
-        _ = screen.wait(20) { $0.contains("Current week") && $0.contains("% used") && screen.quietFor > 1.5 }
+        // Ready: the prompt is drawn and output went quiet (or it failed and said so).
+        guard screen.wait(20, until: { (p.ready($0) && screen.quietFor > 1) || $0.contains("Error:") }),
+              p.ready(StatusDetector.stripANSI(screen.text)) else { return ([], StatusDetector.stripANSI(screen.text)) }
+        pty.write(Data("/usage".utf8)); Thread.sleep(forTimeInterval: 0.6); pty.write(Data("\r".utf8))
+        _ = screen.wait(20) { p.shown($0) && screen.quietFor > 1.5 }
         pty.write(Data("\u{1B}".utf8))
-        return ClaudeLimits.parseUsageScreen(StatusDetector.stripANSI(screen.text).replacingOccurrences(of: "\r", with: "\n"))
+        let text = StatusDetector.stripANSI(screen.text).replacingOccurrences(of: "\r", with: "\n")
+        return (p.parse(text), text)
     }
 }
 

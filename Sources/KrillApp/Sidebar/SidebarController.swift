@@ -67,9 +67,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
         track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
         track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
-        NotificationCenter.default.addObserver(forName: .krillLayout, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated { if let id = n.object as? String { self?.refreshCell("w:" + id) } }
-        }
     }
 
     private func buildEmpty() {
@@ -118,6 +115,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         search.isHidden = AppModel.shared.repos.isEmpty
         if nextShape == shape {
             for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
+            // A workspace's second line comes and goes with its agents' state.
+            NSAnimationContext.runAnimationGroup { $0.duration = 0; outline.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outline.numberOfRows)) }
             return
         }
         roots = next; shape = nextShape
@@ -136,9 +135,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private func syncSelection() {
         guard let id = Workbench.shared.workspaceId, let n = node("w:" + id) else { return }
         let row = outline.row(forItem: n)
-        guard row >= 0, outline.selectedRow != row, !(outline.item(atRow: outline.selectedRow) is Node && isAgent(outline.item(atRow: outline.selectedRow), in: id)) else { return }
-        syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
-        // The workspace on screen is in view, with its agents under it.
+        guard row >= 0 else { return }
+        if outline.selectedRow != row, !isAgent(outline.item(atRow: outline.selectedRow), in: id) {
+            syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
+        }
+        // The workspace on screen is in view, with its agents under it (they can show up after it was selected).
         if let last = n.children.last, outline.isItemExpanded(n) { outline.scrollRowToVisible(outline.row(forItem: last)) }
         outline.scrollRowToVisible(row)
     }
@@ -155,12 +156,12 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, isGroupItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { true } else { false } }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { if case .project? = (item as? Node)?.kind { false } else { true } }
-    // Source-list metrics (Finder, Mail): one line per row.
+    // Compact: a row takes a second line only when there's something to say.
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         switch (item as? Node)?.kind {
-        case .project?: 26
-        case .workspace?: 40
-        default: 36
+        case .workspace(let id)?: SidebarCell.workspaceDetail(id) == nil ? 24 : 34
+        case .agent(let id)?: AppModel.shared.session(id).flatMap(SidebarCell.agentDetail) == nil ? 24 : 34
+        default: 24
         }
     }
 
@@ -269,7 +270,7 @@ final class SidebarCell: NSTableCellView {
     private let node: SidebarController.Node
     private weak var owner: SidebarController?
     private let icon = NSImageView()
-    private let mark = StatusMark(size: 14)
+    private let avatar = AgentAvatar(size: 18)
     private let title = NSTextField(labelWithString: "")
     /// What's going on, in words: "1 working · 1 needs you", "Needs your input", "Done — fixed the parser tests".
     private let detail = NSTextField(labelWithString: "")
@@ -295,7 +296,7 @@ final class SidebarCell: NSTableCellView {
             layout(row: [lines(), NSView(), badgeMark])
         case .agent:
             title.font = .systemFont(ofSize: 13)
-            layout(row: [mark, lines(), NSView()])
+            layout(row: [avatar, lines(), NSView()])
         }
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -330,53 +331,47 @@ final class SidebarCell: NSTableCellView {
             let waiting = agents.filter { $0.status == .waiting }.count
             badgeMark.status = waiting > 0 ? .waiting : agents.contains { $0.status == .working } ? .working
                 : agents.contains { $0.status == .done && $0.unread } ? .done : nil
-            detail.stringValue = Self.summary(of: w, agents: agents, onOwnBranch: !isMain)
+            let line = Self.workspaceDetail(id)
+            detail.stringValue = line ?? ""; detail.isHidden = line == nil
             detail.textColor = waiting > 0 ? .systemOrange : .secondaryLabelColor
             // The branch and folder are one hover away (and in the title bar for the open workspace).
             toolTip = w.path + (isMain ? "" : "\nBranch \(w.branch)")
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
-            mark.status = s.agent == "shell" ? nil : s.status
-            if s.agent == "shell" { icon.image = .symbol("terminal") }
+            avatar.set(agent: s.agent, status: s.status, unread: s.unread)
             title.stringValue = Self.name(of: s, among: m.sessions.filter { $0.worktreeId == s.worktreeId && $0.status != .exited && $0.agent != "shell" })
             title.font = .systemFont(ofSize: 13, weight: s.unread && s.status != .hibernated ? .semibold : .regular)
             title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
-            detail.stringValue = Self.state(of: s)
+            let line = Self.agentDetail(s)
+            detail.stringValue = line ?? ""; detail.isHidden = line == nil
             detail.textColor = s.status == .waiting ? .systemOrange : .secondaryLabelColor
             toolTip = "\(AgentCatalog.name(s.agent)) · \(s.status.words)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
         }
     }
 
-    /// A workspace in a few words: what its agents need, else how many there are, else what's open.
-    static func summary(of w: Worktree, agents: [Session], onOwnBranch: Bool) -> String {
+    /// What a workspace's second line says — what its agents need, and its branch when it has its own — or nil when
+    /// there's nothing worth a line (agents listed under it already say they're paused or ready).
+    static func workspaceDetail(_ id: String) -> String? {
+        let m = AppModel.shared
+        guard let w = m.worktree(id) else { return nil }
+        let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
         func count(_ st: AgentStatus) -> Int { agents.filter { $0.status == st }.count }
         var parts: [String] = []
         if count(.waiting) > 0 { parts.append(count(.waiting) == 1 ? "1 needs you" : "\(count(.waiting)) need you") }
         if count(.working) > 0 { parts.append("\(count(.working)) working") }
-        if count(.done) > 0 { parts.append("\(count(.done)) done") }
-        if parts.isEmpty {
-            if agents.isEmpty {
-                let tabs = Workbench.window?.editors.tabCount(w.id) ?? WorkspaceLayout.load(w.id).allTabs.count
-                parts.append(tabs == 0 ? "Empty" : tabs == 1 ? "1 tab" : "\(tabs) tabs")
-            } else {
-                let paused = agents.allSatisfy { $0.status == .hibernated }
-                parts.append((agents.count == 1 ? "1 agent" : "\(agents.count) agents") + (paused ? ", paused" : ", ready"))
-            }
-        }
-        if onOwnBranch { parts.append("branch \(w.branch)") }
-        return parts.joined(separator: " · ")
+        if count(.done) > 0, agents.contains(where: { $0.status == .done && $0.unread }) { parts.append("\(count(.done)) done") }
+        if w.path != m.repo(w.repoId)?.path { parts.append("branch \(w.branch)") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// The agent's state in words, with what it did or asks when the local model has summed it up.
-    static func state(of s: Session) -> String {
+    /// An agent's second line: what it asks, or what it did (from its own last reply). Working, ready and paused need
+    /// no words — the dot on its icon and its dimming say that (and the tooltip spells it out).
+    static func agentDetail(_ s: Session) -> String? {
         let about = s.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         switch s.status {
-        case .working: return "Working…"
-        case .waiting: return about.isEmpty ? "Needs your input" : "Needs you — \(about)"
-        case .done: return about.isEmpty ? "Done" : "Done — \(about)"
-        case .idle: return "Ready for a task"
-        case .hibernated: return "Paused"
-        case .exited: return "Ended"
+        case .waiting: return about.isEmpty ? "Needs your input" : about
+        case .done where !about.isEmpty: return about
+        default: return nil
         }
     }
 
@@ -396,18 +391,7 @@ final class SidebarCell: NSTableCellView {
     }
 }
 
-/// Bottom of the sidebar: agent limits, then "Add Project".
+/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is in the toolbar above.)
 struct SidebarFooterView: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            UsageView().padding(.horizontal, 12).padding(.top, 8)
-            HStack {
-                Button { Workbench.addProject() } label: { Label("Add Project", systemImage: "plus") }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-        }
-    }
+    var body: some View { UsageView() }
 }

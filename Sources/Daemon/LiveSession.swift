@@ -164,6 +164,7 @@ final class LiveSession: @unchecked Sendable {
     func userInput(_ d: Data) {
         pty.write(d)
         lock.lock(); defer { lock.unlock() }
+        guard !TerminalReplies.isReply(d) else { return }   // the terminal answering the agent, not the user typing
         detector.input()
         guard !sawFirstPrompt else { return }
         var s = String(decoding: d, as: UTF8.self)
@@ -212,7 +213,7 @@ final class LiveSession: @unchecked Sendable {
     }
 
     func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(n) }
-    func attach(_ conn: Int) -> Data { lock.lock(); defer { lock.unlock() }; attached.insert(conn); return ring }
+    func attach(_ conn: Int) -> Data { lock.lock(); defer { lock.unlock() }; attached.insert(conn); return TerminalReplies.withoutQueries(ring) }
     func detach(_ conn: Int) { lock.lock(); attached.remove(conn); lock.unlock() }
     var snapshot: Session { lock.lock(); defer { lock.unlock() }; return record }
 }

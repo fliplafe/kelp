@@ -7,22 +7,27 @@ enum Help {
     # How Krill works
 
     ## Projects, workspaces, agents
-    - **Project** — a folder with a git repository (File › Add Project…, ⌘O). It's a section in the sidebar.
+    - **Project** — a folder with a git repository (the folder button over the sidebar, or File › Add Project…, ⌘O).
+      It's a section in the sidebar.
     - **Workspace** — a clean desk in that folder: its own tabs, splits and agents. **+** next to the project (⌘N) opens one
       at once; it's named after the first thing you ask an agent. Rename with a double-click; close with ⇧⌘W (agents stop,
       files stay). Several workspaces can work in the same folder.
     - **Agent** — Claude Code, Grok, Antigravity, Qwen… whatever is installed and runs on this Mac (found automatically).
 
     ## What the sidebar tells you
-    | Mark | Means |
+    Each agent shows its own icon with a dot on the corner:
+    | Dot | Means |
     | --- | --- |
-    | spinner | working |
-    | orange **?** | asked you something — needs your input |
-    | green **✓** | finished; there's something new to look at (bold until you open it) |
-    | ○ | ready for a task |
-    | moon | paused to save memory — opens where it left off |
+    | blue, pulsing | working |
+    | orange | asked you something — needs your input (the question is under it) |
+    | green | finished; there's something new to look at (bold until you open it; what it did is under it) |
+    | none | ready for a task |
+    | dimmed icon | paused to save memory — opens where it left off |
 
-    Under each workspace: what its agents are doing. Under each agent: its state and what it did.
+    A workspace gets a second line only when there's news: "1 needs you · 1 working", or the branch it's on.
+
+    **Limits** at the bottom: how much of each agent's plan is used, read from the agents' own /usage (Claude Code,
+    Grok, Antigravity) and Codex's logs. Hover for reset times. Settings › Agents › Show plan limits turns it off.
 
     ## The middle: tabs and splits
     The toolbar **+** opens an agent, a terminal, a browser or what extensions add. ⌘D splits right, ⇧⌘D down; drag a tab to

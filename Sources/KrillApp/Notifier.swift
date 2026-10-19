@@ -40,16 +40,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             _ = try? await c.call("session.annotate", .obj(["id": .string(s.id), "summary": .string(line)]))
             post(s); return
         }
-        if LocalAI.isAvailable, let c = AppModel.shared.client,
-           let tail = (try? await c.call("session.read", .obj(["id": .string(s.id), "bytes": 3000])))?.string,
-           let st = await LocalAI.agentState(tail: Self.withoutChrome(StatusDetector.withoutPromptHints(tail))) {
-            s.summary = st.summary
-            var p: [String: JSONValue] = ["id": .string(s.id), "summary": .string(st.summary)]
-            // Agents with hooks report real questions themselves; a closing "let me know if…" isn't one.
-            let hooked = AgentCatalog.all.first { $0.id == s.agent }?.hooksSettingsFlag != nil
-            if st.waitingForUser, s.status == .done, !hooked { p["status"] = "waiting"; s.status = .waiting }
-            _ = try? await AppModel.shared.client?.call("session.annotate", .object(p))
-        }
+        // Other agents: no summary. The small model reading a TUI made things up ("The agent finished…"); the state says enough.
         post(s)
     }
 
@@ -63,18 +54,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             s = String(s.dropFirst(lead.count)); s = s.prefix(1).uppercased() + s.dropFirst(); break
         }
         return s.count > 90 ? String(s.prefix(89)) + "…" : s
-    }
-
-    /// Terminal lines that are the agent UI's chrome, not its words: borders, mode / hint bars, spinner and timing lines.
-    static func withoutChrome(_ tail: String) -> String {
-        tail.split(separator: "\n", omittingEmptySubsequences: false).filter { l in
-            let t = l.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty { return true }
-            if t.unicodeScalars.allSatisfy({ (0x2500...0x257F).contains($0.value) || $0 == " " }) { return false }   // box drawing
-            let lower = t.lowercased()
-            return !["shift+tab", "auto mode", "esc to interrupt", "ctrl+", "tokens", "· done", "for help", "bypass permissions"].contains { lower.contains($0) }
-                && t.range(of: #"^[^\w\s]\s*\w+…"#, options: .regularExpression) == nil   // "✻ Ebbing…" spinners
-        }.joined(separator: "\n")
     }
 
     private func post(_ s: Session) {

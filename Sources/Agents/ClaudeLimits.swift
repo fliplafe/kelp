@@ -55,4 +55,44 @@ public enum ClaudeLimits {
         }
         return order.compactMap { found[$0] }
     }
+
+    /// Grok Build's `/usage` dialog: "Weekly limit (X Premium)", a bar with "45%", "Resets: October 24, 19:36".
+    public static func parseGrokUsage(_ text: String) -> [Reading] {
+        let lines = cells(text)
+        guard let i = lines.lastIndex(where: { $0.hasPrefix("Weekly limit") }) else { return [] }
+        var percent: Double?, resets: String?
+        for next in lines[(i + 1)..<min(i + 4, lines.count)] {
+            if percent == nil, let r = next.range(of: #"\d{1,3}(\.\d+)?%"#, options: .regularExpression) { percent = Double(next[r].dropLast()) }
+            if next.hasPrefix("Resets:") { resets = next.dropFirst("Resets:".count).trimmingCharacters(in: .whitespaces) }
+        }
+        return percent.map { [Reading(kind: "week", percent: $0, resets: resets)] } ?? []
+    }
+
+    /// Antigravity's `/usage`: per model group ("GEMINI MODELS", "CLAUDE AND GPT MODELS") a weekly limit *remaining*;
+    /// returned as used, like the others ("Gemini week" 12 = 88% left).
+    public static func parseAntigravityUsage(_ text: String) -> [Reading] {
+        let lines = cells(text)
+        var found: [String: Reading] = [:], order: [String] = []
+        for (i, line) in lines.enumerated() where line.hasSuffix(" MODELS") && line == line.uppercased() {
+            let group = line.dropLast(" MODELS".count).split(separator: " ").first.map { $0.capitalized } ?? "Models"
+            var percent: Double?, resets: String?
+            for next in lines[(i + 1)..<min(i + 6, lines.count)] {
+                if next.hasSuffix(" MODELS") { break }
+                if percent == nil, let r = next.range(of: #"\d{1,3}(\.\d+)?%"#, options: .regularExpression) { percent = Double(next[r].dropLast()) }
+                if let r = next.range(of: #"(?i)resets in .*"#, options: .regularExpression) { resets = String(next[r].dropFirst("resets ".count)) }
+            }
+            guard let left = percent else { continue }
+            let kind = "\(group) week"
+            if found[kind] == nil { order.append(kind) }
+            found[kind] = Reading(kind: kind, percent: (100 - left).rounded(), resets: resets)
+        }
+        return order.compactMap { found[$0] }
+    }
+
+    /// A TUI's text in pieces: lines, split again at dialog borders (│) and wide gaps between columns.
+    static func cells(_ text: String) -> [String] {
+        text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))
+            .flatMap { $0.components(separatedBy: "   ") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
 }

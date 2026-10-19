@@ -11,6 +11,4 @@ import Testing
     let n = await LocalAI.naming(for: "Fix the crash when the user logs out twice")
     #expect(n != nil)
     #expect(n!.branch.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" })
-    let s = await LocalAI.agentState(tail: "Edited 3 files.\nDo you want to proceed? (y/n)")
-    #expect(s?.waitingForUser == true)
 }

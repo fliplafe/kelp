@@ -35,8 +35,8 @@ enum Builtins {
                   "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask."),
                 s("sessions.hibernateMinutes", "Pause idle agents after (minutes)", "number", 0, "0 = never. Paused agents free memory and resume the same conversation."),
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
-                s("usage.readClaudePlan", "Show Claude plan limits", "boolean", true,
-                  "Opens Claude Code's /usage in the background every 10 minutes and shows the percentages in the sidebar. Uses no tokens.")
+                s("usage.readPlans", "Show plan limits", "boolean", true,
+                  "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows the percentages in the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "krill.agents", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Empty = the theme's / Ghostty's font."),
@@ -117,9 +117,8 @@ enum Builtins {
     static let appearance = Builtin("krill.appearance", "Appearance", "Light / dark, color themes for terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "krill.appearance", specs: [
-            s("workbench.appearance", "Appearance", "enum", "system", "With the Auto and Ghostty themes; a light or dark theme sets the window to match.",
-              options: ["system", "light", "dark"]),
-            s("workbench.theme", "Color theme", "enum", "auto", "Terminal and editor colors. Auto follows light / dark; Ghostty config keeps your Ghostty colors.")
+            s("workbench.theme", "Theme", "theme", "auto",
+              "The window, terminal and editor together. Match System switches Krill Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors.")
         ])]
         return c
     }

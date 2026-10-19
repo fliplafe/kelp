@@ -114,6 +114,8 @@ struct SettingRow: View {
             Picker(spec.title, selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
                 ForEach(Self.options(spec), id: \.self) { Text(Self.label(spec.key, $0)).tag($0) }
             }
+        case "theme":
+            ThemeGallery(selection: Binding(get: { store.string(spec.key) ?? "auto" }, set: { store.set(spec.key, .string($0)) }))
         case "color":
             ColorPicker(spec.title, selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor }, set: { store.set(spec.key, .string($0.hex)) }))
         case "font":
@@ -145,7 +147,7 @@ struct SettingRow: View {
     static func label(_ key: String, _ v: String) -> String {
         switch key {
         case "agents.default": return AgentCatalog.name(v)
-        case "workbench.theme": return v == "auto" ? "Auto (Krill Light / Dark)" : v == "ghostty" ? "Ghostty config" : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
+        case "workbench.theme": return v == "auto" ? "Match System" : v == "ghostty" ? "Ghostty config" : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
         case "power.keepAwake": return ["agents": "While agents work", "always": "Always", "off": "Never"][v] ?? v
         default: return v.prefix(1).uppercased() + v.dropFirst()
         }
@@ -153,6 +155,50 @@ struct SettingRow: View {
 
     static let monospaced: [String] = NSFontManager.shared.availableFontFamilies.filter { fam in
         NSFont(name: fam, size: 12)?.isFixedPitch == true || fam.contains("Mono") || fam.contains("Code")
+    }
+}
+
+/// Color themes as swatch cards: the terminal's background, a sample, and the ANSI colors.
+private struct ThemeGallery: View {
+    @Binding var selection: String
+
+    private struct Card: Identifiable { let id: String, name: String, bg: Color, fg: Color, dots: [Color] }
+    private var cards: [Card] {
+        func card(_ t: Theme, id: String? = nil, name: String? = nil) -> Card {
+            let c = t.terminal
+            return Card(id: id ?? t.id, name: name ?? t.name, bg: Color(hex: c?.background ?? "") ?? .black, fg: Color(hex: c?.foreground ?? "") ?? .white,
+                        dots: (c?.palette ?? []).dropFirst().prefix(6).compactMap { Color(hex: $0) })
+        }
+        let all = ThemeManager.shared.themes
+        let auto = all.first { $0.id == (ThemeManager.shared.isDark ? "krill.dark" : "krill.light") }
+        return (auto.map { [card($0, id: "auto", name: "Match System")] } ?? [])
+            + [Card(id: "ghostty", name: "Ghostty", bg: Color(nsColor: .controlBackgroundColor), fg: .secondary, dots: [])]
+            + all.map { card($0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Theme")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                ForEach(cards) { c in
+                    Button { selection = c.id } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Aa  ~ $").font(.system(size: 12, design: .monospaced)).foregroundStyle(c.fg)
+                            HStack(spacing: 3) { ForEach(Array(c.dots.enumerated()), id: \.offset) { Circle().fill($0.element).frame(width: 8, height: 8) } }
+                                .frame(height: 8)
+                            Text(c.name).font(.caption).foregroundStyle(c.fg).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                        .background(c.bg, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selection == c.id ? Color.accentColor : Color.primary.opacity(0.15),
+                                                                                lineWidth: selection == c.id ? 2 : 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(c.name).accessibilityAddTraits(selection == c.id ? .isSelected : [])
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

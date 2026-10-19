@@ -80,10 +80,11 @@ extension Daemon {
     /// Claude's own percentages from the last 12 hours (they reset; older readings mislead).
     private func withLimits(_ v: JSONValue) -> JSONValue {
         guard case .object(var o) = v else { return v }
-        refreshClaudePlanIfStale()
-        let (plan, planAt) = lock.withLock { (claudePlan, claudePlanAt) }
-        o["claudePlan"] = .array(plan.map { .obj(["kind": .string($0.kind), "percent": .double($0.percent), "resets": $0.resets.map { .string($0) } ?? .null]) })
-        if let planAt { o["claudePlanAt"] = .double(planAt.timeIntervalSince1970) }
+        refreshPlansIfStale()
+        let plans = lock.withLock { self.plans }
+        o["plans"] = .object(plans.filter { !$0.value.readings.isEmpty }.mapValues { s in
+            .array(s.readings.map { .obj(["kind": .string($0.kind), "percent": .double($0.percent), "resets": $0.resets.map { .string($0) } ?? .null]) })
+        })
         let fresh = lock.withLock { claudeLimits.values.filter { Date().timeIntervalSince($0.at) < 12 * 3600 } }
         o["claudeLimits"] = .array(fresh.sorted { $0.reading.kind < $1.reading.kind }.map { x in
             .obj(["kind": .string(x.reading.kind), "percent": .double(x.reading.percent), "resets": x.reading.resets.map { .string($0) } ?? .null,

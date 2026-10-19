@@ -2,7 +2,7 @@ import SwiftUI
 import Core
 
 /// How much of each installed agent's plan is used, one line per agent: the short window and the week.
-/// Claude's numbers come from Claude Code's own /usage (the daemon reads it), Codex's from its session logs;
+/// The numbers come from the agents' own /usage screens (Claude Code, Grok, Antigravity — the daemon reads them) and Codex's session logs;
 /// agents that don't report limits get a dash. Reset times and per-model limits are on hover.
 struct UsageView: View {
     struct Gauge: Equatable { var label: String; var used: Double }   // 0...1
@@ -33,6 +33,7 @@ struct UsageView: View {
 
     @ViewBuilder private var list: some View {
         if rows.contains(where: { !$0.gauges.isEmpty || $0.note != "—" }) {
+            Divider()
             VStack(alignment: .leading, spacing: 5) {
                 Button { expanded.toggle(); UserDefaults.standard.set(expanded, forKey: "usage.expanded") } label: {
                     HStack(spacing: 4) {
@@ -65,6 +66,7 @@ struct UsageView: View {
                     }
                 }
             }
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
@@ -80,7 +82,7 @@ struct UsageView: View {
             switch a.id {
             case "claude": Self.claude(u, into: &r)
             case "codex": Self.codex(u, into: &r)
-            default: break
+            default: Self.plan(u["plans"]?[a.id]?.array ?? [], into: &r)
             }
             return r
         }
@@ -101,7 +103,7 @@ struct UsageView: View {
 
     /// Claude Code's /usage (or the percentages a session printed): session → "5h", all-model week → "week".
     private static func claude(_ u: JSONValue, into r: inout Row) {
-        let readings = (u["claudePlan"]?.array).flatMap { $0.isEmpty ? nil : $0 } ?? u["claudeLimits"]?.array ?? []
+        let readings = u["plans"]?["claude"]?.array ?? u["claudeLimits"]?.array ?? []
         for l in readings {
             guard let kind = l["kind"]?.string, let p = num(l["percent"]) else { continue }
             if kind == "session" { r.gauges.append(Gauge(label: "5h", used: p / 100)) }
@@ -117,6 +119,16 @@ struct UsageView: View {
             r.note = String(format: "$%.0f in 5h", num(b["cost"]) ?? 0)
             r.help = "Spent in the current 5-hour window, " + until(num(b["end"]) ?? 0) + ". Exact limits appear once Claude Code is signed in."
         }
+    }
+
+    /// Grok, Antigravity: their weekly limit — for Antigravity's model groups the fullest one; every group is on hover.
+    private static func plan(_ readings: [JSONValue], into r: inout Row) {
+        guard let worst = readings.compactMap({ num($0["percent"]) }).max() else { return }
+        r.gauges = [Gauge(label: "week", used: worst / 100)]
+        r.help = readings.compactMap { l in
+            guard let kind = l["kind"]?.string, let p = num(l["percent"]) else { return nil }
+            return "\(kind.prefix(1).uppercased() + kind.dropFirst()): \(Int(p))% used" + (l["resets"]?.string.map { " · resets \($0)" } ?? "")
+        }.joined(separator: "\n")
     }
 
     private static func codex(_ u: JSONValue, into r: inout Row) {

@@ -69,7 +69,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         }
         if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
         // Themes, like VS Code's "Color Theme" command.
-        for (id, name) in [("auto", "Auto (Light / Dark)")] + ThemeManager.shared.themes.map({ ($0.id, $0.name) }) {
+        for (id, name) in [("auto", "Match System")] + ThemeManager.shared.themes.map({ ($0.id, $0.name) }) {
             items.append(Item(kind: "Command", icon: "paintpalette", title: "Color Theme: \(name)", detail: "Settings › Appearance",
                               action: { SettingsStore.shared.set("workbench.theme", .string(id)) }))
         }
