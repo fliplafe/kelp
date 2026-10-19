@@ -37,6 +37,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         outline.target = self; outline.doubleAction = #selector(doubleClicked)
         let menu = NSMenu(); menu.delegate = self; outline.menu = menu
         let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        // When the list gets shorter (the limits below load), the selected workspace stays in view.
+        scroll.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let o = self?.outline, o.selectedRow >= 0 { o.scrollRowToVisible(o.selectedRow) } }
+        }
 
         let footer = NSHostingView(rootView: SidebarFooterView())
         footer.sizingOptions = [.intrinsicContentSize]

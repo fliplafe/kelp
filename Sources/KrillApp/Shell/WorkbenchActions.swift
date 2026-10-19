@@ -95,7 +95,6 @@ enum WorkspaceActions {
                 Workbench.show(workspace: main.id)
             }
             await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id), "force": .bool(dirty)]))
-            Attribution.reset(worktree: w.id)
         }
     }
 

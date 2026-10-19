@@ -101,9 +101,6 @@ final class FileTab: TabContent {
         }
         editedStateMayHaveChanged()
         markdown?.textChanged()
-        if let wid = AppModel.shared.worktrees.first(where: { $0.path == root })?.id, let line = editor?.cursor?.line {
-            Attribution.markHuman(worktree: wid, file: String(path.dropFirst(root.count + 1)), line: line)
-        }
         lspTask?.cancel()
         let p = path, r = root
         lspTask = Task {

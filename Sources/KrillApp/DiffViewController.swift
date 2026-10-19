@@ -34,7 +34,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     /// One-file mode: (path, "unstaged" | "staged", commit).
     private var single: (file: String, source: String, commit: String?)?
     private let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private var sideBySide: Bool { layoutToggle.selectedSegment == 0 }
+    /// Side by side when chosen and there's room for two columns; a narrow pane shows it inline (like VS Code).
+    private var sideBySide: Bool { layoutToggle.selectedSegment == 0 && !narrow }
+    private var narrow = false
     var currentSession: () -> String? = { nil }
 
     private static let addTint = NSColor.systemGreen.withAlphaComponent(0.14), delTint = NSColor.systemRed.withAlphaComponent(0.14)
@@ -90,6 +92,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     override func viewDidLayout() {
         super.viewDidLayout()
         if single == nil, !positioned, let s = split, s.bounds.width > 400 { positioned = true; s.setPosition(220, ofDividerAt: 0) }
+        let n = table.bounds.width > 0 && table.bounds.width < 640
+        if n != narrow {
+            narrow = n
+            layoutToggle.setEnabled(!n, forSegment: 0)
+            layoutToggle.setToolTip(n ? "Side by Side (needs a wider pane)" : "Side by Side", forSegment: 0)
+            setColumns(); rebuildRows()
+        }
     }
 
     private func buildBar() {
@@ -175,7 +184,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             changes = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
             comments = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
         }
-        humanLines = Dictionary(uniqueKeysWithValues: diffs.map { ($0.path, Attribution.humanLines(worktree: wid, file: $0.path)) })
         files.reloadData(); rebuildRows()
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         status.stringValue = single != nil ? (diffs.isEmpty ? "No changes" : "+\(add) −\(del)")
@@ -249,8 +257,10 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 stack.wantsLayer = true; stack.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.06).cgColor
                 if canStageHunks {
                     let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
-                    let b = NSButton(title: staged ? "Unstage Hunk" : "Stage Hunk", target: self, action: #selector(hunkAction(_:)))
-                    b.controlSize = .mini; b.bezelStyle = .inline; b.tag = f * 10000 + h
+                    // An icon fits the narrow gutter, like VS Code's hunk actions.
+                    let b = NSButton(image: .symbol(staged ? "minus.circle" : "plus.circle", staged ? "Unstage Hunk" : "Stage Hunk"),
+                                     target: self, action: #selector(hunkAction(_:)))
+                    b.isBordered = false; b.contentTintColor = .secondaryLabelColor; b.toolTip = staged ? "Unstage Hunk" : "Stage Hunk"; b.tag = f * 10000 + h
                     stack.addArrangedSubview(b)
                 }
                 stack.addArrangedSubview(label(header, font: .monospacedSystemFont(ofSize: 11, weight: .regular), color: .tertiaryLabelColor))
@@ -258,13 +268,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             case .line(let f, let l):
                 switch id {
                 case "on": return number(l.oldLine, kind: l.kind)
-                case "nn": return attributed(l, file: f)
+                case "nn": return number(l.newLine, kind: l.kind)
                 default: return codeCell(l, file: f, marker: true)
                 }
             case .pair(let f, let l, let r):
                 switch id {
                 case "on": return l.map { number($0.oldLine, kind: $0.kind) } ?? filler()
-                case "nn": return r.map { attributed($0, file: f) } ?? filler()
+                case "nn": return r.map { number($0.newLine, kind: $0.kind) } ?? filler()
                 case "l": return l.map { codeCell($0, file: f, marker: false) } ?? filler()
                 default: return r.map { codeCell($0, file: f, marker: false) } ?? filler()
                 }
@@ -277,18 +287,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         return source.indexOfSelectedItem <= 2
     }
 
-    /// New-side line number; added lines show who wrote them (agent ✦ / you).
-    private func attributed(_ l: DiffLine, file f: Int) -> NSTextField {
-        let n = l.newLine.map(String.init) ?? ""
-        guard l.kind == .add, let line = l.newLine, hasAgent else { return number(l.newLine, kind: l.kind) }
-        let human = humanLines[diffs[f].path, default: []].contains(line)
-        let t = number(l.newLine, kind: l.kind)
-        if !human { t.stringValue = "✦ " + n; t.textColor = .systemPurple }
-        t.toolTip = human ? "Edited by you" : "Written by an agent"
-        return t
-    }
-    private var hasAgent: Bool { AppModel.shared.sessions.contains { $0.worktreeId == worktreeId && $0.agent != "shell" && $0.agent != "custom" } }
-    private var humanLines: [String: Set<Int>] = [:]
 
     private func ext(_ f: Int) -> String { (diffs[f].path as NSString).pathExtension }
 

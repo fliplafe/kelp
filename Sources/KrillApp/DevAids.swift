@@ -45,8 +45,9 @@ extension AppDelegate {
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
             // KRILL_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
             if let targets = env["KRILL_CLICK"]?.split(separator: "|") {
+                let start = env["KRILL_CLICK_DELAY"].flatMap(Double.init) ?? 0.3   // panels that load later need longer
                 for (i, t) in targets.enumerated() {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.8) { [self] in click(text: String(t)) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 0.8) { [self] in click(text: String(t)) }
                 }
             }
             // KRILL_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
