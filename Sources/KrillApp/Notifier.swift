@@ -75,7 +75,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let wt = AppModel.shared.worktree(s.worktreeId)
         let c = UNMutableNotificationContent()
         c.title = s.status == .waiting ? "\(s.agent ?? "Agent") needs you" : "\(s.agent ?? "Agent") finished"
-        c.title = s.status == .waiting ? "\(s.displayTitle) needs you" : "\(s.displayTitle) finished"
+        c.title = s.status == .waiting ? "\(AgentCatalog.displayName(s)) needs you" : "\(AgentCatalog.displayName(s)) finished"
         c.subtitle = wt?.branch ?? ""
         c.body = s.summary.isEmpty ? (s.status == .waiting ? "Waiting for your answer" : "Ready for review") : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]

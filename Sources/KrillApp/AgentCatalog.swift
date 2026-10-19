@@ -28,6 +28,17 @@ enum AgentCatalog {
         return all.first { $0.id == id }?.name ?? id.capitalized
     }
 
+    /// Its title, or the agent's name — numbered when the same agent runs twice in one workspace.
+    /// Sidebar, tabs, notifications and menus all use this, so they agree.
+    @MainActor static func displayName(_ s: Session) -> String {
+        if !s.title.isEmpty { return s.title }
+        let same = AppModel.shared.sessions.filter { $0.worktreeId == s.worktreeId && $0.status != .exited && $0.title.isEmpty && $0.agent == s.agent }
+            .sorted { $0.createdAt < $1.createdAt }
+        let base = name(s.agent)
+        guard same.count > 1, let i = same.firstIndex(where: { $0.id == s.id }), i > 0 else { return base }
+        return "\(base) \(i + 1)"
+    }
+
     /// The agent's real icon when there is one (AgentIcons), else its symbol.
     @MainActor static func icon(_ id: String?, size: CGFloat = 16) -> NSImage? {
         guard let id, id != "shell", id != "custom", let real = AgentIcons.shared.image(id)?.copy() as? NSImage else {

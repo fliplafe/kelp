@@ -48,11 +48,20 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         outline.headerView = nil; outline.style = .sourceList; outline.dataSource = self; outline.delegate = self
         outline.target = self; outline.action = #selector(openSelected)
         outline.registerForDraggedTypes([.fileURL]); outline.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        // Grouped like Finder's: open, create, change, locate, hand to the agent.
         let m = NSMenu()
-        for (t, a) in [("Open", #selector(openSelected)), ("New File…", #selector(newFile)), ("New Folder…", #selector(newFolder)),
-                       ("New from Template…", #selector(newFromTemplate)), ("Rename…", #selector(rename)), ("Move to Trash", #selector(trash)),
-                       ("Reveal in Finder", #selector(reveal)), ("Insert Path into Agent Prompt", #selector(insertPath))] {
-            m.addItem(withTitle: t, action: a, keyEquivalent: "").target = self
+        for group in [[("Open", #selector(openSelected))],
+                      [("New File…", #selector(newFile)), ("New Folder…", #selector(newFolder)), ("New from Template…", #selector(newFromTemplate))],
+                      [("Rename…", #selector(rename)), ("Move to Trash", #selector(trash))],
+                      [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)), ("Copy Relative Path", #selector(copyRelativePath))],
+                      [("Insert Path into Agent Prompt", #selector(insertPath))]] {
+            if !m.items.isEmpty { m.addItem(.separator()) }
+            for (t, a) in group { m.addItem(withTitle: t, action: a, keyEquivalent: "").target = self }
+        }
+        let openIn = NSMenu()
+        WorkspaceActions.addOpenIn(to: openIn, path: { [weak self] in self?.selectedPath }, prefix: "")
+        if !openIn.items.isEmpty, let i = m.items.firstIndex(where: { $0.action == #selector(reveal) }) {
+            m.insertItem(withTitle: "Open In", action: nil, keyEquivalent: "", at: i + 1).submenu = openIn
         }
         outline.menu = m
         leftScroll.documentView = outline; leftScroll.hasVerticalScroller = true; leftScroll.drawsBackground = false
@@ -153,6 +162,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         reloadTree(); return true
     }
 
+    private var selectedPath: String? { selectedNode.map { root + "/" + $0.path } }
     private var selectedNode: FileNode? { (outline.clickedRow >= 0 ? outline.item(atRow: outline.clickedRow) : outline.item(atRow: outline.selectedRow)) as? FileNode }
     private var selectedDir: String {
         guard let n = selectedNode else { return "" }
@@ -216,6 +226,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     @objc private func reveal() {
         guard let n = selectedNode else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: root).appendingPathComponent(n.path)])
+    }
+    @objc private func copyPath() { copy(selectedPath) }
+    @objc private func copyRelativePath() { copy(selectedNode?.path) }
+    private func copy(_ text: String?) {
+        guard let text else { return }
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }
     @objc private func insertPath() {
         guard let n = selectedNode, let sid = currentSession() else { NSSound.beep(); return }

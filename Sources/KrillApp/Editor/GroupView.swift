@@ -8,19 +8,31 @@ final class GroupView: NSView {
     private let container = NSView()
     private let hint = NSView()
     private weak var shown: NSView?
+    private let veil = Veil()
     var onDropTab: ((String, NSRectEdge?) -> Void)?   // nil edge = into this group
+    /// A terminal pane without focus, among several: it fades toward the terminal's background (Ghostty does the same).
+    var dimmed = false {
+        didSet {
+            guard dimmed != oldValue else { return }
+            veil.layer?.backgroundColor = ThemeManager.shared.terminalBackground.withAlphaComponent(0.3).cgColor
+            veil.isHidden = !dimmed
+        }
+    }
 
     init(groupId: String) {
         self.groupId = groupId
         super.init(frame: .zero)
-        for v in [strip, container] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        veil.wantsLayer = true; veil.isHidden = true
+        for v in [strip, container, veil] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         hint.wantsLayer = true; hint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
         hint.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; hint.layer?.borderWidth = 1
         hint.layer?.cornerRadius = 6; hint.isHidden = true; addSubview(hint)
         NSLayoutConstraint.activate([
             strip.topAnchor.constraint(equalTo: topAnchor), strip.leadingAnchor.constraint(equalTo: leadingAnchor), strip.trailingAnchor.constraint(equalTo: trailingAnchor),
             container.topAnchor.constraint(equalTo: strip.bottomAnchor), container.leadingAnchor.constraint(equalTo: leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: trailingAnchor), container.bottomAnchor.constraint(equalTo: bottomAnchor)
+            container.trailingAnchor.constraint(equalTo: trailingAnchor), container.bottomAnchor.constraint(equalTo: bottomAnchor),
+            veil.topAnchor.constraint(equalTo: container.topAnchor), veil.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            veil.leadingAnchor.constraint(equalTo: container.leadingAnchor), veil.trailingAnchor.constraint(equalTo: container.trailingAnchor)
         ])
         registerForDraggedTypes([.krillTab])
     }
@@ -72,4 +84,9 @@ final class GroupView: NSView {
         guard let id = s.draggingPasteboard.string(forType: .krillTab) else { return false }
         onDropTab?(id, edge(s)); return true
     }
+}
+
+/// Paints over the content without taking its clicks.
+private final class Veil: NSView {
+    override func hitTest(_ p: NSPoint) -> NSView? { nil }
 }

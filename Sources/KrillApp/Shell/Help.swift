@@ -34,7 +34,8 @@ enum Help {
 
     ## The middle: tabs and splits
     The toolbar **+** opens an agent, a terminal, a browser or what extensions add. ⌘D splits right, ⇧⌘D down; drag a tab to
-    an edge to split, between groups to move it. ⇧⌘↩ lets the focused pane fill the area and brings the others back.
+    an edge to split, between groups to move it. Dividers stay where you drag them (View › Equalize Panes evens them out);
+    ⌥⌘ arrows move to the pane on that side. ⇧⌘↩ lets the focused pane fill the area and brings the others back.
     ⌘W closes a tab (in an empty workspace, the workspace). Edited files show a dot on their tab and in the window's close
     button; ⌘S saves.
 
@@ -53,9 +54,12 @@ enum Help {
     ## Settings
     Krill › Settings… (⌘,) — or ~/.krill/settings.json, or `krill settings set <key> <value>` from any terminal.
 
+    ## Adding projects
+    File › Add Project… (⌘O), or drop a folder on the sidebar or on Krill's Dock icon, or run `open -a Krill .` in a folder.
+
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·
-    ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous group ·
+    ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous pane · ⌥⌘←→↑↓ pane on that side ·
     ⌃1…9 workspaces · ⌃⌘↓ / ⌃⌘↑ next / previous workspace · ⇧⌘U agent that needs you · ⌘F find · ⌥⌘R reveal in Finder ·
     ⌘0 sidebar · ⌥⌘0 right panel · ⌘S save · ⌘W close tab · ⇧⌘W close workspace. Shortcuts work on any keyboard layout.
     """

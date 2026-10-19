@@ -74,12 +74,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
 
+    /// Folders dropped on the Dock icon or opened with `open -a Krill <path>` become projects; files open as tabs.
+    func application(_ app: NSApplication, open urls: [URL]) {
+        for u in urls {
+            var dir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) else { continue }
+            if dir.boolValue { Workbench.addProject(path: u.path) } else { Workbench.open(TabURI.file(u.path)) }
+        }
+    }
+
     /// Right-click on the Dock icon: the agents waiting for you, like Mail's dock menu offers what's new.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let m = NSMenu()
         for s in AttentionQueue.sessions {
             let place = AppModel.shared.worktree(s.worktreeId)?.displayName ?? ""
-            let i = m.add("\(s.displayTitle) — \(s.status == .waiting ? "needs you" : "finished") · \(place)") { NSApp.activate(); Workbench.focus(session: s.id) }
+            let i = m.add("\(AgentCatalog.displayName(s)) — \(s.status == .waiting ? "needs you" : "finished") · \(place)") { NSApp.activate(); Workbench.focus(session: s.id) }
             i.image = AgentCatalog.icon(s.agent, size: 16)
         }
         if !m.items.isEmpty { m.addItem(.separator()) }
@@ -109,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }
     @objc func toggleZoom() { editor?.toggleZoom() }
+    @objc func equalizePanes() { editor?.equalizePanes() }
+    @objc func focusPaneToward(_ m: NSMenuItem) { NSRectEdge(rawValue: UInt(m.tag)).map { editor?.focusGroup(toward: $0) } }
     /// ⌘W: the focused tab; in a workspace with nothing open, the workspace itself.
     @objc func closeTab() {
         guard let e = editor else { return }
@@ -272,10 +283,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Split Right", #selector(splitRight), "d")
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
         _ = item(view, "Maximize Pane", #selector(toggleZoom), "\r", [.command, .shift])
+        _ = item(view, "Equalize Panes", #selector(equalizePanes))
+        let panes = NSMenu(title: "Select Pane")
+        _ = item(panes, "Next Pane", #selector(nextGroup), "]")
+        _ = item(panes, "Previous Pane", #selector(prevGroup), "[")
+        panes.addItem(.separator())
+        // NSLeftArrowFunctionKey…: ⌥⌘ arrows, as Ghostty moves between splits
+        for (title, key, edge) in [("Pane on the Left", "\u{F702}", NSRectEdge.minX), ("Pane on the Right", "\u{F703}", .maxX),
+                                   ("Pane Above", "\u{F700}", .maxY), ("Pane Below", "\u{F701}", .minY)] {
+            item(panes, title, #selector(focusPaneToward(_:)), key, [.command, .option]).tag = Int(edge.rawValue)
+        }
+        view.setSubmenu(panes, for: view.addItem(withTitle: "Select Pane", action: nil, keyEquivalent: ""))
+        view.addItem(.separator())
         _ = item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
         _ = item(view, "Previous Tab", #selector(prevTab), "[", [.command, .shift])
-        _ = item(view, "Next Group", #selector(nextGroup), "]")
-        _ = item(view, "Previous Group", #selector(prevGroup), "[")
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i; m.isHidden = i > 3; m.allowsKeyEquivalentWhenHidden = true }
         // ⌃Tab / ⌃⇧Tab as in Safari and Terminal, next to the ⇧⌘] / ⇧⌘[ shown above.
         for (sel, mods) in [(#selector(nextTab), NSEvent.ModifierFlags.control), (#selector(prevTab), NSEvent.ModifierFlags([.control, .shift]))] {

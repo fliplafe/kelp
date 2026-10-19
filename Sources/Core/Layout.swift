@@ -38,6 +38,13 @@ public indirect enum LayoutNode: Codable, Equatable {
         }
     }
 
+    /// One key per split: its children's first panes (where the UI keeps divider positions).
+    public var splitKeys: Set<String> {
+        guard case .split(_, let c) = self else { return [] }
+        return c.reduce(into: [Self.splitKey(c)]) { $0.formUnion($1.splitKeys) }
+    }
+    public static func splitKey(_ children: [LayoutNode]) -> String { children.compactMap(\.sessions.first).joined(separator: ",") }
+
     /// Neighbour in reading order, for keyboard pane navigation.
     public func neighbor(of id: String, step: Int) -> String? {
         let all = sessions

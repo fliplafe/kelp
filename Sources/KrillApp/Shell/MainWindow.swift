@@ -41,9 +41,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
 
     private func updateTitle() {
         guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId), let r = AppModel.shared.repo(w.repoId) else {
-            window?.title = "Krill"; window?.subtitle = ""; return
+            window?.title = "Krill"; window?.subtitle = ""; window?.representedURL = nil; return
         }
         window?.title = w.displayName
+        // The folder's icon by the title, as in Xcode and Finder: ⌘-click for its path, drag it to Terminal or Finder.
+        window?.representedURL = URL(fileURLWithPath: w.path)
         window?.subtitle = "\(r.name) · \(w.branch)"
         editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
     }

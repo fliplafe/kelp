@@ -52,6 +52,12 @@ final class ThemeManager {
     /// "auto" follows macOS light/dark; "ghostty" leaves the terminal to ~/.config/ghostty.
     var themes: [Theme] { Self.builtin + Theme.popular + ExtensionRegistry.shared.all.themes }
 
+    /// What terminals are painted with now (Ghostty's own config when the theme leaves it to Ghostty).
+    var terminalBackground: NSColor {
+        let hex = lastTerminal?.background ?? (lastTerminal?.useGhosttyConfig != false ? GhosttyConfig.load()?.background : nil)
+        return hex.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } ?? .textBackgroundColor
+    }
+
     var isDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 
     func apply() {

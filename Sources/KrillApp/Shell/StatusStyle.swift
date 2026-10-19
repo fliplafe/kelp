@@ -91,6 +91,7 @@ final class StatusMark: NSView {
         if spinning {
             effectiveAppearance.performAsCurrentDrawingAppearance { ring.strokeColor = NSColor.secondaryLabelColor.cgColor }
             ring.anchorPoint = CGPoint(x: 0.5, y: 0.5); ring.position = CGPoint(x: size / 2, y: size / 2)
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }   // Reduce Motion: the open ring stands still
             let a = CABasicAnimation(keyPath: "transform.rotation.z")
             a.fromValue = 0; a.toValue = -2 * Double.pi; a.duration = 1; a.repeatCount = .infinity
             ring.add(a, forKey: "spin")

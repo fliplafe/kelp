@@ -37,6 +37,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         outline.floatsGroupRows = false; outline.indentationPerLevel = 14
         outline.dataSource = self; outline.delegate = self
         outline.target = self; outline.doubleAction = #selector(doubleClicked)
+        outline.registerForDraggedTypes([.fileURL])   // a folder from Finder becomes a project
         let menu = NSMenu(); menu.delegate = self; outline.menu = menu
         let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
@@ -194,6 +195,23 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         }
     }
 
+    // MARK: folders dropped from Finder
+
+    private static func folders(_ info: NSDraggingInfo) -> [String] {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }.map(\.path)
+    }
+    func outlineView(_ o: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+        guard !Self.folders(info).isEmpty else { return [] }
+        o.setDropItem(nil, dropChildIndex: NSOutlineViewDropOnItemIndex)   // the whole list, not a row
+        return .copy
+    }
+    func outlineView(_ o: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        let folders = Self.folders(info)
+        folders.forEach(Workbench.addProject(path:))
+        return !folders.isEmpty
+    }
+
     @objc private func doubleClicked() {
         guard let node = outline.item(atRow: outline.clickedRow) as? Node, case .workspace(let id) = node.kind else { return }
         startRename(id)
@@ -342,13 +360,13 @@ final class SidebarCell: NSTableCellView {
             trailing.stringValue = collapsed ? shortAgo(lead.map { $0.statusAt ?? $0.createdAt }) : ""
             let isMain = w.path == m.repo(w.repoId)?.path
             toolTip = ([w.path + (isMain ? "" : "\nBranch \(w.branch)")]
-                       + agents.map { "\(Self.name(of: $0, among: agents)) — \($0.status.words)" + ($0.summary.isEmpty ? "" : ": \($0.summary)") })
+                       + agents.map { "\(AgentCatalog.displayName($0)) — \($0.status.words)" + ($0.summary.isEmpty ? "" : ": \($0.summary)") })
                 .joined(separator: "\n")
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
             icon.image = AgentCatalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
             icon.alphaValue = s.status == .hibernated ? 0.45 : 1
-            title.stringValue = Self.name(of: s, among: live(s.worktreeId ?? ""))
+            title.stringValue = AgentCatalog.displayName(s)
             title.font = .systemFont(ofSize: 13, weight: Self.isNews(s) ? .semibold : .regular)
             title.textColor = s.status == .hibernated ? .tertiaryLabelColor : .labelColor
             mark.status = s.status; mark.unread = s.unread
@@ -359,15 +377,6 @@ final class SidebarCell: NSTableCellView {
 
     /// Something to look at: finished or asking, and not opened since (bold, like unread mail).
     static func isNews(_ s: Session) -> Bool { s.unread && (s.status == .done || s.status == .waiting) }
-
-    /// Its title, or the agent's name — numbered when the same agent runs twice in one workspace.
-    static func name(of s: Session, among peers: [Session]) -> String {
-        if !s.title.isEmpty { return s.title }
-        let same = peers.filter { $0.title.isEmpty && $0.agent == s.agent }.sorted { $0.createdAt < $1.createdAt }
-        let base = AgentCatalog.name(s.agent)
-        guard same.count > 1, let i = same.firstIndex(where: { $0.id == s.id }), i > 0 else { return base }
-        return "\(base) \(i + 1)"
-    }
 
     func beginEditing(delegate: NSTextFieldDelegate) {
         title.isEditable = true; title.isSelectable = true; title.drawsBackground = true; title.delegate = delegate

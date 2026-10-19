@@ -63,6 +63,7 @@ final class EditorArea: NSViewController {
         guard var root = layout.root, !layout.allTabs.isEmpty else { showStart(); return }
         start = nil
         if let z = zoomed, layout.groups[z] != nil, root.sessions.count > 1 { root = .pane(z) } else { zoomed = nil }
+        if zoomed == nil, let sizes = layout.sizes { layout.sizes = sizes.filter { root.splitKeys.contains($0.key) } }
         let v = build(root)
         v.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(v)
@@ -94,16 +95,25 @@ final class EditorArea: NSViewController {
         case .pane(let gid): return groupView(gid)
         case .split(let vertical, let kids):
             let sv = NSSplitView(); sv.isVertical = vertical; sv.dividerStyle = .thin
+            let key = LayoutNode.splitKey(kids)
+            sv.identifier = NSUserInterfaceItemIdentifier(key); sv.delegate = self
             let size = view.bounds.width > 0 ? view.bounds.size : NSSize(width: 1000, height: 700)
-            let n = CGFloat(kids.count)
-            let child = vertical ? NSSize(width: size.width / n, height: size.height) : NSSize(width: size.width, height: size.height / n)
+            let saved = layout.sizes?[key].flatMap { $0.count == kids.count ? $0 : nil }
+            let shares = saved ?? Array(repeating: 1 / Double(kids.count), count: kids.count)
             sv.frame = NSRect(origin: .zero, size: size)
-            for k in kids {   // equal starting frames; NSSplitView keeps proportions from there
-                let v = build(k); v.translatesAutoresizingMaskIntoConstraints = true; v.frame = NSRect(origin: .zero, size: child)
+            for (k, share) in zip(kids, shares) {   // starting frames; NSSplitView keeps proportions from there
+                let v = build(k); v.translatesAutoresizingMaskIntoConstraints = true
+                v.frame.size = vertical ? NSSize(width: size.width * share, height: size.height) : NSSize(width: size.width, height: size.height * share)
                 sv.addArrangedSubview(v)
             }
             return sv
         }
+    }
+
+    /// View › Equalize Panes: every split back to equal shares.
+    func equalizePanes() {
+        guard layout.sizes != nil else { return }
+        layout.sizes = nil; render(); focusSelected()
     }
 
     private func groupView(_ gid: String) -> GroupView {
@@ -142,6 +152,8 @@ final class EditorArea: NSViewController {
             return Self.placeholder(t)
         }, selected: model.selectedTab?.id)
         g.show(visible?.view)
+        // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
+        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible is SessionTab
         showEdited()
     }
 
@@ -163,7 +175,7 @@ final class EditorArea: NSViewController {
         switch TabURI.scheme(t.uri) {
         case "session":
             let s = AppModel.shared.session(body)
-            let title = s.map { $0.title.isEmpty ? AgentCatalog.name($0.agent) : $0.title } ?? "Session"
+            let title = s.map(AgentCatalog.displayName) ?? "Session"
             return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.status },
                          unread: s?.unread ?? false, toolTip: title)
         case "file":
@@ -311,6 +323,25 @@ final class EditorArea: NSViewController {
         let gid = ids[(i + offset + ids.count) % ids.count]
         if let t = layout.groups[gid]?.selectedTab { select(t.id) }
     }
+    /// ⌥⌘ arrows: the pane on that side of the focused one, the nearest by center (Ghostty's goto_split).
+    func focusGroup(toward edge: NSRectEdge) {
+        guard let cur = layout.focusedGroup?.id, let from = groupViews[cur], from.window != nil else { return }
+        let a = from.convert(from.bounds, to: nil)
+        let near = groupViews.compactMap { id, v -> (String, CGFloat)? in
+            guard id != cur, v.window != nil else { return nil }
+            let b = v.convert(v.bounds, to: nil)
+            let beyond = switch edge {   // window coordinates: y grows upward
+            case .minX: b.maxX <= a.minX + 2
+            case .maxX: b.minX >= a.maxX - 2
+            case .minY: b.maxY <= a.minY + 2
+            default: b.minY >= a.maxY - 2
+            }
+            return beyond ? (id, hypot(b.midX - a.midX, b.midY - a.midY)) : nil
+        }.min { $0.1 < $1.1 }
+        guard let gid = near?.0, let t = layout.groups[gid]?.selectedTab else { NSSound.beep(); return }
+        select(t.id)
+    }
+
     /// Moves the focused tab into a new group to the right / below.
     func splitFocused(_ dir: SplitDirection) {
         zoomed = nil
@@ -460,6 +491,21 @@ final class EditorArea: NSViewController {
     var stateForAgents: JSONValue {
         .obj(["tabs": .array(layout.allTabs.map { t in .obj(["uri": .string(t.uri), "title": .string(contents[t.id]?.title ?? "")]) }),
               "focused": .string(layout.focusedGroup?.selectedTab?.uri ?? "")])
+    }
+}
+
+extension EditorArea: NSSplitViewDelegate {
+    /// A dragged divider stays where it was put: tab changes and relaunches rebuild the splits from these shares.
+    func splitViewDidResizeSubviews(_ n: Notification) {
+        guard let sv = n.object as? NSSplitView, sv.window != nil, let key = sv.identifier?.rawValue,
+              sv.arrangedSubviews.count == key.split(separator: ",").count else { return }   // being taken apart: not the user
+        let lengths = sv.arrangedSubviews.map { Double(sv.isVertical ? $0.frame.width : $0.frame.height) }
+        let total = lengths.reduce(0, +)
+        guard total > 20 else { return }
+        let shares = lengths.map { $0 / total }
+        if layout.sizes?[key].map({ zip($0, shares).allSatisfy { abs($0 - $1) < 0.002 } }) == true { return }
+        layout.sizes = (layout.sizes ?? [:]).merging([key: shares]) { $1 }
+        scheduleSave()
     }
 }
 

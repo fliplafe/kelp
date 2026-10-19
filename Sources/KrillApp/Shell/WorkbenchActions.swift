@@ -60,14 +60,23 @@ extension Workbench {
         p.message = "Choose a git repository"; p.prompt = "Add Project"
         let chosen = { (r: NSApplication.ModalResponse) in
             guard r == .OK, let u = p.url else { return }
-            Task {
-                guard let r = await AppModel.shared.call("repo.add", .obj(["path": .string(u.path)])), let rid = r["id"]?.string else { return }
-                await AppModel.shared.refresh()
-                if let main = AppModel.shared.worktrees.first(where: { $0.repoId == rid && $0.path == r["path"]?.string }) { show(workspace: main.id) }
-            }
+            addProject(path: u.path)
         }
         // A sheet on the window, not an app-modal panel that stops everything else.
         if let w = NSApp.mainWindow ?? NSApp.keyWindow { p.beginSheetModal(for: w, completionHandler: chosen) } else { p.begin(completionHandler: chosen) }
+    }
+
+    /// A folder dropped on the Dock icon or the sidebar, `open -a Krill .`, or picked in Add Project: its project on screen
+    /// (added first if it's new; a folder inside a repository adds the repository).
+    static func addProject(path: String) {
+        Task {
+            let m = AppModel.shared
+            for _ in 0..<50 where !m.connected { try? await Task.sleep(for: .milliseconds(100)) }   // opened at launch
+            guard let r = await m.call("repo.add", .obj(["path": .string(path)])), let rid = r["id"]?.string else { return }
+            await m.refresh()
+            let ws = m.repo(rid).map(m.workspaces(of:)) ?? []
+            if let w = ws.first(where: { $0.id == shared.workspaceId }) ?? ws.first { show(workspace: w.id) }
+        }
     }
 
     /// New isolated workspace in the project on screen (or the first one).
@@ -115,7 +124,10 @@ enum WorkspaceActions {
         for (name, bundle) in editors {
             guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { continue }
             let i = menu.add(prefix + name) {
-                guard let p = path() else { NSSound.beep(); return }
+                guard var p = path() else { NSSound.beep(); return }
+                var dir: ObjCBool = false
+                // Terminal would run a file as a script: it gets the file's folder.
+                if bundle == "com.apple.Terminal", FileManager.default.fileExists(atPath: p, isDirectory: &dir), !dir.boolValue { p = (p as NSString).deletingLastPathComponent }
                 NSWorkspace.shared.open([URL(fileURLWithPath: p)], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             }
             i.image = NSWorkspace.shared.icon(forFile: app.path).resized(16)

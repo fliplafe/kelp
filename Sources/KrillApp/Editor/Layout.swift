@@ -19,6 +19,8 @@ struct WorkspaceLayout: Codable, Equatable {
     var root: LayoutNode?
     var groups: [String: GroupModel] = [:]
     var focused: String?
+    /// Divider positions the user dragged: each split's shares, keyed by its children's first group ids.
+    var sizes: [String: [Double]]?
 
     var allTabs: [TabRef] { (root?.sessions ?? []).compactMap { groups[$0] }.flatMap(\.tabs) }
     var focusedGroup: GroupModel? { focused.flatMap { groups[$0] } ?? root?.sessions.first.flatMap { groups[$0] } }

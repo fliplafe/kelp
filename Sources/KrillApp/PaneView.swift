@@ -144,7 +144,7 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     }
 
     func update(_ s: Session) {
-        title.stringValue = s.displayTitle
+        title.stringValue = AgentCatalog.displayName(s)
         dot.status = s.agent == "shell" ? nil : s.status; dot.unread = s.unread
         if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
         if s.status == .done || s.status == .waiting { lastActivity = Date() }

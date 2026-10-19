@@ -29,9 +29,7 @@ final class SessionTab: TabContent {
 
     private var session: Session? { AppModel.shared.session(sessionId) }
     var title: String {
-        guard let s = session else { return "Session" }
-        if !s.title.isEmpty { return s.title }
-        return s.agent == "shell" ? "Terminal" : AgentCatalog.name(s.agent)
+        session.map(AgentCatalog.displayName) ?? "Session"
     }
     var icon: NSImage? { AgentCatalog.icon(session?.agent) }
     var status: AgentStatus? { session.flatMap { $0.agent == "shell" ? nil : $0.status } }

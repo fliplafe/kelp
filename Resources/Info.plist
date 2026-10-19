@@ -14,6 +14,13 @@
   <key>NSMicrophoneUsageDescription</key><string>Krill uses the microphone only while you dictate a prompt.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Dictated prompts are transcribed on this Mac.</string>
   <key>NSAppleEventsUsageDescription</key><string>Terminal programs may request automation access.</string>
+  <!-- Rank None: Krill is offered for folders and text (Dock drop, Open With, open -a) but never becomes their default app. -->
+  <key>CFBundleDocumentTypes</key><array>
+    <dict><key>CFBundleTypeName</key><string>Folder</string><key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>None</string><key>LSItemContentTypes</key><array><string>public.folder</string></array></dict>
+    <dict><key>CFBundleTypeName</key><string>Text</string><key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>None</string><key>LSItemContentTypes</key><array><string>public.text</string></array></dict>
+  </array>
   <key>SUFeedURL</key><string>https://raw.githubusercontent.com/krill-app/krill/main/appcast.xml</string>
   <key>SUEnableAutomaticChecks</key><true/>
 </dict></plist>

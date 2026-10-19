@@ -87,7 +87,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: s.displayTitle, detail: "\(s.status.words) · \(wt?.displayName ?? "")", action: { Workbench.focus(session: s.id) }))
+                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(wt?.displayName ?? "")", action: { Workbench.focus(session: s.id) }))
             }
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 Task {

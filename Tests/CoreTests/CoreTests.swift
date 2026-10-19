@@ -39,6 +39,14 @@ import Testing
     #expect(l.neighbor(of: "c", step: 1) == "a")
 }
 
+/// Divider positions are kept per split: the key survives tab changes and changes when the split gets another pane.
+@Test func layoutSplitKeys() {
+    let l = LayoutNode.pane("a").inserting("b", beside: "a", vertical: true, before: false).inserting("c", beside: "b", vertical: false, before: false)
+    #expect(l.splitKeys == ["a,b", "b,c"])
+    #expect(LayoutNode.pane("a").splitKeys.isEmpty)
+    #expect(l.removing("c")?.splitKeys == ["a,b"])
+}
+
 @Test func ghosttyConfigParse() {
     let c = GhosttyConfig.parse("# comment\nbackground = #1e1e2e\nforeground=cdd6f4\nfont-family = \"JetBrains Mono\"\nfont-size = 14\npalette = 1=#f38ba8\n")
     #expect(c.background == "#1e1e2e" && c.foreground == "cdd6f4" && c.fontFamily == "JetBrains Mono" && c.fontSize == 14 && c.palette[1] == "#f38ba8")
