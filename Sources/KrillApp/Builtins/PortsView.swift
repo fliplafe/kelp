@@ -1,0 +1,67 @@
+import AppKit
+import Core
+
+/// A blank browser tab offers what the workspace is serving: each port its terminals or agents listen on, to open,
+/// copy, or stop. Refreshed every few seconds while it shows.
+@MainActor
+final class PortsView: NSView {
+    var onOpen: ((String) -> Void)?
+    private let list = NSStackView()
+    private let hint = NSTextField(wrappingLabelWithString: "")
+    private var timer: Timer?
+    private var shown: [Int] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let title = NSTextField(labelWithString: String(localized: "Running in This Workspace")); title.font = .systemFont(ofSize: 13, weight: .semibold)
+        hint.textColor = .secondaryLabelColor; hint.font = .systemFont(ofSize: 12)
+        hint.stringValue = String(localized: "Servers you start in this workspace's terminals and agents show up here. Or type an address above.")
+        list.orientation = .vertical; list.alignment = .leading; list.spacing = 6
+        let stack = NSStackView(views: [title, list, hint]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        NSLayoutConstraint.activate([stack.topAnchor.constraint(equalTo: topAnchor, constant: 40), stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+                                     stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460), stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -40),
+                                     hint.widthAnchor.constraint(lessThanOrEqualToConstant: 460)])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        timer?.invalidate(); timer = nil
+        guard window != nil else { return }
+        reload()
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.reload() } }
+    }
+    override var isHidden: Bool { didSet { if !isHidden { reload() } } }
+
+    private func reload() {
+        guard !isHidden, let wid = Workbench.shared.workspaceId else { return }
+        Task {
+            let ports = (try? await AppModel.shared.client?.call("ports.list", .obj(["worktreeId": .string(wid)])).array) ?? []
+            let numbers = ports.compactMap { $0["port"]?.int }
+            guard numbers != shown else { return }
+            shown = numbers
+            list.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            for p in ports { list.addArrangedSubview(row(p, workspace: wid)) }
+            hint.isHidden = !ports.isEmpty
+        }
+    }
+
+    private func row(_ p: JSONValue, workspace wid: String) -> NSView {
+        let port = p["port"]?.int ?? 0, address = "http://localhost:\(port)"
+        let link = ClosureButton(title: "localhost:\(port)") { [weak self] in self?.onOpen?(address) }
+        link.isBordered = false; link.contentTintColor = .linkColor; link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+        let what = NSTextField(labelWithString: p["command"]?.string ?? ""); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
+        let copy = ClosureButton(title: String(localized: "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(address, forType: .string) }
+        let stop = ClosureButton(title: String(localized: "Stop")) { [weak self] in
+            Task {
+                if await AppModel.shared.call("ports.stop", .obj(["worktreeId": .string(wid), "pid": p["pid"] ?? .null])) != nil { self?.shown = []; self?.reload() }
+            }
+        }
+        for b in [copy, stop] { b.bezelStyle = .push; b.controlSize = .small }
+        stop.toolTip = String(localized: "Stops \(p["command"]?.string ?? String(localized: "the process")) (PID \(p["pid"]?.int ?? 0))")
+        let r = NSStackView(views: [link, what, NSView(), copy, stop]); r.spacing = 8
+        r.widthAnchor.constraint(equalToConstant: 460).isActive = true
+        return r
+    }
+}

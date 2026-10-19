@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 import Core
 import Agents
-import LocalAI
 
-/// Per-agent overrides: binary, arguments, environment. Reset deletes the override.
+/// Per-agent: its version (and a newer one, if published), Install / Update in a terminal you can watch, and overrides:
+/// binary, arguments, environment. Secrets in the environment go to the login keychain. Reset deletes the override.
 struct AgentsSettings: View {
     @State private var agents = AgentManifest.load()
     @State private var selection: String? = "claude"
@@ -12,27 +12,110 @@ struct AgentsSettings: View {
     @State private var args = ""
     @State private var env = ""
     @State private var saved = false
+    @State private var versions: [String: (version: String?, latest: String?)] = [:]
+
+    private var updates: [AgentManifest] { agents.filter { newer(versions[$0.id]) } }
+    /// "2.1.310" is newer than "2.1.304" (numbers, not text; a build ahead of npm isn't behind).
+    private func newer(_ v: (version: String?, latest: String?)?) -> Bool {
+        guard let a = v?.version, let b = v?.latest else { return false }
+        let x = a.split(separator: ".").compactMap { Int($0) }, y = b.split(separator: ".").compactMap { Int($0) }
+        return y.lexicographicallyPrecedes(x) == false && x != y
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            List(agents, id: \.id, selection: $selection) { Text($0.name).tag(Optional($0.id)) }
-                .frame(width: 170)
+            VStack(alignment: .leading, spacing: 0) {
+                List(agents, id: \.id, selection: $selection) { a in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(a.name)
+                            if updates.contains(where: { $0.id == a.id }) { Circle().fill(.orange).frame(width: 6, height: 6).help("Update available") }
+                        }
+                        Text(versions[a.id]?.version ?? (versions.isEmpty ? " " : String(localized: "Not installed"))).font(.caption).foregroundStyle(.secondary)
+                    }.tag(Optional(a.id))
+                }
+                if !updates.isEmpty {
+                    Text(updates.count == 1 ? "1 update available" : String(localized: "\(updates.count) updates available"))
+                        .font(.caption).foregroundStyle(.orange).padding(8)
+                }
+            }
+            .frame(width: 190)
             Form {
+                if let m = current { versionRow(m) }
                 TextField("Command", text: $command)
                 TextField("Arguments", text: $args, prompt: Text("space separated"))
                 TextField("Environment", text: $env, prompt: Text("KEY=value, one per line"), axis: .vertical).lineLimit(3...6)
+                if let m = current, !Self.presets(m.id).isEmpty {
+                    Menu("Provider Presets") {
+                        ForEach(Self.presets(m.id), id: \.0) { name, lines in Button(name) { addLines(lines) } }
+                    }.fixedSize()
+                }
                 HStack {
                     Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id); reload() } }
                     Spacer()
                     if saved { Text("Saved").foregroundStyle(.secondary) }
                     Button("Save") { save() }.keyboardShortcut(.defaultAction)
                 }
-                Text("Agents are JSON files in ~/.krill/agents — add a file to add any CLI agent.").font(.caption).foregroundStyle(.secondary)
+                Text("Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.krill/agents — add a file to add any CLI agent.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .formStyle(.grouped)
+            .formStyle(.columns)   // already inside Settings' grouped section: a second card in it would nest boxes
+            .padding(.leading, 16)
         }
         .onChange(of: selection) { _, _ in load() }
         .onAppear { load() }
+        .task { await loadVersions() }
+    }
+
+    @ViewBuilder private func versionRow(_ m: AgentManifest) -> some View {
+        let v = versions[m.id]
+        HStack {
+            if let installed = v?.version {
+                Text("Version \(installed)") + Text(newer(v) ? String(localized: " · \(v?.latest ?? "") available") : "").foregroundColor(.orange)
+            } else { Text(versions.isEmpty ? String(localized: "Checking…") : String(localized: "Not installed")).foregroundStyle(.secondary) }
+            Spacer()
+            if v?.version == nil, let cmd = m.install { Button("Install…") { run(cmd, String(localized: "Install \(m.name)")) }.help(cmd) }
+            else if let cmd = m.update { Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd) }
+        }
+    }
+
+    /// The agent's own command, in a terminal in the workspace on screen, so what it does is in plain sight.
+    private func run(_ cmd: String, _ title: String) {
+        guard let e = Workbench.editor else {
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(cmd, forType: .string)
+            Banner.show(String(localized: "Open a workspace to run it there — the command is on the clipboard: \(cmd)")); return
+        }
+        e.run(command: cmd, title: title)
+        Workbench.window?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func loadVersions() async {
+        let rows = (try? await AppModel.shared.client?.call("agents.versions").array) ?? []
+        var v: [String: (String?, String?)] = [:]
+        for r in rows { if let id = r["id"]?.string { v[id] = (r["version"]?.string, r["latest"]?.string) } }
+        for a in agents where v[a.id] == nil { v[a.id] = (nil, nil) }
+        versions = v
+    }
+
+    /// Ways to run an agent through another provider, as environment variables its docs define.
+    static func presets(_ agent: String) -> [(String, [String])] {
+        switch agent {
+        case "claude": [
+            ("Anthropic API Key", ["ANTHROPIC_API_KEY="]),
+            ("Amazon Bedrock", ["CLAUDE_CODE_USE_BEDROCK=1", "AWS_REGION=us-east-1", "AWS_PROFILE=default"]),
+            ("Google Vertex AI", ["CLAUDE_CODE_USE_VERTEX=1", "CLOUD_ML_REGION=us-east5", "ANTHROPIC_VERTEX_PROJECT_ID="]),
+            ("Gateway (LiteLLM, Ollama…)", ["ANTHROPIC_BASE_URL=http://localhost:4000", "ANTHROPIC_AUTH_TOKEN="])
+        ]
+        case "codex": [("OpenAI API Key", ["OPENAI_API_KEY="]), ("OpenAI-compatible Endpoint (OpenRouter…)", ["OPENAI_BASE_URL=https://openrouter.ai/api/v1", "OPENAI_API_KEY="])]
+        case "gemini": [("Gemini API Key", ["GEMINI_API_KEY="]),
+                        ("Google Vertex AI", ["GOOGLE_GENAI_USE_VERTEXAI=true", "GOOGLE_CLOUD_PROJECT=", "GOOGLE_CLOUD_LOCATION=us-central1"])]
+        default: []
+        }
+    }
+    private func addLines(_ lines: [String]) {
+        var have = env.split(separator: "\n").map(String.init)
+        for l in lines where !have.contains(where: { $0.hasPrefix(l.split(separator: "=").first.map { $0 + "=" } ?? l) }) { have.append(l) }
+        env = have.joined(separator: "\n")
     }
 
     private var current: AgentManifest? { agents.first { $0.id == selection } }
@@ -45,9 +128,21 @@ struct AgentsSettings: View {
     private func save() {
         guard var m = current else { return }
         m.command = command; m.args = args.split(separator: " ").map(String.init)
-        m.env = Dictionary(env.split(separator: "\n").compactMap { l -> (String, String)? in
-            let p = l.split(separator: "=", maxSplits: 1); return p.count == 2 ? (String(p[0]).trimmingCharacters(in: .whitespaces), String(p[1])) : nil
+        var pairs = Dictionary(env.split(separator: "\n").compactMap { l -> (String, String)? in
+            let p = l.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return p.count == 2 ? (String(p[0]).trimmingCharacters(in: .whitespaces), String(p[1])) : nil
         }, uniquingKeysWith: { $1 })
+        // Secrets: the daemon puts them in the keychain; the file only says where they are.
+        for (k, v) in pairs where AgentManifest.isSecret(k) && v != AgentManifest.keychainValue && !v.isEmpty {
+            let agent = m.id
+            Task { await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(agent), "key": .string(k), "value": .string(v)])) }
+            pairs[k] = AgentManifest.keychainValue
+        }
+        for k in m.env.keys where pairs[k] == nil && m.env[k] == AgentManifest.keychainValue {
+            let agent = m.id
+            Task { await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(agent), "key": .string(k)])) }   // removed: forget it
+        }
+        m.env = pairs.filter { !$0.value.isEmpty }   // a preset's blank line until it's filled in
         try? AgentManifest.saveOverride(m); reload(); saved = true
         AppModel.shared.agents = AgentManifest.load()
         AgentAvailability.shared.refresh(force: true)

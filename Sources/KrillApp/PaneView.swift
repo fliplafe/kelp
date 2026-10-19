@@ -65,6 +65,8 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
 
     isolated deinit { if swiftTerm != nil { AppModel.shared.detach(session: sessionId) } }
 
+    private let preview = PathPreview()
+
     private func buildTerminal(_ s: Session) {
         let id = s.id
         #if canImport(GhosttyKit)
@@ -76,9 +78,16 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
             g.onExit = { [weak self] in self?.sessionEnded() }
             g.onSearch = { [weak self] in self?.searchEvent($0) }
             g.onOpenURL = { url in
-                // ⌘-click: local pages open as a browser tab, the rest in the default browser.
-                if url.host == "localhost" || url.host == "127.0.0.1" || url.isFileURL { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
+                // ⌘-click: local pages open as a browser tab, the rest in the default browser; ⌥ swaps the two.
+                let local = url.host == "localhost" || url.host == "127.0.0.1" || url.isFileURL
+                if local != NSEvent.modifierFlags.contains(.option) { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
                 else { NSWorkspace.shared.open(url) }
+            }
+            let cwd = s.cwd, wid = s.worktreeId
+            g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd, flags: flags) }
+            g.onHoverWord = { [weak self, weak g] token, rect in
+                guard let self, let g else { return }
+                self.preview.show(token, rect: rect, in: g, cwd: cwd, worktree: wid)
             }
             ghostty = g; termView = g
             return
@@ -97,20 +106,20 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     private func buildHeader() {
         header.wantsLayer = true
         title.font = .systemFont(ofSize: 11, weight: .medium); title.lineBreakMode = .byTruncatingTail; title.textColor = .secondaryLabelColor
-        let close = NSButton(image: .symbol("xmark", "Close pane"), target: self, action: #selector(closeTapped))
+        let close = NSButton(image: .symbol("xmark", String(localized: "Close pane")), target: self, action: #selector(closeTapped))
         close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold); close.contentTintColor = .secondaryLabelColor
         let row = NSStackView(views: [dot, title, NSView(), close]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 8)
         row.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(row)
         NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: header.leadingAnchor), row.trailingAnchor.constraint(equalTo: header.trailingAnchor),
                                      row.topAnchor.constraint(equalTo: header.topAnchor), row.bottomAnchor.constraint(equalTo: header.bottomAnchor)])
-        header.toolTip = "Drag to move this pane; drop on an edge of another pane to split"
+        header.toolTip = String(localized: "Drag to move this pane; drop on an edge of another pane to split")
     }
 
     private func buildEndedOverlay() {
-        let l = NSTextField(labelWithString: "Session ended"); l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
-        let b = NSButton(title: "Restart", target: self, action: #selector(restartTapped)); b.bezelStyle = .rounded
+        let l = NSTextField(labelWithString: String(localized: "Session ended")); l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
+        let b = NSButton(title: String(localized: "Restart"), target: self, action: #selector(restartTapped)); b.bezelStyle = .rounded
         b.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); b.imagePosition = .imageLeading
-        let c = NSButton(title: "Close", target: self, action: #selector(closeTapped)); c.bezelStyle = .rounded
+        let c = NSButton(title: String(localized: "Close"), target: self, action: #selector(closeTapped)); c.bezelStyle = .rounded
         let buttons = NSStackView(views: [b, c]); buttons.spacing = 8
         ended.orientation = .vertical; ended.spacing = 10
         [l, buttons].forEach { ended.addArrangedSubview($0) }
@@ -192,15 +201,15 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
         #if canImport(GhosttyKit)
         guard let g = ghostty else { return nil }
         let m = NSMenu()
-        m.addItem(withTitle: "Copy", action: #selector(GhosttyTerminalView.copy(_:)), keyEquivalent: "").target = g
+        m.addItem(withTitle: String(localized: "Copy"), action: #selector(GhosttyTerminalView.copy(_:)), keyEquivalent: "").target = g
         m.items.last?.isEnabled = g.hasSelection; m.autoenablesItems = false
-        m.addItem(withTitle: "Paste", action: #selector(GhosttyTerminalView.paste(_:)), keyEquivalent: "").target = g
-        m.addItem(withTitle: "Select All", action: #selector(GhosttyTerminalView.selectAll(_:)), keyEquivalent: "").target = g
+        m.addItem(withTitle: String(localized: "Paste"), action: #selector(GhosttyTerminalView.paste(_:)), keyEquivalent: "").target = g
+        m.addItem(withTitle: String(localized: "Select All"), action: #selector(GhosttyTerminalView.selectAll(_:)), keyEquivalent: "").target = g
         m.addItem(.separator())
-        m.add("Find…") { [weak self] in self?.showFind(nil) }
+        m.add(String(localized: "Find…")) { [weak self] in self?.showFind(nil) }
         m.addItem(.separator())
-        m.add("Split Right") { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.right) }
-        m.add("Split Down") { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.down) }
+        m.add(String(localized: "Split Right")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.right) }
+        m.add(String(localized: "Split Down")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.down) }
         return m
         #else
         return nil

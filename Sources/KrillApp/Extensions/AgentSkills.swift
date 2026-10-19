@@ -93,6 +93,7 @@ enum AgentSkills {
             }
         }
         out += "\nThemes for `workbench.theme`: auto, ghostty, " + ThemeManager.shared.themes.map(\.id).joined(separator: ", ") + ".\n"
+        out += "File icon themes for `workbench.iconTheme`: " + FileIcon.themes.map(\.id).joined(separator: ", ") + ".\n"
         return out
     }
 }

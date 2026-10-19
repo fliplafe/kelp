@@ -30,6 +30,7 @@ final class EditorArea: NSViewController {
     override func loadView() {
         view = NSView()
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
+        track { FileIcon.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
         // The empty workspace lists the agents that work, with their icons; rebuild it when either changes.
         track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
         track { AgentIcons.shared.images.count } changed: { [weak self] _ in
@@ -94,7 +95,7 @@ final class EditorArea: NSViewController {
         switch n {
         case .pane(let gid): return groupView(gid)
         case .split(let vertical, let kids):
-            let sv = NSSplitView(); sv.isVertical = vertical; sv.dividerStyle = .thin
+            let sv = EqualizingSplitView(); sv.isVertical = vertical; sv.dividerStyle = .thin
             let key = LayoutNode.splitKey(kids)
             sv.identifier = NSUserInterfaceItemIdentifier(key); sv.delegate = self
             let size = view.bounds.width > 0 ? view.bounds.size : NSSize(width: 1000, height: 700)
@@ -108,6 +109,29 @@ final class EditorArea: NSViewController {
             }
             return sv
         }
+    }
+
+    /// Where a tab dropped at the editor area's outer edge will go: half of the whole area along that side.
+    private let outerHint: NSView = {
+        let v = NSView(); v.wantsLayer = true; v.isHidden = true
+        v.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+        v.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; v.layer?.borderWidth = 1; v.layer?.cornerRadius = 6
+        return v
+    }()
+    private func showOuterHint(_ edge: NSRectEdge?) {
+        guard let edge else { outerHint.isHidden = true; return }
+        if outerHint.superview !== view { view.addSubview(outerHint, positioned: .above, relativeTo: nil) }
+        var r = view.bounds.insetBy(dx: 6, dy: 6)
+        // Its share once added: one more beside the panes already split that way.
+        let vertical = edge == .minX || edge == .maxX
+        let n: CGFloat = { if case .split(let v, let c)? = layout.root, v == vertical { CGFloat(c.count + 1) } else { 2 } }()
+        switch edge {
+        case .minX: r.size.width /= n
+        case .maxX: r.origin.x += r.width * (n - 1) / n; r.size.width /= n
+        case .minY: r.size.height /= n
+        default: r.origin.y += r.height * (n - 1) / n; r.size.height /= n
+        }
+        outerHint.frame = r; outerHint.isHidden = false
     }
 
     /// View › Equalize Panes: every split back to equal shares.
@@ -125,6 +149,13 @@ final class EditorArea: NSViewController {
         g.strip.addMenu = { [weak self] in self?.newTabMenu(group: gid) ?? NSMenu() }
         g.strip.onUnzoom = { [weak self] in self?.toggleZoom() }
         g.strip.onDropTab = { [weak self] id, index in self?.layout.move(id, to: gid, index: index); self?.render() }
+        g.editorFrame = { [weak self] in self.map { $0.view.convert($0.view.bounds, to: nil) } }
+        g.showOuterHint = { [weak self] edge in self?.showOuterHint(edge) }
+        g.onDropOuter = { [weak self] id, edge in
+            guard let self else { return }
+            layout.splitRoot(id, vertical: edge == .minX || edge == .maxX, before: edge == .minX || edge == .maxY)
+            render(); focusSelected()
+        }
         g.onDropTab = { [weak self] id, edge in
             guard let self else { return }
             switch edge {
@@ -147,13 +178,16 @@ final class EditorArea: NSViewController {
         g.strip.zoomed = zoomed == gid
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
-        g.strip.set(model.tabs.map { t in
-            if let c = contents[t.id] { return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip, edited: c.isEdited) }
+        g.strip.set(Self.disambiguated(model.tabs.map { t in
+            if let c = contents[t.id] {
+                return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip, edited: c.isEdited, meter: c.meter)
+            }
             return Self.placeholder(t)
-        }, selected: model.selectedTab?.id)
+        }, model.tabs), selected: model.selectedTab?.id)
         g.show(visible?.view)
         // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
         g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible is SessionTab
+        g.attention = (visible as? SessionTab)?.attention
         showEdited()
     }
 
@@ -164,20 +198,34 @@ final class EditorArea: NSViewController {
     var editedFiles: [FileTab] { contents.values.compactMap { $0 as? FileTab }.filter(\.isEdited) }
 
     /// Strip entry for a tab not built yet, from its URI alone.
+    /// Two files with one name (README.md twice): each tab adds its folder, "README.md — docs", as Xcode does.
+    static func disambiguated(_ items: [TabStrip.Item], _ tabs: [TabRef]) -> [TabStrip.Item] {
+        let paths = tabs.map { TabURI.scheme($0.uri) == "file" ? TabURI.filePath($0.uri).path as NSString : nil }
+        let names = paths.map { $0?.lastPathComponent }
+        return zip(items, paths).map { item, path in
+            guard let path, names.filter({ $0 == path.lastPathComponent }).count > 1 else { return item }
+            var item = item
+            item.title = path.lastPathComponent + " — " + (path.deletingLastPathComponent as NSString).lastPathComponent
+            return item
+        }
+    }
+
     static func placeholder(_ t: TabRef) -> TabStrip.Item {
         let body = TabURI.body(t.uri)
         switch TabURI.scheme(t.uri) {
         case "session":
             let s = AppModel.shared.session(body)
-            let title = s.map(AgentCatalog.displayName) ?? "Session"
-            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.status },
+            let title = s.map(AgentCatalog.displayName) ?? String(localized: "Session")
+            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
                          unread: s?.unread ?? false, toolTip: title)
         case "file":
             let p = TabURI.filePath(t.uri).path
-            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: NSWorkspace.shared.icon(forFile: p).resized(16), status: nil, toolTip: p)
-        case "diff": return .init(id: t.id, title: "Changes", icon: .symbol("plusminus"), status: nil, toolTip: nil)
+            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: FileIcon.image((p as NSString).lastPathComponent), status: nil, toolTip: p)
+        case "diff": return .init(id: t.id, title: String(localized: "Changes"), icon: .symbol("plusminus"), status: nil, toolTip: nil)
         case "http", "https", "about":
-            return .init(id: t.id, title: URL(string: t.uri)?.host ?? "New Page", icon: .symbol("safari"), status: nil, toolTip: t.uri)
+            return .init(id: t.id, title: URL(string: t.uri)?.host ?? String(localized: "New Page"), icon: .symbol("safari"), status: nil, toolTip: t.uri)
+        case "preview": return .init(id: t.id, title: (body as NSString).lastPathComponent, icon: .symbol("eye"), status: nil, toolTip: body)
+        case "usage": return .init(id: t.id, title: "Usage", icon: .symbol("chart.bar"), status: nil, toolTip: nil)
         default:
             let v = DeclarativeExtension.viewInfo(t.uri)
             return .init(id: t.id, title: v?.title ?? body, icon: .symbol(v?.icon ?? "puzzlepiece.extension"), status: nil, toolTip: t.uri)
@@ -251,16 +299,18 @@ final class EditorArea: NSViewController {
 
     // MARK: tabs
 
-    func select(_ tab: String) {
+    /// `focus: false` shows the tab but leaves the keys where they are (a click in the Files tree).
+    func select(_ tab: String, focus: Bool = true) {
         let old = layout.focused
         layout.select(tab)
         if let old, old != layout.focused { refreshGroup(old) }
         if let gid = layout.group(of: tab) { refreshGroup(gid) }
-        focusSelected(); publishFocus(); scheduleSave()
+        if focus { focusSelected() }
+        publishFocus(); scheduleSave()
     }
 
     /// Opens a URI in the focused group (or a new group to the right / below). Reuses a tab already showing it.
-    func open(_ uri: String, split: SplitDirection? = nil) {
+    func open(_ uri: String, split: SplitDirection? = nil, focus: Bool = true) {
         switch TabURI.scheme(uri) {
         case "agent":
             let q = URLComponents(string: uri)
@@ -270,9 +320,16 @@ final class EditorArea: NSViewController {
             run(command: q?.queryItems?.first { $0.name == "cmd" }?.value, title: q?.queryItems?.first { $0.name == "title" }?.value, split: split); return
         default: break
         }
+        // A file already open (at another line): that tab, moved to the line asked for.
+        if TabURI.scheme(uri) == "file", layout.tab(uri: uri) == nil,
+           let t = layout.allTabs.first(where: { TabURI.scheme($0.uri) == "file" && TabURI.filePath($0.uri).path == TabURI.filePath(uri).path }) {
+            select(t.id, focus: focus)
+            if let l = uri.split(separator: "#").last.flatMap({ $0.hasPrefix("L") ? Int($0.dropFirst()) : nil }) { (contents[t.id] as? FileTab)?.goTo(line: l) }
+            return
+        }
         if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
             if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); render() }
-            select(t.id); return
+            select(t.id, focus: focus); return
         }
         if TabURI.scheme(uri) != "session", ExtensionRegistry.shared.tabProvider(for: uri) == nil {
             if let u = URL(string: uri), u.scheme?.hasPrefix("http") == true { NSWorkspace.shared.open(u); return }   // browser extension off
@@ -281,7 +338,7 @@ final class EditorArea: NSViewController {
         if let split, let f = target { target = layout.newGroup(beside: f, vertical: split == .right); zoomed = nil }
         let t = layout.add(uri, to: target)
         render()
-        select(t.id)
+        select(t.id, focus: focus)
     }
 
     func closeTab(_ id: String) {
@@ -290,6 +347,12 @@ final class EditorArea: NSViewController {
         layout.remove(id)
         if layout.allTabs.isEmpty { layout = WorkspaceLayout() }
         render(); focusSelected()
+    }
+
+    /// Sessions whose tab is on screen right now (the selected tab of each pane shown).
+    var visibleSessions: [String] {
+        let groups = zoomed.map { [$0] } ?? layout.root?.sessions ?? []
+        return groups.compactMap { layout.groups[$0]?.selectedTab?.uri }.filter { TabURI.scheme($0) == "session" }.map(TabURI.body)
     }
 
     var focusedContent: TabContent? { layout.focusedGroup?.selectedTab.flatMap { contents[$0.id] } }
@@ -347,24 +410,35 @@ final class EditorArea: NSViewController {
 
     private func tabMenu(_ id: String) -> NSMenu {
         let m = NSMenu()
-        m.add("Split Right") { [weak self] in self?.select(id); self?.splitFocused(.right) }
-        m.add("Split Down") { [weak self] in self?.select(id); self?.splitFocused(.down) }
+        m.add(String(localized: "Split Right")) { [weak self] in self?.select(id); self?.splitFocused(.right) }
+        m.add(String(localized: "Split Down")) { [weak self] in self?.select(id); self?.splitFocused(.down) }
         m.addItem(.separator())
         if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "session" {
             let sid = TabURI.body(uri)
-            m.add("Rename…") { AgentActions.rename(sid) }
-            m.add("Restart") { AgentActions.restart(sid) }
-            m.add("Copy Context") { AgentActions.copyContext(sid) }
+            m.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
+            m.add(String(localized: "Restart")) { AgentActions.restart(sid) }
+            m.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
+            m.setSubmenu(AgentActions.handoffMenu(sid), for: m.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
+            m.add(String(localized: "Changes in Its Last Turn")) { [weak self] in
+                guard let self else { return }
+                Workbench.shared.focusedSession = sid
+                open(DiffTab.uri(workspaceId, source: "turn"), split: .right)
+            }
             m.addItem(.separator())
         }
         if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "file" {
             let path = TabURI.filePath(uri).path
-            m.add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-            m.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
+            m.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+            m.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
+            m.add(String(localized: "Copy Web Link")) { FileActions.copyWebLink(path) }
+            m.add(String(localized: "Send to Agent")) { FileActions.sendToAgent(path) }
+            if ["html", "htm"].contains((path as NSString).pathExtension.lowercased()) {
+                m.add(String(localized: "Open Preview to the Side")) { [weak self] in self?.open("preview:" + path, split: .right) }
+            }
             m.addItem(.separator())
         }
-        m.add("Close Tab") { [weak self] in self?.closeTab(id) }
-        m.add("Close Other Tabs") { [weak self] in
+        m.add(String(localized: "Close Tab")) { [weak self] in self?.closeTab(id) }
+        m.add(String(localized: "Close Other Tabs")) { [weak self] in
             guard let self, let gid = layout.group(of: id) else { return }
             for t in layout.groups[gid]?.tabs ?? [] where t.id != id { closeTab(t.id) }
         }
@@ -382,8 +456,8 @@ final class EditorArea: NSViewController {
             }
             item.image = AgentCatalog.icon(a.id)
         }
-        if agents.isEmpty { m.addItem(withTitle: "No agent CLIs found", action: nil, keyEquivalent: "").isEnabled = false }
-        m.add("Terminal", symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
+        if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
+        m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
         let ctx = IDEContext.current
         let editors = ExtensionRegistry.shared.all.editors
         if !editors.isEmpty { m.addItem(.separator()) }
@@ -481,6 +555,9 @@ final class EditorArea: NSViewController {
         saveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
     }
 
+    /// Every open tab (URI and title), for the palette.
+    var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? Self.placeholder($0).title) } }
+
     /// Open tabs and focus, for `ui.state`.
     var stateForAgents: JSONValue {
         .obj(["tabs": .array(layout.allTabs.map { t in .obj(["uri": .string(t.uri), "title": .string(contents[t.id]?.title ?? "")]) }),
@@ -509,16 +586,16 @@ final class UnavailableTab: TabContent {
     let uri: String
     var onChange: (() -> Void)?
     let view: NSView
-    var title: String { "Turned Off" }
+    var title: String { String(localized: "Turned Off") }
     var icon: NSImage? { .symbol("questionmark.square.dashed") }
     init(uri: String) {
         self.uri = uri
         let icon = NSImageView(image: .symbol("puzzlepiece.extension")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
         icon.contentTintColor = .tertiaryLabelColor
-        let t = NSTextField(labelWithString: "Extension Turned Off"); t.font = .systemFont(ofSize: 13, weight: .semibold)
-        let l = NSTextField(wrappingLabelWithString: "The extension that shows “\(uri)” is turned off or was removed.")
+        let t = NSTextField(labelWithString: String(localized: "Extension Turned Off")); t.font = .systemFont(ofSize: 13, weight: .semibold)
+        let l = NSTextField(wrappingLabelWithString: String(localized: "The extension that shows “\(uri)” is turned off or was removed."))
         l.alignment = .center; l.textColor = .secondaryLabelColor
-        let b = ClosureButton(title: "Extensions…") { SettingsWindow.show(section: "extensions") }; b.bezelStyle = .push
+        let b = ClosureButton(title: String(localized: "Extensions…")) { SettingsWindow.show(section: "extensions") }; b.bezelStyle = .push
         let stack = NSStackView(views: [icon, t, l, b]); stack.orientation = .vertical; stack.spacing = 8
         let v = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(stack)
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: v.centerXAnchor), stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),
@@ -537,5 +614,21 @@ extension NSMenu {
         i.target = t; i.representedObject = t
         if let symbol { i.image = .symbol(symbol) }
         return i
+    }
+}
+
+/// A double-click on a divider shares that split equally (like Terminal's and Ghostty's splits).
+final class EqualizingSplitView: NSSplitView {
+    override func mouseDown(with e: NSEvent) {
+        guard e.clickCount == 2, arrangedSubviews.count > 1 else { return super.mouseDown(with: e) }
+        let p = convert(e.locationInWindow, from: nil)
+        let onDivider = arrangedSubviews.dropLast().contains { v in
+            let f = v.frame
+            return isVertical ? abs(p.x - f.maxX) <= dividerThickness + 3 : abs(p.y - f.maxY) <= dividerThickness + 3
+        }
+        guard onDivider else { return super.mouseDown(with: e) }
+        let total = (isVertical ? bounds.width : bounds.height) - dividerThickness * CGFloat(arrangedSubviews.count - 1)
+        let share = total / CGFloat(arrangedSubviews.count)
+        for i in 0..<(arrangedSubviews.count - 1) { setPosition(share * CGFloat(i + 1) + dividerThickness * CGFloat(i), ofDividerAt: i) }
     }
 }

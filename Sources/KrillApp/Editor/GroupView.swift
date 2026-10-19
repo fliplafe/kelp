@@ -9,7 +9,20 @@ final class GroupView: NSView {
     private let hint = NSView()
     private weak var shown: NSView?
     private let veil = Veil()
+    private let ring = Veil()
+    /// A ring around the content when its agent calls for you (it clears once you've looked or answered).
+    var attention: NSColor? {
+        didSet {
+            guard attention != oldValue else { return }
+            ring.layer?.borderColor = attention?.cgColor; ring.isHidden = attention == nil
+        }
+    }
     var onDropTab: ((String, NSRectEdge?) -> Void)?   // nil edge = into this group
+    /// Dropped right at an outer side of the whole editor area: a split along all of it.
+    var onDropOuter: ((String, NSRectEdge) -> Void)?
+    /// The editor area's frame in window coordinates, and a hint drawn across it (nil: none).
+    var editorFrame: (() -> NSRect?)?
+    var showOuterHint: ((NSRectEdge?) -> Void)?
     /// A terminal pane without focus, among several: it fades toward the terminal's background (Ghostty does the same).
     var dimmed = false {
         didSet {
@@ -23,7 +36,8 @@ final class GroupView: NSView {
         self.groupId = groupId
         super.init(frame: .zero)
         veil.wantsLayer = true; veil.isHidden = true
-        for v in [strip, container, veil] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        ring.wantsLayer = true; ring.isHidden = true; ring.layer?.borderWidth = 2; ring.layer?.cornerRadius = 5
+        for v in [strip, container, veil, ring] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         hint.wantsLayer = true; hint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
         hint.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; hint.layer?.borderWidth = 1
         hint.layer?.cornerRadius = 6; hint.isHidden = true; addSubview(hint)
@@ -32,7 +46,9 @@ final class GroupView: NSView {
             container.topAnchor.constraint(equalTo: strip.bottomAnchor), container.leadingAnchor.constraint(equalTo: leadingAnchor),
             container.trailingAnchor.constraint(equalTo: trailingAnchor), container.bottomAnchor.constraint(equalTo: bottomAnchor),
             veil.topAnchor.constraint(equalTo: container.topAnchor), veil.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            veil.leadingAnchor.constraint(equalTo: container.leadingAnchor), veil.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+            veil.leadingAnchor.constraint(equalTo: container.leadingAnchor), veil.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            ring.topAnchor.constraint(equalTo: container.topAnchor, constant: 1), ring.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -1),
+            ring.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 1), ring.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -1)
         ])
         registerForDraggedTypes([.krillTab])
     }
@@ -52,6 +68,17 @@ final class GroupView: NSView {
     }
 
     // MARK: tab dropped on the content: an edge splits, the middle moves the tab here
+
+    /// Within 18 pt of a side of this group that is also a side of the editor area.
+    private func outerEdge(_ s: NSDraggingInfo) -> NSRectEdge? {
+        guard let area = editorFrame?() else { return nil }
+        let me = convert(bounds, to: nil), p = s.draggingLocation, near: CGFloat = 18
+        if abs(me.minX - area.minX) < 1, p.x - me.minX < near { return .minX }
+        if abs(me.maxX - area.maxX) < 1, me.maxX - p.x < near { return .maxX }
+        if abs(me.maxY - area.maxY) < 1, me.maxY - p.y < near, p.y < me.maxY - strip.frame.height { return .maxY }
+        if abs(me.minY - area.minY) < 1, p.y - me.minY < near { return .minY }
+        return nil
+    }
     private func edge(_ s: NSDraggingInfo) -> NSRectEdge? {
         let p = container.convert(s.draggingLocation, from: nil), b = container.bounds
         guard b.width > 0, b.height > 0 else { return nil }
@@ -76,12 +103,14 @@ final class GroupView: NSView {
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { draggingUpdated(s) }
     override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation {
         guard s.draggingPasteboard.string(forType: .krillTab) != nil else { return [] }
-        showHint(edge(s)); return .move
+        if let o = outerEdge(s) { hint.isHidden = true; showOuterHint?(o); return .move }
+        showOuterHint?(nil); showHint(edge(s)); return .move
     }
-    override func draggingExited(_ s: NSDraggingInfo?) { hint.isHidden = true }
+    override func draggingExited(_ s: NSDraggingInfo?) { hint.isHidden = true; showOuterHint?(nil) }
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
-        hint.isHidden = true
+        hint.isHidden = true; showOuterHint?(nil)
         guard let id = s.draggingPasteboard.string(forType: .krillTab) else { return false }
+        if let o = outerEdge(s) { onDropOuter?(id, o); return true }
         onDropTab?(id, edge(s)); return true
     }
 }

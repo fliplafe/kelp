@@ -1,7 +1,7 @@
 import AppKit
 import Core
-import GitKit
 import EditorKit
+import GitKit
 
 /// A file as a tab: code editor with LSP, Markdown with preview, notebooks, or a Quick Look preview.
 /// Like a Mac document: edits show as a dot on the tab and the window's close button, ⌘S saves, closing asks
@@ -13,7 +13,7 @@ final class FileTab: TabContent {
     var onChange: (() -> Void)?
     let view: NSView
     private var editor: CodeEditor?
-    private var markdown: MarkdownTab?
+    private(set) var markdown: MarkdownTab?
     private var notebook: NotebookTab?
     private var lastSaved = ""
     private var wasEdited = false
@@ -28,7 +28,7 @@ final class FileTab: TabContent {
 
     var uri: String { TabURI.file(path) }
     var title: String { url.lastPathComponent }
-    var icon: NSImage? { NSWorkspace.shared.icon(forFile: path).resized(16) }
+    var icon: NSImage? { FileIcon.image(url.lastPathComponent) }
     var toolTip: String? { path }
 
     init(uri: String) {
@@ -36,19 +36,38 @@ final class FileTab: TabContent {
         path = p; url = URL(fileURLWithPath: p); pendingLine = line
         root = AppModel.shared.worktrees.filter { p.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }?.path ?? url.deletingLastPathComponent().path
         let ext = url.pathExtension.lowercased()
+        // A remote project's file: read on its host and shown read-only (edits happen there, by its agents and terminals).
+        if !FileManager.default.fileExists(atPath: p), let r = RemoteHost.containing(p) {
+            let box = NSView(); view = box
+            let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); Self.pin(wait, in: box)
+            Task { [weak self] in
+                let res = await AppModel.shared.tryCall("files.readRemote", .obj(["path": .string(p)]))
+                guard let self else { return }
+                wait.removeFromSuperview()
+                guard let text = res.value?.string else { Self.pin(Self.message(res.error ?? String(localized: "Couldn't read it.")), in: box); return }
+                let e = CodeEditor(text: text, url: url, editable: false)
+                e.view.clipsToBounds = true
+                editor = e; lastSaved = text
+                Self.pin(e.view, in: box)
+            }
+            return
+        }
         if Preview.canPreview(url) { view = Preview.view(for: url); return }
         if ext == "ipynb" {
             let nb = NotebookTab(url: url, path: p, worktreeId: AppModel.shared.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
             nb.currentSession = { Workbench.shared.focusedSession }
             notebook = nb; view = nb.view; return
         }
-        let data = FileManager.default.contents(atPath: p) ?? Data()
-        guard let text = String(data: data, encoding: .utf8) else { view = Self.message("Binary file — open it with another app."); return }
+        // Moved or deleted (often by an agent) since the tab was opened: say so, never an empty buffer ⌘S would write.
+        guard let data = FileManager.default.contents(atPath: p) else {
+            view = Self.message(FileManager.default.fileExists(atPath: p) ? String(localized: "Couldn't read this file.") : String(localized: "File not found — it was moved or deleted.")); return
+        }
+        guard let text = String(data: data, encoding: .utf8) else { view = Self.message(String(localized: "Binary file — open it with another app.")); return }
         let e = CodeEditor(text: text, url: url, editable: data.count <= CodeEditor.readOnlyLimit)
         e.view.clipsToBounds = true
         editor = e; lastSaved = text
         if ["md", "markdown"].contains(ext) {
-            let md = MarkdownTab(editor: e, url: url, path: p); md.currentSession = { Workbench.shared.focusedSession }
+            let md = MarkdownTab(editor: e, url: url, path: p)
             md.startInPreview = p == Help.location.path   // the help is for reading
             markdown = md; view = md.view
         } else { view = e.view }
@@ -80,9 +99,9 @@ final class FileTab: TabContent {
     func close() -> Bool {
         if Self.autosave { flush(); return true }
         guard isEdited else { return true }
-        let a = NSAlert(); a.messageText = "Do you want to save the changes you made to “\(title)”?"
-        a.informativeText = "Your changes will be lost if you don't save them."
-        a.addButton(withTitle: "Save"); a.addButton(withTitle: "Cancel"); a.addButton(withTitle: "Don't Save")
+        let a = NSAlert(); a.messageText = String(localized: "Do you want to save the changes you made to “\(title)”?")
+        a.informativeText = String(localized: "Your changes will be lost if you don't save them.")
+        a.addButton(withTitle: String(localized: "Save")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
         switch runAsSheet(a) {
         case .alertFirstButtonReturn: return save()
         case .alertThirdButtonReturn: return true
@@ -117,7 +136,7 @@ final class FileTab: TabContent {
         guard let e = editor, e.text != lastSaved else { return true }
         if let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved { diskChanged(); return false }   // don't clobber an agent's edit
         do { try e.text.write(to: url, atomically: true, encoding: .utf8); lastSaved = e.text }
-        catch { Banner.show("Couldn't save \(title): \(error.localizedDescription)"); return false }
+        catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)")); return false }
         editedStateMayHaveChanged()
         return true
     }
@@ -131,9 +150,9 @@ final class FileTab: TabContent {
     private func diskChanged() {
         guard let e = editor, let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved else { return }
         if e.text == lastSaved { e.setText(disk); lastSaved = disk; markdown?.textChanged(); editedStateMayHaveChanged(); return }   // no local edits: follow the disk
-        let a = NSAlert(); a.messageText = "\(title) changed on disk"
-        a.informativeText = "An agent edited this file while you had unsaved changes."
-        a.addButton(withTitle: "Keep Mine"); a.addButton(withTitle: "Use Disk Version")
+        let a = NSAlert(); a.messageText = String(localized: "\(title) changed on disk")
+        a.informativeText = String(localized: "An agent edited this file while you had unsaved changes.")
+        a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: String(localized: "Use Disk Version"))
         guard let w = view.window else { return }
         a.beginSheetModal(for: w) { [weak self] r in
             MainActor.assumeIsolated {
@@ -164,6 +183,12 @@ final class FileTab: TabContent {
             guard let client = await LSPManager.shared.client(root: r, path: p), let loc = try? await client.definition(p, line: l, column: c) else { NSSound.beep(); return }
             Workbench.open(TabURI.file(loc.path, line: loc.line))
         }
+    }
+
+    private static func pin(_ v: NSView, in box: NSView) {
+        v.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(v)
+        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: box.topAnchor), v.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+                                     v.leadingAnchor.constraint(equalTo: box.leadingAnchor), v.trailingAnchor.constraint(equalTo: box.trailingAnchor)])
     }
 
     private static func message(_ s: String) -> NSView {

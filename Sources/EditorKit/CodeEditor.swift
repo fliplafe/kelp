@@ -15,6 +15,9 @@ public final class CodeEditor: NSObject {
     private var suppress = false
     /// The controller holds coordinators weakly: without this reference the relay is gone at once and no edit is reported.
     private let relay = Relay()
+    /// Big files (past this many lines) get their text after the view is set up, and no minimap (a second layout of it).
+    private static let bigLines = 5_000
+    private let big: Bool
 
     /// Big documents re-parse off the main thread so typing never waits for tree-sitter (highlighting catches up a frame later).
     private static let tuned: Void = { TreeSitterClient.Constants.maxSyncContentLength = 100_000 }()
@@ -24,15 +27,20 @@ public final class CodeEditor: NSObject {
         let t0 = Date()
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
         let t1 = Date()
+        big = text.utf8.lazy.filter { $0 == 10 }.count > Self.bigLines
         let cfg = SourceEditorConfiguration(
             appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),
-            peripherals: .init(showMinimap: Self.showMinimap,
+            peripherals: .init(showMinimap: Self.showMinimap && !big,
                                showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
         )
-        controller = TextViewController(string: text, language: lang, configuration: cfg, cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
+        // A big file: empty first, the text once the view sits in its scroll view. A text view outside one lays out
+        // every line (a 50k-line file was 24 s of main thread); inside, only what's on screen. (The minimap would keep
+        // the first, empty text, hence none for these.)
+        controller = TextViewController(string: big ? "" : text, language: lang, configuration: cfg, cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
         super.init()
         relay.owner = self
+        if big { _ = controller.view; suppress = true; controller.setText(text); suppress = false }
         if ProcessInfo.processInfo.environment["KRILL_EDITOR_TIMING"] != nil { print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms") }
     }
 
@@ -125,7 +133,7 @@ public final class CodeEditor: NSObject {
         var c = controller.configuration
         c.appearance.theme = Self.theme
         c.appearance.font = Self.font
-        c.peripherals.showMinimap = Self.showMinimap
+        c.peripherals.showMinimap = Self.showMinimap && !big
         controller.configuration = c
     }
 
@@ -182,12 +190,10 @@ private final class Relay: TextViewCoordinator {
 
 private final class Completer: CodeSuggestionDelegate {
     weak var owner: CodeEditor?
-    private var last: [CodeEditor.Completion] = []
     func completionTriggerCharacters() -> Set<String> { [".", ":"] }
     func completionSuggestionsRequested(textView: TextViewController, cursorPosition: CursorPosition) async -> (windowPosition: CursorPosition, items: [CodeSuggestionEntry])? {
         guard let o = await MainActor.run(body: { owner }), let p = await MainActor.run(body: { o.completionProvider }) else { return nil }
         let items = await p(cursorPosition.start.line, cursorPosition.start.column)
-        last = items
         return items.isEmpty ? nil : (cursorPosition, items)
     }
     func completionOnCursorMove(textView: TextViewController, cursorPosition: CursorPosition) -> [CodeSuggestionEntry]? { nil }

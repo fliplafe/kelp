@@ -18,11 +18,11 @@ func tempRepo() throws -> String {
     let dir = URL(fileURLWithPath: repo + "-wt")
     let p = try Git.addWorktree(repo: repo, branch: "feat/x", base: "main", into: dir, copyFiles: [".env"])
     #expect(FileManager.default.fileExists(atPath: p + "/.env"))
-    #expect(try Git.listWorktrees(repo: repo).contains { $0.branch == "feat/x" })
+    #expect(try Git.run(["worktree", "list"], cwd: repo).contains("[feat/x]"))
     try "dirty".write(toFile: p + "/n.txt", atomically: true, encoding: .utf8)
     #expect(throws: GitError.self) { try Git.removeWorktree(repo: repo, path: p, branch: "feat/x", force: false) }
     try Git.removeWorktree(repo: repo, path: p, branch: "feat/x", force: true)
-    #expect(try Git.listWorktrees(repo: repo).count == 1)
+    #expect(!(try Git.run(["worktree", "list"], cwd: repo).contains("[feat/x]")))
 }
 
 @Test func diffParseAndHunkStaging() throws {
@@ -150,4 +150,42 @@ func tempRepo() throws -> String {
     #expect(e.message == "'origin' does not appear to be a git repository")
     let c = GitError(args: ["switch"], status: 1, stderr: "error: Your local changes to the following files would be overwritten by checkout:\n\tf.txt\nAborting")
     #expect(c.message == "Your local changes to the following files would be overwritten by checkout: f.txt")
+}
+
+@Test func webLinks() {
+    #expect(Git.webRepo("git@github.com:o/r.git")! == ("github.com", "o/r"))
+    #expect(Git.webRepo("ssh://git@gitlab.example.com:2222/team/sub/r.git")! == ("gitlab.example.com", "team/sub/r"))
+    #expect(Git.webRepo("https://me@bitbucket.org/ws/r.git")! == ("bitbucket.org", "ws/r"))
+    #expect(Git.webRepo("/local/path") == nil)
+    #expect(Git.webURL(remote: "git@github.com:o/r.git", sha: "abc", file: "a b/c.swift", lines: 3...5) == "https://github.com/o/r/blob/abc/a%20b/c.swift#L3-L5")
+    #expect(Git.webURL(remote: "https://gitlab.com/o/r", sha: "abc", file: "c.swift", lines: 7...7) == "https://gitlab.com/o/r/-/blob/abc/c.swift#L7")
+    #expect(Git.webURL(remote: "git@bitbucket.org:o/r.git", sha: "abc", file: "c.swift", lines: 1...2) == "https://bitbucket.org/o/r/src/abc/c.swift#lines-1:2")
+}
+
+@Test func lineKinds() {
+    #expect(LineStats.kind("Sources/App.swift") == .code)
+    #expect(LineStats.kind("Tests/AppTests/AppTests.swift") == .tests)
+    #expect(LineStats.kind("src/__tests__/a.ts") == .tests)
+    #expect(LineStats.kind("web/button.test.tsx") == .tests)
+    #expect(LineStats.kind("package-lock.json") == .generated)
+    #expect(LineStats.kind("ui/vendor.min.js") == .generated)
+    #expect(LineStats.kind("contest/main.go") == .code)
+}
+
+@Test func snapshotSeesNewAndChangedFiles() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent("snap-\(UUID().uuidString.prefix(6))").path
+    try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+    try Git.run(["init", "-q", "-b", "main"], cwd: d)
+    try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
+    try "a\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "."], cwd: d); try Git.run(["commit", "-qm", "init"], cwd: d)
+    try "a\nb\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)   // changed before the turn: not the agent's
+    let base = try Git.snapshotTree(d)
+    try "a\nb\nc\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)
+    try "new\n".write(toFile: d + "/n.txt", atomically: true, encoding: .utf8)
+    let ch = try Git.changesSince(tree: base, cwd: d)
+    #expect(ch.map(\.path).sorted() == ["a.txt", "n.txt"])
+    #expect(ch.first { $0.path == "a.txt" }?.added == 1)
+    #expect(try Git.status(d).contains { $0.untracked && $0.path == "n.txt" })   // the real index is untouched
+    #expect(try Git.diff(d, source: .since(tree: base)).count == 2)
 }

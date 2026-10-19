@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Perf.measure("window") { main = MainWindowController() }
         Perf.measure("show") { main.showWindow(nil) }
         notifier.onOpen = { id in Workbench.focus(session: id) }
+        ScratchWindow.shared.registerHotKey()
         notifier.start()
         AppModel.shared.onChange.append { [weak self] in self?.main.editors.refresh() }
         NotificationCenter.default.addObserver(forName: .krillRefresh, object: nil, queue: .main) { _ in Task { @MainActor in await AppModel.shared.refresh() } }
@@ -29,8 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { if wid == Workbench.shared.workspaceId { Workbench.open(url, split: .right) } }
         }
         buildMenu()
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }
         track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
+        track { SettingsStore.shared.value("keys") } changed: { [weak self] _ in self?.buildMenu() }
         ExtensionRegistry.shared.watch()
         // Extension commands and requirement checks need the user's PATH; reading it can take seconds.
         DispatchQueue.global(qos: .utility).async {
@@ -42,29 +45,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ExtensionRegistry.shared.reload()   // settings (disabled extensions) are known now
             AgentAvailability.shared.refresh(force: true)
             _ = await Accounts.load()
-            AppModel.shared.startSubagentPolling()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b } }
             let last = UserDefaults.standard.string(forKey: "lastWorkspace").flatMap { AppModel.shared.worktree($0) }
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))
             if let w = pick ?? last ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { Workbench.show(workspace: w.id) }
+            if ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] == nil { OnboardingSheet.showIfFirstLaunch() }
         }
         NSApp.activate()
         if let out = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] { snapshotLater(out) }
     }
 
     /// Agents installed while Krill was in the background show up when it comes back.
-    func applicationDidBecomeActive(_ n: Notification) { AgentAvailability.shared.refresh() }
+    func applicationDidBecomeActive(_ n: Notification) { AgentAvailability.shared.refresh(); notifier.checkAllowed() }
 
     /// Unsaved files ask before quitting, like any Mac app.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let edited = main?.editors.editedFiles ?? []
         guard !edited.isEmpty else { return .terminateNow }
         let a = NSAlert()
-        a.messageText = edited.count == 1 ? "Do you want to save the changes you made to “\(edited[0].title)”?"
-            : "You have \(edited.count) files with unsaved changes. Save them before quitting?"
-        a.informativeText = "Your changes will be lost if you don't save them."
-        a.addButton(withTitle: edited.count == 1 ? "Save" : "Save All"); a.addButton(withTitle: "Cancel"); a.addButton(withTitle: "Don't Save")
+        a.messageText = edited.count == 1 ? String(localized: "Do you want to save the changes you made to “\(edited[0].title)”?")
+            : String(localized: "You have \(edited.count) files with unsaved changes. Save them before quitting?")
+        a.informativeText = String(localized: "Your changes will be lost if you don't save them.")
+        a.addButton(withTitle: edited.count == 1 ? String(localized: "Save") : String(localized: "Save All")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
         switch runAsSheet(a) {
         case .alertFirstButtonReturn: return edited.allSatisfy { $0.save() } ? .terminateNow : .terminateCancel
         case .alertThirdButtonReturn: return .terminateNow
@@ -73,10 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
+    func applicationWillTerminate(_ n: Notification) { main?.leaveFocusMode() }
 
     /// Folders dropped on the Dock icon or opened with `open -a Krill <path>` become projects; files open as tabs.
     func application(_ app: NSApplication, open urls: [URL]) {
         for u in urls {
+            if u.scheme == "krill" { KrillLinks.handle(u); continue }
             var dir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) else { continue }
             if dir.boolValue { Workbench.addProject(path: u.path) } else { Workbench.open(TabURI.file(u.path)) }
@@ -92,8 +97,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             i.image = AgentCatalog.icon(s.agent, size: 16)
         }
         if !m.items.isEmpty { m.addItem(.separator()) }
-        m.add("New Workspace") { NSApp.activate(); Workbench.newWorkspace() }
+        m.add(String(localized: "New Workspace")) { NSApp.activate(); Workbench.newWorkspace() }
         return m
+    }
+
+    /// A finished agent counts as read once its pane has been on screen in the front window for a second: a glance,
+    /// not a click. Opening a workspace in passing doesn't clear anything; questions and failures wait for an answer.
+    private var glanced: [String: Date] = [:]
+    private func trackGlances() {
+        guard NSApp.isActive, let w = main?.window, w.isKeyWindow, w.occlusionState.contains(.visible), let e = Workbench.editor else { glanced = [:]; return }
+        let shown = Set(e.visibleSessions)
+        glanced = glanced.filter { shown.contains($0.key) }
+        for sid in shown {
+            guard let s = AppModel.shared.session(sid), s.unread, s.status == .done || (s.status == .exited && !s.endedWithError) else { glanced[sid] = nil; continue }
+            let since = glanced[sid] ?? Date()
+            glanced[sid] = since
+            guard Date().timeIntervalSince(since) >= 1 else { continue }
+            glanced[sid] = nil
+            Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(sid)])) }
+        }
     }
 
     /// No notification for an agent whose tab the user is looking at.
@@ -136,8 +158,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func prevWorkspace() { Workbench.showWorkspace(offset: -1) }
     @objc func selectWorkspace(_ m: NSMenuItem) { Workbench.showWorkspace(number: m.tag) }
     @objc func nextNeedingAttention() { Workbench.showNextNeedingAttention() }
+    @objc func showUsage() { Workbench.open("usage:") }
+    @objc func showScratch() { ScratchWindow.shared.toggle() }
+    @objc func workspaceBack() { Workbench.goBack(-1) }
+    @objc func switchWorkspace() { WorkspaceSwitcher.shared.step(1) }
+    @objc func switchWorkspaceBack() { WorkspaceSwitcher.shared.step(-1) }
+    @objc func workspaceForward() { Workbench.goBack(1) }
     @objc func toggleInspector() { main.toggleInspectorPanel() }
     @objc func toggleSidebar() { main.toggleSidebarPanel() }
+    @objc func toggleFocusMode() { main.toggleFocusMode() }
     @objc func showPanel(_ m: NSMenuItem) { if let id = m.representedObject as? String { main.showInspector(panel: id) } }
     @objc func runCommand(_ m: NSMenuItem) { if let id = m.representedObject as? String { ExtensionRegistry.shared.command(id)?.run([:]) } }
     @objc func quickOpen() { QuickOpen.shared.show(commandsOnly: false) }
@@ -157,20 +186,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func defaultText() { zoomText(nil) }
     @objc func openHelp() { Workbench.open(TabURI.file(Help.file.path)) }
     @objc func openExtensionGuide() { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
-    @objc func goToLine() { if let f = fileTab, let s = prompt("Go to line", ""), let n = Int(s) { f.goTo(line: n) } }
+    @objc func goToLine() { if let f = fileTab, let s = prompt(String(localized: "Go to line"), ""), let n = Int(s) { f.goTo(line: n) } }
     @objc func jumpToDefinition() { fileTab?.jumpToDefinition() }
-    @objc func findInWorkspace() { main.showInspector(panel: "files") }
+    @objc func findInWorkspace() {
+        main.showInspector(panel: "files")
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .krillFindInFiles, object: nil) }   // after the panel is built
+    }
+    /// ⌥⌘↩: "path:12-30" into the agent's prompt (it reads the file itself), without pressing Return.
     @objc func sendSelection() {
-        guard let f = fileTab, let text = f.selectedText, let sid = Workbench.shared.focusedSession else { NSSound.beep(); return }
-        let lines = f.selectedLines.map { $0.lowerBound == $0.upperBound ? "line \($0.lowerBound)" : "lines \($0.lowerBound)-\($0.upperBound)" } ?? ""
-        Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string("In \(f.path) \(lines):\n```\n\(text)\n```\n"), "enter": false])) }
-        Workbench.focus(session: sid)
+        guard let f = fileTab else { NSSound.beep(); return }
+        FileActions.sendToAgent(f.path, lines: f.selectedText?.isEmpty == false ? f.selectedLines : nil)
+    }
+    @objc func copyWebLink() {
+        guard let f = fileTab else { NSSound.beep(); return }
+        FileActions.copyWebLink(f.path, lines: f.selectedLines)
+    }
+    @objc func copyReference() {
+        guard let f = fileTab else { NSSound.beep(); return }
+        FileActions.copyReference(f.path, lines: f.selectedText?.isEmpty == false ? f.selectedLines : nil)
     }
     @objc func restartService() {
-        let a = NSAlert(); a.messageText = "Restart the background service?"; a.informativeText = "Running agent sessions end. Workspaces, history and settings are kept."
-        a.addButton(withTitle: "Restart"); a.addButton(withTitle: "Cancel")
+        let a = NSAlert(); a.messageText = String(localized: "Restart the background service?"); a.informativeText = String(localized: "Running agent sessions end. Workspaces, history and settings are kept.")
+        a.addButton(withTitle: String(localized: "Restart")); a.addButton(withTitle: String(localized: "Cancel"))
         Task { if await runSheet(a) == .alertFirstButtonReturn { await AppModel.shared.restartDaemon() } }
     }
+
+    private let archivedMenu = ArchivedMenu()
 
     // MARK: menu
     private func item(_ menu: NSMenu, _ title: String, _ sel: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
@@ -266,19 +307,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.setSubmenu(find, for: edit.addItem(withTitle: "Find", action: nil, keyEquivalent: ""))
         _ = item(edit, "Go to Line…", #selector(goToLine), "l")
         _ = item(edit, "Jump to Definition", #selector(jumpToDefinition), "j", [.command, .control])
-        _ = item(edit, "Send Selection to Agent", #selector(sendSelection), "\r", [.command, .option])
+        _ = item(edit, "Send to Agent", #selector(sendSelection), "\r", [.command, .option])
+        _ = item(edit, "Copy Path and Line", #selector(copyReference), "c", [.command, .option, .shift])
+        _ = item(edit, "Copy Web Link", #selector(copyWebLink))
 
         let view = sub("View")
         _ = item(view, "Show Sidebar", #selector(toggleSidebar), "0")
         _ = item(view, "Show Inspector", #selector(toggleInspector), "0", [.command, .option])
+        _ = item(view, "Focus Mode", #selector(toggleFocusMode), "z", [.command, .control])
         for (i, p) in ExtensionRegistry.shared.all.panels.prefix(9).enumerated() {
             let m = item(view, "  " + p.title, #selector(showPanel(_:)), "\(i + 1)", [.command, .option]); m.representedObject = p.id
             m.image = .symbol(p.icon)
         }
         view.addItem(.separator())
         _ = item(view, "Bigger Text", #selector(biggerText), "+")
+        // ⌘= enlarges too, as in Ghostty, VS Code and Safari (+ is the shifted =).
+        let bigger = item(view, "Bigger Text", #selector(biggerText), "="); bigger.isHidden = true; bigger.allowsKeyEquivalentWhenHidden = true
         _ = item(view, "Smaller Text", #selector(smallerText), "-")
-        _ = item(view, "Default Text Size", #selector(defaultText), "=")
+        _ = item(view, "Default Text Size", #selector(defaultText))
         view.addItem(.separator())
         _ = item(view, "Split Right", #selector(splitRight), "d")
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
@@ -298,10 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
         _ = item(view, "Previous Tab", #selector(prevTab), "[", [.command, .shift])
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i; m.isHidden = i > 3; m.allowsKeyEquivalentWhenHidden = true }
-        // ⌃Tab / ⌃⇧Tab as in Safari and Terminal, next to the ⇧⌘] / ⇧⌘[ shown above.
-        for (sel, mods) in [(#selector(nextTab), NSEvent.ModifierFlags.control), (#selector(prevTab), NSEvent.ModifierFlags([.control, .shift]))] {
-            let m = item(view, "", sel, "\t", mods); m.isHidden = true; m.allowsKeyEquivalentWhenHidden = true
-        }
+        // ⌃Tab / ⌃⇧Tab: the workspace switcher (Window menu); tabs keep ⇧⌘] / ⇧⌘[.
         view.addItem(.separator())
         _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
         _ = item(view, "Open Quickly…", #selector(quickOpen), "p")
@@ -320,15 +363,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let k = c.key.flatMap(Self.parseKey) { i.keyEquivalent = k.0; i.keyEquivalentModifierMask = k.1 }
         }
 
+        ScriptsMenu.shared.fill(sub("Run")) { m, t, sel, key, mods in item(m, t, sel, key, mods) }
+
         let win = sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         win.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
         win.addItem(.separator())
         _ = item(win, "Show Agent Needing You", #selector(nextNeedingAttention), "u", [.command, .shift])
+        _ = item(win, "Usage", #selector(showUsage), "u", [.command, .option])
+        _ = item(win, "Scratch", #selector(showScratch), "k", [.command, .option, .control])
         // NSUpArrowFunctionKey / NSDownArrowFunctionKey
+        _ = item(win, "Switch Workspace", #selector(switchWorkspace), "\t", .control)
+        let back = item(win, "", #selector(switchWorkspaceBack), "\t", [.control, .shift]); back.isHidden = true; back.allowsKeyEquivalentWhenHidden = true
         _ = item(win, "Next Workspace", #selector(nextWorkspace), "\u{F701}", [.command, .control])
         _ = item(win, "Previous Workspace", #selector(prevWorkspace), "\u{F700}", [.command, .control])
+        // NSLeftArrowFunctionKey / NSRightArrowFunctionKey: back and forward through the workspaces you visited.
+        _ = item(win, "Back", #selector(workspaceBack), "\u{F702}", [.command, .control])
+        _ = item(win, "Forward", #selector(workspaceForward), "\u{F703}", [.command, .control])
         for i in 1...9 { let m = item(win, "Workspace \(i)", #selector(selectWorkspace(_:)), "\(i)", .control); m.tag = i; m.isHidden = i > 1; m.allowsKeyEquivalentWhenHidden = true }
+        win.addItem(.separator())
+        let archived = NSMenu(title: "Archived Workspaces"); archived.delegate = archivedMenu
+        win.setSubmenu(archived, for: win.addItem(withTitle: "Archived Workspaces", action: nil, keyEquivalent: ""))
         win.addItem(.separator())
         win.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = win
@@ -338,6 +393,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(help, "How Krill Works", #selector(openHelp), "?")
         _ = item(help, "Writing Extensions", #selector(openExtensionGuide))
         NSApp.helpMenu = help
+        Localize.menu(mainMenu)           // shown in the user's language; the English titles stay the items' ids
+        KeyBindings.apply(to: mainMenu)   // Settings › Keyboard's changes over the defaults
         NSApp.mainMenu = mainMenu
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    /// Show/Hide items say what choosing them does; Focus Mode is ticked while it's on.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleSidebar): item.title = main.sidebarShown ? String(localized: "Hide Sidebar") : String(localized: "Show Sidebar")
+        case #selector(toggleInspector): item.title = main.inspectorShown ? String(localized: "Hide Inspector") : String(localized: "Show Inspector")
+        case #selector(toggleFocusMode): item.state = main.inFocusMode ? .on : .off
+        default: break
+        }
+        return true
+    }
+}
+
+/// Window › Archived Workspaces. The list is read from the daemon whenever the workspaces change, so the menu fills at once.
+@MainActor
+final class ArchivedMenu: NSObject, NSMenuDelegate {
+    private var archived: [Worktree] = []
+    override init() {
+        super.init()
+        track { AppModel.shared.worktrees } changed: { [weak self] _ in Task { await self?.reload() } }
+    }
+    private func reload() async {
+        archived = ((try? await AppModel.shared.client?.call("worktree.list", .obj(["archived": true]), as: [Worktree].self)) ?? []).filter(\.archived)
+    }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard !archived.isEmpty else { menu.addItem(withTitle: "None", action: nil, keyEquivalent: "").isEnabled = false; return }
+        for w in archived.sorted(by: { $0.createdAt > $1.createdAt }) {
+            menu.add("\(w.displayName) — \(AppModel.shared.repo(w.repoId)?.name ?? "")") { WorkspaceActions.unarchive(w.id) }
+        }
     }
 }

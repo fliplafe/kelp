@@ -52,3 +52,10 @@ import Testing
     #expect(c.background == "#1e1e2e" && c.foreground == "cdd6f4" && c.fontFamily == "JetBrains Mono" && c.fontSize == 14 && c.palette[1] == "#f38ba8")
     #expect(GhosttyConfig.rgb("#ff0000")! == (1, 0, 0))
 }
+
+@Test func knownErrorsCarryTheirFix() {
+    #expect(FixRecipes.fix(for: "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)") == .init(command: "xcode-select --install", blocking: true))
+    #expect(FixRecipes.fix(for: "You have not agreed to the Xcode license agreements.")?.blocking == true)
+    #expect(FixRecipes.fix(for: "fatal: The current branch x has no upstream branch.")?.command == "git push -u origin HEAD")
+    #expect(FixRecipes.fix(for: "everything is fine") == nil)
+}

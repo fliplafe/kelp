@@ -64,6 +64,9 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var pluginDirFlag: String?
     /// If set, `{contextFlag} <text>` tells the agent it runs inside Krill and which skills to use for it.
     public var contextFlag: String?
+    /// The agent's own install / update commands (run in a terminal you can watch), and its npm package for
+    /// "is there a newer version".
+    public var install: String?, update: String?, npm: String?
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
@@ -97,6 +100,45 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         contextFlag = try c.decodeIfPresent(String.self, forKey: .contextFlag)
         sessionIdFlag = try c.decodeIfPresent(String.self, forKey: .sessionIdFlag)
         resumeIdFlag = try c.decodeIfPresent(String.self, forKey: .resumeIdFlag)
+        install = try c.decodeIfPresent(String.self, forKey: .install)
+        update = try c.decodeIfPresent(String.self, forKey: .update)
+        npm = try c.decodeIfPresent(String.self, forKey: .npm)
+    }
+
+    /// What an agent file says instead of a secret's value: the value is in the login keychain (`agent.<id>.<KEY>`).
+    public static let keychainValue = "<in Keychain>"
+    public static func isSecret(_ key: String) -> Bool { key.range(of: #"(KEY|TOKEN|SECRET|PASSWORD|AUTH)"#, options: .regularExpression) != nil }
+    public static func secretAccount(agent: String, key: String) -> String { "agent.\(agent).\(key)" }
+
+    /// The environment to launch with: secrets read from the keychain.
+    public var resolvedEnv: [String: String] {
+        env.reduce(into: [:]) { out, kv in
+            out[kv.key] = kv.value == Self.keychainValue ? Keychain.get(Self.secretAccount(agent: id, key: kv.key)) ?? "" : kv.value
+        }
+    }
+
+    /// Installs and updates of the agents people use most, as their own docs give them; the npm package says what's newest.
+    static func withInstall(_ m: AgentManifest) -> AgentManifest {
+        let known: [String: (install: String, update: String?, npm: String?)] = [
+            "claude": ("curl -fsSL https://claude.ai/install.sh | bash", "claude update", "@anthropic-ai/claude-code"),
+            "codex": ("npm install -g @openai/codex", "npm install -g @openai/codex@latest", "@openai/codex"),
+            "gemini": ("npm install -g @google/gemini-cli", "npm install -g @google/gemini-cli@latest", "@google/gemini-cli"),
+            "opencode": ("curl -fsSL https://opencode.ai/install | bash", "opencode upgrade", "opencode-ai"),
+            "cursor": ("curl https://cursor.com/install -fsS | bash", "cursor-agent update", nil),
+            "qwen": ("npm install -g @qwen-code/qwen-code", "npm install -g @qwen-code/qwen-code@latest", "@qwen-code/qwen-code"),
+            "amp": ("npm install -g @sourcegraph/amp", "npm install -g @sourcegraph/amp@latest", "@sourcegraph/amp"),
+            "copilot": ("npm install -g @github/copilot", "npm install -g @github/copilot@latest", "@github/copilot"),
+            "auggie": ("npm install -g @augmentcode/auggie", "npm install -g @augmentcode/auggie@latest", "@augmentcode/auggie"),
+            "crush": ("brew install charmbracelet/tap/crush", "brew upgrade crush", nil),
+            "aider": ("python3 -m pip install aider-install && aider-install", nil, nil),
+            "droid": ("curl -fsSL https://app.factory.ai/cli | sh", nil, nil)
+        ]
+        guard let k = known[m.id] else { return m }
+        var m = m
+        if m.install == nil { m.install = k.install }
+        if m.update == nil { m.update = k.update }
+        if m.npm == nil { m.npm = k.npm }
+        return m
     }
 
     public static let defaultWaiting = [
@@ -163,10 +205,10 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     /// Presets overridden/extended by `*.json` files in `dir`. Bad files are skipped, never fatal.
     public static func load(dir: URL = Paths.agents) -> [AgentManifest] {
-        var all = Dictionary(uniqueKeysWithValues: presets.map { ($0.id, $0) })
+        var all = Dictionary(uniqueKeysWithValues: presets.map { ($0.id, withInstall($0)) })
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for f in files where f.pathExtension == "json" {
-            if let d = try? Data(contentsOf: f), let m = try? JSONDecoder().decode(AgentManifest.self, from: d) { all[m.id] = m }
+            if let d = try? Data(contentsOf: f), let m = try? JSONDecoder().decode(AgentManifest.self, from: d) { all[m.id] = withInstall(m) }
         }
         return all.values.sorted { $0.name < $1.name }
     }
@@ -195,7 +237,8 @@ public enum Hooks {
             #"[{\#(matcher.map { #""matcher":"\#($0)","# } ?? "")"hooks":[{"type":"command","command":"krill hook \#(ev)"}]}]"#
         }
         return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working")),"#
-            + #""PreToolUse":\#(hook("waiting", "AskUserQuestion")),"PostToolUse":\#(hook("working", "AskUserQuestion"))}}"#
+            + #""PreToolUse":\#(hook("waiting", "AskUserQuestion")),"PostToolUse":\#(hook("working", "AskUserQuestion")),"#
+            + #""PreCompact":\#(hook("compacting")),"SessionStart":\#(hook("compacted", "compact"))}}"#
     }
 
     /// Claude Code repeats "waiting for your input" a minute after a turn ends; that's a finished agent, not a question.

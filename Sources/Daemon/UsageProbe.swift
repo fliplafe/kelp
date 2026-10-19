@@ -11,7 +11,7 @@ extension Daemon {
         let shown: @Sendable (String) -> Bool    // the usage screen has loaded
         let parse: @Sendable (String) -> [ClaudeLimits.Reading]
     }
-    struct PlanState { var readings: [ClaudeLimits.Reading] = []; var at: Date?; var running = false }
+    struct PlanState { var readings: [ClaudeLimits.Reading] = []; var at: Date?; var running = false; var readAt: Date? }
 
     static let planProbes = [
         PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
@@ -44,7 +44,7 @@ extension Daemon {
                     if readings.isEmpty, (try? Paths.ensure(root.appendingPathComponent("probe"))) != nil { try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8) }
                 }
                 lock.withLock {
-                    if !readings.isEmpty { plans[probe.agent]?.readings = readings }
+                    if !readings.isEmpty { plans[probe.agent]?.readings = readings; plans[probe.agent]?.readAt = Date() }
                     // A failed probe retries in 2 minutes rather than waiting a whole round.
                     plans[probe.agent]?.at = readings.isEmpty ? Date().addingTimeInterval(120 - probe.every) : Date()
                     plans[probe.agent]?.running = false

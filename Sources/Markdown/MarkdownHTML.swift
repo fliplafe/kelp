@@ -13,6 +13,24 @@ public enum MarkdownHTML {
 
     /// Full HTML document around `body`. `baseURL` (the document's URL) resolves relative links and images.
     /// `dark: true` forces the dark palette; otherwise `prefers-color-scheme` decides.
+    /// Diagrams for ```mermaid blocks, drawn in the page with the bundled mermaid (no network); nil when there are none.
+    public static func mermaid(for md: String, dark: Bool) -> String? {
+        guard md.contains("```mermaid") || md.contains("~~~mermaid"), let js = mermaidJS else { return nil }
+        return """
+        <script>\(js)</script>
+        <script>
+        mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: '\(dark ? "dark" : "default")'});
+        document.querySelectorAll('pre > code.language-mermaid').forEach(c => {
+          const d = document.createElement('div'); d.className = 'mermaid'; d.textContent = c.textContent;
+          d.dataset.line = c.parentElement.dataset.line || ''; c.parentElement.replaceWith(d);
+        });
+        mermaid.run().catch(() => {});   // a broken diagram shows mermaid's own error in its place
+        </script>
+        """
+    }
+
+    static let mermaidJS: String? = Bundle.module.url(forResource: "mermaid.min", withExtension: "js").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+
     public static func page(body: String, baseURL: URL?, dark: Bool) -> String {
         let base = baseURL.map { "<base href=\"\(esc($0.absoluteString))\">\n" } ?? ""
         return """

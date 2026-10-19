@@ -158,3 +158,44 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(GitHubError(args: [], status: 4, stderr: "To get started with GitHub CLI, please run:  gh auth login").description.contains("gh auth login"))
     #expect(!GitHubError(args: ["pr", "list", "--json", "number"], status: 1, stderr: "boom\nmore").description.contains("--json"))
 }
+
+@Test func workflowDispatchInputs() {
+    let y = """
+    name: Deploy
+    on:
+      push:
+      workflow_dispatch:
+        inputs:
+          environment:
+            description: "Where to"
+            default: staging
+            type: choice
+            options:
+              - staging
+              - production
+          dry_run:
+            required: true
+    jobs:
+      x:
+        runs-on: ubuntu-latest
+    """
+    let w = CIRuns.parseWorkflow(y, file: "deploy.yml")
+    #expect(w?.name == "Deploy")
+    #expect(w?.inputs.map(\.name) == ["environment", "dry_run"])
+    #expect(w?.inputs.first?.options == ["staging", "production"])
+    #expect(w?.inputs.first?.defaultValue == "staging")
+    #expect(w?.inputs.last?.required == true)
+    #expect(CIRuns.parseWorkflow("on: push\n", file: "a.yml") == nil)
+}
+
+/// GitLab's merge request JSON reads as a pull request, its pipeline as checks.
+@Test func gitlabMergeRequestShape() throws {
+    let json = #"""
+    [{"iid": 12, "title": "Fix login", "web_url": "https://gitlab.com/a/b/-/merge_requests/12", "author": {"username": "kim"},
+      "source_branch": "fix-login", "state": "opened", "draft": true, "head_pipeline": {"status": "failed"}}]
+    """#
+    let pr = try #require(try JSONDecoder().decode([GitLab.RawMR].self, from: Data(json.utf8)).map(GitLab.pr).first)
+    #expect(pr.number == 12 && pr.state == "OPEN" && pr.isDraft && pr.author == "kim" && pr.headRefName == "fix-login")
+    #expect(pr.checks.failed == 1 && pr.checks.passed == 0)
+    #expect(CIRuns.gitlabState("manual").0 == "waiting" && CIRuns.gitlabState("canceled").1 == "cancelled")
+}

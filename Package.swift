@@ -29,19 +29,18 @@ let package = Package(
         .target(name: "GitKit", dependencies: ["Core"]),
         .target(name: "Agents", dependencies: ["Core"]),
         .target(name: "AgentData", dependencies: ["Core"]),
-        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "LocalAI", "Integrations", "AgentData"]),
+        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData"]),
         .target(name: "TerminalKit", dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm"), "Core"] + (hasGhostty ? ["GhosttyKit"] : []),
                 linkerSettings: hasGhostty ? ghosttyLinks : []),
         .executableTarget(name: "krilld", dependencies: ["Daemon"]),
         .executableTarget(name: "krill", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
-        .target(name: "LocalAI"),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
-        .target(name: "Markdown"),
+        .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.4.1, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KrillApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "LocalAI", "Markdown", .product(name: "Sparkle", package: "Sparkle")]
+            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", .product(name: "Sparkle", package: "Sparkle")]
                 + (hasGhostty ? ["GhosttyKit"] : []),
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
@@ -52,9 +51,9 @@ let package = Package(
         .testTarget(name: "AgentDataTests", dependencies: ["AgentData"]),
         .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents"]),
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
-        .testTarget(name: "LocalAITests", dependencies: ["LocalAI"]),
         .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
+        .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
     ]
 )
 

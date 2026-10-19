@@ -9,6 +9,9 @@ struct UsageView: View {
     struct Row: Identifiable, Equatable {
         var id: String, name: String, fullName: String
         var lines: [Line] = []
+        /// When the numbers were read (nil: unknown); past half an hour they're dimmed and say how old they are.
+        var readAt: Date?
+        var stale: Bool { readAt.map { Date().timeIntervalSince($0) > 1800 } ?? false }
         var used: Double { lines.map(\.used).max() ?? 0 }
     }
     @State private var rows: [Row] = []
@@ -42,6 +45,7 @@ struct UsageView: View {
                     Ring(used: r.used)
                     Text(r.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
+                .opacity(r.stale ? 0.45 : 1)
                 .contentShape(Rectangle())
                 .onHover { hovered = $0 ? r.id : (hovered == r.id ? nil : hovered) }
                 .onTapGesture { hovered = r.id }   // trackpads, and anyone who'd rather click
@@ -49,22 +53,34 @@ struct UsageView: View {
                     Details(row: r)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(r.lines.map { "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used" }.joined(separator: ", "))
+                .accessibilityLabel(r.lines.map { String(localized: "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used") }.joined(separator: ", "))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)   // a Spacer here would squeeze the names
     }
 
-    /// A progress ring: how full the fullest limit is, orange from 70 %, red from 90 %.
+    /// How full the fullest limit is, as a filled wedge in a ring (a gauge: an arc alone would read as the
+    /// "working" spinner); orange from 70 %, red from 90 %.
     private struct Ring: View {
         let used: Double
         var body: some View {
             ZStack {
-                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 2.5)
-                Circle().trim(from: 0, to: max(0.02, used)).stroke(UsageView.tint(used), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                Circle().stroke(Color.secondary.opacity(0.6), lineWidth: 1)
+                Wedge(fraction: max(0.03, used)).fill(UsageView.tint(used)).padding(2.5)
             }
             .frame(width: 13, height: 13)
+        }
+    }
+
+    private struct Wedge: Shape {
+        let fraction: Double
+        func path(in r: CGRect) -> Path {
+            let c = CGPoint(x: r.midX, y: r.midY)
+            var p = Path()
+            p.move(to: c)
+            p.addArc(center: c, radius: r.width / 2, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(fraction, 1)), clockwise: false)
+            p.closeSubpath()
+            return p
         }
     }
 
@@ -73,6 +89,10 @@ struct UsageView: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(row.fullName).font(.headline)
+                if let at = row.readAt {
+                    Text(row.stale ? String(localized: "Read \(shortAgo(at)) ago; not since, so these may be out of date.") : String(localized: "Read \(shortAgo(at)) ago"))
+                        .font(.caption).foregroundStyle(row.stale ? .orange : .secondary)
+                }
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                     ForEach(row.lines, id: \.label) { l in
                         GridRow {
@@ -96,6 +116,7 @@ struct UsageView: View {
         guard let c = AppModel.shared.client, let u = try? await c.call("usage.get") else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
+            r.readAt = Self.num(u["plansReadAt"]?[a.id]).map { Date(timeIntervalSince1970: $0) }
             switch a.id {
             case "claude": r.lines = Self.claude(u)
             case "codex": r.lines = Self.codex(u)
@@ -123,8 +144,8 @@ struct UsageView: View {
     private static func lines(_ readings: [JSONValue]) -> [Line] {
         readings.compactMap { l in
             guard let kind = l["kind"]?.string, let p = num(l["percent"]) else { return nil }
-            let label = kind == "session" ? "5 hours" : kind == "week" ? "Week"
-                : kind.hasPrefix("week · ") ? "Week, " + kind.dropFirst(7) : kind.prefix(1).uppercased() + kind.dropFirst()
+            let label = kind == "session" ? String(localized: "5 hours") : kind == "week" ? String(localized: "Week")
+                : kind.hasPrefix("week · ") ? String(localized: "Week, ") + kind.dropFirst(7) : kind.prefix(1).uppercased() + kind.dropFirst()
             return Line(label: label, used: p / 100, resets: l["resets"]?.string)
         }
     }
@@ -137,7 +158,7 @@ struct UsageView: View {
     private static func codex(_ u: JSONValue) -> [Line] {
         guard let x = u["codex"]?.array?.first else { return [] }
         let now = Date().timeIntervalSince1970
-        return [("5 hours", "primaryUsedPercent", "primaryResetsAt"), ("Week", "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
+        return [(String(localized: "5 hours"), "primaryUsedPercent", "primaryResetsAt"), (String(localized: "Week"), "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
             guard let p = num(x[used]) else { return nil }
             let t = num(x[reset]) ?? 0, expired = t > 0 && t < now
             return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.until(t) : nil)
@@ -146,6 +167,6 @@ struct UsageView: View {
 
     private static func until(_ ts: Double) -> String {
         let s = max(0, ts - Date().timeIntervalSince1970)
-        return "in " + (s >= 86400 ? "\(Int(s) / 86400)d \(Int(s) % 86400 / 3600)h" : "\(Int(s) / 3600)h \(Int(s) % 3600 / 60)m")
+        return "in " + (s >= 86400 ? String(localized: "\(Int(s) / 86400)d \(Int(s) % 86400 / 3600)h") : String(localized: "\(Int(s) / 3600)h \(Int(s) % 3600 / 60)m"))
     }
 }

@@ -89,6 +89,18 @@ struct WorkspaceLayout: Codable, Equatable {
         groups[target] = g; focused = target
     }
 
+    /// The tab in a new group along a whole side of the editor area (dropped at its outer edge): full height or width.
+    mutating func splitRoot(_ tab: String, vertical: Bool, before: Bool) {
+        guard let t = allTabs.first(where: { $0.id == tab }), let r = root, r.sessions.count > 1 || groups[r.sessions[0]]?.tabs.count ?? 0 > 1 else { return }
+        remove(tab)
+        let g = GroupModel(); groups[g.id] = g
+        groups[g.id]?.tabs = [t]; groups[g.id]?.selected = t.id
+        let kids: [LayoutNode]
+        if case .split(let v, let c) = root ?? r, v == vertical { kids = before ? [.pane(g.id)] + c : c + [.pane(g.id)] }
+        else { kids = before ? [.pane(g.id), root ?? r] : [root ?? r, .pane(g.id)] }
+        root = .split(vertical: vertical, children: kids); focused = g.id
+    }
+
     mutating func split(_ tab: String, from target: String, vertical: Bool, before: Bool) {
         guard let t = allTabs.first(where: { $0.id == tab }) else { return }
         let alone = group(of: tab) == target && groups[target]?.tabs.count == 1

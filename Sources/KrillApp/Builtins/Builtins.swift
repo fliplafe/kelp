@@ -17,7 +17,7 @@ struct Builtin {
 
 @MainActor
 enum Builtins {
-    static let all: [Builtin] = [agents, appearance, files, git, browser, issues]
+    static let all: [Builtin] = [agents, appearance, files, git, browser, issues, activity]
 
     private static func s(_ key: String, _ title: String, _ type: String, _ def: JSONValue?, _ desc: String? = nil, options: [String]? = nil) -> SettingSpec {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
@@ -26,6 +26,7 @@ enum Builtins {
     static let agents = Builtin("krill.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["session"], extensionId: "krill.agents") { SessionTab(uri: $0) }]
+        c.tabs.append(TabProvider(schemes: ["usage"], extensionId: "krill.agents") { _ in UsageTab() })
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", extensionId: "krill.agents", specs: [
                 s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: AgentCatalog.all.map(\.id)),
@@ -33,16 +34,19 @@ enum Builtins {
                   "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
                 s("agents.skills.settings", "Skill: change Krill settings", "boolean", true,
                   "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask."),
-                s("sessions.hibernateMinutes", "Pause idle agents after (minutes)", "number", 0, "0 = never. Paused agents free memory and resume the same conversation."),
+                s("sessions.hibernateMinutes", "Pause idle agents", "number", 0, "Paused agents free memory and resume the same conversation.",
+                  options: ["0", "15", "30", "60", "240"]),
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
                 s("usage.readPlans", "Show plan limits", "boolean", true,
-                  "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows the percentages in the sidebar. Uses no tokens.")
+                  "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "krill.agents", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Empty = the theme's / Ghostty's font."),
                 s("terminal.fontSize", "Font size", "number", 13),
                 s("terminal.cursorStyle", "Cursor", "enum", "block", options: ["block", "bar", "underline"]),
                 s("terminal.optionAsAlt", "Option key sends Alt (Meta)", "boolean", false),
+                s("terminal.cleanCopy", "Copy text without the TUI around it", "boolean", true,
+                  "Drops box borders, an agent's indented gutter and trailing spaces from what you copy."),
                 s("terminal.useGhosttyConfig", "Also read ~/.config/ghostty/config", "boolean", false, "Keybindings and other Ghostty options; the theme's colors still apply.")
             ])
         ]
@@ -66,13 +70,18 @@ enum Builtins {
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
             s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
         ])]
-        c.commands = [CommandSpec(id: "files.quickOpen", title: "Open File…", extensionId: "krill.files", key: "cmd+p") { _ in QuickOpen.shared.show(commandsOnly: false) }]
+        c.commands = [CommandSpec(id: "files.quickOpen", title: "Open File…", extensionId: "krill.files", key: "cmd+p") { _ in QuickOpen.shared.show(commandsOnly: false) },
+                      CommandSpec(id: "markdown.cycleView", title: "Markdown: Source, Split, Preview", extensionId: "krill.files", key: "shift+cmd+v") { _ in
+                          guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
+                          md.cycleMode()
+                      }]
         return c
     }
 
     static let git = Builtin("krill.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["diff"], extensionId: "krill.git") { DiffTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["diff"], extensionId: "krill.git") { DiffTab(uri: $0) },
+                  TabProvider(schemes: ["commit"], extensionId: "krill.git") { CommitMessageTab(uri: $0) }]
         c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "krill.git") { SourceControlController() }]
         c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "krill.git", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", extensionId: "krill.git", specs: [
@@ -86,15 +95,22 @@ enum Builtins {
                 if let w = Workbench.shared.workspaceId { PRActions.create(worktree: w) }
             },
             CommandSpec(id: "git.push", title: "Git: Push", extensionId: "krill.git") { _ in
-                if let w = Workbench.shared.workspaceId { Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show("Pushed") } } }
+                if let w = Workbench.shared.workspaceId { Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show(String(localized: "Pushed")) } } }
             }
         ]
         return c
     }
 
+    /// Off on a clean install (`ExtensionRegistry.offByDefault`): Settings › Extensions turns it on.
+    static let activity = Builtin("krill.activity", "Activity", "CPU and memory of each agent and terminal, with Stop.", icon: "gauge.with.dots.needle.33percent") {
+        var c = Contributions()
+        c.panels = [PanelSpec(id: "activity", title: "Activity", icon: "gauge.with.dots.needle.33percent", extensionId: "krill.activity") { ActivityController() }]
+        return c
+    }
+
     static let browser = Builtin("krill.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["http", "https", "about"], extensionId: "krill.browser") { BrowserTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"], extensionId: "krill.browser") { BrowserTab(uri: $0) }]
         c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", extensionId: "krill.browser", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
         c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", extensionId: "krill.browser", key: "shift+cmd+b") { args in
             Workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
@@ -108,7 +124,7 @@ enum Builtins {
             let t = TasksViewController()
             track { Workbench.shared.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
             return t
-        }]
+        }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "krill.issues") { CIRunsController() }]
         c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", extensionId: "krill.issues", specs: [],
                                       custom: { AnyView(IntegrationsSettings()) })]
         return c
@@ -118,8 +134,15 @@ enum Builtins {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "krill.appearance", specs: [
             s("workbench.theme", "Theme", "theme", "auto",
-              "The window, terminal and editor together. Match System switches Krill Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors.")
-        ])]
+              "The window, terminal and editor together. Match System switches Krill Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors."),
+            s("workbench.iconTheme", "File Icons", "enum", .string(FileIcon.system),
+              "Icons in Files, Source Control and tabs. VS Code icon themes work as they are: Settings › Extensions › Install…"),
+            s("workbench.textSize", "Sidebar and inspector text", "enum", "normal", "The terminal and the editor have their own font sizes.",
+              options: ["normal", "large", "larger"]),
+            s("workbench.inspectorIcons", "Inspector icons", "enum", "center", "Where the panel icons sit above the inspector.",
+              options: ["left", "center", "right"])
+        ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", extensionId: "krill.appearance", specs: [],
+                            custom: { AnyView(KeyboardSettings()) })]
         return c
     }
 }

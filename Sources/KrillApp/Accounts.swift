@@ -24,7 +24,6 @@ enum Accounts {
         cached = list
         await AppModel.shared.call("config.set", .obj(["profiles": (try? JSONValue.from(list)) ?? .array([])]))
     }
-    static func profiles(for agent: String) -> [AccountProfile] { cached.filter { $0.agent == agent } }
 }
 
 struct AccountsSettings: View {
@@ -63,7 +62,7 @@ struct AccountsSettings: View {
     private func login() {
         guard let p = profiles.first(where: { $0.id == selection }), let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         Task {
-            guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "agent": .string(p.agent), "profile": .string(p.name), "title": .string("Log in: \(p.name)")])),
+            guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "agent": .string(p.agent), "profile": .string(p.name), "title": .string(String(localized: "Log in: \(p.name)"))])),
                   let s = try? r.decode(Session.self) else { return }
             AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)

@@ -8,8 +8,10 @@ import Agents
 struct ExtManifest: Decodable {
     struct Contrib: Decodable {
         var panels: [ViewDef]?, editors: [ViewDef]?, commands: [ActionDef]?
-        var settings: [SettingSpec]?, themes: [Theme]?, agents: [AgentManifest]?
+        var settings: [SettingSpec]?, themes: [Theme]?, iconThemes: [IconThemeRef]?, agents: [AgentManifest]?
     }
+    /// VS Code's own shape: the theme file is in VS Code's file icon theme format.
+    struct IconThemeRef: Decodable { var id: String; var label: String?; var path: String }
     struct ViewDef: Decodable { var id: String; var title: String; var icon: String?; var list: ListDef?; var web: String? }
     struct ListDef: Decodable {
         struct StatusMap: Decodable { var field: String; var map: [String: String] }
@@ -37,6 +39,18 @@ struct ExtManifest: Decodable {
     var contributes: Contrib?
 }
 
+/// A VS Code extension's package.json. Krill uses what it understands of it: file icon themes.
+struct VSCodePackage: Decodable {
+    struct Contrib: Decodable { var iconThemes: [ExtManifest.IconThemeRef]? }
+    var name: String, publisher: String?, displayName: String?, version: String?, description: String?
+    var contributes: Contrib?
+
+    var manifest: ExtManifest {
+        ExtManifest(id: publisher.map { "\($0).\(name)" } ?? name, name: displayName ?? name, version: version, description: description,
+                    icon: "paintpalette", contributes: .init(iconThemes: contributes?.iconThemes))
+    }
+}
+
 @MainActor
 enum DeclarativeExtension {
     /// View definitions by "extension/view", for `ext:` tabs.
@@ -45,12 +59,14 @@ enum DeclarativeExtension {
     static func load(_ folder: URL, builtin: Bool = false, checkRequirements: Bool = true) -> (info: ExtensionInfo, contributions: Contributions) {
         let fallbackId = folder.lastPathComponent
         do {
-            let data = try Data(contentsOf: folder.appendingPathComponent("extension.json"))
-            let m = try JSONDecoder().decode(ExtManifest.self, from: data)
+            let own = folder.appendingPathComponent("extension.json"), vscode = folder.appendingPathComponent("package.json")
+            let m = !FileManager.default.fileExists(atPath: own.path) && FileManager.default.fileExists(atPath: vscode.path)
+                ? try JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: vscode)).manifest
+                : try JSONDecoder().decode(ExtManifest.self, from: Data(contentsOf: own))
             var info = ExtensionInfo(id: m.id, name: m.name, description: m.description ?? "", version: m.version ?? "", icon: m.icon ?? "puzzlepiece.extension",
                                      builtin: builtin, path: folder, enabled: true)
             if checkRequirements, let missing = (m.requires ?? []).first(where: { (try? LoginPath.resolve($0)) == nil }) {
-                info.unavailable = "Needs `\(missing)` — not found on this Mac."
+                info.unavailable = String(localized: "Needs `\(missing)` — not found on this Mac.")
                 return (info, Contributions())
             }
             return (info, contributions(m, folder))
@@ -84,6 +100,9 @@ enum DeclarativeExtension {
             c.settings.append(SettingsSection(id: m.id, title: m.name, icon: m.icon ?? "puzzlepiece.extension", extensionId: m.id, specs: s))
         }
         c.themes = x?.themes ?? []
+        c.iconThemes = (x?.iconThemes ?? []).map {
+            IconThemeSpec(id: $0.id, label: $0.label ?? $0.id, file: folder.appendingPathComponent($0.path).standardizedFileURL)
+        }
         c.agents = x?.agents ?? []
         return c
     }
@@ -101,7 +120,7 @@ enum DeclarativeExtension {
     private static func viewController(_ m: ExtManifest, _ v: ExtManifest.ViewDef, _ folder: URL) -> NSViewController {
         if let list = v.list { return hosting(ExtListView(def: list, folder: folder)) }
         if let web = v.web { return ExtWebController(page: folder.appendingPathComponent(web), folder: folder) }
-        let vc = NSViewController(); vc.view = NSTextField(labelWithString: "\(m.name): view “\(v.id)” has neither list nor web.")
+        let vc = NSViewController(); vc.view = NSTextField(labelWithString: String(localized: "\(m.name): view “\(v.id)” has neither list nor web."))
         return vc
     }
 
@@ -172,7 +191,7 @@ enum ExtActions {
     static func perform(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)? = nil) {
         if let q = a.confirm {
             let alert = NSAlert(); alert.messageText = expand(q, item: item, quote: false)
-            alert.addButton(withTitle: a.title); alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: a.title); alert.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(alert) == .alertFirstButtonReturn else { return }
         }
         if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
@@ -225,7 +244,8 @@ struct ExtListView: View {
     let folder: URL
     @State private var items: [JSONValue] = []
     @State private var error: String?
-    @State private var loading = false
+    @State private var loading = false   // the spinner, after a second
+    @State private var running = false   // the command hasn't answered yet (no "empty" meanwhile)
     @State private var selection: Int?
     private var bench = Workbench.shared
 
@@ -249,8 +269,8 @@ struct ExtListView: View {
             if let error {
                 ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: { Text(error).font(.caption).textSelection(.enabled) }
                     .frame(maxHeight: .infinity)
-            } else if items.isEmpty, !loading {
-                ContentUnavailableView(def.empty ?? "Nothing here", systemImage: def.icon ?? "tray")
+            } else if items.isEmpty, !running {
+                ContentUnavailableView(def.empty ?? String(localized: "Nothing here"), systemImage: def.icon ?? "tray")
                     .frame(maxHeight: .infinity)
             } else {
                 List(selection: $selection) {
@@ -304,11 +324,12 @@ struct ExtListView: View {
     private func reload() {
         let cmd = ExtActions.expand(def.command, item: nil, quote: true)
         let cwd = IDEContext.current.workspace?.path ?? folder.path
-        loading = true
+        let slow = whileSlow { loading = true }   // a spinner only for a wait you'd notice
+        running = true
         Task {
             let r = await Shell.run(cmd, cwd: cwd)
-            loading = false
-            if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? "Exit code \(r.code)" : String(r.stderr.suffix(600)); return }
+            slow.cancel(); loading = false; running = false
+            if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? String(localized: "Exit code \(r.code)") : String(r.stderr.suffix(600)); return }
             error = nil
             items = Self.parse(r.stdout)
         }

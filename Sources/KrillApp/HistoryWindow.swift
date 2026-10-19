@@ -8,7 +8,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     private var window: NSWindow?
     private let table = NSTableView()
     private let search = NSSearchField()
-    private let fullText = NSButton(checkboxWithTitle: "Search inside conversations", target: nil, action: nil)
+    private let fullText = NSButton(checkboxWithTitle: String(localized: "Search inside conversations"), target: nil, action: nil)
     private let status = NSTextField(labelWithString: "")
     private var rows: [JSONValue] = []
     private var pending: Task<Void, Never>?
@@ -19,24 +19,27 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
 
     private func build() {
-        for (id, title, w) in [("agent", "Agent", 70.0), ("title", "Conversation", 380), ("cwd", "Folder", 260), ("updated", "Last active", 130)] {
+        for (id, title, w) in [("agent", "Agent", 70.0), ("title", String(localized: "Conversation"), 380), ("cwd", String(localized: "Folder"), 260), ("updated", String(localized: "Last active"), 130)] {
             let c = NSTableColumn(identifier: .init(id)); c.title = title; c.width = w; table.addTableColumn(c)
         }
         table.dataSource = self; table.delegate = self; table.rowHeight = 22; table.style = .inset; table.usesAlternatingRowBackgroundColors = true
         table.target = self; table.doubleAction = #selector(resume)
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
         let sv = NSScrollView(); sv.documentView = table; sv.hasVerticalScroller = true
-        search.placeholderString = "Search titles and folders"; search.delegate = self
+        search.placeholderString = String(localized: "Search titles and folders"); search.delegate = self
         fullText.target = self; fullText.action = #selector(searchChanged)
-        let resumeB = NSButton(title: "Resume", target: self, action: #selector(resume)); resumeB.bezelStyle = .rounded; resumeB.keyEquivalent = "\r"
-        let copyB = NSButton(title: "Copy Resume Command", target: self, action: #selector(copyCommand)); copyB.bezelStyle = .rounded
+        let resumeB = NSButton(title: String(localized: "Resume"), target: self, action: #selector(resume)); resumeB.bezelStyle = .rounded; resumeB.keyEquivalent = "\r"
+        let copyB = NSButton(title: String(localized: "Copy Resume Command"), target: self, action: #selector(copyCommand)); copyB.bezelStyle = .rounded
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
-        let bar = NSStackView(views: [search, fullText, NSView(), status, copyB, resumeB]); bar.spacing = 8; bar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 8, right: 12)
+        showAll.bezelStyle = .rounded; showAll.isHidden = true
+        let bar = NSStackView(views: [search, fullText, NSView(), status, showAll, copyB, resumeB]); bar.spacing = 8; bar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 8, right: 12)
         search.widthAnchor.constraint(equalToConstant: 280).isActive = true
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 600), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = "Session History"; w.contentView = pinned(bar: bar, body: sv); w.isReleasedWhenClosed = false; w.setFrameAutosaveName("history"); w.center()
+        w.title = String(localized: "Session History"); w.contentView = pinned(bar: bar, body: sv); w.isReleasedWhenClosed = false; w.setFrameAutosaveName("history"); w.center()
         window = w
     }
+
+    private lazy var showAll = ClosureButton(title: String(localized: "Show All")) { [weak self] in self?.search.stringValue = ""; self?.load() }
 
     func controlTextDidChange(_ obj: Notification) { searchChanged() }
     @objc private func searchChanged() {
@@ -45,12 +48,15 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
 
     private func load() {
-        status.stringValue = "Loading…"
+        let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
         Task {
+            defer { slow.cancel() }
             var p: [String: JSONValue] = ["query": .string(search.stringValue)]
             if fullText.state == .on { p["fullText"] = true }
             rows = (await AppModel.shared.call("history.list", .object(p)))?.array ?? []
-            status.stringValue = "\(rows.count) conversations"
+            let q = search.stringValue.trimmingCharacters(in: .whitespaces)
+            status.stringValue = rows.isEmpty ? (q.isEmpty ? String(localized: "No conversations yet") : String(localized: "No conversations match “\(q)”")) : "\(rows.count) conversations"
+            showAll.isHidden = !(rows.isEmpty && !q.isEmpty)
             table.reloadData()
         }
     }
@@ -61,7 +67,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let s: String
         switch c?.identifier.rawValue {
         case "agent": s = r["agent"]?.string == "codex" ? "Codex" : "Claude"
-        case "title": s = r["title"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled"
+        case "title": s = r["title"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Untitled")
         case "cwd": s = (r["cwd"]?.string ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~")
         default:
             let d = Date(timeIntervalSinceReferenceDate: r["updated"].flatMap { if case .double(let x) = $0 { x } else { $0.int.map(Double.init) } } ?? 0)
@@ -82,7 +88,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     @objc private func copyCommand() {
         guard table.selectedRow >= 0 else { NSSound.beep(); return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command(rows[table.selectedRow]), forType: .string)
-        status.stringValue = "Copied"
+        status.stringValue = String(localized: "Copied")
     }
     @objc private func resume() {
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow

@@ -25,9 +25,11 @@ public enum IDE {
     }
 
     /// Opens `target` in the editor area of the workspace that contains `cwd` (when there is one).
-    public static func open(_ target: String, split: String?, cwd: String, call: Call) async throws -> JSONValue {
+    /// `focus`: bring Krill to the front and switch to that workspace (otherwise the tab waits there quietly).
+    public static func open(_ target: String, split: String?, cwd: String, focus: Bool = false, call: Call) async throws -> JSONValue {
         var p: [String: JSONValue] = ["uri": .string(uri(for: target, cwd: cwd))]
         if let split { p["split"] = .string(split) }
+        if focus { p["focus"] = true }
         let worktrees = (try? await call("worktree.list", .null))?.array ?? []
         if let w = worktrees.first(where: { $0["path"]?.string.map { inside(cwd, $0) } ?? false }) { p["worktreeId"] = w["id"] }
         return try await call("ui.open", .object(p))

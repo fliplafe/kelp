@@ -1,27 +1,6 @@
 import Foundation
 
-public struct WorktreeInfo: Sendable, Equatable {
-    public var path: String; public var branch: String?; public var head: String
-}
-
 extension Git {
-    /// Parse `git worktree list --porcelain`.
-    public static func parseWorktrees(_ s: String) -> [WorktreeInfo] {
-        s.components(separatedBy: "\n\n").compactMap { block in
-            var path = "", head = "", branch: String?
-            for l in block.split(separator: "\n") {
-                if l.hasPrefix("worktree ") { path = String(l.dropFirst(9)) }
-                else if l.hasPrefix("HEAD ") { head = String(l.dropFirst(5)) }
-                else if l.hasPrefix("branch ") { branch = String(l.dropFirst(7).replacingOccurrences(of: "refs/heads/", with: "")) }
-            }
-            return path.isEmpty ? nil : WorktreeInfo(path: path, branch: branch, head: head)
-        }
-    }
-
-    public static func listWorktrees(repo: String) throws -> [WorktreeInfo] {
-        parseWorktrees(try run(["worktree", "list", "--porcelain"], cwd: repo))
-    }
-
     /// Slug safe for directory names: "feat/login ui" -> "feat-login-ui".
     public static func slug(_ branch: String) -> String {
         String(branch.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" ? $0 : "-" })

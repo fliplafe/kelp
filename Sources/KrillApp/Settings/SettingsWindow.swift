@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import Core
 import Agents
 
@@ -10,9 +11,10 @@ enum SettingsWindow {
     static func show(section: String? = nil) {
         if let s = section { UserDefaults.standard.set(s, forKey: "settings.section") }
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600), styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
-            w.title = "Settings"; w.isReleasedWhenClosed = false; w.toolbarStyle = .unified
+            w.title = String(localized: "Settings"); w.isReleasedWhenClosed = false; w.toolbarStyle = .unified
+            w.standardWindowButton(.zoomButton)?.isEnabled = false   // ⌘, brings it back, so no minimize or zoom (HIG › Settings)
             let host = NSHostingController(rootView: SettingsView())
             host.sizingOptions = [.minSize]
             w.contentViewController = host
@@ -33,12 +35,13 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section {
-                    ForEach(registry.all.settings) { s in Label(s.title, systemImage: s.icon).tag(s.id) }
+                    ForEach(registry.all.settings) { s in Label(loc(s.title), systemImage: s.icon).tag(s.id) }
                 }
                 Section {
                     Label("Extensions", systemImage: "puzzlepiece.extension").tag("extensions")
                 }
             }
+            .toolbar(removing: .sidebarToggle)   // a settings window keeps its sections in view (HIG › Settings)
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         } detail: {
             Group {
@@ -47,7 +50,7 @@ struct SettingsView: View {
                 else if let s = registry.all.settings.first(where: { $0.id == selection }) { SectionForm(section: s) }
                 else { ContentUnavailableView("Pick a section", systemImage: "gearshape") }
             }
-            .navigationTitle(registry.all.settings.first { $0.id == selection }?.title ?? (selection == "extensions" ? "Extensions" : "Settings"))
+            .navigationTitle(loc(registry.all.settings.first { $0.id == selection }?.title ?? (selection == "extensions" ? "Extensions" : "Settings")))
             .toolbar {
                 Button { Workbench.open(TabURI.file(Paths.root.appendingPathComponent("settings.json").path)) } label: { Label("Open settings.json", systemImage: "curlybraces") }
                     .help("Edit settings.json in the editor")
@@ -74,13 +77,16 @@ private struct SearchResults: View {
     var body: some View {
         let q = query.lowercased()
         let hits = ExtensionRegistry.shared.all.settings.flatMap { s in
-            s.specs.filter { ($0.title + " " + $0.key + " " + ($0.description ?? "")).lowercased().contains(q) }.map { (s, $0) }
+            // In English and as shown (a Russian search finds Russian titles).
+            s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " " + loc($0.description ?? "")).lowercased().contains(q) }.map { (s, $0) }
         }
+        let keys = KeyBindings.entries().contains { KeyBindings.matches($0, query) }
         Form {
-            if hits.isEmpty { Text("No settings match “\(query)”.").foregroundStyle(.secondary) }
+            if hits.isEmpty, !keys { Text("No settings match “\(query)”.").foregroundStyle(.secondary) }
             ForEach(hits, id: \.1.key) { s, spec in
-                Section(s.title) { SettingRow(spec: spec) }
+                Section(loc(s.title)) { SettingRow(spec: spec) }
             }
+            if keys { Section("Keyboard") { KeyboardSettings(query: query) } }
         }
         .formStyle(.grouped)
     }
@@ -95,7 +101,7 @@ struct SettingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             control
-            if let d = spec.description { Text(d).font(.caption).foregroundStyle(.secondary) }
+            if let d = spec.description { Text(loc(d)).font(.caption).foregroundStyle(.secondary) }
         }
         .help(spec.key)
     }
@@ -103,23 +109,32 @@ struct SettingRow: View {
     @ViewBuilder private var control: some View {
         switch spec.type {
         case "boolean":
-            Toggle(spec.title, isOn: Binding(get: { store.bool(spec.key) ?? false }, set: { store.set(spec.key, .bool($0)) }))
+            Toggle(loc(spec.title), isOn: Binding(get: { store.bool(spec.key) ?? false }, set: { store.set(spec.key, .bool($0)) }))
+        case "number" where spec.options?.isEmpty == false:
+            // A number with options is a choice (minutes…): a picker of those values, plus a hand-set one from settings.json.
+            let current = store.number(spec.key) ?? 0
+            let values = (spec.options ?? []).compactMap(Double.init)
+            Picker(loc(spec.title), selection: Binding(get: { current }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) })) {
+                ForEach(values.contains(current) ? values : values + [current], id: \.self) { v in
+                    Text(Self.label(spec.key, v == v.rounded() ? String(Int(v)) : String(v))).tag(v)
+                }
+            }
         case "number":
-            LabeledContent(spec.title) {
+            LabeledContent(loc(spec.title)) {
                 TextField("", value: Binding(get: { store.number(spec.key) ?? 0 }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) }),
                           format: .number)
                     .multilineTextAlignment(.trailing).frame(width: 90)
             }
         case "enum":
-            Picker(spec.title, selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
+            Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
                 ForEach(Self.options(spec), id: \.self) { Text(Self.label(spec.key, $0)).tag($0) }
             }
         case "theme":
             ThemeGallery(selection: Binding(get: { store.string(spec.key) ?? "auto" }, set: { store.set(spec.key, .string($0)) }))
         case "color":
-            ColorPicker(spec.title, selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor }, set: { store.set(spec.key, .string($0.hex)) }))
+            ColorPicker(loc(spec.title), selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor }, set: { store.set(spec.key, .string($0.hex)) }))
         case "font":
-            LabeledContent(spec.title) {
+            LabeledContent(loc(spec.title)) {
                 Picker("", selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
                     Text("Default").tag("")
                     ForEach(Self.monospaced, id: \.self) { Text($0).tag($0) }
@@ -127,7 +142,7 @@ struct SettingRow: View {
                 .labelsHidden().frame(width: 220)
             }
         default:
-            LabeledContent(spec.title) {
+            LabeledContent(loc(spec.title)) {
                 TextField("", text: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) }))
                     .frame(width: 220)
             }
@@ -138,6 +153,7 @@ struct SettingRow: View {
     static func options(_ spec: SettingSpec) -> [String] {
         switch spec.key {
         case "workbench.theme": return ["auto", "ghostty"] + ThemeManager.shared.themes.map(\.id)
+        case "workbench.iconTheme": return FileIcon.themes.map(\.id)
         case "agents.default": return AgentCatalog.installed(AgentCatalog.all).map(\.id)
         default: return spec.options ?? []
         }
@@ -147,9 +163,13 @@ struct SettingRow: View {
     static func label(_ key: String, _ v: String) -> String {
         switch key {
         case "agents.default": return AgentCatalog.name(v)
-        case "workbench.theme": return v == "auto" ? "Match System" : v == "ghostty" ? "Ghostty config" : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
-        case "power.keepAwake": return ["agents": "While agents work", "always": "Always", "off": "Never"][v] ?? v
-        default: return v.prefix(1).uppercased() + v.dropFirst()
+        case "workbench.theme": return v == "auto" ? String(localized: "Match System") : v == "ghostty" ? String(localized: "Ghostty config") : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
+        case "workbench.iconTheme": return FileIcon.themes.first { $0.id == v }?.label ?? v
+        case "power.keepAwake": return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
+        case "sessions.hibernateMinutes":
+            let m = Int(v) ?? -1
+            return m == 0 ? String(localized: "Never") : m == 60 ? String(localized: "After 1 hour") : m > 0 && m % 60 == 0 ? String(localized: "After \(m / 60) hours") : String(localized: "After \(v) minutes")
+        default: return loc(v.prefix(1).uppercased() + v.dropFirst())
         }
     }
 
@@ -205,6 +225,7 @@ private struct ThemeGallery: View {
 /// Installed extensions: turn them on or off, remove, create (by hand or with an agent).
 private struct ExtensionsSettings: View {
     private var registry = ExtensionRegistry.shared
+    @State private var picking = false
     var body: some View {
         Form {
             Section {
@@ -213,10 +234,10 @@ private struct ExtensionsSettings: View {
                         Image(systemName: e.icon).font(.title3).foregroundStyle(e.error == nil ? Color.accentColor : .orange).frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text(e.name).fontWeight(.medium)
-                                Text(e.builtin ? "Built-in" : e.version).font(.caption).foregroundStyle(.secondary)
+                                Text(loc(e.name)).fontWeight(.medium)
+                                Text(e.builtin ? String(localized: "Built-in") : e.version).font(.caption).foregroundStyle(.secondary)
                             }
-                            if !e.description.isEmpty { Text(e.description).font(.caption).foregroundStyle(.secondary) }
+                            if !e.description.isEmpty { Text(loc(e.description)).font(.caption).foregroundStyle(.secondary) }
                             if let err = e.error { Text(err).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                             if let u = e.unavailable { Text(u).font(.caption).foregroundStyle(.tertiary) }
                         }
@@ -224,7 +245,8 @@ private struct ExtensionsSettings: View {
                         if let p = e.path, !e.builtin {
                             Menu {
                                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
-                                Button("Edit extension.json") { Workbench.open(TabURI.file(p.appendingPathComponent("extension.json").path)) }
+                                let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path) ? "extension.json" : "package.json"
+                                Button("Edit \(manifest)") { Workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
                                 Divider()
                                 Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }
                             } label: { Image(systemName: "ellipsis.circle") }
@@ -242,18 +264,26 @@ private struct ExtensionsSettings: View {
             }
             Section {
                 Text("To add one, ask Claude Code in an agent tab, e.g. “make a Krill panel that lists my Docker containers”. "
-                     + "It knows how through the extensions skill (Settings › Agents).")
+                     + String(localized: "It knows how through the extensions skill (Settings › Agents)."))
                     .foregroundStyle(.secondary)
                 HStack {
                     Button("How Extensions Work") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
                         .buttonStyle(.link)
                     Spacer()
+                    Button("Install…") { picking = true }
+                        .help("A VS Code extension (.vsix or its folder) — for its file icon themes — or a Krill extension folder")
                     Button("Show in Finder") { NSWorkspace.shared.open(ExtensionRegistry.userDir) }
                     Button("Reload") { registry.reload() }
                 }
             }
         }
         .formStyle(.grouped)
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "vsix") ?? .zip]) { result in
+            guard case .success(let url) = result else { return }
+            Task {
+                do { try await registry.install(url) } catch { Banner.show(String(localized: "Couldn't install \(url.lastPathComponent): \(error.localizedDescription)"), style: .error) }
+            }
+        }
     }
 }
 

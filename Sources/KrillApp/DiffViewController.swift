@@ -17,7 +17,7 @@ final class DiffTable: NSTableView {
 @MainActor
 final class DiffViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let source = NSPopUpButton()
-    private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", "Side by Side"), .symbol("rectangle", "Inline")],
+    private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", String(localized: "Side by Side")), .symbol("rectangle", String(localized: "Inline"))],
                                                   trackingMode: .selectOne, target: nil, action: nil)
     private let files = NSTableView()
     private let table = DiffTable()
@@ -48,18 +48,20 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
 
     override func loadView() {
         layoutToggle.selectedSegment = UserDefaults.standard.bool(forKey: "diff.inline") ? 1 : 0
-        layoutToggle.target = self; layoutToggle.action = #selector(layoutChanged); layoutToggle.segmentStyle = .separated
-        layoutToggle.setToolTip("Side by Side", forSegment: 0); layoutToggle.setToolTip("Inline", forSegment: 1)
-        source.addItems(withTitles: ["Uncommitted", "Unstaged", "Staged", "Branch vs base", "Commit…"])
+        layoutToggle.target = self; layoutToggle.action = #selector(layoutChanged)
+        layoutToggle.setToolTip(String(localized: "Side by Side"), forSegment: 0); layoutToggle.setToolTip(String(localized: "Inline"), forSegment: 1)
+        source.addItems(withTitles: [String(localized: "Uncommitted"), String(localized: "Unstaged"), String(localized: "Staged"), String(localized: "Branch vs base"), String(localized: "Commit…"), String(localized: "Agent's Last Turn")])
+        source.lastItem?.toolTip = String(localized: "What changed since the agent's last prompt, even with other agents in the same folder")
         source.target = self; source.action = #selector(sourceChanged); source.controlSize = .small
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
         pathLabel.lineBreakMode = .byTruncatingHead; pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let fc = NSTableColumn(identifier: .init("file")); fc.title = "Files"
+        let fc = NSTableColumn(identifier: .init("file")); fc.title = String(localized: "Files")
         files.addTableColumn(fc); files.dataSource = self; files.delegate = self; files.rowHeight = 20; files.style = .sourceList
         files.headerView = nil
-        let fm = NSMenu(); fm.addItem(withTitle: "Stage", action: #selector(stageFile), keyEquivalent: "").target = self
-        fm.addItem(withTitle: "Unstage", action: #selector(unstageFile), keyEquivalent: "").target = self
+        fc.resizingMask = .autoresizingMask; files.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle   // rows as wide as the pane
+        let fm = NSMenu(); fm.addItem(withTitle: String(localized: "Stage"), action: #selector(stageFile), keyEquivalent: "").target = self
+        fm.addItem(withTitle: String(localized: "Unstage"), action: #selector(unstageFile), keyEquivalent: "").target = self
         files.menu = fm
         let fs = NSScrollView(); fs.documentView = files; fs.hasVerticalScroller = true; fs.drawsBackground = false
 
@@ -69,7 +71,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         table.backgroundColor = .textBackgroundColor
         table.onKey = { [weak self] e in self?.key(e) ?? false }
         let cm = NSMenu()
-        for (t, st) in [("Mark Resolved", "resolved"), ("Reopen", "open")] { let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st }
+        for (t, st) in [(String(localized: "Mark Resolved"), "resolved"), (String(localized: "Reopen"), "open")] { let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st }
         table.menu = cm
         let ts = NSScrollView(); ts.documentView = table; ts.hasVerticalScroller = true; ts.autohidesScrollers = true
         setColumns()
@@ -96,7 +98,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         if n != narrow {
             narrow = n
             layoutToggle.setEnabled(!n, forSegment: 0)
-            layoutToggle.setToolTip(n ? "Side by Side (needs a wider pane)" : "Side by Side", forSegment: 0)
+            layoutToggle.setToolTip(n ? String(localized: "Side by Side (needs a wider pane)") : String(localized: "Side by Side"), forSegment: 0)
             setColumns(); rebuildRows()
         }
     }
@@ -108,11 +110,11 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             return b
         }
         if single != nil {
-            [pathLabel, status, NSView(), icon("chevron.up", "Previous Change (⌥↑)", #selector(prevChange)),
-             icon("chevron.down", "Next Change (⌥↓)", #selector(nextChange)), layoutToggle].forEach { bar.addArrangedSubview($0) }
+            [pathLabel, status, NSView(), icon("chevron.up", String(localized: "Previous Change (⌥↑)"), #selector(prevChange)),
+             icon("chevron.down", String(localized: "Next Change (⌥↓)"), #selector(nextChange)), layoutToggle].forEach { bar.addArrangedSubview($0) }
         } else {
             func btn(_ t: String, _ a: Selector) -> NSButton { let b = NSButton(title: t, target: self, action: a); b.bezelStyle = .rounded; b.controlSize = .small; return b }
-            [source, layoutToggle, btn("Comment", #selector(addComment)), btn("Send to Agent", #selector(sendComments)), NSView(), status]
+            [source, layoutToggle, btn(String(localized: "Comment"), #selector(addComment)), btn("Send to Agent", #selector(sendComments)), NSView(), status]
                 .forEach { bar.addArrangedSubview($0) }
         }
     }
@@ -144,6 +146,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     @objc func reload() { Task { await load() } }
+    func showLastTurn() { source.selectItem(at: 5) }
     @objc private func sourceChanged() { askCommit = source.indexOfSelectedItem == 4; reload() }
     private var askCommit = false
     @objc private func layoutChanged() {
@@ -163,6 +166,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         case 2: p["source"] = "staged"
         case 3: p["source"] = "branch"
         case 4: p["source"] = "commit"; p["commit"] = .string(commitHash ?? "HEAD")
+        case 5: p["source"] = "turn"; p["session"] = .string(FileActions.targetAgent?.id ?? "")
         default: p["source"] = "all"
         }
         return .object(p)
@@ -175,19 +179,24 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             let menu = NSMenu()
             for c in log.prefix(30) { let m = menu.addItem(withTitle: "\(c["hash"]?.string ?? "")  \(c["subject"]?.string ?? "")", action: nil, keyEquivalent: ""); m.representedObject = c["hash"]?.string }
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
-            let a = NSAlert(); a.messageText = "Review which commit?"; a.accessoryView = pop; a.addButton(withTitle: "Show"); a.addButton(withTitle: "Cancel")
+            let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Show")); a.addButton(withTitle: String(localized: "Cancel"))
             if runAsSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
         }
         askCommit = false
-        diffs = (try? await AppModel.shared.client?.call("git.diff", srcParams(), as: [FileDiff].self)) ?? []
+        if single == nil, source.indexOfSelectedItem == 5, FileActions.targetAgent == nil {
+            diffs = []; files.reloadData(); rebuildRows(); status.stringValue = String(localized: "No agent in this workspace"); return
+        }
+        let r = await AppModel.shared.tryCall("git.diff", srcParams())
+        diffs = (try? r.value?.decode([FileDiff].self)) ?? []
+        if let e = r.error, single == nil, source.indexOfSelectedItem == 5 { files.reloadData(); rebuildRows(); status.stringValue = e; return }
         if single == nil {
             changes = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
             comments = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
         }
         files.reloadData(); rebuildRows()
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
-        status.stringValue = single != nil ? (diffs.isEmpty ? "No changes" : "+\(add) −\(del)")
-            : "\(diffs.count) files  +\(add) −\(del)  ·  \(comments.filter { $0.state == .open }.count) open comments"
+        status.stringValue = single != nil ? (diffs.isEmpty ? String(localized: "No changes") : RowBadges.changes(added: add, removed: del).string)
+            : "\(diffs.count) files  \(RowBadges.changes(added: add, removed: del).string)  ·  \(comments.filter { $0.state == .open }.count) open comments"
     }
 
     private func rebuildRows() {
@@ -234,9 +243,15 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     func tableView(_ t: NSTableView, viewFor col: NSTableColumn?, row: Int) -> NSView? {
         if t === files {
             let d = diffs[row]
-            let st = changes.first { $0.path == d.path }
-            let mark = st.map { $0.conflicted ? "!" : $0.untracked ? "?" : ($0.staged && !$0.unstaged ? "●" : $0.staged ? "◐" : "○") } ?? " "
-            return label("\(mark) \(d.path)   +\(d.additions) −\(d.deletions)", font: .systemFont(ofSize: 11))
+            // The same letters and colours as Source Control and Files; a long path loses its middle, not its counts.
+            let (letter, color) = changes.first { $0.path == d.path }?.badge ?? (" ", .labelColor)
+            let t = NSMutableAttributedString(string: letter + "  ", attributes: [.font: NSFont.ui(10, weight: .bold), .foregroundColor: color])
+            t.append(NSAttributedString(string: d.path + "  ", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor]))
+            t.append(RowBadges.changes(added: d.additions, removed: d.deletions))
+            let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingMiddle
+            t.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: t.length))
+            let v = label("", font: .systemFont(ofSize: 11)); v.attributedStringValue = t
+            return v
         }
         let id = col?.identifier.rawValue ?? ""
         let first = id == "t" || id == "l"
@@ -248,9 +263,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         case .diff(let r):
             switch r {
             case .file(let p, let a, let d):
-                let v = label(first ? "\(p)   +\(a) −\(d)" : "", font: .boldSystemFont(ofSize: 12)); v.backgroundColor = .controlBackgroundColor; v.drawsBackground = true; return v
-            case .binary(let p): return label(first ? "Binary file \(p) not shown" : "", font: font, color: .secondaryLabelColor)
-            case .gap(let n): return band(first ? "⋯  \(n) unchanged lines" : "")
+                let v = label(first ? "\(p)   " + RowBadges.changes(added: a, removed: d).string : "", font: .boldSystemFont(ofSize: 12)); v.backgroundColor = .controlBackgroundColor; v.drawsBackground = true; return v
+            case .binary(let p): return label(first ? String(localized: "Binary file \(p) not shown") : "", font: font, color: .secondaryLabelColor)
+            case .gap(let n): return band(first ? String(localized: "⋯  \(n) unchanged lines") : "")
             case .hunk(let f, let h, let header):
                 guard first else { return band("") }
                 let stack = NSStackView(); stack.spacing = 6; stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 0)
@@ -258,9 +273,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 if canStageHunks {
                     let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
                     // An icon fits the narrow gutter, like VS Code's hunk actions.
-                    let b = NSButton(image: .symbol(staged ? "minus.circle" : "plus.circle", staged ? "Unstage Hunk" : "Stage Hunk"),
+                    let b = NSButton(image: .symbol(staged ? "minus.circle" : "plus.circle", staged ? String(localized: "Unstage Hunk") : String(localized: "Stage Hunk")),
                                      target: self, action: #selector(hunkAction(_:)))
-                    b.isBordered = false; b.contentTintColor = .secondaryLabelColor; b.toolTip = staged ? "Unstage Hunk" : "Stage Hunk"; b.tag = f * 10000 + h
+                    b.isBordered = false; b.contentTintColor = .secondaryLabelColor; b.toolTip = staged ? String(localized: "Unstage Hunk") : String(localized: "Stage Hunk"); b.tag = f * 10000 + h
                     stack.addArrangedSubview(b)
                 }
                 stack.addArrangedSubview(label(header, font: .monospacedSystemFont(ofSize: 11, weight: .regular), color: .tertiaryLabelColor))
@@ -286,7 +301,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         if let s = single { return s.commit == nil }
         return source.indexOfSelectedItem <= 2
     }
-
 
     private func ext(_ f: Int) -> String { (diffs[f].path as NSString).pathExtension }
 
@@ -377,7 +391,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             }
         }
         guard let file, let first = lines.first, let last = lines.last else { NSSound.beep(); return }
-        guard let text = prompt("Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")", "Goes to the agent with the code quote."), !text.isEmpty else { return }
+        guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"), String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
         Task {
             await AppModel.shared.call("comment.add", .obj(["id": .string(wid), "file": .string(file), "start": .int(first.0), "end": .int(last.0),
                                                            "quote": .string(lines.map(\.1).joined(separator: "\n")), "text": .string(text)]))
@@ -392,11 +406,11 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
 
     @objc private func sendComments() {
         guard let wid = worktreeId else { return }
-        guard comments.contains(where: { $0.state == .open }) else { status.stringValue = "No open comments"; return }
+        guard comments.contains(where: { $0.state == .open }) else { status.stringValue = String(localized: "No open comments"); return }
         guard let sid = pickAgentSession(wid) else { return }
         Task {
             let n = await AppModel.shared.call("comment.send", .obj(["id": .string(wid), "session": .string(sid)]))?.int ?? 0
-            status.stringValue = "Sent \(n) comments to agent"; await load()
+            status.stringValue = String(localized: "Sent \(n) comments to agent"); await load()
         }
     }
 
@@ -405,10 +419,10 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         let live = AppModel.shared.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
         if let cur = currentSession(), live.contains(where: { $0.id == cur }) { return cur }
         if live.count == 1 { return live[0].id }
-        guard !live.isEmpty else { status.stringValue = "No running agent in this worktree"; return nil }
+        guard !live.isEmpty else { status.stringValue = String(localized: "No running agent in this worktree"); return nil }
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
-        let a = NSAlert(); a.messageText = "Send to which agent?"; a.accessoryView = pop; a.addButton(withTitle: "Send"); a.addButton(withTitle: "Cancel")
+        let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
         return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 }
@@ -426,4 +440,12 @@ func pinned(bar: NSView, body: NSView) -> NSView {
         body.trailingAnchor.constraint(equalTo: v.trailingAnchor), body.bottomAnchor.constraint(equalTo: v.bottomAnchor)
     ])
     return v
+}
+
+extension FileChange {
+    /// VS Code's status letter and colour, as Files and the diff's file list show it.
+    var badge: (String, NSColor) {
+        conflicted ? ("!", .systemRed) : untracked ? ("U", .systemGreen) : (index == "D" || worktree == "D") ? ("D", .systemRed)
+            : index == "A" ? ("A", .systemGreen) : ("M", .systemOrange)
+    }
 }

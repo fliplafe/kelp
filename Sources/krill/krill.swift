@@ -12,7 +12,7 @@ usage: krill <command>
   terminal list | read <session> [bytes] | send <session> <text> [--no-enter]
   diff [--source unstaged|staged|all|branch] | commit <msg> | merge | push
   comment add <file> <line[-line]> <text> | send <session>
-  task <prompt> [--agent id] [--model m] [--yolo]   new branch (named on-device) + worktree + agent
+  task <prompt> [--agent id] [--model m] [--yolo]   new branch (named from the prompt) + worktree + agent
   session restart|rename <id> [title]|handoff <id> [--agent a]|fork <id>
   terminal context <session>          bounded transcript (for pasting elsewhere)
   fanout <prompt> --agents claude,codex [--repo id]
@@ -21,7 +21,8 @@ usage: krill <command>
   install | uninstall                  launchd agent for the daemon
   github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
   linear login <key> | tasks | start <ENG-123>
-  open <path[:line]|url> [--split right|down]   open a tab in the app (relative paths are fine)
+  open <path[:line]|url> [--split right|down] [--focus]   open a tab in the app (relative paths are fine);
+                                                --focus also brings Krill forward and shows that workspace
   settings | settings get <key> | set <key> <json-or-text> | unset <key>
   ui state                             what the app shows: workspace, tabs, extensions, commands
   run <command-id> [json-args]         run an app command (ids from `krill ui state`)
@@ -131,6 +132,7 @@ func plist() -> String {
                 // Claude Code hooks pass a JSON payload on stdin (session id, transcript path).
                 if isatty(0) == 0, let d = try? FileHandle.standardInput.readToEnd(), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
                     if let t = v["transcript_path"]?.string { p["transcript"] = .string(t) }
+                    if let t = v["trigger"]?.string { p["trigger"] = .string(t) }   // PreCompact: manual (/compact) or auto
                     if v["notification_type"] != nil || v["message"] != nil {
                         p["notification"] = .obj(["notification_type": v["notification_type"] ?? .null, "message": v["message"] ?? .null])
                     }
@@ -271,8 +273,9 @@ func plist() -> String {
             show(try await c.call("linear.setKey", .obj(["key": .string(k)])))
         case ("open", _):
             let split = flag("--split")
-            guard let target = sub ?? args.first else { fail("open <path|url> [--split right|down]") }
-            show(try await IDE.open(target, split: split, cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }))
+            let focus = has("--focus") || sub == "--focus"
+            guard let target = sub.flatMap({ $0 == "--focus" ? nil : $0 }) ?? args.first else { fail("open <path|url> [--split right|down] [--focus]") }
+            show(try await IDE.open(target, split: split, cwd: FileManager.default.currentDirectoryPath, focus: focus, call: { try await c.call($0, $1) }))
         case ("settings", _), ("ui", _), ("run", _): try await settingsAndUI(cmd, sub, c)
         case ("ext", _): try await ext(sub, c)
         default: print(usage)

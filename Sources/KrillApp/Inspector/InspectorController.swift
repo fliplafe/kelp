@@ -10,20 +10,25 @@ final class InspectorController: NSViewController {
     private let host = NSView()   // clips: see showSelected
     private var panels: [PanelSpec] = []
     private var made: [String: NSViewController] = [:]
-    private let empty = NSTextField(labelWithString: "No panels — enable extensions in Settings.")
+    /// Settings › Appearance › Inspector icons: one of these holds the row (left, centered, right).
+    private var align: [String: NSLayoutConstraint] = [:]
+    private let empty = NSTextField(labelWithString: String(localized: "No panels — enable extensions in Settings."))
 
     override func loadView() {
         let v = NSView()
-        selector.spacing = 2
+        selector.spacing = 4
         empty.textColor = .secondaryLabelColor; empty.alignment = .center
         host.clipsToBounds = true
         let sep = NSBox(); sep.boxType = .separator
         for x in [selector, sep, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        let center = selector.centerXAnchor.constraint(equalTo: v.centerXAnchor); center.priority = .defaultHigh
+        align = ["left": selector.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
+                 "center": selector.centerXAnchor.constraint(equalTo: v.centerXAnchor),
+                 "right": selector.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -44)]
+        align.values.forEach { $0.priority = .defaultHigh }
         NSLayoutConstraint.activate([
-            // Level with the tabs; clear of the inspector toggle in the corner.
-            selector.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2), center,
-            selector.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), selector.heightAnchor.constraint(equalToConstant: 26),
+            // Level with the tabs, the full height of the title bar; clear of the inspector toggle in the corner.
+            selector.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
+            selector.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), selector.heightAnchor.constraint(equalToConstant: TabStrip.height),
             selector.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -44),
             sep.bottomAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             host.topAnchor.constraint(equalTo: sep.bottomAnchor), host.leadingAnchor.constraint(equalTo: v.leadingAnchor),
@@ -34,6 +39,19 @@ final class InspectorController: NSViewController {
         view = v
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.rebuild() }
         track { Workbench.shared.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
+        track { SettingsStore.shared.string("workbench.inspectorIcons") } changed: { [weak self] in
+            guard let self else { return }
+            let want = self.align[$0 ?? ""] == nil ? "center" : $0 ?? ""
+            for (k, c) in self.align { c.isActive = k == want }
+        }
+        // Panels are built with the text size of the moment: rebuilt when it changes.
+        NotificationCenter.default.addObserver(forName: .krillTextSize, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                for (_, vc) in self.made { vc.view.removeFromSuperview(); vc.removeFromParent() }
+                self.made = [:]; self.showSelected()
+            }
+        }
     }
 
     private func rebuild() {
@@ -42,11 +60,11 @@ final class InspectorController: NSViewController {
         for k in made.keys where !ids.contains(k) { made[k]?.view.removeFromSuperview(); made[k]?.removeFromParent(); made[k] = nil }
         buttons.forEach { $0.removeFromSuperview() }
         buttons = panels.enumerated().map { i, p in
-            let b = NSButton(image: .symbol(p.icon, p.title), target: self, action: #selector(selected(_:)))
+            let b = NSButton(image: .symbol(p.icon, loc(p.title)), target: self, action: #selector(selected(_:)))
             b.bezelStyle = .recessed; b.setButtonType(.pushOnPushOff); b.showsBorderOnlyWhileMouseInside = true
-            b.toolTip = p.title; b.tag = i; b.imageScaling = .scaleProportionallyDown
-            b.symbolConfiguration = .init(pointSize: 13, weight: .regular)
-            b.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            b.toolTip = loc(p.title); b.tag = i; b.imageScaling = .scaleProportionallyDown
+            b.symbolConfiguration = .init(pointSize: 15, weight: .medium)   // 13 pt regular read as hairlines in the title bar
+            b.widthAnchor.constraint(equalToConstant: 32).isActive = true
             selector.addArrangedSubview(b)
             return b
         }

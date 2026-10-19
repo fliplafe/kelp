@@ -27,7 +27,7 @@ final class SettingsStore {
         values = o
         ThemeManager.shared.apply()
         AgentSkills.write()
-        if !ExtensionRegistry.shared.extensions.isEmpty, Set((o["extensions.disabled"]?.array ?? []).compactMap(\.string)) != ExtensionRegistry.shared.disabledLoaded {
+        if !ExtensionRegistry.shared.extensions.isEmpty, ExtensionRegistry.disabled(o["extensions.disabled"]) != ExtensionRegistry.shared.disabledLoaded {
             ExtensionRegistry.shared.reload()
         }
     }

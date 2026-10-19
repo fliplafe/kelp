@@ -41,6 +41,7 @@ public enum DiffSource: Sendable {
     case allUncommitted           // worktree vs HEAD
     case branch(base: String)     // HEAD vs merge-base(base)
     case commit(String)
+    case since(tree: String)      // the working tree now vs a snapshot taken earlier (`snapshotTree`)
 }
 
 extension Git {
@@ -95,6 +96,7 @@ extension Git {
         case .allUncommitted: a.append("HEAD")
         case .branch(let base): a.append("\(base)...HEAD")
         case .commit(let c): a = ["show", "--no-color", "--format=", "-U3", "-M", "--diff-merges=first-parent", c]
+        case .since(let tree): a += [tree, try snapshotTree(path)]   // two trees: new files included, nothing staged
         }
         if let file { a += ["--", file] }
         var diffs = parseDiff(try run(a, cwd: path))

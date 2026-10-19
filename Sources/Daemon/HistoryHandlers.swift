@@ -32,10 +32,14 @@ extension Daemon {
             var claude: [JSONValue] = [], codex: [JSONValue] = []
             let names = ["Default"] + (settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
             for (i, r) in roots.claude.enumerated() where FileManager.default.fileExists(atPath: r.path) {
-                let u = ClaudeUsage(root: r)
+                // Today and the week from the index (read incrementally); the 5-hour block from the last hours' files only.
+                let cal = Calendar.current, today = cal.startOfDay(for: Date()), now = Date()
+                let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
+                let rows = usageIndex.rows(roots: [r], since: weekStart)
                 var o: [String: JSONValue] = ["account": .string(i == 0 ? "Default" : names[min(i, names.count - 1)]),
-                                              "today": Self.json(u.today()), "week": Self.json(u.last7Days())]
-                if let b = u.currentBlock() { o["block"] = Self.json(b) }
+                                              "today": Self.json(UsageIndex.block(rows, from: today, to: now)),
+                                              "week": Self.json(UsageIndex.block(rows, from: weekStart, to: now))]
+                if let b = ClaudeUsage(root: r, since: now.addingTimeInterval(-10 * 3600)).currentBlock() { o["block"] = Self.json(b) }
                 claude.append(.object(o))
             }
             for r in roots.codex where FileManager.default.fileExists(atPath: r.path) {
@@ -50,6 +54,21 @@ extension Daemon {
             let v = JSONValue.obj(["claude": .array(claude), "codex": .array(codex)])
             lock.withLock { usageCache = (Date(), v) }
             return withLimits(v)
+
+        case "usage.report":   // {days} → what Claude Code used, by day / model / project, priced as the API would
+            let days = max(1, min(90, p["days"]?.int ?? 30))
+            let cal = Calendar.current, since = cal.date(byAdding: .day, value: 1 - days, to: cal.startOfDay(for: Date())) ?? Date()
+            let rows = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
+            let repos = (try? store.repos()) ?? []
+            func project(_ cwd: String) -> String {
+                repos.first { cwd == $0.path || cwd.hasPrefix($0.path + "/") }?.name ?? (cwd.isEmpty ? "Other" : (cwd as NSString).lastPathComponent)
+            }
+            func group(_ key: (UsageIndex.Row) -> String) -> [JSONValue] {
+                Dictionary(grouping: rows, by: key).map { k, rs in (k, rs.reduce(0) { $0 + $1.tally.cost }, rs.reduce(0) { $0 + $1.tally.tokens.total }) }
+                    .sorted { $0.1 > $1.1 }.map { .obj(["name": .string($0.0), "cost": .double($0.1), "tokens": .int($0.2)]) }
+            }
+            return .obj(["days": .array(group(\.day)), "models": .array(group(\.model)), "projects": .array(group { project($0.cwd) }),
+                         "since": .double(since.timeIntervalSince1970)])
 
         case "history.list":
             let roots = agentRoots()
@@ -85,6 +104,8 @@ extension Daemon {
         o["plans"] = .object(plans.filter { !$0.value.readings.isEmpty }.mapValues { s in
             .array(s.readings.map { .obj(["kind": .string($0.kind), "percent": .double($0.percent), "resets": $0.resets.map { .string($0) } ?? .null]) })
         })
+        // When each plan was last read: an old reading is shown as old, not as today's.
+        o["plansReadAt"] = .object(plans.compactMapValues { s in s.readAt.map { .double($0.timeIntervalSince1970) } })
         let fresh = lock.withLock { claudeLimits.values.filter { Date().timeIntervalSince($0.at) < 12 * 3600 } }
         o["claudeLimits"] = .array(fresh.sorted { $0.reading.kind < $1.reading.kind }.map { x in
             .obj(["kind": .string(x.reading.kind), "percent": .double(x.reading.percent), "resets": x.reading.resets.map { .string($0) } ?? .null,

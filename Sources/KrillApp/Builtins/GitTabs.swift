@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import GitKit
 
 /// "diff:<workspace>" (every change) or "diff:<workspace>?file=<path>[&source=unstaged|staged][&commit=<hash>]" (one file,
 /// like VS Code's diff editor: "name (Working Tree)", "name (Index)", "name (abc1234)").
@@ -12,8 +13,8 @@ final class DiffTab: TabContent {
     private(set) var uri: String
     var view: NSView { controller.view }
     var title: String {
-        guard let file else { return "Changes" }
-        let what = commit.map { String($0.prefix(7)) } ?? (source == "staged" ? "Index" : "Working Tree")
+        guard let file else { return source == "turn" ? String(localized: "Last Turn") : String(localized: "Changes") }
+        let what = commit.map { String($0.prefix(7)) } ?? (source == "staged" ? String(localized: "Index") : String(localized: "Working Tree"))
         return "\((file as NSString).lastPathComponent) (\(what))"
     }
     var icon: NSImage? { .symbol("plusminus") }
@@ -28,7 +29,7 @@ final class DiffTab: TabContent {
         file = item("file"); source = item("source"); commit = item("commit")
         controller.currentSession = { Workbench.shared.focusedSession }
         _ = controller.view
-        if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) }
+        if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
         NotificationCenter.default.addObserver(forName: .krillGitChanged, object: nil, queue: .main) { [weak self] n in
             MainActor.assumeIsolated { if (n.object as? String) == self?.worktreeId, self?.commit == nil { self?.controller.reload() } }
@@ -41,6 +42,127 @@ final class DiffTab: TabContent {
         var c = URLComponents()
         c.queryItems = [("file", file), ("source", source), ("commit", commit)].compactMap { n, v in v.map { URLQueryItem(name: n, value: $0) } }
         return "diff:\(worktree)" + (c.queryItems?.isEmpty == false ? "?" + (c.percentEncodedQuery ?? "") : "")
+    }
+}
+
+/// "commit:<workspace>[?push=1][&amend=1][&message=…]": the commit message as a page, like VS Code's COMMIT_EDITMSG.
+/// Commit with an empty message box opens it. Lines starting with "#" are left out; ⌘↩ or Commit commits, closing cancels.
+@MainActor
+final class CommitMessageTab: TabContent {
+    let uri: String
+    private let worktreeId: String, push: Bool, amend: Bool
+    private let text = CommitTextView()
+    private let root = NSView()
+    private let commitButton = NSButton()
+    var onChange: (() -> Void)?
+    var view: NSView { root }
+    var title: String { amend ? String(localized: "Amend Commit") : String(localized: "Commit Message") }
+    var icon: NSImage? { .symbol("square.and.pencil") }
+
+    init(uri: String) {
+        self.uri = uri
+        let parts = TabURI.body(uri).split(separator: "?", maxSplits: 1)
+        worktreeId = parts.first.map(String.init) ?? ""
+        let q = parts.count > 1 ? URLComponents(string: "x:?" + parts[1])?.queryItems ?? [] : []
+        push = q.contains { $0.name == "push" }; amend = q.contains { $0.name == "amend" }
+        build()
+        let message = q.first { $0.name == "message" }?.value ?? ""
+        Task { await fill(message) }
+    }
+
+    static func uri(_ worktree: String, push: Bool = false, amend: Bool = false, message: String? = nil) -> String {
+        var c = URLComponents()
+        c.queryItems = [push ? URLQueryItem(name: "push", value: "1") : nil, amend ? URLQueryItem(name: "amend", value: "1") : nil,
+                        message.map { URLQueryItem(name: "message", value: $0) }].compactMap { $0 }
+        return "commit:\(worktree)" + (c.queryItems?.isEmpty == false ? "?" + (c.percentEncodedQuery ?? "") : "")
+    }
+
+    private func build() {
+        text.isRichText = false; text.allowsUndo = true; text.font = .monospacedSystemFont(ofSize: TextSize.of(13), weight: .regular)
+        text.textContainerInset = NSSize(width: 12, height: 12); text.isVerticallyResizable = true; text.autoresizingMask = .width
+        text.isAutomaticQuoteSubstitutionEnabled = false; text.isAutomaticDashSubstitutionEnabled = false
+        text.onCommit = { [weak self] in self?.commit() }
+        text.onChange = { [weak self] in self?.dimComments() }
+        let scroll = NSScrollView(); scroll.documentView = text; scroll.hasVerticalScroller = true
+        let hint = NSTextField(labelWithString: String(localized: "Lines starting with # are left out. ⌘↩ commits."))
+        hint.font = .ui(11); hint.textColor = .secondaryLabelColor; hint.lineBreakMode = .byTruncatingTail
+        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let cancel = ClosureButton(title: String(localized: "Cancel")) { [weak self] in self?.dismiss() }
+        cancel.bezelStyle = .push; cancel.toolTip = String(localized: "Close without committing")
+        commitButton.title = amend ? String(localized: "Amend") : push ? String(localized: "Commit & Push") : String(localized: "Commit")
+        commitButton.bezelStyle = .push; commitButton.bezelColor = .controlAccentColor; commitButton.toolTip = String(localized: "Commit (⌘↩)")
+        commitButton.target = self; commitButton.action = #selector(commitPressed)
+        let bar = NSStackView(views: [hint, NSView(), cancel, commitButton]); bar.spacing = 8
+        bar.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        let sep = NSBox(); sep.boxType = .separator
+        for v in [bar, sep, scroll] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: root.topAnchor), bar.heightAnchor.constraint(equalToConstant: 40),
+            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor), bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            sep.topAnchor.constraint(equalTo: bar.bottomAnchor), sep.heightAnchor.constraint(equalToConstant: 1),
+            sep.leadingAnchor.constraint(equalTo: root.leadingAnchor), sep.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor)
+        ])
+    }
+
+    /// The message (the last commit's, when amending), then what goes into the commit as "#" lines, as git's own template does.
+    private func fill(_ message: String) async {
+        let c = AppModel.shared.client, id = JSONValue.obj(["id": .string(worktreeId)])
+        let changes = (try? await c?.call("git.status", id, as: [FileChange].self)) ?? []
+        let branch = (try? await c?.call("git.branches", id, as: BranchInfo.self))?.current
+        let staged = changes.filter { $0.staged && !$0.conflicted }
+        let files = staged.isEmpty ? changes.filter { !$0.conflicted && !$0.untracked } : staged
+        var lines = [message, ""]
+        lines.append(files.isEmpty ? "# No changes to commit." : (staged.isEmpty ? "# All changes" : "# Staged changes") + (branch.map { String(localized: " on “\($0)”") } ?? "") + ":")
+        lines += files.map { "#\t" + SourceControlController.letter($0, staged.isEmpty ? .changes : .staged).0 + "  " + $0.path }
+        text.string = lines.joined(separator: "\n")
+        text.setSelectedRange(NSRange(location: (message as NSString).length, length: 0))
+        dimComments()
+        focus()
+    }
+
+    private func dimComments() {
+        guard let ts = text.textStorage else { return }
+        let all = NSRange(location: 0, length: ts.length)
+        ts.addAttribute(.foregroundColor, value: NSColor.labelColor, range: all)
+        (ts.string as NSString).enumerateSubstrings(in: all, options: .byLines) { line, r, _, _ in
+            if line?.hasPrefix("#") == true { ts.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: r) }
+        }
+    }
+
+    @objc private func commitPressed() { commit() }
+
+    private func commit() {
+        let message = text.string.split(separator: "\n", omittingEmptySubsequences: false).filter { !$0.hasPrefix("#") }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, commitButton.isEnabled else { NSSound.beep(); return }
+        commitButton.isEnabled = false
+        Task {
+            if await GitCommit.run(worktreeId, message: message, push: push, amend: amend) { dismiss() }
+            commitButton.isEnabled = true
+        }
+    }
+
+    private func dismiss() { Workbench.closeTab(uri: uri) }
+    func focus() { text.window?.makeFirstResponder(text) }
+}
+
+/// Commits what's staged, or every tracked change when nothing is (as VS Code does), then pushes if asked.
+/// Failures go to the banner, where an agent can be asked to fix them.
+@MainActor
+enum GitCommit {
+    static func run(_ wid: String, message: String, push: Bool, amend: Bool) async -> Bool {
+        let id = JSONValue.string(wid)
+        let changes = (try? await AppModel.shared.client?.call("git.status", .obj(["id": id]), as: [FileChange].self)) ?? []
+        let all = !changes.contains { $0.staged && !$0.conflicted }
+        let r = await AppModel.shared.tryCall("git.commit", .obj(["id": id, "message": .string(message), "all": .bool(all), "amend": .bool(amend)]))
+        if let e = r.error { GitFix.offer(e, recipe: "fixCommit", worktree: wid); return false }
+        if push {
+            let p = await AppModel.shared.tryCall("git.push", .obj(["id": id]))
+            if let e = p.error { GitFix.offer(e, recipe: "fixPush", worktree: wid) } else { Banner.show(String(localized: "Pushed")) }
+        }
+        return true
     }
 }
 

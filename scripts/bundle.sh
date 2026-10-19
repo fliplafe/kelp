@@ -18,6 +18,7 @@ cp "$BIN/krilld" "$BIN/krill" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
 for b in "$BIN"/*.bundle(N); do cp -R "$b" "$APP/Contents/Resources/"; done
+scripts/strings.sh install "$APP/Contents/Resources"   # English and Russian
 if [ -n "${SIGN_ID:-}" ]; then
   SIGN=(codesign --force --options runtime --timestamp --sign "$SIGN_ID")
   # Sparkle ships its helpers ad-hoc signed; notarization needs every nested binary signed by us, inside out.

@@ -44,8 +44,18 @@ public enum AgentStatus: String, Codable, Sendable {
     case idle, working, waiting, done, exited
     /// Process stopped to save memory; resumes its conversation when opened again.
     case hibernated
+    /// The agent says its turn failed (OSC 7501 "error"); it stays so until the next turn.
+    case error
     public var label: String {
-        switch self { case .idle: "Idle"; case .working: "Working"; case .waiting: "Needs you"; case .done: "Done"; case .exited: "Exited"; case .hibernated: "Paused" }
+        switch self {
+        case .idle: "Idle"
+        case .working: "Working"
+        case .waiting: "Needs you"
+        case .done: "Done"
+        case .exited: "Exited"
+        case .hibernated: "Paused"
+        case .error: "Failed"
+        }
     }
 }
 

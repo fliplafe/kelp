@@ -14,13 +14,11 @@ final class AppModel {
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var sessions: [Session] = []
+    /// How full each agent's conversation is (0…1), read when a turn ends (Claude Code transcripts).
+    var contextShare: [String: Double] = [:]
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
     @ObservationIgnored var onChange: [() -> Void] = []
-    /// Claude Code subagents per session (title, active), polled while the parent works.
-    var subagents: [String: [Subagent]] = [:]
-    struct Subagent: Equatable { var title: String; var active: Bool }
-    @ObservationIgnored private var subagentTimer: Timer?
     @ObservationIgnored var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
     @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
 
@@ -90,9 +88,9 @@ final class AppModel {
         guard !(samePath && abs(theirs - mine) < 1), !restartAttempted else { return false }
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
         if (info["liveSessions"]?.int ?? 0) > 0 {
-            let a = NSAlert(); a.messageText = "Krill was updated"
-            a.informativeText = "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu."
-            a.addButton(withTitle: "Restart Service"); a.addButton(withTitle: "Later")
+            let a = NSAlert(); a.messageText = String(localized: "Krill was updated")
+            a.informativeText = String(localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu.")
+            a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
         _ = try? await c.call("daemon.shutdown")
@@ -118,21 +116,6 @@ final class AppModel {
         try? p.run()
     }
 
-    func startSubagentPolling() {
-        subagentTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
-            MainActor.assumeIsolated { Task { await AppModel.shared.pollSubagents() } }
-        }
-    }
-    private func pollSubagents() async {
-        var changed = false
-        for s in sessions where s.agent == "claude" && (s.status == .working || subagents[s.id] != nil) {
-            let list = ((try? await client?.call("session.subagents", .obj(["id": .string(s.id)])).array) ?? [])
-                .map { Subagent(title: $0["title"]?.string ?? "Subagent", active: $0["active"]?.bool ?? false) }
-            if (subagents[s.id] ?? []) != list { subagents[s.id] = list.isEmpty ? nil : list; changed = true }
-        }
-        if changed { onChange.forEach { $0() } }
-    }
-
     func refresh() async {
         guard let c = client else { return }
         // Assign only what changed: every assignment re-renders the views that read it.
@@ -153,17 +136,29 @@ final class AppModel {
             NotificationCenter.default.post(name: .krillSession, object: s.id)
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
+            if old?.status != s.status, s.status == .done || s.status == .waiting, s.agent != "shell" { readContext(s.id) }
         case "event.devserver":
             if let w = p["worktree"]?.string, let u = p["url"]?.string {
                 NotificationCenter.default.post(name: .krillDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])
             }
         case "event.changed":
             Task { await refresh() }
+        case "event.clone":
+            NotificationCenter.default.post(name: .krillClone, object: nil, userInfo: ["id": p["id"]?.string ?? "", "line": p["line"]?.string ?? ""])
         case "event.settings":
             if case .object(let o)? = p["settings"] { SettingsStore.shared.apply(o) }
         case "event.ui":
             UIRequests.handle(p)
         default: break
+        }
+    }
+
+    private func readContext(_ id: String) {
+        Task {
+            guard let u = try? await client?.call("session.contextWindow", .obj(["id": .string(id)])),
+                  let used = u["used"]?.int, let window = u["window"]?.int, window > 0 else { return }
+            let share = Double(used) / Double(window)
+            if abs((contextShare[id] ?? -1) - share) > 0.01 { contextShare[id] = share; onChange.forEach { $0() } }
         }
     }
 
@@ -177,6 +172,13 @@ final class AppModel {
             Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error)
             return nil
         }
+    }
+
+    /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.
+    func tryCall(_ method: String, _ params: JSONValue? = nil) async -> (value: JSONValue?, error: String?) {
+        guard let c = client else { return (nil, "Krill's background service isn't running.") }
+        do { return (try await c.call(method, params), nil) }
+        catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
     }
 
     /// Replays history, then streams live output into `sink`.

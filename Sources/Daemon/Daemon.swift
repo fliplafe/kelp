@@ -2,7 +2,6 @@ import Foundation
 import Core
 import GitKit
 import Agents
-import LocalAI
 import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
@@ -22,7 +21,9 @@ public final class Daemon: @unchecked Sendable {
     var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     var sleepAssertion: UInt32 = 0
     var usageCache: (at: Date, value: JSONValue)?
-    var chats: [String: ChatSession] = [:]
+    var prCache: [String: (at: Date, value: JSONValue)] = [:]   // "path@branch" → its PR (github.branchPR)
+    /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
+    let usageIndex: UsageIndex
     var rawConns = Set<Int>()
     var lastMethod = ""
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
@@ -40,6 +41,9 @@ public final class Daemon: @unchecked Sendable {
         self.socketPath = root.appendingPathComponent("krill.sock").path
         self.extra = extra
         self.settings = SettingsStore(root: root)
+        self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
+        // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
+        let ssh = root.appendingPathComponent("ssh"); try? Paths.ensure(ssh); RemoteHost.controlDir = ssh.path
         // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
         for var s in (try? self.store.sessions()) ?? [] where s.status != .exited {
             let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
@@ -62,6 +66,11 @@ public final class Daemon: @unchecked Sendable {
     public func start() throws {
         _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one
         DispatchQueue.global().async { _ = LoginPath.value }   // warm up so the first agent doesn't wait for the shell
+        // The usage index reads gigabytes the first time: do it in the background now, not when Usage is opened.
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 30) { [self] in
+            let since = Calendar.current.date(byAdding: .day, value: -89, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+            _ = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
+        }
         listenFD = try Unix.listen(socketPath)
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: .global())
         src.setEventHandler { [self] in
@@ -177,6 +186,7 @@ public final class Daemon: @unchecked Sendable {
     struct Launch {
         var yolo = false, model: String?, effort: String?, resume = false
         var prompt: String?, title: String?
+        var draft = false   // type the prompt, don't send it
         var profile: String?
         var cols: UInt16 = 120, rows: UInt16 = 32
         var argv: [String]?   // restart: reuse exactly
@@ -185,7 +195,7 @@ public final class Daemon: @unchecked Sendable {
         init(_ p: JSONValue) {
             yolo = p["mode"]?.string == "yolo" || p["yolo"]?.bool == true
             model = p["model"]?.string; effort = p["effort"]?.string; resume = p["resume"]?.bool == true
-            prompt = p["prompt"]?.string; title = p["title"]?.string; profile = p["profile"]?.string
+            prompt = p["prompt"]?.string; title = p["title"]?.string; profile = p["profile"]?.string; draft = p["draft"]?.bool == true
             cols = UInt16(p["cols"]?.int ?? 120); rows = UInt16(p["rows"]?.int ?? 32)
         }
     }
@@ -195,24 +205,29 @@ public final class Daemon: @unchecked Sendable {
         var argv = o.argv ?? manifest.argv(yolo: o.yolo, model: o.model, effort: o.effort, resume: o.resume)
         var rec = Session(worktreeId: worktreeId, cwd: cwd, command: argv.joined(separator: " "), agent: manifest.id,
                           title: o.title ?? "", titleManual: o.title != nil, argv: argv)
-        if o.argv == nil, let flag = manifest.hooksSettingsFlag {
+        // A remote project's sessions run on its host. Krill's hooks and skills are files on this Mac, so they stay
+        // out: status comes from what the screen shows.
+        if let remote = RemoteHost.of(cwd) {
+            argv = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : argv)]
+            rec.argv = argv
+        } else if o.argv == nil, let flag = manifest.hooksSettingsFlag {
             let f = root.appendingPathComponent("hooks-\(manifest.id).json")
             try Hooks.writeSettings(to: f)
             argv += [flag, f.path]
             rec.argv = argv
         }
         // Krill's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
-        if o.argv == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
+        if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
             argv += [flag, Paths.agentSkills.path]
             // Without a word of context, "add a panel" reads as a request for the agent's own UI.
             if let ctx = manifest.contextFlag, let text = Self.krillContext(Paths.agentSkills) { argv += [ctx, text] }
             rec.argv = argv
         }
-        if o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
+        if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
             argv += [flag, rec.id.lowercased()]
             rec.argv = argv
         }
-        var env = manifest.env
+        var env = manifest.resolvedEnv
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
         env["PATH"] = childPath
@@ -220,13 +235,13 @@ public final class Daemon: @unchecked Sendable {
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
         rec = ls.snapshot
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        ls.onStatus = { [weak self] s in self?.publish(s) }
+        ls.onStatus = { [weak self, weak ls] s in self?.publish(s); ls?.noteTurn(s.status) }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         let sid = rec.id
         ls.onFirstPrompt = { [weak self] text in Task { await self?.autoTitle(session: sid, prompt: text) } }
         lock.lock(); live[rec.id] = ls; lock.unlock()
         if let p = o.prompt {
-            ls.queuePrompt(p)
+            ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { Task { await autoTitle(session: sid, prompt: p) } }
         }
         try store.save(rec)
@@ -285,13 +300,13 @@ public final class Daemon: @unchecked Sendable {
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         let argv = resumeArgv(rec, m)
         rec.argv = argv   // the conversation it found is this session's from now on
-        var env = m.env
+        var env = m.resolvedEnv
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
         env["PATH"] = childPath
         rec.status = .idle
         let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        ls.onStatus = { [weak self] s in self?.publish(s) }
+        ls.onStatus = { [weak self, weak ls] s in self?.publish(s); ls?.noteTurn(s.status) }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         lock.withLock { live[rec.id] = ls }
         publish(ls.snapshot)
@@ -330,8 +345,7 @@ public final class Daemon: @unchecked Sendable {
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.
     func autoTitle(session id: String, prompt: String) async {
         guard let ls = existing(id), !ls.snapshot.titleManual else { return }
-        let naming = await LocalAI.naming(for: prompt)
-        let title = naming?.title ?? Fallback.title(prompt)
+        let title = Naming.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(s)
         // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
@@ -340,7 +354,7 @@ public final class Daemon: @unchecked Sendable {
         }
         if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
            let r = try? store.repo(w.repoId), w.path != r.path {
-            let base = naming?.branch ?? Fallback.slug(prompt)
+            let base = Naming.slug(prompt)
             var b = base, n = 2
             while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
             if !base.isEmpty, (try? Git.renameBranch(w.path, from: w.branch, to: b)) != nil {

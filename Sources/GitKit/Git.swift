@@ -16,13 +16,20 @@ public struct GitError: Error, CustomStringConvertible, Sendable {
 /// Thin wrapper over the system git. Behaviour matches what you'd see in a terminal.
 public enum Git {
     @discardableResult
-    public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0]) throws -> String {
+    public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
+                           env extra: [String: String] = [:]) throws -> String {
+        var args = args, executable = executable, cwd = cwd
+        if executable == "/usr/bin/git", let r = RemoteHost.of(cwd) {   // a remote project: the same git, on its host
+            args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]
+            executable = RemoteHost.ssh; cwd = NSHomeDirectory()
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
         p.arguments = args
         p.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["GIT_TERMINAL_PROMPT"] = "0"; env["LC_ALL"] = "C"
+        env.merge(extra) { $1 }
         p.environment = env
         let out = Pipe(), err = Pipe(), inp = Pipe()
         p.standardOutput = out; p.standardError = err

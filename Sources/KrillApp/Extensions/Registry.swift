@@ -8,13 +8,12 @@ import Agents
 struct IDEContext {
     var workspace: Worktree?
     var project: Repo?
-    var focusedSession: String?
     var focusedFile: String?
 
     static var current: IDEContext {
         let w = AppModel.shared.worktree(Workbench.shared.workspaceId)
         return IDEContext(workspace: w, project: AppModel.shared.repo(w?.repoId),
-                          focusedSession: Workbench.shared.focusedSession, focusedFile: Workbench.shared.focusedFile)
+                          focusedFile: Workbench.shared.focusedFile)
     }
 }
 
@@ -33,9 +32,6 @@ struct EditorSpec: Identifiable {
     init(id: String, title: String, icon: String, extensionId: String, uri: @escaping @MainActor (IDEContext) -> String?) {
         self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId
         open = { ctx in if let u = uri(ctx) { Workbench.open(u) } }
-    }
-    init(id: String, title: String, icon: String, extensionId: String, open: @escaping @MainActor (IDEContext) -> Void) {
-        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId; self.open = open
     }
 }
 
@@ -64,6 +60,11 @@ struct SettingsSection: Identifiable {
     var custom: (@MainActor () -> AnyView)?
 }
 
+/// A file icon theme in VS Code's format (see IconTheme).
+struct IconThemeSpec {
+    let id: String, label: String, file: URL
+}
+
 /// Opens tabs for URIs of a scheme ("session", "file", "https"…).
 struct TabProvider {
     let schemes: [String], extensionId: String
@@ -77,6 +78,7 @@ struct Contributions {
     var commands: [CommandSpec] = []
     var settings: [SettingsSection] = []
     var themes: [Theme] = []
+    var iconThemes: [IconThemeSpec] = []
     var agents: [AgentManifest] = []
     var tabs: [TabProvider] = []
 }
@@ -91,7 +93,6 @@ struct ExtensionInfo: Identifiable {
     /// A required tool is missing; shown, but contributes nothing.
     var unavailable: String?
     var enabled: Bool
-    var removable: Bool { !builtin }
 }
 
 /// The IDE is a shell around this: everything visible comes from an extension, built-in or a folder in ~/.krill/extensions.
@@ -110,7 +111,10 @@ final class ExtensionRegistry {
     /// Set once LoginPath has been read off the main thread.
     static var pathReady = false
 
-    var disabled: Set<String> { Set((SettingsStore.shared.value("extensions.disabled")?.array ?? []).compactMap(\.string)) }
+    /// Built-ins a clean install starts with switched off; once settings.json has its own list, that list decides.
+    static let offByDefault: Set<String> = ["krill.activity"]
+    static func disabled(_ v: JSONValue?) -> Set<String> { v?.array.map { Set($0.compactMap(\.string)) } ?? offByDefault }
+    var disabled: Set<String> { Self.disabled(SettingsStore.shared.value("extensions.disabled")) }
 
     func reload() {
         var infos: [ExtensionInfo] = []
@@ -122,11 +126,11 @@ final class ExtensionRegistry {
             infos.append(info)
             guard info.enabled else { return }
             merged.panels += c.panels; merged.editors += c.editors; merged.commands += c.commands
-            merged.settings += c.settings; merged.themes += c.themes; merged.agents += c.agents; merged.tabs += c.tabs
+            merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
         }
         for b in Builtins.all { take(b.info, b.contribute()) }
         // Requirement checks need the login-shell PATH; until it's read (in the background) assume tools are there.
-        for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where folder.hasDirectoryPath {
+        for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where Self.isFolder(folder) {
             let loaded = DeclarativeExtension.load(folder, checkRequirements: Self.pathReady)
             take(loaded.info, loaded.contributions)
         }
@@ -150,6 +154,39 @@ final class ExtensionRegistry {
             let w = DispatchWorkItem { self?.reload() }
             pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
         }
+    }
+
+    /// Follows symlinks: a VS Code extension can be linked in rather than copied.
+    private static func isFolder(_ u: URL) -> Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) && dir.boolValue
+    }
+
+    /// Like VS Code's "Install from VSIX…": a .vsix (a zip with the extension in `extension/`) or an extension folder,
+    /// copied into ~/.krill/extensions. A version already there goes to the Trash.
+    func install(_ src: URL) async throws {
+        let dir = Self.userDir
+        try await Task.detached {
+            let fm = FileManager.default
+            var folder = src, name = src.lastPathComponent
+            let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? fm.removeItem(at: tmp) }
+            if src.pathExtension.lowercased() == "vsix" {
+                let unzip = Process()
+                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); unzip.arguments = ["-x", "-k", src.path, tmp.path]
+                try unzip.run(); unzip.waitUntilExit()
+                folder = tmp.appendingPathComponent("extension")
+                guard unzip.terminationStatus == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
+                    throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
+                }
+                name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: folder.appendingPathComponent("package.json"))).manifest.id)
+                    ?? src.deletingPathExtension().lastPathComponent
+            }
+            let dest = dir.appendingPathComponent(name)
+            if fm.fileExists(atPath: dest.path) { try fm.trashItem(at: dest, resultingItemURL: nil) }
+            try fm.copyItem(at: folder, to: dest)
+        }.value
+        reload()
     }
 
     func setEnabled(_ id: String, _ on: Bool) {

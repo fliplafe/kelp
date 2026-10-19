@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import Agents
 import GitKit
 
 /// Workspaces are worktree records. A workspace is a desk in the project's folder (its path is the repo path): a set of
@@ -39,6 +40,22 @@ extension Daemon {
     }
 
     /// Closing a desk ends its agents and forgets its layout; the folder is untouched. The last one stays.
+    /// Out of sight, nothing lost: its agents pause (they resume their conversations when it comes back), its tabs stay.
+    func archiveDesk(_ w: Worktree, _ r: Repo) throws {
+        guard try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count > 1 else {
+            throw RPCError.invalidParams("A project keeps at least one workspace.")
+        }
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        for s in try store.sessions() where s.worktreeId == w.id {
+            guard let ls = existing(s.id) else { continue }
+            if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
+                let paused = ls.markHibernated(); ls.pty.kill(); lock.withLock { live[s.id] = nil }; publish(paused)
+            } else { ls.pty.kill() }
+        }
+        var a = w; a.archived = true; try store.save(a)
+        notify("event.changed", "worktree")
+    }
+
     func removeDesk(_ w: Worktree, _ r: Repo) throws {
         guard try store.worktrees(repo: r.id).filter({ isMain($0, r) }).count > 1 else {
             throw RPCError.invalidParams("A project keeps at least one workspace; remove the project instead.")

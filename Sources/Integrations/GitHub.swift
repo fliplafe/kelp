@@ -64,6 +64,13 @@ public enum GitHub {
         catch let e as GitError { throw GitHubError(args: args, status: e.status, stderr: e.stderr) }
     }
 
+    /// For Settings: is gh installed, and who is signed in (nil: not signed in, or no network to ask).
+    public static func account() -> (installed: Bool, user: String?) {
+        guard let exe = ghPath else { return (false, nil) }
+        let login = (try? Git.run(["api", "user", "--jq", ".login"], cwd: NSHomeDirectory(), executable: exe))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (true, login?.isEmpty == false ? login : nil)
+    }
+
     // MARK: Commands
 
     public static func pullRequests(cwd: String, filter: PRFilter = .open) throws -> [PullRequest] {
@@ -75,7 +82,8 @@ public enum GitHub {
         return try parsePullRequests(gh(["pr", "list", "-L", "100", "--json", prFields] + extra, cwd: cwd))
     }
 
-    public static func prForBranch(cwd: String, branch: String) throws -> PullRequest? {
+    /// The newest PR whose head is `branch` (open, merged or closed), or nil.
+    public static func pullRequest(cwd: String, branch: String) throws -> PullRequest? {
         try parsePullRequests(gh(["pr", "list", "--head", branch, "--state", "all", "-L", "1", "--json", prFields], cwd: cwd)).first
     }
 

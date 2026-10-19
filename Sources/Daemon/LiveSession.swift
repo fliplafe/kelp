@@ -1,6 +1,7 @@
 import Foundation
 import Core
 import Agents
+import GitKit
 
 /// A running PTY plus its history ring buffer, disk log and status detector.
 final class LiveSession: @unchecked Sendable {
@@ -36,14 +37,35 @@ final class LiveSession: @unchecked Sendable {
     private var redrawUntil = Date.distantPast
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     private var pendingPrompt: String?
+    /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
+    private var promptIsDraft = false
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
     private var steering: (choose: NSRegularExpression, since: Date, lastKey: Date)?
     private var inputLine = ""
     private var sawFirstPrompt = false
+    /// Agents with hooks report their state themselves; the others may through OSC 7501 (ProgramStatus).
+    private let hooked: Bool
+    private var oscCarry = ""
+    private var lastHookAt = Date.distantPast
+    /// Esc / ⌃C / an answer while it works or asks: Claude Code sends no hook when a turn is cut short, so the
+    /// screen decides ("Interrupted…") within a few seconds. `seen` is the text printed since.
+    private var interruptArmed: (at: Date, seen: String)?
+    private var compactManual = false
+    /// One turn of the agent: the tree when it started working, and what it changed by the time it stopped.
+    struct Turn: Codable, Sendable {
+        struct File: Codable, Sendable { var path: String; var added: Int; var removed: Int }
+        var files: [File]; var seconds: Double
+    }
+    private(set) var turnBase: String?
+    private var turnStart: Date?
+    private(set) var lastTurn: Turn?
+    private var inTurn = false
+    static let stoppedMarkers = ["Interrupted", "What should Claude do instead", "tell Claude what to do"]
 
     init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16) throws {
         var rec = record
         detector = StatusDetector(manifest: manifest)
+        hooked = manifest.hooksSettingsFlag != nil
         autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
         try Paths.ensure(historyDir)
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
@@ -62,6 +84,19 @@ final class LiveSession: @unchecked Sendable {
         if ring.count > Self.ringLimit { ring.removeFirst(ring.count - Self.ringLimit) }
         try? log?.write(contentsOf: d)
         let text = String(decoding: d, as: UTF8.self)
+        var probe = false
+        if !hooked, text.contains(ProgramStatus.prefix) || !oscCarry.isEmpty {
+            for m in ProgramStatus.scan(text, carry: &oscCarry) {
+                switch m {
+                case .query: probe = true
+                case .report(let r) where r.id == nil:   // children (subagents) aren't shown
+                    detector.program(r.state); lastHookAt = Date()
+                    if r.state == "blocked" || r.state == "error", let msg = r.msg, !msg.isEmpty { record.summary = msg }
+                default: break
+                }
+            }
+        }
+        if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + StatusDetector.stripANSI(text)).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
         var answer: String?
         if !autoAnswers.isEmpty, Date().timeIntervalSince(started) < 90 {
@@ -89,6 +124,7 @@ final class LiveSession: @unchecked Sendable {
         let subs = attached
         let changed = sync()
         lock.unlock()
+        if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !limits.isEmpty { onLimits?(limits) }
         if let url { onLocalURL?(url) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
@@ -100,6 +136,8 @@ final class LiveSession: @unchecked Sendable {
         lock.lock()
         if record.status == .hibernated { try? log?.close(); lock.unlock(); return }
         detector.exited()
+        let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure
+        if exitCode != 0, record.agent != "shell" { record.summary = "Ended with an error (exit code \(exitCode))" }
         let changed = sync()
         try? log?.close()
         lock.unlock()
@@ -111,13 +149,41 @@ final class LiveSession: @unchecked Sendable {
         let s = detector.status
         guard s != record.status else { return nil }
         record.status = s
-        if s == .done || s == .waiting || s == .exited { record.unread = true }
+        if s == .done || s == .waiting || s == .exited || s == .error { record.unread = true }
         return record
+    }
+
+    /// Called with every status change: a snapshot when work starts, the changes when it stops (git work off the lock).
+    func noteTurn(_ s: AgentStatus) {
+        let cwd = record.cwd
+        lock.lock()
+        let starting = s == .working && !inTurn, ending = inTurn && s != .working
+        if starting { inTurn = true; turnStart = Date() }
+        if ending { inTurn = false }
+        let base = turnBase, start = turnStart
+        lock.unlock()
+        guard record.agent != "shell", starting || ending else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            if starting {
+                let tree = try? Git.snapshotTree(cwd)
+                self?.lock.withLock { self?.turnBase = tree }
+            } else if let base, let start {
+                let files = ((try? Git.changesSince(tree: base, cwd: cwd)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
+                self?.lock.withLock { self?.lastTurn = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
+            }
+        }
     }
 
     func tick() {
         steer()
-        lock.lock(); detector.tick(); let c = sync()
+        lock.lock(); detector.tick()
+        if let arm = interruptArmed {
+            if lastHookAt > arm.at { interruptArmed = nil }
+            else if Self.stoppedMarkers.contains(where: arm.seen.contains) {
+                detector.override(.idle); record.summary = "Stopped by you"; interruptArmed = nil
+            } else if Date().timeIntervalSince(arm.at) > 10 { interruptArmed = nil }
+        }
+        let c = sync()
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
         var prompt: String?
         if let p = pendingPrompt {
@@ -126,7 +192,7 @@ final class LiveSession: @unchecked Sendable {
         }
         lock.unlock()
         if let c { onStatus?(c) }
-        if let prompt { send(prompt, enter: true) }
+        if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }) }
     }
 
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
@@ -145,12 +211,29 @@ final class LiveSession: @unchecked Sendable {
         pty.write(Data(key.utf8))
     }
 
+    /// Answers the menu the agent shows (a permission request) from outside the terminal — a notification's Allow / Deny.
+    /// The cursor is walked to the option and Enter pressed only there (see `steer`). nil: no such menu on screen.
+    func choose(_ answer: String) -> Session? {
+        lock.lock()
+        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
+        let pattern = answer == "allow" ? #"^(\d+\.\s*)?(Yes|Allow|Approve)\b(?!,)"# : #"^(\d+\.\s*)?(No|Deny|Reject)\b"#
+        let lines = screen.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ❯›>")) }
+        guard AgentManifest.AutoAnswer.optionAtCursor(screen) != nil, let re = try? NSRegularExpression(pattern: pattern),
+              lines.contains(where: { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) else { lock.unlock(); return nil }
+        steering = (re, Date(), .distantPast)
+        detector.input(); record.unread = false
+        if hooked { detector.override(.working); interruptArmed = (Date(), "") }   // a "No" ends the turn: the screen says so
+        let changed = sync() ?? record
+        lock.unlock()
+        return changed
+    }
+
     func resize(cols: UInt16, rows: UInt16) {
         lock.withLock { redrawUntil = Date().addingTimeInterval(1) }
         pty.resize(cols: cols, rows: rows)
     }
 
-    func queuePrompt(_ p: String) { lock.lock(); pendingPrompt = p; sawFirstPrompt = true; lock.unlock() }
+    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompt = p; promptIsDraft = draft; sawFirstPrompt = true; lock.unlock() }
 
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
     func send(_ text: String, enter: Bool) {
@@ -163,9 +246,22 @@ final class LiveSession: @unchecked Sendable {
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
     func userInput(_ d: Data) {
         pty.write(d)
-        lock.lock(); defer { lock.unlock() }
-        guard !TerminalReplies.isReply(d) else { return }   // the terminal answering the agent, not the user typing
+        lock.lock()
+        guard !TerminalReplies.isReply(d) else { lock.unlock(); return }   // the terminal answering the agent, not the user typing
         detector.input()
+        var read: Session?
+        if record.unread { record.unread = false; read = record }   // typing into it is having read it
+        if hooked {
+            if d == Data([0x1B]) || d.contains(0x03), record.status == .working || record.status == .waiting { interruptArmed = (Date(), "") }
+            // An answer to a question or a permission menu: it works again (Claude Code sends no hook for that).
+            if record.status == .waiting, d.contains(0x0D) || (d.count == 1 && (0x31...0x39).contains(d[0])) {
+                detector.override(.working); interruptArmed = (Date(), "")
+            }
+        }
+        let changed = sync() ?? read
+        lock.unlock()
+        if let changed { onStatus?(changed) }
+        lock.lock(); defer { lock.unlock() }
         guard !sawFirstPrompt else { return }
         var s = String(decoding: d, as: UTF8.self)
         if s.hasPrefix("\u{1B}[200~") { s = s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "") }
@@ -195,8 +291,23 @@ final class LiveSession: @unchecked Sendable {
         if let c { onStatus?(c) }
     }
 
-    func hook(_ event: String) {
-        lock.lock(); detector.hook(event); let c = sync(); lock.unlock()
+    /// `trigger`: PreCompact's manual / auto; `message`: what a Notification says ("Claude needs your permission to use Bash").
+    func hook(_ event: String, trigger: String? = nil, message: String? = nil) {
+        lock.lock()
+        lastHookAt = Date()
+        let compacting = "Compacting the conversation…"
+        switch event {
+        case "compacting":
+            compactManual = trigger == "manual"; record.summary = compacting; detector.hook("working")
+        case "compacted":
+            if record.summary == compacting { record.summary = "" }
+            if compactManual { detector.override(.idle) }   // /compact finished: back at the prompt; an auto one carries on
+        case "waiting":
+            if let message, !message.isEmpty { record.summary = message }
+            detector.hook(event)
+        default: detector.hook(event)
+        }
+        let c = sync(); lock.unlock()
         if let c { onStatus?(c) }
     }
 

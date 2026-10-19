@@ -2,7 +2,6 @@ import Foundation
 import Core
 import GitKit
 import Integrations
-import LocalAI
 
 /// GitHub (through `gh`, same auth) and Linear (API key in the keychain) RPCs.
 extension Daemon {
@@ -55,16 +54,49 @@ extension Daemon {
 
     private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
         switch method {
+        case "github.branchPR":   // {worktreeId} → the PR of the branch checked out there (cached for two minutes)
+            let w = try cwd(forWorktree: p.req("worktreeId"))
+            let branch = (try? Git.run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: w.path))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? w.branch
+            let key = w.path + "@" + branch
+            if let hit = lock.withLock({ prCache[key] }), Date().timeIntervalSince(hit.at) < 120 { return hit.value }
+            let found = GitLab.isGitLab(cwd: w.path) ? try? GitLab.mergeRequest(cwd: w.path, branch: branch) : try? GitHub.pullRequest(cwd: w.path, branch: branch)
+            let v: JSONValue = found.flatMap { try? JSONValue.from($0) } ?? .null   // try? flattens: one optional
+            lock.withLock { prCache[key] = (Date(), v) }
+            return v
+        case "github.forge":   // {repoId} → "github" | "gitlab" | "bitbucket": what the panels call things
+            let (_, path) = try repoPath(p)
+            return .string(GitLab.isGitLab(cwd: path) ? "gitlab" : BitbucketClient.slug(cwd: path) != nil ? "bitbucket" : "github")
+
+        // MARK: CI runs of the branch checked out in a workspace
+        case "ci.runs":
+            let w = try cwd(forWorktree: p.req("worktreeId"))
+            let branch = (try? Git.run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: w.path))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? w.branch
+            return .obj(["branch": .string(branch), "runs": try .from(CIRuns.runs(cwd: w.path, branch: branch)),
+                         "workflows": try .from(GitLab.isGitLab(cwd: w.path) ? [] : CIRuns.dispatchable(repo: w.path))])
+        case "ci.jobs": return try .from(CIRuns.jobs(cwd: cwd(forWorktree: p.req("worktreeId")).path, run: p["run"]?.int ?? 0))
+        case "ci.log": return .string(try CIRuns.log(cwd: cwd(forWorktree: p.req("worktreeId")).path, job: p["job"]?.int ?? 0))
+        case "ci.rerun": try CIRuns.rerunFailed(cwd: cwd(forWorktree: p.req("worktreeId")).path, run: p["run"]?.int ?? 0); return .null
+        case "ci.dispatch":
+            let w = try cwd(forWorktree: p.req("worktreeId"))
+            var inputs: [String: String] = [:]
+            if case .object(let o)? = p["inputs"] { for (k, v) in o { inputs[k] = v.string ?? "" } }
+            try CIRuns.dispatch(cwd: w.path, workflow: p.req("workflow"), branch: p.req("branch"), inputs: inputs); return .null
+
+        case "github.status":
+            let a = GitHub.account()
+            return .obj(["installed": .bool(a.installed), "user": a.user.map { .string($0) } ?? .null])
         case "github.prs":
             let (_, path) = try repoPath(p)
             if let slug = BitbucketClient.slug(cwd: path) {
                 guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
             }
+            if GitLab.isGitLab(cwd: path) { return try .from(GitLab.mergeRequests(cwd: path, mine: p["filter"]?.string == "mine")) }
             let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
             return try .from(GitHub.pullRequests(cwd: path, filter: f))
         case "github.issues":
             let (_, path) = try repoPath(p)
+            if GitLab.isGitLab(cwd: path) { return try .from(GitLab.issues(cwd: path, mine: p["filter"]?.string == "mine")) }
             return try .from(GitHub.issues(cwd: path, filter: p["filter"]?.string == "mine" ? .mine : .open))
         case "github.checks":
             let (_, path) = try repoPath(p); return try .from(GitHub.checks(cwd: path, pr: p["pr"]?.int ?? 0))
@@ -76,13 +108,7 @@ extension Daemon {
             let (_, path) = try repoPath(p); return try .from(GitHub.projects(cwd: path))
         case "github.projectItems":
             return try .from(GitHub.projectItems(owner: p.req("owner"), number: p["number"]?.int ?? 0))
-        case "github.prForWorktree":
-            guard var w = try store.worktree(p.req("worktreeId")) else { throw RPCError.invalidParams("no worktree") }
-            guard let pr = try GitHub.prForBranch(cwd: w.path, branch: w.branch) else { return .null }
-            if w.prNumber != pr.number { w.prNumber = pr.number; w.prURL = pr.url; try store.save(w); notify("event.changed", "worktree") }
-            return try .from(pr)
-
-        case "github.pr-create":   // push, draft title/body on-device if not given, open the PR, link it
+        case "github.pr-create":   // push, title/body from the commits if not given, open the PR, link it
             guard var w = try store.worktree(p.req("worktreeId")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
             try Git.remote(w.path, .push)   // the branch checked out now
             var title = p["title"]?.string ?? "", body = p["body"]?.string ?? ""
@@ -90,10 +116,8 @@ extension Daemon {
             if title.isEmpty || body.isEmpty {
                 let cmpBase = w.base.isEmpty ? r.baseBranch : w.base
                 let commits = try Git.log(w.path, base: cmpBase).map(\.subject)
-                let stat = (try? Git.run(["diff", "--stat", "\(cmpBase)...HEAD"], cwd: w.path)) ?? ""
-                let d = await LocalAI.pullRequest(branch: w.branch, commits: commits, diffStat: stat, issue: link)
-                if title.isEmpty { title = d?.title ?? commits.last ?? w.branch }
-                if body.isEmpty { body = d?.body ?? (commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "")) }
+                if title.isEmpty { title = commits.last ?? w.branch }
+                if body.isEmpty { body = commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "") }
             } else if let link, !body.contains(w.issue) { body += "\n\n\(link)" }
             // Stacked: a worktree cut from another feature branch opens its PR against that branch.
             let prBase = w.base.isEmpty ? r.baseBranch : w.base

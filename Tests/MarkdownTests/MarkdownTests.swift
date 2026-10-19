@@ -217,3 +217,11 @@ private func sel(_ t: String, _ s: String) -> NSRange { (t as NSString).range(of
     #expect(!html.contains("<hi>"))
     #expect(NotebookHTML.summary(Data(nb.utf8)) == .init(cells: 2, language: "python"))
 }
+
+@Test func mermaidOnlyWhenThereIsADiagram() {
+    #expect(MarkdownHTML.mermaid(for: "# Plain\n\n```swift\nlet x = 1\n```", dark: false) == nil)
+    let page = MarkdownHTML.mermaid(for: "```mermaid\ngraph LR\n  A --> B\n```", dark: true)
+    #expect(page?.contains("mermaid.initialize") == true && page?.contains("theme: 'dark'") == true)
+    #expect((MarkdownHTML.mermaidJS?.count ?? 0) > 1_000_000)   // bundled, not fetched
+    #expect(MarkdownHTML.render("```mermaid\ngraph LR\n```").contains("language-mermaid"))
+}

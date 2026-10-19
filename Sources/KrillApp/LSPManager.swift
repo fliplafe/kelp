@@ -27,8 +27,4 @@ final class LSPManager {
         starting[key] = nil; clients[key] = c
         return c
     }
-
-    func shutdown(root: String) {
-        for (k, c) in clients where k.hasPrefix(root + "|") { c.shutdown(); clients[k] = nil }
-    }
 }

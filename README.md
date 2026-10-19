@@ -8,10 +8,8 @@ Swift + AppKit: no Electron, no cloud, no telemetry.
 - **Sessions outlive the window.** A background daemon (`krilld`) owns the terminals; quit the app and agents keep working.
 - **Plain git.** Standard branches and `git worktree`; everything is checkable from a normal terminal.
 - **Everything from the CLI.** `krill` drives the app, so agents can drive it too.
-- **On-device AI for the small stuff.** Branch names, tab titles, notification summaries and commit drafts come from
-  Apple's on-device model — free, offline, private.
 
-Requires macOS 14+ (on-device model features need macOS 26 with Apple Intelligence; they fall back gracefully).
+Requires macOS 14+.
 
 ## Build and run
 
@@ -28,7 +26,7 @@ For quick iteration: `swift build && .build/debug/KrillApp` (the app starts `kri
 
 ```sh
 krill status
-krill task "Add a dark mode toggle to settings" --agent claude   # branch + worktree + agent, named on-device
+krill task "Add a dark mode toggle to settings" --agent claude   # branch + worktree + agent, named from the prompt
 krill worktree create feat/login | list | current | note "half done"
 krill terminal list | read <id> | send <id> "run the tests" | context <id>
 krill fanout "Fix the flaky test" --agents claude,codex
@@ -40,13 +38,10 @@ krill install                                                   # run the daemon
 
 ```yaml
 setup: npm install              # runs in every new worktree
-run: npm run dev                # ⌃⌘R; the first localhost URL opens in the built-in browser
-test: npm test                  # used by fan-out compare
 shared: node_modules            # symlinked from the main checkout instead of reinstalling
 tabs: claude, shell             # sessions opened in each new worktree
 issueCommand: "Fix {title}: {body}"
 recipe.commit: "Write a conventional commit for: {stagedPatch}"
-command.lint: npm run lint      # quick command in the palette
 ```
 
 `.worktreeinclude` lists gitignored files (globs) copied into new worktrees, e.g. `.env*`.

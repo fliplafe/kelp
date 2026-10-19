@@ -125,8 +125,7 @@ public final class LSPClient: @unchecked Sendable {
         _ = try await request("initialize", .obj([
             "processId": .int(Int(ProcessInfo.processInfo.processIdentifier)), "rootUri": .string(uri),
             "workspaceFolders": .array([.obj(["uri": .string(uri), "name": .string((root as NSString).lastPathComponent)])]),
-            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "hover": .obj(["contentFormat": .array(["plaintext", "markdown"])]),
-                                                        "definition": .obj([:]), "completion": .obj(["completionItem": .obj(["snippetSupport": false])])])]),
+            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]), "completion": .obj(["completionItem": .obj(["snippetSupport": false])])])]),
         ]))
         notify("initialized", .obj([:]))
     }
@@ -154,14 +153,6 @@ public final class LSPClient: @unchecked Sendable {
         let range = l["range"] ?? l["targetSelectionRange"]
         guard let uri, let p = URL(string: uri)?.path else { return nil }
         return Location(path: p, line: (range?["start"]?["line"]?.int ?? 0) + 1, column: (range?["start"]?["character"]?.int ?? 0) + 1)
-    }
-
-    public func hover(_ path: String, line: Int, column: Int) async throws -> String? {
-        let r = try await request("textDocument/hover", at(path, line, column))
-        let c = r["contents"]
-        if let s = c?.string { return s }
-        if let v = c?["value"]?.string { return v }
-        return c?.array?.compactMap { $0.string ?? $0["value"]?.string }.joined(separator: "\n")
     }
 
     public func completion(_ path: String, line: Int, column: Int) async throws -> [(label: String, detail: String?, insert: String)] {

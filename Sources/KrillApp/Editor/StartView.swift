@@ -1,4 +1,5 @@
 import AppKit
+import GitKit
 import Core
 
 /// An empty workspace: what can be opened here, one click each (like Xcode's welcome window) — the installed agents,
@@ -12,7 +13,7 @@ final class StartView: NSView {
         super.init(frame: .zero)
         let title = NSTextField(labelWithString: w.displayName)
         title.font = .systemFont(ofSize: 22, weight: .semibold); title.lineBreakMode = .byTruncatingTail
-        let folder = NSTextField(labelWithString: (w.path as NSString).abbreviatingWithTildeInPath)
+        let folder = NSTextField(labelWithString: RemoteHost.of(w.path).map { "\($0.host):\($0.path)" } ?? (w.path as NSString).abbreviatingWithTildeInPath)
         folder.font = .systemFont(ofSize: 12); folder.textColor = .secondaryLabelColor; folder.lineBreakMode = .byTruncatingMiddle
 
         // The default agent first, then the others in two columns (people often have a dozen).
@@ -23,7 +24,7 @@ final class StartView: NSView {
         }
         var rows: [NSView] = []
         if agents.isEmpty {
-            let none = NSTextField(wrappingLabelWithString: "No agent found. Install Claude Code or another agent CLI — Krill picks it up when you come back.")
+            let none = NSTextField(wrappingLabelWithString: String(localized: "No agent found. Install Claude Code or another agent CLI — Krill picks it up when you come back."))
             none.textColor = .secondaryLabelColor
             rows.append(none)
         } else {
@@ -34,7 +35,7 @@ final class StartView: NSView {
             rows.append(grid)
             let sep = NSBox(); sep.boxType = .separator; rows.append(sep)
         }
-        rows.append(StartRow(image: .symbol("terminal"), title: "Terminal", shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
+        rows.append(StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
             let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(StartRow.symbols)

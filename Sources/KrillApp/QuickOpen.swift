@@ -2,14 +2,24 @@ import AppKit
 import Core
 import GitKit
 
-/// ⌘P: files, worktrees, agents, commands in one fuzzy list. ⇧⌘P: commands only.
+/// ⌘P: files, worktrees, agents, tabs, commands in one fuzzy list; "#123" finds a pull request. ⇧⌘P: commands only.
+/// Empty, it lists the agents to get back to — those that need you first — on ⌘1–⌘6, in an order that holds still
+/// while it's open. ⇧↩ opens the choice in a split.
 @MainActor
 final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     static let shared = QuickOpen()
 
-    struct Item { let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void }
+    struct Item {
+        let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void
+        /// ⇧↩: the same thing in a split to the right (files, agents, tabs).
+        var split: (() -> Void)?
+    }
 
-    private var panel: NSPanel!
+    private var panel: QuickPanel!
+    /// What the empty field shows, made once per opening so rows don't move under the pointer.
+    private var recents: [Item] = []
+    private var showingRecents = false
+    private var prSearch: Task<Void, Never>?
     private let field = NSSearchField()
     private let table = NSTableView()
     private var all: [Item] = []
@@ -19,7 +29,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     func show(commandsOnly: Bool) {
         if panel == nil { build() }
         self.commandsOnly = commandsOnly
-        field.placeholderString = commandsOnly ? "Run a command" : "Search files, worktrees, agents and commands"
+        field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands — # for pull requests")
         field.stringValue = ""
         collect()
         filter()
@@ -32,7 +42,9 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     }
 
     private func build() {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .fullSizeContentView, .closable], backing: .buffered, defer: false)
+        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .fullSizeContentView, .closable], backing: .buffered, defer: false)
+        panel.onNumber = { [weak self] n in self?.pickRecent(n) ?? false }
+        panel.title = String(localized: "Open Quickly")   // hidden; the Window menu and VoiceOver read it
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isMovableByWindowBackground = true
         panel.standardWindowButton(.closeButton)?.isHidden = true; panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
@@ -70,36 +82,94 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
         // Themes, like VS Code's "Color Theme" command.
         for (id, name) in [("auto", "Match System")] + ThemeManager.shared.themes.map({ ($0.id, $0.name) }) {
-            items.append(Item(kind: "Command", icon: "paintpalette", title: "Color Theme: \(name)", detail: "Settings › Appearance",
+            items.append(Item(kind: "Command", icon: "paintpalette", title: String(localized: "Color Theme: \(name)"), detail: String(localized: "Settings › Appearance"),
                               action: { SettingsStore.shared.set("workbench.theme", .string(id)) }))
+        }
+        for (id, name) in FileIcon.themes {
+            items.append(Item(kind: "Command", icon: "doc.richtext", title: String(localized: "File Icon Theme: \(name)"), detail: String(localized: "Settings › Appearance"),
+                              action: { SettingsStore.shared.set("workbench.iconTheme", .string(id)) }))
         }
         // Every setting, to jump to its page.
         for section in ExtensionRegistry.shared.all.settings {
             for spec in section.specs {
-                items.append(Item(kind: "Setting", icon: section.icon, title: "\(section.title): \(spec.title)", detail: spec.description ?? "",
+                items.append(Item(kind: "Setting", icon: section.icon, title: "\(loc(section.title)): \(loc(spec.title))", detail: loc(spec.description ?? ""),
                                   action: { SettingsWindow.show(section: section.id) }))
             }
         }
         if !commandsOnly {
+            collectRecents()
+            if let e = Workbench.editor {
+                for (uri, title) in e.openTabs where TabURI.scheme(uri) != "session" {
+                    items.append(Item(kind: "Tab", icon: "square.on.square", title: title, detail: TabURI.scheme(uri) == "file" ? TabURI.filePath(uri).path : uri,
+                                      action: { Workbench.open(uri) }, split: { Workbench.open(uri, split: .right) }))
+                }
+            }
             for w in AppModel.shared.worktrees where !w.archived {
                 let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
                 items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)", action: { Workbench.show(workspace: w.id) }))
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(wt?.displayName ?? "")", action: { Workbench.focus(session: s.id) }))
+                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(wt?.displayName ?? "")",
+                                  action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) }))
             }
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
-                    all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f, action: { [weak self] in
-                        _ = self; Workbench.open(TabURI.file(root + "/" + f))
-                    }) }
+                    all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
+                                                 action: { Workbench.open(TabURI.file(root + "/" + f)) },
+                                                 split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }) }
                     filter()
                 }
             }
         }
         all = items
+    }
+
+    /// Agents to get back to: asking or failed first, then finished and unseen, then the latest others; then the
+    /// workspaces visited last. The first six get ⌘1–⌘6.
+    private func collectRecents() {
+        let m = AppModel.shared
+        let queue = AttentionQueue.sessions
+        let rest = m.sessions.filter { s in s.agent != "shell" && s.status != .exited && !queue.contains { $0.id == s.id } }
+            .sorted { ($0.statusAt ?? $0.createdAt) > ($1.statusAt ?? $1.createdAt) }
+        var out = (queue + rest).prefix(6).map { s -> Item in
+            let w = m.worktree(s.worktreeId)
+            return Item(kind: s.status.words, icon: "terminal", title: AgentCatalog.displayName(s), detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
+                        action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) })
+        }
+        let shown = Set(Workbench.shared.visits.reversed())
+        for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && shown.contains(id) {
+            guard let w = m.worktree(id), !out.contains(where: { $0.title == w.displayName && $0.kind == "Workspace" }) else { continue }
+            out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))
+            if out.count >= 10 { break }
+        }
+        recents = out
+    }
+
+    private func pickRecent(_ n: Int) -> Bool {
+        guard showingRecents, recents.indices.contains(n - 1), recents[n - 1].kind != "Workspace" else { return false }
+        panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil)
+        recents[n - 1].action()
+        return true
+    }
+
+    /// "#123" or "#login": the project's open pull requests (gh), opened in the browser tab.
+    private func searchPullRequests(_ q: String) {
+        prSearch?.cancel()
+        guard let repo = AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId else { return }
+        prSearch = Task { [weak self] in
+            let prs = (try? await AppModel.shared.client?.call("github.prs", .obj(["repoId": .string(repo), "filter": "open"])).array) ?? []
+            guard let self, !Task.isCancelled, field.stringValue == q else { return }
+            let term = String(q.dropFirst()).lowercased()
+            shown = prs.filter { p in term.isEmpty || "\(p["number"]?.int ?? 0)".hasPrefix(term) || (p["title"]?.string ?? "").lowercased().contains(term) }.map { p in
+                let url = p["url"]?.string ?? ""
+                return Item(kind: "Pull Request", icon: "arrow.triangle.pull", title: "#\(p["number"]?.int ?? 0) \(p["title"]?.string ?? "")",
+                            detail: [p["author"]?.string, p["headRefName"]?.string].compactMap { $0 }.joined(separator: " · "), action: { Workbench.open(url) })
+            }
+            table.reloadData()
+            if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+        }
     }
 
     /// A title matches when it contains the query, or each query word starts a word of the title.
@@ -129,9 +199,12 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private func filter() {
         let q = field.stringValue
         let pool = commandsOnly ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
+        if !commandsOnly, q.hasPrefix("#") { shown = []; table.reloadData(); searchPullRequests(q); return }
         if q.isEmpty {
-            shown = Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200))
+            showingRecents = !commandsOnly && !recents.isEmpty
+            shown = showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200))
         } else {
+            showingRecents = false
             shown = pool.compactMap { it -> (Item, Int)? in
                 // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
                 if it.kind == "File" { return ProjectFiles.fuzzyScore(it.detail, q).map { (it, $0) } }
@@ -146,8 +219,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         switch sel {
         case #selector(NSResponder.moveDown(_:)): move(1); return true
         case #selector(NSResponder.moveUp(_:)): move(-1); return true
-        case #selector(NSResponder.insertNewline(_:)): activate(); return true
-        case #selector(NSResponder.cancelOperation(_:)): panel.orderOut(nil); return true
+        case #selector(NSResponder.insertNewline(_:)): choose(split: NSApp.currentEvent?.modifierFlags.contains(.shift) == true); return true
+        case #selector(NSResponder.cancelOperation(_:)): panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil); return true   // back to the terminal
         default: return false
         }
     }
@@ -156,27 +229,40 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         let r = max(0, min(shown.count - 1, table.selectedRow + d))
         table.selectRowIndexes([r], byExtendingSelection: false); table.scrollRowToVisible(r)
     }
-    @objc private func activate() {
+    @objc private func activate() { choose(split: false) }
+    private func choose(split: Bool) {
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard shown.indices.contains(r) else { return }
         panel.orderOut(nil)
         NSApp.mainWindow?.makeKeyAndOrderFront(nil)
-        shown[r].action()
+        if split, let s = shown[r].split { s() } else { shown[r].action() }
     }
     func windowDidResignKey(_ n: Notification) { panel.orderOut(nil) }
 
     func numberOfRows(in t: NSTableView) -> Int { shown.count }
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
         let it = shown[row]
-        let img = NSImageView(image: NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage())
+        let img = NSImageView(image: it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage())
         img.contentTintColor = .secondaryLabelColor
         let t1 = NSTextField(labelWithString: it.title); t1.font = .systemFont(ofSize: 13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
         let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingMiddle
-        let kind = NSTextField(labelWithString: it.kind); kind.font = .systemFont(ofSize: 10, weight: .medium); kind.textColor = .tertiaryLabelColor
+        // Empty field: the agents on ⌘1–⌘6 say so.
+        let n = showingRecents && row < 6 && it.kind != "Workspace" ? "⌘\(row + 1)  " : ""
+        let kind = NSTextField(labelWithString: n + loc(it.kind)); kind.font = .systemFont(ofSize: 10, weight: .medium); kind.textColor = .tertiaryLabelColor
         let texts = NSStackView(views: [t1, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
         let row = NSStackView(views: [img, texts, NSView(), kind]); row.spacing = 10; row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         img.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return row
+    }
+}
+
+/// The palette's window: ⌘1–⌘6 pick from the agents it lists before the main menu sees them (they select tabs there).
+final class QuickPanel: NSPanel {
+    var onNumber: ((Int) -> Bool)?
+    override func performKeyEquivalent(with e: NSEvent) -> Bool {
+        if e.modifierFlags.intersection([.command, .shift, .option, .control]) == .command, let n = Int(e.charactersIgnoringModifiers ?? ""),
+           (1...6).contains(n), onNumber?(n) == true { return true }
+        return super.performKeyEquivalent(with: e)
     }
 }

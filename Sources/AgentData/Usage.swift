@@ -9,6 +9,9 @@ public struct TokenCounts: Codable, Sendable, Equatable {
     public static func + (a: Self, b: Self) -> Self {
         Self(input: a.input + b.input, output: a.output + b.output, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead)
     }
+    public static func += (a: inout Self, b: Self) {
+        a.input += b.input; a.output += b.output; a.cacheWrite += b.cacheWrite; a.cacheRead += b.cacheRead
+    }
 }
 
 /// USD per million tokens.
@@ -52,7 +55,11 @@ public struct Pricing: Sendable, Equatable {
 public struct ClaudeUsage: Sendable {
     public struct Entry: Sendable, Equatable {
         public var timestamp: Date, model: String, tokens: TokenCounts
-        public init(timestamp: Date, model: String, tokens: TokenCounts) { self.timestamp = timestamp; self.model = model; self.tokens = tokens }
+        /// The folder the conversation ran in ("" when the transcript doesn't say).
+        public var cwd = ""
+        public init(timestamp: Date, model: String, tokens: TokenCounts, cwd: String = "") {
+            self.timestamp = timestamp; self.model = model; self.tokens = tokens; self.cwd = cwd
+        }
     }
 
     /// Usage over `start..<end`. For a billing block `end` is when the 5-hour limit resets.
@@ -61,6 +68,9 @@ public struct ClaudeUsage: Sendable {
         public var tokens: TokenCounts
         public var estimatedCostUSD: Double
         public var models: [String]
+        public init(start: Date, end: Date, tokens: TokenCounts, estimatedCostUSD: Double, models: [String]) {
+            self.start = start; self.end = end; self.tokens = tokens; self.estimatedCostUSD = estimatedCostUSD; self.models = models
+        }
     }
 
     public static let blockLength: TimeInterval = 5 * 3600
@@ -142,7 +152,7 @@ public struct ClaudeUsage: Sendable {
                 func n(_ k: String) -> Int { (u[k] as? NSNumber)?.intValue ?? 0 }
                 out.append(Entry(timestamp: t, model: model, tokens: TokenCounts(
                     input: n("input_tokens"), output: n("output_tokens"),
-                    cacheWrite: n("cache_creation_input_tokens"), cacheRead: n("cache_read_input_tokens"))))
+                    cacheWrite: n("cache_creation_input_tokens"), cacheRead: n("cache_read_input_tokens")), cwd: o["cwd"] as? String ?? ""))
             }
         }
         return out

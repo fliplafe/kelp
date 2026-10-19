@@ -57,6 +57,19 @@ public struct StatusDetector: Sendable {
         }
     }
 
+    /// OSC 7501 report from the agent itself: as good as a hook, heuristics are off from here.
+    public mutating func program(_ state: String) {
+        hooked = true
+        switch state {
+        case "idle", "clear": status = .idle
+        case "working": status = .working
+        case "done": status = .done
+        case "blocked": status = .waiting
+        case "error": status = .error
+        default: break
+        }
+    }
+
     public mutating func exited() { status = .exited }
 
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.

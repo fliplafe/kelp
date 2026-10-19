@@ -48,7 +48,7 @@ enum AgentCatalog {
         return real
     }
 
-    /// A few agents have a fitting symbol; any other one gets its initial in a circle.
+    /// A few agents have a fitting symbol; any other one gets its initial on a filled tile, the shape of the real logos.
     static func symbol(_ id: String?) -> String {
         switch id {
         case "claude": "sparkle"
@@ -59,7 +59,7 @@ enum AgentCatalog {
         case "amp": "bolt"
         case "shell", nil: "terminal"
         case "custom": "apple.terminal"
-        case let id?: id.first.flatMap { $0.isASCII && $0.isLetter ? "\($0.lowercased()).circle" : nil } ?? "cpu"
+        case let id?: id.first.flatMap { $0.isASCII && $0.isLetter ? "\($0.lowercased()).square.fill" : nil } ?? "cpu"
         }
     }
 }

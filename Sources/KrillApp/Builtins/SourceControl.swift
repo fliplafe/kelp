@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 import Core
 import GitKit
 
@@ -13,15 +12,18 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         enum Kind { case section(Section), file(FileChange, Section), commit(Int), commitFile(String, FileChange), note(String) }
         let kind: Kind
         var children: [Node] = []
+        var files: [FileChange] = []   // a section's, also while it's folded
         init(_ k: Kind) { kind = k }
     }
 
     private let outline = NSOutlineView()
+    private let graphOutline = NSOutlineView()
+    private let graphBar = GraphBar()
+    private var graphHeight: NSLayoutConstraint?, barHeight: NSLayoutConstraint?
     private let branchButton = NSButton()
     private let syncButton = NSButton()
     private let message = CommitTextView()
     private let placeholder = NSTextField(labelWithString: "")
-    private let generate = NSButton()
     private var messageHeight: NSLayoutConstraint?
     private var commitButton: NSComboButton?
     private var moreButton: NSButton?
@@ -36,43 +38,44 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var commitFiles: [String: [FileChange]] = [:]
     private var openCommits = Set<String>()
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])
-    private var roots: [Node] = []
+    private var roots: [Node] = [], graphRoots: [Node] = []
     private var graphWidth: CGFloat = GraphView.width(lanes: 1)
     private var watcher: FileWatcher?
     private var pending: DispatchWorkItem?
     private var busy = false { didSet { updateCommitButton() } }
+    private let stats = NSTextField(labelWithString: "")
 
     // MARK: view
 
     override func loadView() {
         branchButton.isBordered = false; branchButton.imagePosition = .imageLeading; branchButton.imageHugsTitle = true
-        branchButton.image = .symbol("arrow.triangle.branch"); branchButton.font = .systemFont(ofSize: 12, weight: .semibold)
+        branchButton.image = .symbol("arrow.triangle.branch"); branchButton.font = .ui(12, weight: .semibold)
         branchButton.lineBreakMode = .byTruncatingMiddle; branchButton.target = self; branchButton.action = #selector(branchMenu)
         branchButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        branchButton.toolTip = "Switch or create a branch"
-        syncButton.isBordered = false; syncButton.imagePosition = .imageLeading; syncButton.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        branchButton.toolTip = String(localized: "Switch or create a branch")
+        syncButton.isBordered = false; syncButton.imagePosition = .imageLeading; syncButton.font = .uiDigits(11, weight: .regular)
         syncButton.contentTintColor = .secondaryLabelColor; syncButton.target = self; syncButton.action = #selector(sync)
-        let refresh = iconButton("arrow.clockwise", "Refresh") { [weak self] in self?.reloadAll() }
-        let more = iconButton("ellipsis.circle", "More Actions") { [weak self] in self?.showMoreMenu() }
+        let refresh = iconButton("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reloadAll() }
+        let more = iconButton("ellipsis.circle", String(localized: "More Actions")) { [weak self] in self?.showMoreMenu() }
         moreButton = more
-        let header = NSStackView(views: [branchButton, syncButton, NSView(), refresh, more])
+        stats.font = .uiDigits(11, weight: .regular); stats.textColor = .secondaryLabelColor
+        stats.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let header = NSStackView(views: [branchButton, syncButton, NSView(), stats, refresh, more])
         header.spacing = 6; header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 8)
 
         let box = commitBox(); commitArea = box
-        let col = NSTableColumn(identifier: .init("scm")); col.resizingMask = .autoresizingMask
-        outline.addTableColumn(col); outline.outlineTableColumn = col
-        outline.headerView = nil; outline.style = .plain; outline.backgroundColor = .clear
-        outline.intercellSpacing = .zero; outline.indentationPerLevel = 0; outline.rowSizeStyle = .custom
-        outline.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        outline.dataSource = self; outline.delegate = self; outline.target = self; outline.action = #selector(clicked)
-        let menu = NSMenu(); menu.delegate = self; outline.menu = menu
-        let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        scroll.autohidesScrollers = true
+        let scroll = list(outline), graphScroll = list(graphOutline)
+        graphBar.onToggle = { [weak self] in self?.toggle(.graph) }
+        graphBar.onResize = { [weak self] in self?.resizeGraph(by: $0) }
+        graphBar.onRefresh = { [weak self] in Task { await self?.loadGraph() } }
 
         empty.alignment = .center; empty.textColor = .secondaryLabelColor; empty.isHidden = true
         let v = NSView()
         let sep = NSBox(); sep.boxType = .separator; separator = sep
-        for x in [header, box, sep, scroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 0); gh.priority = .defaultHigh; graphHeight = gh
+        let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
+        let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: v.topAnchor), header.heightAnchor.constraint(equalToConstant: 32),
             header.leadingAnchor.constraint(equalTo: v.leadingAnchor), header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -80,14 +83,34 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             box.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), box.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
             sep.topAnchor.constraint(equalTo: box.bottomAnchor, constant: 10),
             sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+            sep.heightAnchor.constraint(equalToConstant: 1),   // unset, a rebuilt panel's layout can stretch it tall (and vertical)
+            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: graphBar.topAnchor), room,
             scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            graphBar.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphBar.trailingAnchor.constraint(equalTo: v.trailingAnchor), bh,
+            graphScroll.topAnchor.constraint(equalTo: graphBar.bottomAnchor), graphScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor), gh,
+            graphScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40)
         ])
         view = v
         updateHeader()   // NSButton's own "Button" title must not show while the branch loads
         track { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track { FileIcon.revision } changed: { [weak self] _ in
+            for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
+        }
+    }
+
+    /// A list in the panel: one column, no header, rows drawn by the cells.
+    private func list(_ o: NSOutlineView) -> NSScrollView {
+        let col = NSTableColumn(identifier: .init("scm")); col.resizingMask = .autoresizingMask
+        o.addTableColumn(col); o.outlineTableColumn = col
+        o.headerView = nil; o.style = .plain; o.backgroundColor = .clear
+        o.intercellSpacing = .zero; o.indentationPerLevel = 0; o.rowSizeStyle = .custom
+        o.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        o.dataSource = self; o.delegate = self; o.target = self; o.action = #selector(clicked(_:))
+        let menu = NSMenu(); menu.delegate = self; o.menu = menu
+        let s = NSScrollView(); s.documentView = o; s.hasVerticalScroller = true; s.drawsBackground = false; s.autohidesScrollers = true
+        return s
     }
 
     private func iconButton(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
@@ -97,38 +120,33 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         return b
     }
 
-    /// The message field (grows to six lines), the on-device draft button inside it, and Commit with its split menu.
+    /// The message field (grows to six lines) and Commit with its split menu.
     private func commitBox() -> NSView {
-        message.isRichText = false; message.font = .systemFont(ofSize: 13); message.drawsBackground = false
+        message.isRichText = false; message.font = .ui(13); message.drawsBackground = false
         message.textContainerInset = NSSize(width: 4, height: 6); message.allowsUndo = true
         message.isAutomaticQuoteSubstitutionEnabled = false; message.isAutomaticDashSubstitutionEnabled = false
         message.isVerticallyResizable = true; message.autoresizingMask = .width
         message.onCommit = { [weak self] in self?.commit(push: false, amend: false) }
         message.onChange = { [weak self] in self?.messageChanged() }
         let s = NSScrollView(); s.documentView = message; s.drawsBackground = false; s.hasVerticalScroller = false
-        placeholder.textColor = .placeholderTextColor; placeholder.font = .systemFont(ofSize: 13); placeholder.lineBreakMode = .byTruncatingTail
-        generate.image = .symbol("sparkles", "Draft with the on-device model"); generate.isBordered = false
-        generate.contentTintColor = .secondaryLabelColor; generate.toolTip = "Draft a message from the changes (on-device)"
-        generate.target = self; generate.action = #selector(draftMessage)
+        placeholder.textColor = .placeholderTextColor; placeholder.font = .ui(13); placeholder.lineBreakMode = .byTruncatingTail
         let field = FieldBox(); field.wantsLayer = true
         let m = NSMenu()
-        m.add("Commit & Push") { [weak self] in self?.commit(push: true, amend: false) }
-        m.add("Commit (Amend)") { [weak self] in self?.commit(push: false, amend: true) }
-        let cb = NSComboButton(title: "Commit", menu: m, target: self, action: #selector(commitPressed))
-        cb.image = .symbol("checkmark", "Commit"); cb.style = .split; cb.controlSize = .large
+        m.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
+        m.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
+        let cb = NSComboButton(title: String(localized: "Commit"), menu: m, target: self, action: #selector(commitPressed))
+        cb.image = .symbol("checkmark", String(localized: "Commit")); cb.style = .split; cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
         commitButton = cb
         let box = NSView()
-        for x in [field, s, placeholder, generate, cb] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
+        for x in [field, s, placeholder, cb] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
         let h = s.heightAnchor.constraint(equalToConstant: 30); messageHeight = h
         NSLayoutConstraint.activate([
             field.topAnchor.constraint(equalTo: box.topAnchor), field.leadingAnchor.constraint(equalTo: box.leadingAnchor),
             field.trailingAnchor.constraint(equalTo: box.trailingAnchor),
             s.topAnchor.constraint(equalTo: field.topAnchor, constant: 1), s.bottomAnchor.constraint(equalTo: field.bottomAnchor, constant: -1),
-            s.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 2), s.trailingAnchor.constraint(equalTo: generate.leadingAnchor), h,
+            s.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 2), s.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -2), h,
             placeholder.leadingAnchor.constraint(equalTo: s.leadingAnchor, constant: 9), placeholder.topAnchor.constraint(equalTo: s.topAnchor, constant: 7),
-            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: generate.leadingAnchor, constant: -2),
-            generate.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -6), generate.topAnchor.constraint(equalTo: field.topAnchor, constant: 7),
-            generate.widthAnchor.constraint(equalToConstant: 18),
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: s.trailingAnchor, constant: -8),
             cb.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8), cb.bottomAnchor.constraint(equalTo: box.bottomAnchor),
             cb.leadingAnchor.constraint(equalTo: box.leadingAnchor), cb.trailingAnchor.constraint(equalTo: box.trailingAnchor)
         ])
@@ -148,8 +166,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private func updateCommitButton() {
         let staged = changes.contains { $0.staged && !$0.conflicted }
         let branch = info?.current ?? "HEAD"
-        placeholder.stringValue = staged || changes.isEmpty ? "Message (⌘↩ to commit on “\(branch)”)" : "Message (⌘↩ to commit all changes on “\(branch)”)"
-        commitButton?.isEnabled = !busy && !changes.isEmpty && !message.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        placeholder.stringValue = staged || changes.isEmpty ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
+        commitButton?.isEnabled = !busy && !changes.isEmpty   // with no message, Commit opens a page to write one
     }
 
     // MARK: data
@@ -179,7 +197,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
                 let changed = ch != changes || br != info
                 changes = ch; info = br; showError(nil)
                 updateHeader(); updateCommitButton()
-                if graphStale || commits.isEmpty { await loadGraph() } else if changed { rebuild() }
+                showStats(ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self))
+                if graphStale || commits.isEmpty { await loadGraph() } else if changed { rebuildChanges() }
             } catch {
                 changes = []; info = nil; commits = []
                 showError((error as? RPCError)?.message ?? "\(error)")
@@ -194,12 +213,17 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         for v in [commitArea, separator, moreButton] { v?.isHidden = message != nil }
         outline.enclosingScrollView?.isHidden = message != nil
         empty.isHidden = message == nil
+        layoutGraph()
         guard let message else { return }
         let notRepo = message.contains("not a git repository")
-        let s = NSMutableAttributedString(string: notRepo ? "Not a Git Repository" : "Git Isn't Available",
-                                          attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor])
-        s.append(NSAttributedString(string: "\n" + (notRepo ? "This folder isn't under git version control." : message),
-                                    attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        let s = NSMutableAttributedString(string: notRepo ? String(localized: "Not a Git Repository") : String(localized: "Git Isn't Available"),
+                                          attributes: [.font: NSFont.ui(13, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor])
+        s.append(NSAttributedString(string: "\n" + (notRepo ? String(localized: "This folder isn't under git version control.") : message),
+                                    attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        if let fix = FixRecipes.fix(for: message) {   // the command that makes git work again, selectable
+            s.append(NSAttributedString(string: String(localized: "\n\nFix it in Terminal:\n") + fix.command,
+                                        attributes: [.font: NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+        }
         let p = NSMutableParagraphStyle(); p.alignment = .center; p.paragraphSpacing = 4
         s.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: s.length))
         empty.attributedStringValue = s
@@ -217,57 +241,94 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         Perf.measure("graph rows") { rebuild() }
     }
 
+    /// "+120 −30" for everything not committed yet; hovering splits it into code, tests and generated files.
+    private func showStats(_ s: LineStats?) {
+        guard let s, s.totalAdded + s.totalRemoved > 0 else { stats.isHidden = true; return }
+        stats.isHidden = false
+        stats.attributedStringValue = RowBadges.changes(s) ?? NSAttributedString()
+        let names: [LineStats.Kind: String] = [.code: "Code", .tests: String(localized: "Tests"), .generated: String(localized: "Generated")]
+        stats.toolTip = String(localized: "Not committed yet\n") + LineStats.Kind.allCases.compactMap { k in
+            let a = s.added[k] ?? 0, r = s.removed[k] ?? 0
+            return a + r == 0 ? nil : "\(names[k] ?? ""): +\(a) −\(r)"
+        }.joined(separator: "\n")
+    }
+
     private func updateHeader() {
         guard let info else { branchButton.title = ""; syncButton.isHidden = true; return }
-        branchButton.title = info.current ?? "Detached at \(info.head ?? "?")"
+        branchButton.title = info.current ?? String(localized: "Detached at \(info.head ?? "?")")
         if info.merging { branchButton.title += " (Merging)" }
         if let up = info.upstream {
-            syncButton.isHidden = false; syncButton.image = .symbol("arrow.triangle.2.circlepath", "Sync")
-            syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = "Pull from and push to \(up)"
+            syncButton.isHidden = false; syncButton.image = .symbol("arrow.triangle.2.circlepath", String(localized: "Sync"))
+            syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = String(localized: "Pull from and push to \(up)")
         } else if info.current != nil, !info.remote.isEmpty {
-            syncButton.isHidden = false; syncButton.image = .symbol("icloud.and.arrow.up", "Publish Branch")
-            syncButton.title = ""; syncButton.toolTip = "Publish Branch"
+            syncButton.isHidden = false; syncButton.image = .symbol("icloud.and.arrow.up", String(localized: "Publish Branch"))
+            syncButton.title = ""; syncButton.toolTip = String(localized: "Publish Branch")
         } else { syncButton.isHidden = true }
     }
 
     // MARK: tree
 
-    private func rebuild() {
+    private func rebuild() { rebuildChanges(); rebuildGraph() }
+
+    /// Sections fold through `collapsed`, not the outline's own expansion state, which goes stale across reloads
+    /// (a click then "expanded" a section already open).
+    private func rebuildChanges() {
         var out: [Node] = []
         func section(_ s: Section, _ files: [FileChange]) {
             guard !files.isEmpty else { return }
-            let n = Node(.section(s)); n.children = files.map { Node(.file($0, s)) }; out.append(n)
+            let n = Node(.section(s)); n.files = files
+            if !collapsed.contains(s.rawValue) { n.children = files.map { Node(.file($0, s)) } }
+            out.append(n)
         }
         section(.merge, changes.filter(\.conflicted))
         section(.staged, changes.filter { $0.staged && !$0.conflicted })
         section(.changes, changes.filter { ($0.unstaged || $0.untracked) && !$0.conflicted })
         if changes.isEmpty, info != nil { out.append(Node(.note("No changes"))) }
-        if !commits.isEmpty {
-            let g = Node(.section(.graph))
-            g.children = commits.indices.map { i in
-                let n = Node(.commit(i))
-                n.children = (commitFiles[commits[i].hash] ?? []).map { Node(.commitFile(commits[i].hash, $0)) }
-                return n
-            }
-            out.append(g)
-        }
         roots = out
-        outline.reloadData()
-        for n in roots {
-            guard case .section(let s) = n.kind, !collapsed.contains(s.rawValue) else { continue }
-            outline.expandItem(n)
-            if s == .graph { for c in n.children { if case .commit(let i) = c.kind, openCommits.contains(commits[i].hash) { outline.expandItem(c) } } }
-        }
+        outline.reloadData(); outline.expandItem(nil, expandChildren: true)
     }
 
-    func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? Node)?.children.count ?? roots.count }
-    func outlineView(_ o: NSOutlineView, child i: Int, ofItem item: Any?) -> Any { (item as? Node)?.children[i] ?? roots[i] }
+    private func rebuildGraph() {
+        graphRoots = commits.indices.map { i in
+            let n = Node(.commit(i)), h = commits[i].hash
+            if openCommits.contains(h) { n.children = (commitFiles[h] ?? []).map { Node(.commitFile(h, $0)) } }
+            return n
+        }
+        graphOutline.reloadData(); graphOutline.expandItem(nil, expandChildren: true)
+        layoutGraph()
+    }
+
+    /// The graph is a pane of its own under the changes, as in VS Code, so a long list of changes never pushes it
+    /// out of sight: its header folds it, dragging the header sizes it.
+    private func layoutGraph() {
+        let has = !commits.isEmpty && empty.isHidden, open = has && !collapsed.contains(Section.graph.rawValue)
+        graphBar.isHidden = !has; graphBar.expanded = open
+        graphOutline.enclosingScrollView?.isHidden = !open
+        barHeight?.constant = has ? GraphBar.height : 0
+        graphHeight?.constant = open ? UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260 : 0
+    }
+
+    private func resizeGraph(by dy: CGFloat) {
+        guard let gh = graphHeight, gh.constant > 0, let changes = outline.enclosingScrollView, let graph = graphOutline.enclosingScrollView else { return }
+        gh.constant = min(max(60, graph.frame.height + dy), changes.frame.height + graph.frame.height - 80)
+        UserDefaults.standard.set(gh.constant, forKey: "scm.graphHeight")
+    }
+
+    private func toggle(_ s: Section) {
+        if collapsed.contains(s.rawValue) { collapsed.remove(s.rawValue) } else { collapsed.insert(s.rawValue) }
+        UserDefaults.standard.set(Array(collapsed), forKey: "scm.collapsed")
+        if s == .graph { layoutGraph() } else { rebuildChanges() }
+    }
+
+    private func roots(of o: NSOutlineView) -> [Node] { o === graphOutline ? graphRoots : roots }
+    func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? Node)?.children.count ?? roots(of: o).count }
+    func outlineView(_ o: NSOutlineView, child i: Int, ofItem item: Any?) -> Any { (item as? Node)?.children[i] ?? roots(of: o)[i] }
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { !((item as? Node)?.children.isEmpty ?? true) }
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { false }
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         switch (item as? Node)?.kind {
-        case .section?, .note?: 26
-        default: 22
+        case .section?, .note?: TextSize.of(26)
+        default: TextSize.of(22)
         }
     }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool {
@@ -280,8 +341,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let n = item as? Node else { return nil }
         switch n.kind {
         case .section(let s):
-            let count = s == .graph ? nil : n.children.count
-            return SectionCell(title: s.rawValue, count: count, expanded: outline.isItemExpanded(n), actions: sectionActions(s, n))
+            return SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n))
         case .file(let f, let s):
             return FileCell(f, letter: Self.letter(f, s), indent: 16, actions: fileActions(f, s))
         case .commit(let i):
@@ -300,14 +360,6 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         }
     }
 
-    func outlineViewItemDidExpand(_ n: Notification) { refreshChevron(n) }
-    func outlineViewItemDidCollapse(_ n: Notification) { refreshChevron(n) }
-    private func refreshChevron(_ n: Notification) {
-        guard let node = n.userInfo?["NSObject"] as? Node, case .section = node.kind else { return }
-        let row = outline.row(forItem: node)
-        (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SectionCell)?.expanded = outline.isItemExpanded(node)
-    }
-
     private func loadMore() {
         loadingMore = true; limit += 200
         DispatchQueue.main.async { Task { [weak self] in await self?.loadGraph() } }
@@ -315,12 +367,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     // MARK: clicks
 
-    @objc private func clicked() {
-        guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
+    @objc private func clicked(_ o: NSOutlineView) {
+        guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
         switch n.kind {
-        case .section(let s):
-            if outline.isItemExpanded(n) { outline.collapseItem(n); collapsed.insert(s.rawValue) } else { outline.expandItem(n); collapsed.remove(s.rawValue) }
-            UserDefaults.standard.set(Array(collapsed), forKey: "scm.collapsed")
+        case .section(let s): toggle(s)
         case .file(let f, let s): open(f, s)
         case .commit(let i): toggle(commit: commits[i].hash)
         case .commitFile(let h, let f): if let w = worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) }
@@ -338,12 +388,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     }
 
     private func toggle(commit hash: String) {
-        if openCommits.contains(hash) { openCommits.remove(hash); rebuild(); return }
+        if openCommits.contains(hash) { openCommits.remove(hash); rebuildGraph(); return }
         openCommits.insert(hash)
-        guard commitFiles[hash] == nil, let wid = worktreeId else { rebuild(); return }
+        guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
             commitFiles[hash] = (try? await AppModel.shared.client?.call("git.commitFiles", .obj(["id": .string(wid), "commit": .string(hash)]), as: [FileChange].self)) ?? []
-            rebuild()
+            rebuildGraph()
         }
     }
 
@@ -354,9 +404,15 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         var p = extra; p["id"] = .string(wid)
         busy = true
         Task {
-            let ok = await AppModel.shared.call(method, .object(p)) != nil
+            let r = await AppModel.shared.tryCall(method, .object(p))
             busy = false
-            if ok, let done { Banner.show(done) }
+            if let e = r.error {
+                // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
+                if method == "git.remote", extra["op"]?.string == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
+                else if method == "git.remote", extra["op"]?.string == "pull", e.lowercased().contains("conflict") {
+                    GitFix.offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
+                } else { Banner.show(e, style: .error) }
+            } else if let done { Banner.show(done) }
             reloadAll()
         }
     }
@@ -370,20 +426,20 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let a = NSAlert(); a.alertStyle = .warning
         let name = (files[0].path as NSString).lastPathComponent
         if files.count == 1, files[0].untracked {
-            a.messageText = "Delete “\(name)”?"; a.informativeText = "Git doesn't track this file, so it can't be restored."
-            a.addButton(withTitle: "Delete")
+            a.messageText = String(localized: "Delete “\(name)”?"); a.informativeText = String(localized: "Git doesn't track this file, so it can't be restored.")
+            a.addButton(withTitle: String(localized: "Delete File")).hasDestructiveAction = true
         } else {
-            a.messageText = files.count == 1 ? "Discard changes in “\(name)”?" : "Discard all \(files.count) changes?"
-            a.informativeText = "This can't be undone." + (files.contains(where: \.untracked) ? " Untracked files are deleted." : "")
-            a.addButton(withTitle: "Discard")
+            a.messageText = files.count == 1 ? String(localized: "Discard changes in “\(name)”?") : String(localized: "Discard all \(files.count) changes?")
+            a.informativeText = String(localized: "This can't be undone.") + (files.contains(where: \.untracked) ? String(localized: " Untracked files are deleted.") : "")
+            a.addButton(withTitle: files.count == 1 ? String(localized: "Discard Changes") : String(localized: "Discard \(files.count) Changes")).hasDestructiveAction = true
         }
-        a.addButton(withTitle: "Cancel")
+        a.addButton(withTitle: String(localized: "Cancel"))
         guard runAsSheet(a) == .alertFirstButtonReturn else { return }
         run("git.discard", ["files": .array(files.map { .string($0.path) })])
     }
 
     private func sectionActions(_ s: Section, _ n: Node) -> [RowAction] {
-        let files = n.children.compactMap { if case .file(let f, _) = $0.kind { f } else { nil } }
+        let files = n.files
         switch s {
         case .merge: return [RowAction("plus", "Stage All (Mark Resolved)") { [weak self] in self?.stage(files, true) }]
         case .staged: return [RowAction("minus", "Unstage All") { [weak self] in self?.stage(files, false) }]
@@ -410,25 +466,17 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     private func commit(push: Bool, amend: Bool) {
         let text = message.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let wid = worktreeId, !busy, !text.isEmpty, !changes.isEmpty || amend else { NSSound.beep(); return }
-        let all = !changes.contains { $0.staged && !$0.conflicted }
+        guard let wid = worktreeId, !busy, !changes.isEmpty || amend else { NSSound.beep(); return }
+        // No message yet: a page to write it on, as in VS Code (amending starts from the last commit's message).
+        guard !text.isEmpty else {
+            let last = amend ? commits.first { $0.hash.hasPrefix(info?.head ?? "\u{0}") }?.subject : nil
+            Workbench.open(CommitMessageTab.uri(wid, push: push, amend: amend, message: last)); return
+        }
         busy = true
         Task {
-            let ok = await AppModel.shared.call("git.commit", .obj(["id": .string(wid), "message": .string(text), "all": .bool(all), "amend": .bool(amend)])) != nil
-            if ok { message.string = ""; messageChanged() }
-            if ok, push, await AppModel.shared.call("git.push", .obj(["id": .string(wid)])) != nil { Banner.show("Pushed") }
+            if await GitCommit.run(wid, message: text, push: push, amend: amend) { message.string = ""; messageChanged() }
             busy = false
             reloadAll()
-        }
-    }
-
-    @objc private func draftMessage() {
-        guard let wid = worktreeId, let c = AppModel.shared.client else { return }
-        generate.isEnabled = false
-        Task {
-            if let s = try? await c.call("ai.commitMessage", .obj(["id": .string(wid)])).string, !s.isEmpty { message.string = s; messageChanged() }
-            else { Banner.show("Couldn't draft a message on this Mac.", style: .error) }
-            generate.isEnabled = true
         }
     }
 
@@ -456,11 +504,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             let sub = NSMenu()
             for b in info.remote { sub.add(b) { [weak self] in self?.run("git.switch", ["branch": .string(b), "remote": true]) } }
             m.addItem(.separator())
-            let r = m.addItem(withTitle: "Remote Branches", action: nil, keyEquivalent: ""); r.submenu = sub
+            let r = m.addItem(withTitle: String(localized: "Remote Branches"), action: nil, keyEquivalent: ""); r.submenu = sub
         }
         m.addItem(.separator())
-        m.add("Create Branch…") { [weak self] in
-            guard let name = prompt("Create Branch", "Starts from \(info.current ?? "HEAD") and switches to it."), !name.isEmpty else { return }
+        m.add(String(localized: "Create Branch…")) { [weak self] in
+            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")), !name.isEmpty else { return }
             self?.run("git.switch", ["branch": .string(name), "create": true])
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branchButton.bounds.height + 4), in: branchButton)
@@ -469,17 +517,17 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private func showMoreMenu() {
         guard let wid = worktreeId else { return }
         let m = NSMenu()
-        m.add("Pull") { [weak self] in self?.run("git.remote", ["op": "pull"], done: "Pulled") }
-        m.add("Push") { [weak self] in self?.run("git.remote", ["op": "push"], done: "Pushed") }
-        m.add("Fetch") { [weak self] in self?.run("git.remote", ["op": "fetch"]) }
+        m.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
+        m.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
+        m.add(String(localized: "Fetch")) { [weak self] in self?.run("git.remote", ["op": "fetch"]) }
         m.addItem(.separator())
-        m.add("Stash Changes") { [weak self] in self?.run("git.stash", done: "Changes stashed") }
-        m.add("Pop Stash") { [weak self] in self?.run("git.stash", ["pop": true]) }
+        m.add(String(localized: "Stash Changes")) { [weak self] in self?.run("git.stash", done: String(localized: "Changes stashed")) }
+        m.add(String(localized: "Pop Stash")) { [weak self] in self?.run("git.stash", ["pop": true]) }
         m.addItem(.separator())
-        m.add("Open All Changes") { Workbench.open(DiffTab.uri(wid)) }
-        m.add("Create Pull Request…") { PRActions.create(worktree: wid) }
+        m.add(String(localized: "Open All Changes")) { Workbench.open(DiffTab.uri(wid)) }
+        m.add(String(localized: "Create Pull Request…")) { PRActions.create(worktree: wid) }
         if let w = AppModel.shared.worktree(wid), let r = AppModel.shared.repo(w.repoId), w.path != r.path {
-            m.add("Merge into \(r.baseBranch)…") { [weak self] in self?.mergeIntoBase() }
+            m.add(String(localized: "Merge into \(r.baseBranch)…")) { [weak self] in self?.mergeIntoBase() }
         }
         let anchor: NSView = moreButton ?? view
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
@@ -490,10 +538,15 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let wid = worktreeId else { return }
         Task {
             guard let r = await AppModel.shared.call("git.merge", .obj(["id": .string(wid)])) else { return }
-            if r["merged"]?.bool == true { Banner.show("Merged"); NotificationCenter.default.post(name: .krillRefresh, object: nil); return }
-            let a = NSAlert(); a.messageText = "Merge Conflicts"; a.alertStyle = .warning
-            a.informativeText = ((r["conflicts"]?.array ?? []).compactMap(\.string)).joined(separator: "\n") + "\n\nThe merge was aborted; nothing changed."
-            _ = await runSheet(a)
+            if r["merged"]?.bool == true { Banner.show(String(localized: "Merged")); NotificationCenter.default.post(name: .krillRefresh, object: nil); return }
+            let files = (r["conflicts"]?.array ?? []).compactMap(\.string)
+            let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
+            a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
+            a.addButton(withTitle: "OK")
+            if FileActions.targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
+            if await runSheet(a) == .alertSecondButtonReturn, let w = AppModel.shared.worktree(wid), let repo = AppModel.shared.repo(w.repoId) {
+                GitFix.send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
+            }
         }
     }
 
@@ -501,22 +554,23 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
+        let o = menu === graphOutline.menu ? graphOutline : outline
+        guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
         switch n.kind {
         case .file(let f, let s):
-            if s != .merge { menu.add("Open Changes") { [weak self] in self?.open(f, s) } }
-            menu.add("Open File") { [weak self] in self?.openFile(f) }
+            if s != .merge { menu.add(String(localized: "Open Changes")) { [weak self] in self?.open(f, s) } }
+            menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
             menu.addItem(.separator())
             for a in fileActions(f, s).dropFirst() { menu.add(a.title) { a.run() } }
             menu.addItem(.separator())
-            menu.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(f.path, forType: .string) }
+            menu.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(f.path, forType: .string) }
         case .commit(let i):
             let c = commits[i]
-            menu.add("Copy Commit Hash") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.hash, forType: .string) }
-            menu.add("Copy Commit Message") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.subject, forType: .string) }
+            menu.add(String(localized: "Copy Commit Hash")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.hash, forType: .string) }
+            menu.add(String(localized: "Copy Commit Message")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.subject, forType: .string) }
         case .commitFile(let h, let f):
-            menu.add("Open Changes") { [weak self] in if let w = self?.worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
-            menu.add("Open File") { [weak self] in self?.openFile(f) }
+            menu.add(String(localized: "Open Changes")) { [weak self] in if let w = self?.worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
+            menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
         default: break
         }
     }
@@ -594,8 +648,8 @@ final class SectionCell: NSTableCellView, Hoverable {
         super.init(frame: .zero)
         chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold); chevron.contentTintColor = .tertiaryLabelColor
         chevron.widthAnchor.constraint(equalToConstant: 10).isActive = true
-        let t = NSTextField(labelWithString: title); t.font = .systemFont(ofSize: 11, weight: .semibold); t.textColor = .secondaryLabelColor
-        let c = NSTextField(labelWithString: count.map(String.init) ?? ""); c.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        let t = NSTextField(labelWithString: title); t.font = .ui(11, weight: .semibold); t.textColor = .secondaryLabelColor
+        let c = NSTextField(labelWithString: count.map(String.init) ?? ""); c.font = .uiDigits(10, weight: .medium)
         c.textColor = .secondaryLabelColor
         pinRow(self, [chevron, t, NSView(), actions, c], leading: 10)
         self.expanded = expanded; showChevron()   // didSet doesn't run in init
@@ -604,22 +658,59 @@ final class SectionCell: NSTableCellView, Hoverable {
     func setHover(_ on: Bool) { actions.isHidden = !on }
 }
 
+/// The Graph pane's header: a click folds the pane, a drag sizes it (VS Code's view header and sash in one).
+final class GraphBar: NSView {
+    static let height = TextSize.of(26) + 1
+    var onToggle: (() -> Void)?, onResize: ((CGFloat) -> Void)?, onRefresh: (() -> Void)?
+    var expanded = true { didSet { cell?.expanded = expanded; window?.invalidateCursorRects(for: self) } }
+    private var cell: SectionCell?
+
+    init() {
+        super.init(frame: .zero)
+        let c = SectionCell(title: loc(SourceControlController.Section.graph.rawValue), count: nil, expanded: true,
+                            actions: [RowAction("arrow.clockwise", "Refresh") { [weak self] in self?.onRefresh?() }])
+        let sep = NSBox(); sep.boxType = .separator
+        for v in [sep, c] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        NSLayoutConstraint.activate([
+            sep.topAnchor.constraint(equalTo: topAnchor), sep.heightAnchor.constraint(equalToConstant: 1),
+            sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor),
+            c.topAnchor.constraint(equalTo: sep.bottomAnchor), c.bottomAnchor.constraint(equalTo: bottomAnchor),
+            c.leadingAnchor.constraint(equalTo: leadingAnchor), c.trailingAnchor.constraint(equalTo: trailingAnchor)
+        ])
+        cell = c; clipsToBounds = true
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        setAccessibilityElement(true); setAccessibilityRole(.disclosureTriangle); setAccessibilityLabel("Graph")
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func mouseEntered(with e: NSEvent) { cell?.setHover(true) }
+    override func mouseExited(with e: NSEvent) { cell?.setHover(false) }
+    override func resetCursorRects() { if expanded { addCursorRect(NSRect(x: 0, y: bounds.height - 4, width: bounds.width, height: 4), cursor: .resizeUpDown) } }
+    override func accessibilityPerformPress() -> Bool { onToggle?(); return true }
+    override func accessibilityValue() -> Any? { expanded }
+
+    private var start: CGFloat = 0, last: CGFloat = 0, dragged = false
+    override func mouseDown(with e: NSEvent) { start = e.locationInWindow.y; last = start; dragged = false }
+    override func mouseDragged(with e: NSEvent) {
+        let y = e.locationInWindow.y
+        dragged = dragged || (expanded && abs(y - start) > 3)
+        if dragged { onResize?(y - last); last = y }
+    }
+    override func mouseUp(with e: NSEvent) { if !dragged { onToggle?() } }
+}
+
 final class FileCell: NSTableCellView, Hoverable {
-    private static var icons: [String: NSImage] = [:]
     private let actions: NSStackView
     init(_ f: FileChange, letter: (String, NSColor), indent: CGFloat, actions a: [RowAction]) {
         actions = actionButtons(a)
         super.init(frame: .zero)
-        let ext = (f.path as NSString).pathExtension
-        let icon = NSImageView(image: Self.icons[ext] ?? {
-            let i = NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data); Self.icons[ext] = i; return i
-        }())
+        let icon = NSImageView(image: FileIcon.image((f.path as NSString).lastPathComponent))
         icon.imageScaling = .scaleProportionallyDown
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        let name = NSTextField(labelWithString: (f.path as NSString).lastPathComponent); name.font = .systemFont(ofSize: 12)
+        let name = NSTextField(labelWithString: (f.path as NSString).lastPathComponent); name.font = .ui(12)
         name.lineBreakMode = .byTruncatingTail
-        if letter.0 == "D" { name.attributedStringValue = NSAttributedString(string: name.stringValue, attributes: [.strikethroughStyle: 1, .font: NSFont.systemFont(ofSize: 12)]) }
-        let dir = NSTextField(labelWithString: (f.path as NSString).deletingLastPathComponent); dir.font = .systemFont(ofSize: 11)
+        if letter.0 == "D" { name.attributedStringValue = NSAttributedString(string: name.stringValue, attributes: [.strikethroughStyle: 1, .font: NSFont.ui(12)]) }
+        let dir = NSTextField(labelWithString: (f.path as NSString).deletingLastPathComponent); dir.font = .ui(11)
         dir.textColor = .tertiaryLabelColor; dir.lineBreakMode = .byTruncatingHead
         dir.setContentCompressionResistancePriority(.init(200), for: .horizontal); name.setContentCompressionResistancePriority(.init(400), for: .horizontal)
         let l = NSTextField(labelWithString: letter.0); l.font = .monospacedSystemFont(ofSize: 11, weight: .semibold); l.textColor = letter.1
@@ -634,7 +725,7 @@ final class FileCell: NSTableCellView, Hoverable {
 final class NoteCell: NSTableCellView {
     init(_ text: String) {
         super.init(frame: .zero)
-        let t = NSTextField(labelWithString: text); t.font = .systemFont(ofSize: 12); t.textColor = .tertiaryLabelColor
+        let t = NSTextField(labelWithString: text); t.font = .ui(12); t.textColor = .tertiaryLabelColor
         pinRow(self, [t], leading: 26)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -645,10 +736,10 @@ final class CommitCell: NSTableCellView {
         super.init(frame: .zero)
         let g = GraphView(); g.commit = c; g.isHead = isHead
         g.translatesAutoresizingMaskIntoConstraints = false; addSubview(g)
-        let subject = NSTextField(labelWithString: c.subject); subject.font = .systemFont(ofSize: 12, weight: isHead ? .semibold : .regular)
+        let subject = NSTextField(labelWithString: c.subject); subject.font = .ui(12, weight: isHead ? .semibold : .regular)
         subject.lineBreakMode = .byTruncatingTail; subject.setContentCompressionResistancePriority(.init(200), for: .horizontal)
         let badges = Self.badges(c.refs)
-        let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .systemFont(ofSize: 11); date.textColor = .tertiaryLabelColor
+        let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .tertiaryLabelColor
         let row = NSStackView(views: [subject] + badges + [NSView(), date]); row.spacing = 5; row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         NSLayoutConstraint.activate([
@@ -684,10 +775,7 @@ final class CommitCell: NSTableCellView {
     static func relative(_ t: Double) -> String {
         let s = Date().timeIntervalSince1970 - t
         switch s {
-        case ..<60: return "now"
-        case ..<3600: return "\(Int(s / 60))m"
-        case ..<86400: return "\(Int(s / 3600))h"
-        case ..<(86400 * 7): return "\(Int(s / 86400))d"
+        case ..<(86400 * 7): return shortAgo(Date(timeIntervalSince1970: t))   // "now", "4m", "2h", "3d" in the user's language
         default:
             let d = Date(timeIntervalSince1970: t)
             let sameYear = Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year)
@@ -702,7 +790,7 @@ final class Badge: NSView {
     private let color: NSColor
     init(text: String, color: NSColor, strong: Bool) {
         self.color = color
-        self.text = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 10, weight: strong ? .semibold : .medium),
+        self.text = NSAttributedString(string: text, attributes: [.font: NSFont.ui(10, weight: strong ? .semibold : .medium),
                                                                    .foregroundColor: color])
         super.init(frame: .zero)
         setContentCompressionResistancePriority(.init(300), for: .horizontal)

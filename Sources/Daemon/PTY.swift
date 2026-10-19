@@ -100,6 +100,14 @@ public final class PTY: @unchecked Sendable {
     static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KRILL_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
     public func write(_ d: Data) { Unix.writeAll(master, d) }
+
+    /// The program in the foreground when it isn't the one the PTY started (a shell running `npm run dev`, vim…).
+    public var foregroundProgram: String? {
+        let pg = tcgetpgrp(master)
+        guard pg > 0, pg != pid else { return nil }
+        var name = [CChar](repeating: 0, count: 256)
+        return proc_name(pg, &name, UInt32(name.count)) > 0 ? String(cString: name) : "a program"
+    }
     public func resize(cols: UInt16, rows: UInt16) {
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         _ = ioctl(master, TIOCSWINSZ, &ws)

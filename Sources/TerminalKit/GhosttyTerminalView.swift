@@ -41,6 +41,8 @@ public final class GhosttyRuntime {
     /// Set before the first terminal opens; `configure` changes it later.
     public static var appearance = TerminalAppearance()
     public private(set) static var started = false
+    /// Copying from a terminal drops what TUIs draw around text: borders, the agent's gutter, trailing spaces.
+    public static var cleanCopy = true
 
     /// Applies a new appearance to every open terminal.
     public func configure(_ a: TerminalAppearance) {
@@ -72,6 +74,7 @@ public final class GhosttyRuntime {
     }
 
     // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Krill; Ghostty keeps only terminal ones.
+    // ⇧↩ types a line feed: a new line in agent prompts (Claude Code, Codex) instead of sending the message.
     private static let overrides = """
         keybind = clear
         keybind = super+c=copy_to_clipboard
@@ -84,6 +87,7 @@ public final class GhosttyRuntime {
         keybind = super+k=clear_screen
         keybind = shift+page_up=scroll_page_up
         keybind = shift+page_down=scroll_page_down
+        keybind = shift+enter=text:\n
         keybind = super+home=scroll_to_top
         keybind = super+end=scroll_to_bottom
         confirm-close-surface = false
@@ -114,7 +118,12 @@ public final class GhosttyRuntime {
                 guard let mime = c.mime.map({ String(cString: $0) }), mime.hasPrefix("text/plain"), let data = c.data else { continue }
                 text = String(bytes: UnsafeRawBufferPointer(start: data, count: c.len), encoding: .utf8)
             }
-            if let text { DispatchQueue.main.async { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) } }
+            if let raw = text {
+                DispatchQueue.main.async { MainActor.assumeIsolated {
+                    let text = GhosttyRuntime.cleanCopy ? TerminalCopy.clean(raw) : raw
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+                } }
+            }
         }
         rt.close_surface_cb = { ud, _ in
             MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.onExit?() }
@@ -160,6 +169,10 @@ public final class GhosttyRuntime {
         case GHOSTTY_ACTION_SEARCH_SELECTED:
             view?.onSearch?(.selected(Int(action.action.search_selected.selected)))
             return true
+        case GHOSTTY_ACTION_SCROLLBAR:
+            let s = action.action.scrollbar
+            view?.scrollIndicator.show(total: Double(s.total), offset: Double(s.offset), length: Double(s.len))
+            return true
         default:
             return false
         }
@@ -176,6 +189,17 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     /// Find in the scrollback: Ghostty reports matches as it searches (-1 = not known yet).
     public enum SearchEvent: Sendable { case started(String), ended, total(Int), selected(Int) }
     public var onSearch: ((SearchEvent) -> Void)?
+    /// ⌘-click on text Ghostty doesn't see as a link (`Sources/App.swift:12`): true if the app opened it.
+    public var onOpenPath: ((String, NSEvent.ModifierFlags) -> Bool)?
+    /// The pointer came to rest on a word (a path, maybe), or left it (nil); the rect is the word's, in this view.
+    public var onHoverWord: ((String?, NSRect) -> Void)?
+    private var hoverTimer: Timer?
+    private var hovered: NSRect?
+    private var clickTaken = false
+    let scrollIndicator = ScrollIndicator()
+    private let sizeBadge = SizeBadge()
+    private var shownGrid: (cols: Int, rows: Int)?
+    private var placedAt = Date.distantFuture
     var cellSize = NSSize(width: 8, height: 16)
     var cursor: NSCursor = .iBeam
     private var markedText = NSMutableAttributedString()
@@ -191,6 +215,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public init(command: String, cwd: String, env: [String: String] = [:]) {
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         wantsLayer = true
+        for v in [scrollIndicator, sizeBadge] as [NSView] { addSubview(v) }
         guard let app = GhosttyRuntime.shared.app else { return }
         var cfg = ghostty_surface_config_new()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS
@@ -247,6 +272,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow(); updateSize()
+        placedAt = window == nil ? .distantFuture : Date()
         if let o = occlusionObserver { NotificationCenter.default.removeObserver(o); occlusionObserver = nil }
         updateOcclusion()
         guard let w = window else { return }
@@ -264,7 +290,17 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         lastVisible = v
         ghostty_surface_set_occlusion(surface, v)
     }
-    public override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); updateSize() }
+    public override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); updateSize(); layoutOverlays() }
+
+    /// The scroll position along the right edge, and "120 × 40" in the middle while the pane is being resized.
+    private func layoutOverlays() {
+        scrollIndicator.frame = NSRect(x: bounds.width - 9, y: 2, width: 7, height: max(0, bounds.height - 4))
+        guard let g = gridSize else { return }
+        defer { shownGrid = g }
+        // Not when it first appears or a tab is switched to: only a resize of a terminal already on screen.
+        guard let old = shownGrid, old != g, Date().timeIntervalSince(placedAt) > 1 else { return }
+        sizeBadge.show("\(g.cols) × \(g.rows)", in: bounds)
+    }
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -317,6 +353,16 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         defer { ghostty_surface_free_text(surface, &t) }
         return String(cString: t.text)
     }
+    /// Where `text` is on screen, in this view (dev aids and tests rest the pointer on it).
+    public func location(of text: String) -> NSPoint? {
+        guard let surface else { return nil }
+        let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
+        let lines = visibleText.components(separatedBy: "\n")
+        guard let row = lines.firstIndex(where: { $0.contains(text) }), let r = lines[row].range(of: text) else { return nil }
+        let col = lines[row].distance(from: lines[row].startIndex, to: r.lowerBound) + 1
+        return NSPoint(x: 6 + (Double(col) + 0.5) * Double(s.cell_width_px) / scale, y: bounds.height - 4 - (Double(row) + 0.5) * Double(s.cell_height_px) / scale)
+    }
+
     /// Type text as if pasted by the user (used for drops into the prompt).
     public func insert(_ text: String) {
         guard let surface else { return }
@@ -343,9 +389,15 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public override func mouseDown(with e: NSEvent) {
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         guard let surface else { return }
+        endHover()
+        // ⌘-click on a path: the app opens it (Ghostty handles URLs itself).
+        if e.modifierFlags.contains(.command), let w = word(at: convert(e.locationInWindow, from: nil)), onOpenPath?(w.text, e.modifierFlags) == true {
+            clickTaken = true; return
+        }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, Self.mods(e.modifierFlags))
     }
     public override func mouseUp(with e: NSEvent) {
+        if clickTaken { clickTaken = false; return }
         guard let surface else { return }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, Self.mods(e.modifierFlags))
         ghostty_surface_mouse_pressure(surface, 0, 0)
@@ -368,12 +420,53 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         guard let surface else { return }
         let p = convert(e.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, p.x, bounds.height - p.y, Self.mods(e.modifierFlags))
+        scheduleHover(p, buttons: NSEvent.pressedMouseButtons)
+    }
+
+    /// Half a second at rest on a word asks the app whether it's worth a preview; moving off it closes that.
+    private func scheduleHover(_ p: NSPoint, buttons: Int) {
+        hoverTimer?.invalidate()
+        if let r = hovered, !r.insetBy(dx: -2, dy: -2).contains(p) { endHover() }
+        guard buttons == 0, onHoverWord != nil, hovered == nil else { return }
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let w = self.word(at: p) else { return }
+                self.hovered = w.rect; self.onHoverWord?(w.text, w.rect)
+            }
+        }
+    }
+    private func endHover() {
+        hoverTimer?.invalidate()
+        guard hovered != nil else { return }
+        hovered = nil; onHoverWord?(nil, .zero)
+    }
+
+    /// The run of characters under `p` up to blanks and brackets, from its screen row — so "App.swift:12:5" stays
+    /// whole (Ghostty's own words stop at ":").
+    public func word(at p: NSPoint) -> (text: String, rect: NSRect)? {
+        guard let surface else { return nil }
+        let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
+        let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
+        guard cw > 0, ch > 0, s.columns > 0 else { return nil }
+        let padX = 6.0, padY = 4.0   // window-padding in the overrides above
+        let col = Int((p.x - padX) / cw), row = Int((bounds.height - p.y - padY) / ch)
+        guard row >= 0, row < Int(s.rows), col >= 0, col < Int(s.columns) else { return nil }
+        var t = ghostty_text_s()
+        let sel = ghostty_selection_s(top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: UInt32(row)),
+                                      bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: UInt32(s.columns - 1), y: UInt32(row)),
+                                      rectangle: false)
+        guard ghostty_surface_read_text(surface, sel, &t) else { return nil }
+        defer { ghostty_surface_free_text(surface, &t) }
+        guard let r = TerminalCopy.word(in: String(cString: t.text), at: col) else { return nil }
+        let rect = NSRect(x: padX + Double(r.start) * cw, y: bounds.height - padY - Double(row + 1) * ch, width: Double(r.text.count) * cw, height: ch)
+        return (r.text, rect)
     }
     public override func mouseDragged(with e: NSEvent) { mouseMoved(with: e) }
     public override func rightMouseDragged(with e: NSEvent) { mouseMoved(with: e) }
     public override func otherMouseDragged(with e: NSEvent) { mouseMoved(with: e) }
     public override func mouseEntered(with e: NSEvent) { mouseMoved(with: e) }
     public override func mouseExited(with e: NSEvent) {
+        endHover()
         guard let surface, NSEvent.pressedMouseButtons == 0 else { return }
         ghostty_surface_mouse_pos(surface, -1, -1, Self.mods(e.modifierFlags))
     }

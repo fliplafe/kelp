@@ -213,3 +213,23 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     #expect(ClaudeHistory.sessions(cwd: "/work/my_app", root: root).map(\.id) == ["abc"])
     #expect(ClaudeHistory.sessions(cwd: "/work/other", root: root).isEmpty)
 }
+
+@Test func usageIndexReadsOnlyWhatsNew() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let f = dir.appendingPathComponent("s.jsonl")
+    func line(_ id: String, _ ts: String, _ out: Int) -> String {
+        #"{"parentUuid":null,"cwd":"/p","message":{"id":"\#(id)","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"{ not usage }"}],"usage":{"input_tokens":10,"output_tokens":\#(out),"cache_creation":{"ephemeral_5m_input_tokens":0}}},"requestId":"r\#(id)","type":"assistant","timestamp":"\#(ts)"}"#
+    }
+    let now = ISO8601DateFormatter().string(from: Date())
+    let old = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3 * 86400))   // copied in by a resume: before the file existed
+    try [line("a", now, 5), line("a", now, 5), line("b", old, 100)].joined(separator: "\n").appending("\n").write(to: f, atomically: true, encoding: .utf8)
+    let idx = UsageIndex(cache: dir.appendingPathComponent("cache.json"))
+    let since = Date().addingTimeInterval(-7 * 86400)
+    #expect(idx.rows(roots: [dir], since: since).reduce(0) { $0 + $1.tally.tokens.output } == 5)
+    let h = try FileHandle(forWritingTo: f); try h.seekToEnd(); try h.write(contentsOf: Data((line("c", now, 7) + "\n").utf8)); try h.close()
+    let again = UsageIndex(cache: dir.appendingPathComponent("cache.json"))   // from disk: the old part isn't read again
+    let rows = again.rows(roots: [dir], since: since)
+    #expect(rows.reduce(0) { $0 + $1.tally.tokens.output } == 12)
+    #expect(rows.first?.cwd == "/p" && rows.first?.model == "claude-sonnet-4-5")
+}

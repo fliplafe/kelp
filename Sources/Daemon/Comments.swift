@@ -16,13 +16,19 @@ public enum ReviewMessage {
 }
 
 /// `.krill.yaml`: flat `key: value` lines. Deliberately not full YAML.
-///   setup / run / test: shell commands      shared: node_modules, .venv   (symlinked into each worktree)
+///   setup: shell command      shared: node_modules, .venv   (symlinked into each worktree)
 ///   tabs: claude, shell   (sessions opened in a new worktree)      issueCommand: prompt template for issue worktrees
 ///   recipe.<action>: prompt template with {stagedPatch} {branch} {diffStat} {error} {linkedIssue}
+///   run / test / lint / build: the project's commands (Run menu, ⌘R ⌘U)      script.<name>: any other one
+/// Its commands run only once the project is trusted (`Trust`), and again after the file changes.
 public struct RepoConfig: Sendable, Equatable {
-    public var setup: String?, run: String?, test: String?, issueCommand: String?
+    public var setup: String?, issueCommand: String?
     public var shared: [String] = [], tabs: [String] = []
     public var recipes: [String: String] = [:]
+    /// Named commands in the file's order.
+    public var scripts: [Script] = []
+    public struct Script: Sendable, Equatable, Codable { public var name: String; public var command: String }
+    public static let scriptNames: Set = ["run", "test", "lint", "build"]
 
     public static func parse(_ text: String) -> RepoConfig {
         var c = RepoConfig()
@@ -35,12 +41,13 @@ public struct RepoConfig: Sendable, Equatable {
             let key = String(t[..<i])
             switch key {
             case "setup": c.setup = v
-            case "run": c.run = v
-            case "test": c.test = v
             case "issueCommand": c.issueCommand = v
             case "shared": c.shared = list
             case "tabs": c.tabs = list
-            default: if key.hasPrefix("recipe.") { c.recipes[String(key.dropFirst(7))] = v.replacingOccurrences(of: "\\n", with: "\n") }
+            default:
+                if key.hasPrefix("recipe.") { c.recipes[String(key.dropFirst(7))] = v.replacingOccurrences(of: "\\n", with: "\n") }
+                let name = key.hasPrefix("script.") ? String(key.dropFirst(7)) : scriptNames.contains(key) ? key : ""
+                if !name.isEmpty, !v.isEmpty, !c.scripts.contains(where: { $0.name == name }) { c.scripts.append(Script(name: name, command: v)) }
             }
         }
         return c

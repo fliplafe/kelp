@@ -1,4 +1,5 @@
 import AppKit
+import Core
 
 /// A short message over the bottom of the window — errors and confirmations that shouldn't block anything.
 @MainActor
@@ -6,8 +7,16 @@ enum Banner {
     enum Style { case info, error }
     private static var current: NSView?
 
-    static func show(_ text: String, style: Style = .info) {
+    /// `action`: one button beside the text (e.g. "Open Settings"); the banner stays a little longer.
+    static func show(_ text: String, style: Style = .info, action: (title: String, run: @MainActor () -> Void)? = nil) {
         guard let content = (NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible })?.contentView else { return }
+        // A known error carries its fix: the command, and a button that copies it.
+        let fix = style == .error ? FixRecipes.fix(for: text) : nil
+        var text = text, action = action
+        if let fix {
+            text += "\nFix: " + fix.command
+            if action == nil { action = (String(localized: "Copy Fix"), { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(fix.command, forType: .string) }) }
+        }
         current?.removeFromSuperview()
         let fx = NSVisualEffectView(); fx.material = .hudWindow; fx.blendingMode = .withinWindow; fx.state = .active
         fx.wantsLayer = true; fx.layer?.cornerRadius = 10
@@ -16,6 +25,10 @@ enum Banner {
         let label = NSTextField(wrappingLabelWithString: text); label.font = .systemFont(ofSize: 12); label.isSelectable = true
         label.preferredMaxLayoutWidth = 460
         let row = NSStackView(views: [icon, label]); row.spacing = 8; row.alignment = .top
+        if let action {
+            let b = ClosureButton(title: action.title) { action.run(); current?.removeFromSuperview() }
+            b.bezelStyle = .push; b.controlSize = .small; row.alignment = .centerY; row.addArrangedSubview(b)
+        }
         row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 14)
         for v in [row] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; fx.addSubview(v) }
         fx.translatesAutoresizingMaskIntoConstraints = false
@@ -29,7 +42,13 @@ enum Banner {
         current = fx
         fx.alphaValue = 0
         NSAnimationContext.runAnimationGroup { $0.duration = 0.15; fx.animator().alphaValue = 1 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + (style == .error ? 6 : 3)) { [weak fx] in
+        if fix?.blocking == true {   // git can't run at all: stays until it's closed
+            let x = ClosureButton(title: "") { current?.removeFromSuperview() }
+            x.image = .symbol("xmark", String(localized: "Close")); x.isBordered = false; x.contentTintColor = .secondaryLabelColor
+            row.addArrangedSubview(x)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (action != nil ? 10 : style == .error ? 6 : 3)) { [weak fx] in
             guard let fx else { return }
             NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; fx.animator().alphaValue = 0 }) { MainActor.assumeIsolated { fx.removeFromSuperview() } }
         }

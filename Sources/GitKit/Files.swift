@@ -8,8 +8,9 @@ public struct SearchMatch: Codable, Sendable, Equatable {
 public enum ProjectFiles {
     /// Tracked + untracked-but-not-ignored files, relative paths.
     public static func list(_ root: String) throws -> [String] {
-        try Git.run(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd: root)
-            .split(separator: "\0").map(String.init).filter { FileManager.default.fileExists(atPath: root + "/" + $0) }
+        let remote = RemoteHost.of(root) != nil   // its files are on the host: nothing to check here
+        return try Git.run(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd: root)
+            .split(separator: "\0").map(String.init).filter { remote || FileManager.default.fileExists(atPath: root + "/" + $0) }
     }
 
     /// Bundled or system ripgrep, else `git grep`.
@@ -21,7 +22,7 @@ public enum ProjectFiles {
     public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = 2000) throws -> [SearchMatch] {
         guard !query.isEmpty else { return [] }
         var out: String
-        if let rg = ripgrep {
+        if let rg = ripgrep, RemoteHost.of(root) == nil {   // remote: git grep runs on the host
             var a = ["--line-number", "--no-heading", "--color=never", "--max-columns=300", "--max-count=200"]
             if !regex { a.append("--fixed-strings") }
             if !caseSensitive { a.append("--smart-case") }

@@ -13,6 +13,7 @@ extension AgentStatus {
         case .idle: "circle"
         case .hibernated: "moon.fill"
         case .exited: "xmark.circle"
+        case .error: "exclamationmark.circle.fill"
         }
     }
     var nsColor: NSColor {
@@ -22,22 +23,24 @@ extension AgentStatus {
         case .done: .labelColor
         case .idle, .hibernated: .tertiaryLabelColor   // nothing to look at: they stay quiet
         case .exited: .secondaryLabelColor
+        case .error: .systemRed
         }
     }
     var color: Color { Color(nsColor: nsColor) }
     /// Short, for rows: "Working", "Needs input"…
     var words: String {
         switch self {
-        case .working: "Working"
-        case .waiting: "Needs your input"
-        case .done: "Done"
-        case .idle: "Ready"
-        case .hibernated: "Paused"
-        case .exited: "Ended"
+        case .working: String(localized: "Working")
+        case .waiting: String(localized: "Needs your input")
+        case .done: String(localized: "Done")
+        case .idle: String(localized: "Ready")
+        case .hibernated: String(localized: "Paused")
+        case .exited: String(localized: "Ended")
+        case .error: String(localized: "Failed")
         }
     }
     /// Most urgent first: what a workspace shows when it has several agents.
-    static let urgency: [AgentStatus] = [.waiting, .working, .done, .idle, .hibernated, .exited]
+    static let urgency: [AgentStatus] = [.waiting, .error, .working, .done, .idle, .hibernated, .exited]
     static func mostUrgent(_ s: [AgentStatus]) -> AgentStatus? { s.min { (urgency.firstIndex(of: $0) ?? 9) < (urgency.firstIndex(of: $1) ?? 9) } }
 }
 
@@ -45,7 +48,7 @@ extension AgentStatus {
 func shortAgo(_ d: Date?, now: Date = Date()) -> String {
     guard let d else { return "" }
     let s = max(0, Int(now.timeIntervalSince(d)))
-    return s < 60 ? "now" : s < 3600 ? "\(s / 60)m" : s < 86400 ? "\(s / 3600)h" : "\(s / 86400)d"
+    return s < 60 ? String(localized: "now") : s < 3600 ? String(localized: "\(s / 60)m") : s < 86400 ? String(localized: "\(s / 3600)h") : String(localized: "\(s / 86400)d")
 }
 
 /// A status mark for AppKit. Ready agents show none.
@@ -57,6 +60,8 @@ final class StatusMark: NSView {
     var status: AgentStatus? { didSet { if status != oldValue { update() } } }
     /// Done and not looked at yet: the filled ✓; seen: a plain one.
     var unread = true { didSet { if unread != oldValue { update() } } }
+    /// Working on shrinking its conversation (Claude's compaction): a slow pulse, not the spin.
+    var compacting = false { didSet { if compacting != oldValue { update() } } }
 
     init(size: CGFloat = 12) {
         self.size = size
@@ -85,16 +90,29 @@ final class StatusMark: NSView {
         let s = status == .idle ? nil : status
         isHidden = s == nil
         toolTip = s?.words
-        let spinning = s == .working
+        // Motion means state: spinning = working, pulsing = compacting, filled = waiting for you. With Reduce Motion a
+        // still symbol says "working" instead: a ring that stopped spinning looks stuck.
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let spinning = s == .working && !compacting && !still
         ring.isHidden = !spinning; image.isHidden = spinning
-        ring.removeAllAnimations()
+        ring.removeAllAnimations(); image.layer?.removeAllAnimations(); image.alphaValue = 1
         if spinning {
             effectiveAppearance.performAsCurrentDrawingAppearance { ring.strokeColor = NSColor.secondaryLabelColor.cgColor }
             ring.anchorPoint = CGPoint(x: 0.5, y: 0.5); ring.position = CGPoint(x: size / 2, y: size / 2)
-            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }   // Reduce Motion: the open ring stands still
             let a = CABasicAnimation(keyPath: "transform.rotation.z")
             a.fromValue = 0; a.toValue = -2 * Double.pi; a.duration = 1; a.repeatCount = .infinity
             ring.add(a, forKey: "spin")
+            return
+        }
+        if s == .working {
+            image.image = .symbol(compacting ? "arrow.down.right.and.arrow.up.left" : "ellipsis.circle", compacting ? String(localized: "Compacting its conversation") : s?.words ?? "")
+            image.symbolConfiguration = .init(pointSize: size - 2, weight: .regular); image.contentTintColor = .secondaryLabelColor
+            if compacting, !still {
+                image.wantsLayer = true
+                let p = CABasicAnimation(keyPath: "opacity"); p.fromValue = 1; p.toValue = 0.3; p.duration = 0.9
+                p.autoreverses = true; p.repeatCount = .infinity
+                image.layer?.add(p, forKey: "pulse")
+            }
             return
         }
         guard let s else { return }
@@ -116,13 +134,18 @@ struct StatusIcon: View {
     }
 }
 
-/// Agents waiting for the user, in the order to visit them: questions before finished work, oldest first.
+extension Session {
+    /// Ended on its own with a non-zero exit code (the daemon says so in the summary): shown red, not grey.
+    var endedWithError: Bool { status == .exited && summary.hasPrefix("Ended with an error") }
+}
+
+/// Agents waiting for the user, in the order to visit them: questions and failures before finished work, oldest first.
 @MainActor
 enum AttentionQueue {
     static var sessions: [Session] {
         AppModel.shared.sessions
-            .filter { $0.agent != "shell" && ($0.status == .waiting || ($0.status == .done && $0.unread)) }
-            .sorted { ($0.status == .waiting ? 0 : 1, $0.statusAt ?? $0.createdAt) < ($1.status == .waiting ? 0 : 1, $1.statusAt ?? $1.createdAt) }
+            .filter { $0.agent != "shell" && ($0.status == .waiting || $0.status == .error || ($0.status == .done && $0.unread)) }
+            .sorted { ($0.status == .done ? 1 : 0, $0.statusAt ?? $0.createdAt) < ($1.status == .done ? 1 : 0, $1.statusAt ?? $1.createdAt) }
     }
 
     /// The one after `current` (wrapping), so pressing again walks the whole queue.

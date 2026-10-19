@@ -24,8 +24,8 @@ final class NotebookTab: NSViewController {
             x.imagePosition = .imageLeading; x.bezelStyle = .texturedRounded; return x
         }
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
-        let bar = NSStackView(views: [b("Run All", "play.fill", #selector(runAll)), b("Open Kernel", "server.rack", #selector(openKernel)),
-                                      b("Ask Agent", "text.bubble", #selector(askAgent)), NSView(), status])
+        let bar = NSStackView(views: [b(String(localized: "Run All"), "play.fill", #selector(runAll)), b(String(localized: "Open Kernel"), "server.rack", #selector(openKernel)),
+                                      b(String(localized: "Ask Agent"), "text.bubble", #selector(askAgent)), NSView(), status])
         bar.spacing = 6; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         view = pinned(bar: bar, body: web)
         reload()
@@ -37,7 +37,7 @@ final class NotebookTab: NSViewController {
         }
         let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         web.loadHTMLString(MarkdownHTML.page(body: body, baseURL: url.deletingLastPathComponent(), dark: dark), baseURL: url.deletingLastPathComponent())
-        if let s = NotebookHTML.summary(d) { status.stringValue = "\(s.cells) cells · \(s.language)" }
+        if let s = NotebookHTML.summary(d) { status.stringValue = String(localized: "\(s.cells) cells · \(s.language)") }
     }
 
     private static func jupyter() -> String? {
@@ -45,8 +45,8 @@ final class NotebookTab: NSViewController {
     }
 
     @objc private func runAll() {
-        guard let j = Self.jupyter() else { status.stringValue = "Jupyter not found — pip install jupyter"; return }
-        status.stringValue = "Running…"
+        guard let j = Self.jupyter() else { status.stringValue = String(localized: "Jupyter not found — pip install jupyter"); return }
+        status.stringValue = String(localized: "Running…")
         let file = url
         Task.detached {
             let p = Process(); p.executableURL = URL(fileURLWithPath: j)
@@ -56,19 +56,19 @@ final class NotebookTab: NSViewController {
             try? p.run(); p.waitUntilExit()
             let ok = p.terminationStatus == 0
             let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
-            await MainActor.run { self.status.stringValue = ok ? "Ran all cells" : "Failed: \(msg)"; self.reload() }
+            await MainActor.run { self.status.stringValue = ok ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)"); self.reload() }
         }
     }
 
     @objc private func openKernel() {
         guard let wid = worktreeId else { return }
-        guard Self.jupyter() != nil else { status.stringValue = "Jupyter not found — pip install jupyter"; return }
+        guard Self.jupyter() != nil else { status.stringValue = String(localized: "Jupyter not found — pip install jupyter"); return }
         Task {
             guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "command": .string("jupyter lab --no-browser '\(path.replacingOccurrences(of: "'", with: "'\\''"))'"),
                                                                             "title": "Jupyter", "openURLs": true])) else { return }
             if let s = try? r.decode(Core.Session.self) { AppModel.shared.sessions.append(s) }
             // Jupyter's URL arrives as a dev-server URL and opens in a browser tab
-            status.stringValue = "Starting Jupyter Lab… it opens in the Browser tab"
+            status.stringValue = String(localized: "Starting Jupyter Lab… it opens in the Browser tab")
         }
     }
 

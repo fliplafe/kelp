@@ -1,0 +1,137 @@
+import Foundation
+import GitKit
+
+/// CI runs of one branch, the same for GitHub Actions (`gh run`) and GitLab pipelines (`glab api`).
+public enum CIRuns {
+    public struct Step: Codable, Sendable, Equatable {
+        public var name: String; public var status: String; public var conclusion: String?
+        public init(name: String, status: String, conclusion: String?) { self.name = name; self.status = status; self.conclusion = conclusion }
+    }
+    public struct Job: Codable, Sendable, Equatable {
+        public var id: Int, name: String, status: String, conclusion: String?, url: String?
+        public var steps: [Step]
+        /// Finished without success (failed, timed out, cancelled…).
+        public var failed: Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+    }
+    public struct Run: Codable, Sendable, Equatable {
+        public var id: Int, title: String, workflow: String, status: String, conclusion: String?, event: String, url: String, createdAt: String
+        public var failed: Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+    }
+    /// A workflow you can start by hand (`on: workflow_dispatch`), with the inputs its form asks for.
+    public struct Workflow: Codable, Sendable, Equatable {
+        public struct Input: Codable, Sendable, Equatable { public var name: String, description: String, defaultValue: String, options: [String], required: Bool }
+        public var file: String, name: String, inputs: [Input]
+    }
+
+    // MARK: GitHub
+
+    public static func runs(cwd: String, branch: String) throws -> [Run] {
+        if GitLab.isGitLab(cwd: cwd) { return try gitlabRuns(cwd: cwd, branch: branch) }
+        struct RawRun: Decodable { var databaseId: Int, displayTitle: String, workflowName: String?, name: String?, status: String, conclusion: String?, event: String, url: String, createdAt: String }
+        let d = try GitHub.gh(["run", "list", "--branch", branch, "-L", "20", "--json", "databaseId,displayTitle,workflowName,name,status,conclusion,event,url,createdAt"], cwd: cwd)
+        return try JSONDecoder().decode([RawRun].self, from: d).map {
+            Run(id: $0.databaseId, title: $0.displayTitle, workflow: $0.workflowName ?? $0.name ?? "", status: $0.status,
+                conclusion: $0.conclusion.flatMap { $0.isEmpty ? nil : $0 }, event: $0.event, url: $0.url, createdAt: $0.createdAt)
+        }
+    }
+
+    public static func jobs(cwd: String, run: Int) throws -> [Job] {
+        if GitLab.isGitLab(cwd: cwd) { return try gitlabJobs(cwd: cwd, pipeline: run) }
+        struct RawStep: Decodable { var name: String, status: String, conclusion: String? }
+        struct RawJob: Decodable { var databaseId: Int, name: String, status: String, conclusion: String?, url: String?, steps: [RawStep]? }
+        struct RunView: Decodable { var jobs: [RawJob] }
+        let v = try JSONDecoder().decode(RunView.self, from: GitHub.gh(["run", "view", String(run), "--json", "jobs"], cwd: cwd))
+        return v.jobs.map { j in
+            Job(id: j.databaseId, name: j.name, status: j.status, conclusion: j.conclusion.flatMap { $0.isEmpty ? nil : $0 }, url: j.url,
+                steps: (j.steps ?? []).map { Step(name: $0.name, status: $0.status, conclusion: $0.conclusion.flatMap { $0.isEmpty ? nil : $0 }) })
+        }
+    }
+
+    /// The failed steps' output of a job (the whole log if nothing failed), its last ~12 KB.
+    public static func log(cwd: String, job: Int) throws -> String {
+        if GitLab.isGitLab(cwd: cwd) { return GitHub.tail(String(bytes: try GitLab.api("projects/:id/jobs/\(job)/trace", cwd: cwd), encoding: .utf8) ?? "") }
+        let failed = (try? GitHub.gh(["run", "view", "--job", String(job), "--log-failed"], cwd: cwd)).flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
+        if !failed.isEmpty { return GitHub.tail(failed) }
+        return GitHub.tail(String(bytes: try GitHub.gh(["run", "view", "--job", String(job), "--log"], cwd: cwd), encoding: .utf8) ?? "")
+    }
+
+    public static func rerunFailed(cwd: String, run: Int) throws {
+        if GitLab.isGitLab(cwd: cwd) { _ = try GitLab.api("projects/:id/pipelines/\(run)/retry", cwd: cwd, method: "POST"); return }
+        try GitHub.gh(["run", "rerun", String(run), "--failed"], cwd: cwd)
+    }
+
+    public static func dispatch(cwd: String, workflow: String, branch: String, inputs: [String: String]) throws {
+        try GitHub.gh(["workflow", "run", workflow, "--ref", branch] + inputs.sorted { $0.key < $1.key }.flatMap { ["-f", "\($0.key)=\($0.value)"] }, cwd: cwd)
+    }
+
+    /// `.github/workflows/*.yml` that can be started by hand, read just far enough for their inputs.
+    public static func dispatchable(repo: String) -> [Workflow] {
+        let dir = URL(fileURLWithPath: repo).appendingPathComponent(".github/workflows")
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".yml") || $0.hasSuffix(".yaml") }.sorted()
+        return files.compactMap { f in
+            guard let text = try? String(contentsOf: dir.appendingPathComponent(f), encoding: .utf8) else { return nil }
+            return parseWorkflow(text, file: f)
+        }
+    }
+
+    /// The `workflow_dispatch:` inputs of a workflow file. Limit: an indentation reader, not YAML; flow-style maps are missed.
+    static func parseWorkflow(_ text: String, file: String) -> Workflow? {
+        let lines = text.components(separatedBy: "\n")
+        guard let d = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("workflow_dispatch") }) else { return nil }
+        let name = lines.first { $0.hasPrefix("name:") }.map { unquote(String($0.dropFirst(5))) } ?? file
+        func indent(_ l: String) -> Int { l.prefix { $0 == " " }.count }
+        let base = indent(lines[d])
+        var inputs: [Workflow.Input] = [], i = d + 1, inputIndent: Int?
+        while i < lines.count {
+            let l = lines[i], t = l.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || t.hasPrefix("#") { i += 1; continue }
+            if indent(l) <= base { break }
+            if t == "inputs:" { i += 1; continue }
+            if inputIndent == nil || indent(l) == inputIndent, t.hasSuffix(":"), !t.contains(" ") {
+                inputIndent = indent(l)
+                inputs.append(.init(name: String(t.dropLast()), description: "", defaultValue: "", options: [], required: false))
+            } else if var last = inputs.popLast() {
+                if t.hasPrefix("description:") { last.description = unquote(String(t.dropFirst(12))) }
+                if t.hasPrefix("default:") { last.defaultValue = unquote(String(t.dropFirst(8))) }
+                if t.hasPrefix("required:") { last.required = t.hasSuffix("true") }
+                if t.hasPrefix("- ") { last.options.append(unquote(String(t.dropFirst(2)))) }
+                inputs.append(last)
+            }
+            i += 1
+        }
+        return Workflow(file: file, name: name, inputs: inputs)
+    }
+
+    static func unquote(_ s: String) -> String { s.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
+
+    // MARK: GitLab
+
+    static func gitlabRuns(cwd: String, branch: String) throws -> [Run] {
+        struct RawPipeline: Decodable { var id: Int, status: String, source: String?, web_url: String, created_at: String, ref: String }
+        let b = branch.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? branch
+        return try JSONDecoder().decode([RawPipeline].self, from: GitLab.api("projects/:id/pipelines?ref=\(b)&per_page=20", cwd: cwd)).map {
+            let (s, c) = gitlabState($0.status)
+            return Run(id: $0.id, title: "Pipeline #\($0.id)", workflow: $0.ref, status: s, conclusion: c, event: $0.source ?? "", url: $0.web_url, createdAt: $0.created_at)
+        }
+    }
+
+    static func gitlabJobs(cwd: String, pipeline: Int) throws -> [Job] {
+        struct RawGitLabJob: Decodable { var id: Int, name: String, status: String, web_url: String?, stage: String? }
+        return try JSONDecoder().decode([RawGitLabJob].self, from: GitLab.api("projects/:id/pipelines/\(pipeline)/jobs?per_page=100", cwd: cwd)).map {
+            let (s, c) = gitlabState($0.status)
+            return Job(id: $0.id, name: [$0.stage, $0.name].compactMap { $0 }.joined(separator: " · "), status: s, conclusion: c, url: $0.web_url, steps: [])
+        }
+    }
+
+    /// GitLab's states in GitHub's two fields.
+    static func gitlabState(_ s: String) -> (String, String?) {
+        switch s {
+        case "success": ("completed", "success")
+        case "failed": ("completed", "failure")
+        case "canceled": ("completed", "cancelled")
+        case "skipped": ("completed", "skipped")
+        case "manual": ("waiting", nil)
+        default: ("in_progress", nil)
+        }
+    }
+}

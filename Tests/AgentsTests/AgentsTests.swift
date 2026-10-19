@@ -82,25 +82,6 @@ import Core
     #expect(AgentManifest.AutoAnswer.optionAtCursor(StatusDetector.stripANSI(moved)) == "Yes, I trust")
 }
 
-@Test func chatStreamParsing() {
-    let lines = [
-        #"{"type":"system","subtype":"init","model":"claude-opus-5-5","session_id":"s1","tools":[]}"#,
-        #"{"type":"assistant","message":{"content":[{"type":"text","text":"Plan:"},{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"Sources/App.swift","old_string":"a","new_string":"b"}}]}}"#,
-        #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"TodoWrite","input":{"todos":[{"content":"Add tests","status":"completed"},{"content":"Fix bug","status":"in_progress"}]}}]}}"#,
-        #"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok","is_error":false}]}}"#,
-        #"{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.0123,"num_turns":3,"result":"done"}"#,
-    ]
-    let ev = lines.flatMap { ChatEvent.parse(Data($0.utf8)) }
-    #expect(ev[0] == .started(model: "claude-opus-5-5", sessionId: "s1"))
-    #expect(ev[1] == .text("Plan:"))
-    #expect(ev[2] == .tool(id: "t1", name: "Edit", summary: "Edit Sources/App.swift"))
-    #expect(ev[3] == .todos([.init(text: "Add tests", state: "completed"), .init(text: "Fix bug", state: "in_progress")]))
-    #expect(ev[4] == .toolResult(id: "t1", ok: true, preview: "ok"))
-    #expect(ev[5] == .finished(ok: true, costUSD: 0.0123, turns: 3))
-    let u = String(decoding: ChatEvent.userLine("hi"), as: UTF8.self)
-    #expect(u.hasSuffix("\n") && u.contains(#""type":"user""#))
-}
-
 @Test func claudeLimitMessagesParse() {
     let a = ClaudeLimits.parse("⏵⏵ auto mode on · You've used 80% of your weekly limit · resets Oct 20 at 5am (Europe/Helsinki)")
     #expect(a == [.init(kind: "weekly", percent: 80, resets: "Oct 20 at 5am")])
@@ -204,4 +185,20 @@ import Core
     Within each group, models share a weekly limit.
     """
     #expect(ClaudeLimits.parseAntigravityUsage(agy) == [.init(kind: "Gemini week", percent: 12, resets: nil)])
+}
+
+@Test func programStatusReports() {
+    var carry = ""
+    let msg = Data("Needs approval".utf8).base64EncodedString()
+    let out = ProgramStatus.scan("hi \u{1B}]7501;?\u{1B}\\ text \u{1B}]7501;state=blocked:kind=permission:msg=\(msg)\u{07} more \u{1B}]75", carry: &carry)
+    #expect(out == [.query, .report(.init(id: nil, state: "blocked", kind: "permission", msg: "Needs approval"))])
+    #expect(carry == "\u{1B}]75")
+    let next = ProgramStatus.scan("01;state=working:id=sub/1\u{1B}\\", carry: &carry)
+    #expect(next == [.report(.init(id: "sub/1", state: "working", kind: nil, msg: nil))])
+    #expect(carry.isEmpty)
+    #expect(ProgramStatus.parse("state=sleeping") == nil)
+    var d = StatusDetector(manifest: AgentManifest(id: "x", name: "X", command: "x"))
+    d.program("blocked"); #expect(d.status == .waiting)
+    d.program("error"); #expect(d.status == .error)
+    d.output("lots of words here"); _ = d.tick(at: Date().addingTimeInterval(60)); #expect(d.status == .error)   // heuristics are off now
 }

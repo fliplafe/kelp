@@ -93,6 +93,9 @@ final class ThemeManager {
         t.fontSize = s.number("terminal.fontSize")
         t.cursorStyle = s.string("terminal.cursorStyle")
         t.optionAsAlt = s.bool("terminal.optionAsAlt") ?? false
+        #if canImport(GhosttyKit)
+        GhosttyRuntime.cleanCopy = s.bool("terminal.cleanCopy") ?? true
+        #endif
         if t != lastTerminal {
             lastTerminal = t
             #if canImport(GhosttyKit)
@@ -106,6 +109,7 @@ final class ThemeManager {
                                                  type: $0.type, number: $0.number, function: $0.function, selection: $0.selection, lineHighlight: $0.lineHighlight) }
         let size = CGFloat(s.number("editor.fontSize") ?? 13), font = s.string("editor.fontFamily").flatMap { $0.isEmpty ? nil : $0 }
         let minimap = s.bool("editor.minimap") ?? false
+        TextSize.apply(s.string("workbench.textSize"))
         if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap {
             CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font; CodeEditor.showMinimap = minimap
             NotificationCenter.default.post(name: .krillAppearance, object: nil)

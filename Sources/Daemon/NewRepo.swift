@@ -1,0 +1,112 @@
+import Foundation
+import Core
+import GitKit
+
+/// Add Project's other two ways in: clone by URL (progress as `event.clone`; a half-made folder is removed when it fails
+/// or is cancelled) and a new empty project (`git init`, like the scratch project).
+extension Daemon {
+    /// Running clones by the id the app gave them, for `repo.cloneCancel`.
+    final class Clones: @unchecked Sendable {
+        private let lock = NSLock()
+        private var running: [String: Process] = [:]
+        func set(_ id: String, _ p: Process?) { lock.withLock { running[id] = p } }
+        func cancel(_ id: String) { lock.withLock { running[id] }?.interrupt() }
+    }
+    static let clones = Clones()
+
+    func handleNewRepo(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+        switch method {
+        case "repo.clone":   // {url, parent, id} → the added repo
+            let id = p["id"]?.string ?? UUID().uuidString
+            let dest = try await clone(p.req("url"), into: p.req("parent"), id: id, conn: conn)
+            return try await handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
+        case "repo.cloneCancel": Self.clones.cancel(try p.req("id")); return .null
+        case "repo.create":   // {parent, name} → the added repo
+            let dest = try Self.newFolder(p.req("name"), in: p.req("parent"))
+            try FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: false)
+            try Git.run(["init", "-q"], cwd: dest)
+            return try await handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
+        default: return nil
+        }
+    }
+
+    /// "git@github.com:me/app.git", "https://gitlab.com/me/app" → "app".
+    static func repoName(_ url: String) -> String {
+        var n = url.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: { "/:".contains($0) }).last.map(String.init) ?? ""
+        if n.hasSuffix(".git") { n = String(n.dropLast(4)) }
+        return n
+    }
+
+    /// `parent/name`, checked: a real folder to go in, a plain name, nothing there yet.
+    static func newFolder(_ name: String, in parent: String) throws -> String {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { throw RPCError.invalidParams("Enter a name for the project folder.") }
+        var dir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: parent, isDirectory: &dir), dir.boolValue else { throw RPCError.invalidParams("Choose the folder it goes in.") }
+        let dest = (parent as NSString).appendingPathComponent(name)
+        guard !FileManager.default.fileExists(atPath: dest) else {
+            throw RPCError.invalidParams("“\(name)” already exists in \((parent as NSString).abbreviatingWithTildeInPath).")
+        }
+        return dest
+    }
+
+    private func clone(_ url: String, into parent: String, id: String, conn: Int) async throws -> String {
+        let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty, !url.hasPrefix("-") else { throw RPCError.invalidParams("Enter the repository's URL.") }
+        let dest = try Self.newFolder(Self.repoName(url), in: parent)
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["clone", "--progress", "--", url, dest]
+        var env = ProcessInfo.processInfo.environment; env["GIT_TERMINAL_PROMPT"] = "0"; env["LC_ALL"] = "C"
+        proc.environment = env
+        let err = Pipe(); proc.standardError = err; proc.standardOutput = FileHandle.nullDevice; proc.standardInput = FileHandle.nullDevice
+        // git rewrites its progress line with \r: pass the latest one on, at most a few times a second.
+        let log = CloneLog()
+        err.fileHandleForReading.readabilityHandler = { [weak self] h in
+            guard let line = log.add(h.availableData) else { return }
+            self?.notify("event.clone", .obj(["id": .string(id), "line": .string(line)]), to: [conn])
+        }
+        Self.clones.set(id, proc)
+        let status: (Int32, Process.TerminationReason) = try await withCheckedThrowingContinuation { c in
+            proc.terminationHandler = { c.resume(returning: ($0.terminationStatus, $0.terminationReason)) }
+            do { try proc.run() } catch { proc.terminationHandler = nil; c.resume(throwing: error) }
+        }
+        Self.clones.set(id, nil)
+        err.fileHandleForReading.readabilityHandler = nil
+        guard status.0 == 0 else {
+            try? FileManager.default.removeItem(atPath: dest)   // it didn't exist before (newFolder checked)
+            if status.1 == .uncaughtSignal || status.0 == 130 { throw RPCError.invalidParams("Clone cancelled.") }
+            throw RPCError.invalidParams(log.failure ?? "git clone failed (exit code \(status.0)).")
+        }
+        return dest
+    }
+}
+
+/// git's stderr during a clone: the last progress line, and what it said when it failed.
+final class CloneLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = "", sent = Date.distantPast
+
+    /// The newest complete line, when it's time to show one.
+    func add(_ d: Data) -> String? {
+        lock.withLock {
+            text += String(bytes: d, encoding: .utf8) ?? ""   // git writes ASCII here
+            if text.count > 8000 { text = String(text.suffix(4000)) }
+            guard Date().timeIntervalSince(sent) > 0.2 else { return nil }
+            let lines = text.split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+            guard let last = lines.last.map(String.init), !last.isEmpty else { return nil }
+            sent = Date(); return last.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    /// "fatal: repository 'x' not found" → "Repository 'x' not found".
+    var failure: String? {
+        lock.withLock {
+            let lines = text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
+            guard let f = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.hasPrefix("ERROR:") }) ?? lines.last else { return nil }
+            var m = f.replacingOccurrences(of: #"^(fatal|error|ERROR): ?"#, with: "", options: .regularExpression)
+            m = m.prefix(1).uppercased() + m.dropFirst()
+            return m
+        }
+    }
+}

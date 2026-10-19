@@ -23,6 +23,10 @@ extension Daemon {
             try Git.remote(cwd(forWorktree: p.req("id")).path, op)
             return .null
         case "git.stash": try Git.stash(cwd(forWorktree: p.req("id")).path, pop: p["pop"]?.bool == true); return .null
+        case "git.lineStats": return try .from(Git.lineStats(cwd(forWorktree: p.req("id")).path))
+        case "git.webURL":   // {path, start?, end?} → the file on GitHub / GitLab / Bitbucket at HEAD
+            let start = p["start"]?.int, end = p["end"]?.int ?? p["start"]?.int
+            return .string(try Git.webURL(path: p.req("path"), lines: start.flatMap { s in end.map { min(s, $0)...max(s, $0) } }))
         default: return nil
         }
     }

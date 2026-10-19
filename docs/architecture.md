@@ -20,7 +20,7 @@ contributions, the command palette and settings.
 - **Project**: a git repository (`repo.*` RPCs).
 - **Workspace**: a desk in the project's folder — its own tabs, splits and agents, nothing on disk
   (`workspace.create`, stored as worktree records whose path is the repo path). "+" opens a new one instantly,
-  named "Workspace N" until its first agent prompt names it (on-device AI); several desks share the folder.
+  named "Workspace N" until its first agent prompt names it; several desks share the folder.
   Closing one ends its agents and leaves the files. (Workspaces from older versions may be git worktrees.)
 - **Agent**: a session in a workspace (`session.*`). Status: working · needs input · done · idle · paused · ended.
 - **Tab**: anything shown in the editor area, addressed by a URI:

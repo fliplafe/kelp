@@ -25,6 +25,7 @@ public enum ExtensionGuide {
         "commands": [],
         "settings": [],
         "themes":   [],
+        "iconThemes": [],
         "agents":   []
       }
     }
@@ -103,7 +104,7 @@ public enum ExtensionGuide {
     ```json
     { "key": "docker.refresh", "title": "Refresh interval", "type": "number", "default": 5, "description": "Seconds" }
     ```
-    Types: `boolean`, `number`, `string`, `enum` (with `"options": ["a", "b"]`), `color`.
+    Types: `boolean`, `number`, `string`, `enum` (with `"options": ["a", "b"]`), `color`. A `number` with `"options": ["0", "15"]` shows as a picker of those values.
     They appear in Settings under the extension's name and in `~/.krill/settings.json`.
 
     ## themes
@@ -117,6 +118,16 @@ public enum ExtensionGuide {
                   "comment": "#6272a4", "type": "#8be9fd", "number": "#bd93f9", "function": "#50fa7b" }
     }
     ```
+
+    ## iconThemes
+    File icon themes in VS Code's format, so existing ones work unchanged:
+    ```json
+    { "id": "my-icons", "label": "My Icons", "path": "icons/theme.json" }
+    ```
+    `path` is a VS Code file icon theme: `iconDefinitions` (each with an `iconPath` to an SVG or PNG), then `file`, `folder`,
+    `folderExpanded`, `fileExtensions`, `fileNames`, `folderNames`, `folderNamesExpanded`, `languageIds` and a `light` section.
+    Font icons (`fontCharacter`) aren't drawn. A VS Code extension needs no `extension.json`: Settings › Extensions › Install…
+    takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). Pick the theme in Settings › Appearance › File Icons.
 
     ## agents
     Same format as `~/.krill/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.

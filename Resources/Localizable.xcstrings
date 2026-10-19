@@ -1,0 +1,7924 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "": {},
+    "\n\nFix it in Terminal:\n": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\n\nИсправьте в Терминале:\n"
+          }
+        }
+      }
+    },
+    "\n\nThe merge was aborted; nothing changed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\n\nСлияние отменено, ничего не изменилось."
+          }
+        }
+      }
+    },
+    " ": {},
+    " Untracked files are deleted.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " Неотслеживаемые файлы будут удалены."
+          }
+        }
+      }
+    },
+    " in “%@”": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " в «%@»"
+          }
+        }
+      }
+    },
+    " needs you": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " ждёт вас"
+          }
+        }
+      }
+    },
+    " on “%@”": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " в «%@»"
+          }
+        }
+      }
+    },
+    " ran into an error": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " завершился с ошибкой"
+          }
+        }
+      }
+    },
+    " · %@ available": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · доступна %@"
+          }
+        }
+      }
+    },
+    " · draft": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · черновик"
+          }
+        }
+      }
+    },
+    " · ◌ %lld pending": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · ◌ ждут: %lld"
+          }
+        }
+      }
+    },
+    " · ✓ checks passed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · ✓ проверки пройдены"
+          }
+        }
+      }
+    },
+    " · ✕ %lld failing": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · ✕ упало: %lld"
+          }
+        }
+      }
+    },
+    "#%lld": {},
+    "%@ %@: %lld%% used": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ %2$@: %3$lld%% used"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, %@: использовано %lld%%"
+          }
+        }
+      }
+    },
+    "%@ asks Krill to run these as you, in the workspace's folder. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ просит Krill выполнить эти команды от вашего имени в папке рабочей области. "
+          }
+        }
+      }
+    },
+    "%@ changed on disk": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» изменён на диске"
+          }
+        }
+      }
+    },
+    "%@ isn't there anymore. Right-click › Locate… if it moved.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ больше нет на месте. Если папку перенесли — правый клик › «Указать…»."
+          }
+        }
+      }
+    },
+    "%@ wants to merge %@%@%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ wants to merge %2$@%3$@%4$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ хочет влить %@%@%@"
+          }
+        }
+      }
+    },
+    "%@ — Full Transcript": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — полная запись"
+          }
+        }
+      }
+    },
+    "%@: view “%@” has neither list nor web.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@: view “%2$@” has neither list nor web."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: у вида «%@» нет ни list, ни web."
+          }
+        }
+      }
+    },
+    "%lld cells · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld cells · %2$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ячеек: %lld · %@"
+          }
+        }
+      }
+    },
+    "%lld checks failing": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Упало проверок: %lld"
+          }
+        }
+      }
+    },
+    "%lld checks running": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идёт проверок: %lld"
+          }
+        }
+      }
+    },
+    "%lld need you": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждут вас: %lld"
+          }
+        }
+      }
+    },
+    "%lld running agents stop. Files in the project are not touched.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущенные агенты (%lld) остановятся. Файлы проекта не затрагиваются."
+          }
+        }
+      }
+    },
+    "%lld running sessions stop. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущенные сессии (%lld) остановятся. "
+          }
+        }
+      }
+    },
+    "%lld sessions · CPU %@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld sessions · CPU %2$@ · %3$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессий: %lld · ЦП %@ · %@"
+          }
+        }
+      }
+    },
+    "%lld updates available": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступно обновлений: %lld"
+          }
+        }
+      }
+    },
+    "%lld%%": {},
+    "%lldd": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld д"
+          }
+        }
+      }
+    },
+    "%lldd %lldh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lldd %2$lldh"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld д %lld ч"
+          }
+        }
+      }
+    },
+    "%lldh": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ч"
+          }
+        }
+      }
+    },
+    "%lldh %lldm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lldh %2$lldm"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ч %lld мин"
+          }
+        }
+      }
+    },
+    "%lldm": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld мин"
+          }
+        }
+      }
+    },
+    "+%lld": {},
+    "1 needs you": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ждёт вас"
+          }
+        }
+      }
+    },
+    "1 running agent stops. Files in the project are not touched.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущенный агент остановится. Файлы проекта не затрагиваются."
+          }
+        }
+      }
+    },
+    "1 running session stops. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущенная сессия остановится. "
+          }
+        }
+      }
+    },
+    "1 update available": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступно 1 обновление"
+          }
+        }
+      }
+    },
+    "30 Days": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 дней"
+          }
+        }
+      }
+    },
+    "5 hours": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 часов"
+          }
+        }
+      }
+    },
+    "7 Days": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 дней"
+          }
+        }
+      }
+    },
+    "90 Days": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90 дней"
+          }
+        }
+      }
+    },
+    "A VS Code extension (.vsix or its folder) — for its file icon themes — or a Krill extension folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширение VS Code (.vsix или его папка) — ради тем значков файлов — или папка расширения Krill"
+          }
+        }
+      }
+    },
+    "A link asked to open %@ as a project.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ссылка просит открыть %@ как проект."
+          }
+        }
+      }
+    },
+    "API token": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-токен"
+          }
+        }
+      }
+    },
+    "API token / app password": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-токен / пароль приложения"
+          }
+        }
+      }
+    },
+    "API token from id.atlassian.com › Security. Stored in your login keychain.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-токен из id.atlassian.com › Security. Хранится в вашей связке ключей."
+          }
+        }
+      }
+    },
+    "Aa  ~ $": {},
+    "About Krill": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "О программе Krill"
+          }
+        }
+      }
+    },
+    "Activity": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Активность"
+          }
+        }
+      }
+    },
+    "Add": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить"
+          }
+        }
+      }
+    },
+    "Add Markdown files to .krill/templates in the repo or ~/.krill/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Положите Markdown-файлы в .krill/templates в репозитории или в ~/.krill/templates. Подстановки: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}."
+          }
+        }
+      }
+    },
+    "Add Project": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить проект"
+          }
+        }
+      }
+    },
+    "Add Project…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить проект…"
+          }
+        }
+      }
+    },
+    "Add a git repository to start.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавьте git-репозиторий, чтобы начать."
+          }
+        }
+      }
+    },
+    "Add a project folder (⌘O)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить папку проекта (⌘O)"
+          }
+        }
+      }
+    },
+    "Add a project folder. Each task gets its own workspace: agents, terminals and files side by side.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавьте папку проекта. Каждая задача получает свою рабочую область: агенты, терминалы и файлы рядом."
+          }
+        }
+      }
+    },
+    "Add “%@” to Krill?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить «%@» в Krill?"
+          }
+        }
+      }
+    },
+    "Added to branches Krill names, e.g. “niko/”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавляется к веткам, которые называет Krill, например «niko/»."
+          }
+        }
+      }
+    },
+    "After %@ minutes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через %@ мин"
+          }
+        }
+      }
+    },
+    "After %lld hours": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через %lld ч"
+          }
+        }
+      }
+    },
+    "After 1 hour": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Через 1 ч"
+          }
+        }
+      }
+    },
+    "Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент"
+          }
+        }
+      }
+    },
+    "Agent sessions and terminals as tabs.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессии агентов и терминалы во вкладках."
+          }
+        }
+      }
+    },
+    "Agent's Last Turn": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Последний ход агента"
+          }
+        }
+      }
+    },
+    "Agents": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты"
+          }
+        }
+      }
+    },
+    "Agents & Terminals": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты и терминалы"
+          }
+        }
+      }
+    },
+    "Agents and terminals run there, and git too, over one SSH connection. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты, терминалы и git работают там, через одно SSH-соединение. "
+          }
+        }
+      }
+    },
+    "Agents on this Mac": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты на этом Mac"
+          }
+        }
+      }
+    },
+    "Agents work in their own workspaces here, with the terminal, editor and git next to them.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь агенты работают в своих рабочих областях, а рядом — терминал, редактор и git."
+          }
+        }
+      }
+    },
+    "All Tabs": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все вкладки"
+          }
+        }
+      }
+    },
+    "All Workspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все рабочие области"
+          }
+        }
+      }
+    },
+    "All tabs in this group": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все вкладки этой группы"
+          }
+        }
+      }
+    },
+    "Allow": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешить"
+          }
+        }
+      }
+    },
+    "Also read ~/.config/ghostty/config": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Также читать ~/.config/ghostty/config"
+          }
+        }
+      }
+    },
+    "Also the shortcut for %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это же сочетание у «%@»."
+          }
+        }
+      }
+    },
+    "Always": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всегда"
+          }
+        }
+      }
+    },
+    "Amend": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дополнить (amend)"
+          }
+        }
+      }
+    },
+    "Amend Commit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дополнить коммит"
+          }
+        }
+      }
+    },
+    "An agent edited this file while you had unsaved changes.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент изменил этот файл, пока у вас были несохранённые правки."
+          }
+        }
+      }
+    },
+    "Appearance": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оформление"
+          }
+        }
+      }
+    },
+    "Archive": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В архив"
+          }
+        }
+      }
+    },
+    "Archived Workspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Архивные рабочие области"
+          }
+        }
+      }
+    },
+    "Arguments": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Аргументы"
+          }
+        }
+      }
+    },
+    "Ask Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Спросить агента"
+          }
+        }
+      }
+    },
+    "Ask Agent to Fix": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Попросить агента исправить"
+          }
+        }
+      }
+    },
+    "Ask Agent to Resolve": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Попросить агента разрешить"
+          }
+        }
+      }
+    },
+    "Assigned to me": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назначенные мне"
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
+          }
+        }
+      }
+    },
+    "Bigger Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Крупнее"
+          }
+        }
+      }
+    },
+    "Binary file": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Двоичный файл"
+          }
+        }
+      }
+    },
+    "Binary file %@ not shown": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Двоичный файл %@ не показан"
+          }
+        }
+      }
+    },
+    "Binary file — open it with another app.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Двоичный файл — откройте его в другом приложении."
+          }
+        }
+      }
+    },
+    "Bitbucket": {},
+    "Bold (⌘B)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Жирный (⌘B)"
+          }
+        }
+      }
+    },
+    "Branch prefix": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Префикс веток"
+          }
+        }
+      }
+    },
+    "Branch vs base": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ветка против базы"
+          }
+        }
+      }
+    },
+    "Bring All to Front": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все окна — на передний план"
+          }
+        }
+      }
+    },
+    "Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Браузер"
+          }
+        }
+      }
+    },
+    "Built-in": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Встроенное"
+          }
+        }
+      }
+    },
+    "Bulleted list": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Маркированный список"
+          }
+        }
+      }
+    },
+    "By Model": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По моделям"
+          }
+        }
+      }
+    },
+    "By Project": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По проектам"
+          }
+        }
+      }
+    },
+    "CI Runs": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запуски CI"
+          }
+        }
+      }
+    },
+    "CPU and memory of each agent and terminal, with Stop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ЦП и память каждого агента и терминала, с кнопкой «Остановить»."
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить"
+          }
+        }
+      }
+    },
+    "Cancelling…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена…"
+          }
+        }
+      }
+    },
+    "Center": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По центру"
+          }
+        }
+      }
+    },
+    "Changed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменено"
+          }
+        }
+      }
+    },
+    "Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения"
+          }
+        }
+      }
+    },
+    "Changes in Its Last Turn": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения за последний ход"
+          }
+        }
+      }
+    },
+    "Changes stashed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения спрятаны"
+          }
+        }
+      }
+    },
+    "Check for Update": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить обновление"
+          }
+        }
+      }
+    },
+    "Check for Updates…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить обновления…"
+          }
+        }
+      }
+    },
+    "Checking…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверка…"
+          }
+        }
+      }
+    },
+    "Checks": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверки"
+          }
+        }
+      }
+    },
+    "Choose a git repository": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите git-репозиторий"
+          }
+        }
+      }
+    },
+    "Claude Code": {},
+    "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code может читать и менять эти настройки (тему, шрифты, расширения…), когда вы попросите."
+          }
+        }
+      }
+    },
+    "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code знает, куда кладётся расширение, его формат и как его подключить. Попросите его сделать панель, вкладку или команду."
+          }
+        }
+      }
+    },
+    "Clear Cookies and Data for This Site": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить cookie и данные этого сайта"
+          }
+        }
+      }
+    },
+    "Clear Search": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Очистить поиск"
+          }
+        }
+      }
+    },
+    "Cleared %@'s cookies and data": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cookie и данные %@ удалены"
+          }
+        }
+      }
+    },
+    "Click a shortcut, then press the new keys. ⌫ removes it, Esc keeps it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажмите на сочетание, затем новые клавиши. ⌫ удаляет его, Esc оставляет как было."
+          }
+        }
+      }
+    },
+    "Clone": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клонировать"
+          }
+        }
+      }
+    },
+    "Clone Repository…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клонировать репозиторий…"
+          }
+        }
+      }
+    },
+    "Clone a Repository": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клонирование репозитория"
+          }
+        }
+      }
+    },
+    "Clone into:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Куда:"
+          }
+        }
+      }
+    },
+    "Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть"
+          }
+        }
+      }
+    },
+    "Close %lld Workspaces…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть рабочие области (%lld)…"
+          }
+        }
+      }
+    },
+    "Close %lld workspaces?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть рабочие области (%lld)?"
+          }
+        }
+      }
+    },
+    "Close 1 workspace?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть рабочую область?"
+          }
+        }
+      }
+    },
+    "Close Other Tabs": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть остальные вкладки"
+          }
+        }
+      }
+    },
+    "Close Tab": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть вкладку"
+          }
+        }
+      }
+    },
+    "Close Tab (⌘W)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть вкладку (⌘W)"
+          }
+        }
+      }
+    },
+    "Close Workspace": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть рабочую область"
+          }
+        }
+      }
+    },
+    "Close pane": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть панель"
+          }
+        }
+      }
+    },
+    "Close without committing": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть без коммита"
+          }
+        }
+      }
+    },
+    "Close “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть «%@»?"
+          }
+        }
+      }
+    },
+    "Code": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код"
+          }
+        }
+      }
+    },
+    "Codex": {},
+    "Color Theme: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цветовая тема: %@"
+          }
+        }
+      }
+    },
+    "Command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда"
+          }
+        }
+      }
+    },
+    "Command Palette…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Палитра команд…"
+          }
+        }
+      }
+    },
+    "Comment": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Комментарий"
+          }
+        }
+      }
+    },
+    "Comment on %@:%lld%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Comment on %1$@:%2$lld%3$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Комментарий к %@:%lld%@"
+          }
+        }
+      }
+    },
+    "Commit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить"
+          }
+        }
+      }
+    },
+    "Commit & Push": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить и отправить"
+          }
+        }
+      }
+    },
+    "Commit (Amend)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить (amend)"
+          }
+        }
+      }
+    },
+    "Commit (⌘↩ in the message)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить (⌘↩ в сообщении)"
+          }
+        }
+      }
+    },
+    "Commit (⌘↩)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить (⌘↩)"
+          }
+        }
+      }
+    },
+    "Commit Message": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сообщение коммита"
+          }
+        }
+      }
+    },
+    "Commit…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Коммит…"
+          }
+        }
+      }
+    },
+    "Compacting its conversation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сжимает разговор"
+          }
+        }
+      }
+    },
+    "Config folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка конфигурации"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключить"
+          }
+        }
+      }
+    },
+    "Connect Jira in Settings › Integrations": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключите Jira в Настройки › Интеграции"
+          }
+        }
+      }
+    },
+    "Connect Linear in Settings › Integrations": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключите Linear в Настройки › Интеграции"
+          }
+        }
+      }
+    },
+    "Connected as %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключено как %@"
+          }
+        }
+      }
+    },
+    "Connecting…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение…"
+          }
+        }
+      }
+    },
+    "Context %lld %% full": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Контекст заполнен на %lld %%"
+          }
+        }
+      }
+    },
+    "Context %lld%% · %lldk of %lldk tokens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Context %1$lld%% · %2$lldk of %3$lldk tokens"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Контекст %lld%% · %lldk из %lldk токенов"
+          }
+        }
+      }
+    },
+    "Context copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Контекст скопирован"
+          }
+        }
+      }
+    },
+    "Conversation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разговор"
+          }
+        }
+      }
+    },
+    "Copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировано"
+          }
+        }
+      }
+    },
+    "Copied %@ and the element's details": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопированы %@ и данные элемента"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать"
+          }
+        }
+      }
+    },
+    "Copy Commit Hash": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать хеш коммита"
+          }
+        }
+      }
+    },
+    "Copy Commit Message": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать сообщение коммита"
+          }
+        }
+      }
+    },
+    "Copy Context": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать контекст"
+          }
+        }
+      }
+    },
+    "Copy Fix": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать исправление"
+          }
+        }
+      }
+    },
+    "Copy Path": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать путь"
+          }
+        }
+      }
+    },
+    "Copy Path and Line": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать путь и строку"
+          }
+        }
+      }
+    },
+    "Copy Relative Path": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать относительный путь"
+          }
+        }
+      }
+    },
+    "Copy Resume Command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать команду продолжения"
+          }
+        }
+      }
+    },
+    "Copy Screenshot": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать снимок"
+          }
+        }
+      }
+    },
+    "Copy Web Link": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать веб-ссылку"
+          }
+        }
+      }
+    },
+    "Copy text without the TUI around it": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Копировать текст без рамок TUI вокруг"
+          }
+        }
+      }
+    },
+    "Copy “%@”": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать «%@»"
+          }
+        }
+      }
+    },
+    "Cost": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Стоимость"
+          }
+        }
+      }
+    },
+    "Couldn't create a file in /%@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось создать файл в /%@."
+          }
+        }
+      }
+    },
+    "Couldn't install %@: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Couldn't install %1$@: %2$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось установить %@: %@"
+          }
+        }
+      }
+    },
+    "Couldn't load": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось загрузить"
+          }
+        }
+      }
+    },
+    "Couldn't read it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать."
+          }
+        }
+      }
+    },
+    "Couldn't read this file.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать этот файл."
+          }
+        }
+      }
+    },
+    "Couldn't save %@: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Couldn't save %1$@: %2$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось сохранить %@: %@"
+          }
+        }
+      }
+    },
+    "Create": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать"
+          }
+        }
+      }
+    },
+    "Create Branch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать ветку"
+          }
+        }
+      }
+    },
+    "Create Branch…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать ветку…"
+          }
+        }
+      }
+    },
+    "Create Pull Request…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать pull request…"
+          }
+        }
+      }
+    },
+    "Create a key in Linear › Settings › Security & access. It's stored in your login keychain.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создайте ключ в Linear › Settings › Security & access. Он хранится в вашей связке ключей."
+          }
+        }
+      }
+    },
+    "Create a pull request?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать pull request?"
+          }
+        }
+      }
+    },
+    "Create in:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Где:"
+          }
+        }
+      }
+    },
+    "Creating…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создание…"
+          }
+        }
+      }
+    },
+    "Cursor": {
+      "extractionState": "manual"
+    },
+    "Custom JQL…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свой JQL…"
+          }
+        }
+      }
+    },
+    "Cut": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вырезать"
+          }
+        }
+      }
+    },
+    "Day": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "День"
+          }
+        }
+      }
+    },
+    "Default": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По умолчанию"
+          }
+        }
+      }
+    },
+    "Default Text Size": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обычный размер текста"
+          }
+        }
+      }
+    },
+    "Default agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент по умолчанию"
+          }
+        }
+      }
+    },
+    "Delete File": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить файл"
+          }
+        }
+      }
+    },
+    "Delete Workspace & Branch…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить рабочую область и ветку…"
+          }
+        }
+      }
+    },
+    "Delete Workspace and Branch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить рабочую область и ветку"
+          }
+        }
+      }
+    },
+    "Delete and Lose Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить и потерять изменения"
+          }
+        }
+      }
+    },
+    "Delete “%@” and its branch?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить «%@» вместе с веткой?"
+          }
+        }
+      }
+    },
+    "Delete “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить «%@»?"
+          }
+        }
+      }
+    },
+    "Deny": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запретить"
+          }
+        }
+      }
+    },
+    "Design Mode": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим дизайна"
+          }
+        }
+      }
+    },
+    "Design Mode: click an element to send its source, HTML, CSS and a screenshot to the agent (⌥-click copies them)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим дизайна: нажмите на элемент, чтобы отправить агенту его исходник, HTML, CSS и снимок (⌥-клик копирует их)"
+          }
+        }
+      }
+    },
+    "Detached at %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отсоединено на %@"
+          }
+        }
+      }
+    },
+    "Discard %lld Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить изменения (%lld)"
+          }
+        }
+      }
+    },
+    "Discard Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить изменения"
+          }
+        }
+      }
+    },
+    "Discard all %lld changes?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить все изменения (%lld)?"
+          }
+        }
+      }
+    },
+    "Discard changes in “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить изменения в «%@»?"
+          }
+        }
+      }
+    },
+    "Disconnect": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отключить"
+          }
+        }
+      }
+    },
+    "Do Not Disturb": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "режима «Не беспокоить»"
+          }
+        }
+      }
+    },
+    "Do you want to save the changes you made to “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить изменения в «%@»?"
+          }
+        }
+      }
+    },
+    "Dock hiding": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "скрытия Dock"
+          }
+        }
+      }
+    },
+    "Don't Save": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не сохранять"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово"
+          }
+        }
+      }
+    },
+    "Draft": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Черновик"
+          }
+        }
+      }
+    },
+    "Drag to move this pane; drop on an edge of another pane to split": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перетащите, чтобы переместить панель; отпустите у края другой панели, чтобы разделить"
+          }
+        }
+      }
+    },
+    "Drops box borders, an agent's indented gutter and trailing spaces from what you copy.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убирает из скопированного рамки, отступ агента слева и пробелы в конце строк."
+          }
+        }
+      }
+    },
+    "Edit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Правка"
+          }
+        }
+      }
+    },
+    "Edit %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить %@"
+          }
+        }
+      }
+    },
+    "Edit Commands": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить команды"
+          }
+        }
+      }
+    },
+    "Edit Commands…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить команды…"
+          }
+        }
+      }
+    },
+    "Edit settings.json in the editor": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить settings.json в редакторе"
+          }
+        }
+      }
+    },
+    "Edited": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменён"
+          }
+        }
+      }
+    },
+    "Editor": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Редактор"
+          }
+        }
+      }
+    },
+    "Element details copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Данные элемента скопированы"
+          }
+        }
+      }
+    },
+    "Email": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Почта"
+          }
+        }
+      }
+    },
+    "Empty = SF Mono.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пусто — SF Mono."
+          }
+        }
+      }
+    },
+    "Empty = the theme's / Ghostty's font.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пусто — шрифт темы или Ghostty."
+          }
+        }
+      }
+    },
+    "Ended": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершён"
+          }
+        }
+      }
+    },
+    "Enter Full Screen": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти в полноэкранный режим"
+          }
+        }
+      }
+    },
+    "Environment": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Окружение"
+          }
+        }
+      }
+    },
+    "Equalize Panes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выровнять панели"
+          }
+        }
+      }
+    },
+    "Exit code %d": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код выхода %d"
+          }
+        }
+      }
+    },
+    "Extension Turned Off": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширение выключено"
+          }
+        }
+      }
+    },
+    "Extensions": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширения"
+          }
+        }
+      }
+    },
+    "Extensions…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширения…"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка"
+          }
+        }
+      }
+    },
+    "Failed: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка: %@"
+          }
+        }
+      }
+    },
+    "Fetch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Получить"
+          }
+        }
+      }
+    },
+    "File": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл"
+          }
+        }
+      }
+    },
+    "File Icon Theme: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тема значков файлов: %@"
+          }
+        }
+      }
+    },
+    "File Icons": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значки файлов"
+          }
+        }
+      }
+    },
+    "File name, e.g. plan-login.md": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя файла, например plan-login.md"
+          }
+        }
+      }
+    },
+    "File not found — it was moved or deleted.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл не найден — его перенесли или удалили."
+          }
+        }
+      }
+    },
+    "File tree, search and the code editor (tree-sitter, LSP).": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дерево файлов, поиск и редактор кода (tree-sitter, LSP)."
+          }
+        }
+      }
+    },
+    "Files": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы"
+          }
+        }
+      }
+    },
+    "Files & Editor": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы и редактор"
+          }
+        }
+      }
+    },
+    "Find": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найти"
+          }
+        }
+      }
+    },
+    "Find Next": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найти далее"
+          }
+        }
+      }
+    },
+    "Find Previous": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найти ранее"
+          }
+        }
+      }
+    },
+    "Find in Workspace…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найти в рабочей области…"
+          }
+        }
+      }
+    },
+    "Finder search": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "поиска в Finder"
+          }
+        }
+      }
+    },
+    "Find…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найти…"
+          }
+        }
+      }
+    },
+    "Fix with Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Исправить с агентом"
+          }
+        }
+      }
+    },
+    "Focus Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим фокуса"
+          }
+        }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка"
+          }
+        }
+      }
+    },
+    "Folder missing": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папки нет"
+          }
+        }
+      }
+    },
+    "Folder there:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка там:"
+          }
+        }
+      }
+    },
+    "Font": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Шрифт"
+          }
+        }
+      }
+    },
+    "Font size": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Размер шрифта"
+          }
+        }
+      }
+    },
+    "Forward": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вперёд"
+          }
+        }
+      }
+    },
+    "General": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Основное"
+          }
+        }
+      }
+    },
+    "Generated": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сгенерированное"
+          }
+        }
+      }
+    },
+    "Ghostty config": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Конфигурация Ghostty"
+          }
+        }
+      }
+    },
+    "Git": {
+      "extractionState": "manual"
+    },
+    "Git Isn't Available": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git недоступен"
+          }
+        }
+      }
+    },
+    "Git doesn't track this file, so it can't be restored.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git не отслеживает этот файл, восстановить его будет нельзя."
+          }
+        }
+      }
+    },
+    "Git: Create Pull Request": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git: создать pull request"
+          }
+        }
+      }
+    },
+    "Git: Push": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git: отправить"
+          }
+        }
+      }
+    },
+    "Git: Review Changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git: просмотреть изменения"
+          }
+        }
+      }
+    },
+    "GitHub": {},
+    "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub, Linear, Jira и Bitbucket: начинайте работу с задачи, смотрите PR."
+          }
+        }
+      }
+    },
+    "Go to Line…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перейти к строке…"
+          }
+        }
+      }
+    },
+    "Go to line": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перейти к строке"
+          }
+        }
+      }
+    },
+    "Goes to the agent with the code quote.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уходит агенту вместе с цитатой кода."
+          }
+        }
+      }
+    },
+    "Graph": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Граф"
+          }
+        }
+      }
+    },
+    "Hand Off to": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Передать"
+          }
+        }
+      }
+    },
+    "Heading 1": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заголовок 1"
+          }
+        }
+      }
+    },
+    "Heading 2": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заголовок 2"
+          }
+        }
+      }
+    },
+    "Heading 3": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заголовок 3"
+          }
+        }
+      }
+    },
+    "Help": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Справка"
+          }
+        }
+      }
+    },
+    "Hide Inspector": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть инспектор"
+          }
+        }
+      }
+    },
+    "Hide Krill": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть Krill"
+          }
+        }
+      }
+    },
+    "Hide Others": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть остальные"
+          }
+        }
+      }
+    },
+    "Hide Sidebar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть боковую панель"
+          }
+        }
+      }
+    },
+    "Host:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хост:"
+          }
+        }
+      }
+    },
+    "How Extensions Work": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как устроены расширения"
+          }
+        }
+      }
+    },
+    "How Krill Works": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как устроен Krill"
+          }
+        }
+      }
+    },
+    "Icons in Files, Source Control and tabs. VS Code icon themes work as they are: Settings › Extensions › Install…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значки в Файлах, Контроле версий и на вкладках. Темы значков VS Code работают как есть: Настройки › Расширения › Установить…"
+          }
+        }
+      }
+    },
+    "In /%@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В /%@"
+          }
+        }
+      }
+    },
+    "Index": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Индекс"
+          }
+        }
+      }
+    },
+    "Inline": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В строку"
+          }
+        }
+      }
+    },
+    "Inputs from %@:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Параметры из %@:"
+          }
+        }
+      }
+    },
+    "Insert link": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вставить ссылку"
+          }
+        }
+      }
+    },
+    "Inspect: right-click the page › Inspect Element": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инспектор: правый клик по странице › Inspect Element"
+          }
+        }
+      }
+    },
+    "Inspector": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инспектор"
+          }
+        }
+      }
+    },
+    "Inspector icons": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значки инспектора"
+          }
+        }
+      }
+    },
+    "Install %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установить %@"
+          }
+        }
+      }
+    },
+    "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установите GitHub CLI, чтобы видеть запуски CI: brew install gh (glab для GitLab)."
+          }
+        }
+      }
+    },
+    "Install…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установить…"
+          }
+        }
+      }
+    },
+    "Integrations": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Интеграции"
+          }
+        }
+      }
+    },
+    "Issues": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Задачи"
+          }
+        }
+      }
+    },
+    "Issues & PRs": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Задачи и PR"
+          }
+        }
+      }
+    },
+    "Issues & Pull Requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Задачи и pull request'ы"
+          }
+        }
+      }
+    },
+    "It has uncommitted changes that will be lost.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В ней есть незакоммиченные изменения — они пропадут."
+          }
+        }
+      }
+    },
+    "It is still running in this terminal. Closing the tab stops it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он ещё работает в этом терминале. Закрытие вкладки его остановит."
+          }
+        }
+      }
+    },
+    "It knows how through the extensions skill (Settings › Agents).": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он умеет это через навык расширений (Настройки › Агенты)."
+          }
+        }
+      }
+    },
+    "It runs on GitHub Actions.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запуск на GitHub Actions."
+          }
+        }
+      }
+    },
+    "Italic (⌘I)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Курсив (⌘I)"
+          }
+        }
+      }
+    },
+    "Its session ends": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его сессия завершится"
+          }
+        }
+      }
+    },
+    "Jira": {},
+    "Jira search": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск в Jira"
+          }
+        }
+      }
+    },
+    "Jump to Definition": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перейти к определению"
+          }
+        }
+      }
+    },
+    "Jupyter not found — pip install jupyter": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jupyter не найден — pip install jupyter"
+          }
+        }
+      }
+    },
+    "KEY=value, one per line": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "КЛЮЧ=значение, по одному в строке"
+          }
+        }
+      }
+    },
+    "Keep Mac awake": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не давать Mac засыпать"
+          }
+        }
+      }
+    },
+    "Keep Mine": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оставить мою"
+          }
+        }
+      }
+    },
+    "Keybindings and other Ghostty options; the theme's colors still apply.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сочетания клавиш и другие настройки Ghostty; цвета темы по-прежнему действуют."
+          }
+        }
+      }
+    },
+    "Keyboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клавиатура"
+          }
+        }
+      }
+    },
+    "Krill": {},
+    "Krill can reach you": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krill может до вас достучаться"
+          }
+        }
+      }
+    },
+    "Krill can't find the file in that link.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krill не находит файл из этой ссылки."
+          }
+        }
+      }
+    },
+    "Krill doesn't know the link %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krill не знает ссылку %@."
+          }
+        }
+      }
+    },
+    "Krill uses the GitHub CLI and its login. Project boards need `gh auth refresh -s read:project`.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krill использует GitHub CLI и его вход. Для досок проектов нужен `gh auth refresh -s read:project`."
+          }
+        }
+      }
+    },
+    "Krill was updated": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krill обновлён"
+          }
+        }
+      }
+    },
+    "Krill's background service isn't running.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фоновая служба Krill не запущена."
+          }
+        }
+      }
+    },
+    "Krill's default: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По умолчанию в Krill: %@"
+          }
+        }
+      }
+    },
+    "Krill's default: none": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По умолчанию в Krill: нет"
+          }
+        }
+      }
+    },
+    "Language servers (errors, completion, jump to definition)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Языковые серверы (ошибки, автодополнение, переход к определению)"
+          }
+        }
+      }
+    },
+    "Last Turn": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Последний ход"
+          }
+        }
+      }
+    },
+    "Last active": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Активность"
+          }
+        }
+      }
+    },
+    "Last turn changed no files · %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Последний ход не изменил файлов · %@"
+          }
+        }
+      }
+    },
+    "Later": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Позже"
+          }
+        }
+      }
+    },
+    "Leave empty to name it from the task automatically.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оставьте пустым — имя возьмётся из задачи."
+          }
+        }
+      }
+    },
+    "Left": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слева"
+          }
+        }
+      }
+    },
+    "Linear": {},
+    "Lines starting with # are left out. ⌘↩ commits.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Строки с # не попадут в коммит. ⌘↩ — закоммитить."
+          }
+        }
+      }
+    },
+    "Link (⌘K)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ссылка (⌘K)"
+          }
+        }
+      }
+    },
+    "Link copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ссылка скопирована"
+          }
+        }
+      }
+    },
+    "Loading projects…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка проектов…"
+          }
+        }
+      }
+    },
+    "Loading the log…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка лога…"
+          }
+        }
+      }
+    },
+    "Loading…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка…"
+          }
+        }
+      }
+    },
+    "Locate…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Указать…"
+          }
+        }
+      }
+    },
+    "Log In…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти…"
+          }
+        }
+      }
+    },
+    "Log copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лог скопирован"
+          }
+        }
+      }
+    },
+    "Log in once per profile; afterwards pick the account when starting an agent. Usage and limits per account show in Agents › Usage.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войдите один раз для каждого профиля; потом выбирайте аккаунт при запуске агента. Расход и лимиты по аккаунтам — в Агенты › Расход."
+          }
+        }
+      }
+    },
+    "Log in: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход: %@"
+          }
+        }
+      }
+    },
+    "Mark Resolved": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отметить решённым"
+          }
+        }
+      }
+    },
+    "Mark as Read": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отметить прочитанным"
+          }
+        }
+      }
+    },
+    "Mark as Unread": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отметить непрочитанным"
+          }
+        }
+      }
+    },
+    "Markdown: Source, Split, Preview": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown: исходник, сплит, просмотр"
+          }
+        }
+      }
+    },
+    "Match System": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как в системе"
+          }
+        }
+      }
+    },
+    "Maximize Pane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Развернуть панель"
+          }
+        }
+      }
+    },
+    "Merge": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Влить"
+          }
+        }
+      }
+    },
+    "Merge (squash)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Влить (squash)"
+          }
+        }
+      }
+    },
+    "Merge Changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слияние"
+          }
+        }
+      }
+    },
+    "Merge Conflicts": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Конфликты слияния"
+          }
+        }
+      }
+    },
+    "Merge Requests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge request'ы"
+          }
+        }
+      }
+    },
+    "Merge into %@…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Влить в %@…"
+          }
+        }
+      }
+    },
+    "Merged": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Влито"
+          }
+        }
+      }
+    },
+    "Merged #%lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%lld влит"
+          }
+        }
+      }
+    },
+    "Message (⌘↩ to commit all changes on “%@”)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сообщение (⌘↩ — закоммитить все изменения в «%@»)"
+          }
+        }
+      }
+    },
+    "Message (⌘↩ to commit on “%@”)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сообщение (⌘↩ — закоммитить в «%@»)"
+          }
+        }
+      }
+    },
+    "Mine": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мои"
+          }
+        }
+      }
+    },
+    "Minimize": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свернуть"
+          }
+        }
+      }
+    },
+    "More": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё"
+          }
+        }
+      }
+    },
+    "More Actions": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другие действия"
+          }
+        }
+      }
+    },
+    "Move": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перемещение"
+          }
+        }
+      }
+    },
+    "Move to Trash": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переместить в Корзину"
+          }
+        }
+      }
+    },
+    "Moved %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перемещено: %@"
+          }
+        }
+      }
+    },
+    "My issues": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мои задачи"
+          }
+        }
+      }
+    },
+    "My open issues": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мои открытые задачи"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя"
+          }
+        }
+      }
+    },
+    "Name:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя:"
+          }
+        }
+      }
+    },
+    "Needs You": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждут вас"
+          }
+        }
+      }
+    },
+    "Needs `%@` — not found on this Mac.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужен `%@` — на этом Mac его нет."
+          }
+        }
+      }
+    },
+    "Needs your input": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждёт вашего ответа"
+          }
+        }
+      }
+    },
+    "Never": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Никогда"
+          }
+        }
+      }
+    },
+    "New Agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый агент"
+          }
+        }
+      }
+    },
+    "New Agent (⌥⌘T) starts:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый агент (⌥⌘T) запускает:"
+          }
+        }
+      }
+    },
+    "New Browser Tab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая вкладка браузера"
+          }
+        }
+      }
+    },
+    "New File": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый файл"
+          }
+        }
+      }
+    },
+    "New Folder…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая папка…"
+          }
+        }
+      }
+    },
+    "New Page": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая страница"
+          }
+        }
+      }
+    },
+    "New Project": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый проект"
+          }
+        }
+      }
+    },
+    "New Project…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый проект…"
+          }
+        }
+      }
+    },
+    "New Tab": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая вкладка"
+          }
+        }
+      }
+    },
+    "New Terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый терминал"
+          }
+        }
+      }
+    },
+    "New Workspace": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая рабочая область"
+          }
+        }
+      }
+    },
+    "New folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая папка"
+          }
+        }
+      }
+    },
+    "New from Template": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый по шаблону"
+          }
+        }
+      }
+    },
+    "New from Template…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый по шаблону…"
+          }
+        }
+      }
+    },
+    "New tab: an agent (⌥⌘T), a terminal (⌘T), a browser…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая вкладка: агент (⌥⌘T), терминал (⌘T), браузер…"
+          }
+        }
+      }
+    },
+    "New workspace (⌘N)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая рабочая область (⌘N)"
+          }
+        }
+      }
+    },
+    "Next Change (⌥↓)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующее изменение (⌥↓)"
+          }
+        }
+      }
+    },
+    "Next Match": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующее совпадение"
+          }
+        }
+      }
+    },
+    "Next Match (⌘G)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующее совпадение (⌘G)"
+          }
+        }
+      }
+    },
+    "Next Pane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующая панель"
+          }
+        }
+      }
+    },
+    "Next Tab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующая вкладка"
+          }
+        }
+      }
+    },
+    "Next Workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Следующая рабочая область"
+          }
+        }
+      }
+    },
+    "No CI runs on %@ yet.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В %@ ещё нет запусков CI."
+          }
+        }
+      }
+    },
+    "No Claude Code conversations in this time.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "За это время разговоров с Claude Code не было."
+          }
+        }
+      }
+    },
+    "No Projects": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет проектов"
+          }
+        }
+      }
+    },
+    "No agent CLIs found": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI агентов не найдены"
+          }
+        }
+      }
+    },
+    "No agent found. Install Claude Code or another agent CLI — Krill picks it up when you come back.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент не найден. Установите Claude Code или другой CLI агента — Krill заметит его, когда вы вернётесь."
+          }
+        }
+      }
+    },
+    "No agent in this workspace": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этой рабочей области нет агента"
+          }
+        }
+      }
+    },
+    "No agent in this workspace — the element details were copied to the clipboard.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этой рабочей области нет агента — данные элемента скопированы в буфер обмена."
+          }
+        }
+      }
+    },
+    "No agent in this workspace. Start one with ⌥⌘T, then ask again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этой рабочей области нет агента. Запустите его (⌥⌘T) и попросите снова."
+          }
+        }
+      }
+    },
+    "No agent in this workspace. Start one with ⌥⌘T, then send again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этой рабочей области нет агента. Запустите его (⌥⌘T) и отправьте снова."
+          }
+        }
+      }
+    },
+    "No changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменений нет"
+          }
+        }
+      }
+    },
+    "No checks reported.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверок нет."
+          }
+        }
+      }
+    },
+    "No conversations match “%@”": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет разговоров по запросу «%@»"
+          }
+        }
+      }
+    },
+    "No conversations yet": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разговоров пока нет"
+          }
+        }
+      }
+    },
+    "No description.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Без описания."
+          }
+        }
+      }
+    },
+    "No matches": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Совпадений нет"
+          }
+        }
+      }
+    },
+    "No matches for “%@”.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет совпадений для «%@»."
+          }
+        }
+      }
+    },
+    "No open comments": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открытых комментариев нет"
+          }
+        }
+      }
+    },
+    "No panels — enable extensions in Settings.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панелей нет — включите расширения в Настройках."
+          }
+        }
+      }
+    },
+    "No review comments": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Комментариев ревью нет"
+          }
+        }
+      }
+    },
+    "No running agent in %@ — start one first": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В %@ нет запущенного агента — сначала запустите его"
+          }
+        }
+      }
+    },
+    "No running agent in this worktree": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этом worktree нет запущенного агента"
+          }
+        }
+      }
+    },
+    "No sessions running.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет запущенных сессий."
+          }
+        }
+      }
+    },
+    "No settings match “%@”.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет настроек по запросу «%@»."
+          }
+        }
+      }
+    },
+    "No templates yet": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Шаблонов пока нет"
+          }
+        }
+      }
+    },
+    "No workspaces match %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет рабочих областей по запросу %@."
+          }
+        }
+      }
+    },
+    "None": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет"
+          }
+        }
+      }
+    },
+    "None found yet. Krill runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока ни одного. Krill запускает CLI агентов — Claude Code, Codex, Gemini: установите один в Терминале, "
+          }
+        }
+      }
+    },
+    "None in “%@”.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В «%@» ничего нет."
+          }
+        }
+      }
+    },
+    "Not a Git Repository": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не git-репозиторий"
+          }
+        }
+      }
+    },
+    "Not committed  ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не закоммичено  "
+          }
+        }
+      }
+    },
+    "Not committed yet\n": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё не закоммичено\n"
+          }
+        }
+      }
+    },
+    "Not committed yet — click for the changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё не закоммичено — нажмите, чтобы увидеть изменения"
+          }
+        }
+      }
+    },
+    "Not installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не установлен"
+          }
+        }
+      }
+    },
+    "Nothing here": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь пусто"
+          }
+        }
+      }
+    },
+    "Nothing open here.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь ничего не открыто."
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уведомления"
+          }
+        }
+      }
+    },
+    "Notifications for Krill are turned off in System Settings, so you won't hear when an agent needs you.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уведомления Krill выключены в Системных настройках, и вы не узнаете, когда агенту что-то нужно."
+          }
+        }
+      }
+    },
+    "Numbered list": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нумерованный список"
+          }
+        }
+      }
+    },
+    "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выкл.: у изменённых файлов точка, сохранение по ⌘S. Вкл.: сохраняются через мгновение после того, как вы перестали печатать."
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть"
+          }
+        }
+      }
+    },
+    "Open %@ in %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Open %1$@ in %2$@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть %@ в %@"
+          }
+        }
+      }
+    },
+    "Open All Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть все изменения"
+          }
+        }
+      }
+    },
+    "Open Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть изменения"
+          }
+        }
+      }
+    },
+    "Open File": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть файл"
+          }
+        }
+      }
+    },
+    "Open File…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть файл…"
+          }
+        }
+      }
+    },
+    "Open In": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть в"
+          }
+        }
+      }
+    },
+    "Open Kernel": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть ядро"
+          }
+        }
+      }
+    },
+    "Open Preview to the Side": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть просмотр сбоку"
+          }
+        }
+      }
+    },
+    "Open Quickly": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрое открытие"
+          }
+        }
+      }
+    },
+    "Open Quickly…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрое открытие…"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть настройки"
+          }
+        }
+      }
+    },
+    "Open Workspace In": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть рабочую область в"
+          }
+        }
+      }
+    },
+    "Open Worktree": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть worktree"
+          }
+        }
+      }
+    },
+    "Open a Project over SSH": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть проект по SSH"
+          }
+        }
+      }
+    },
+    "Open a workspace to run it there — the command is on the clipboard: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте рабочую область, чтобы запустить там — команда в буфере обмена: %@"
+          }
+        }
+      }
+    },
+    "Open in ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть в "
+          }
+        }
+      }
+    },
+    "Open in Safari": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть в Safari"
+          }
+        }
+      }
+    },
+    "Open on the Web": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть в вебе"
+          }
+        }
+      }
+    },
+    "Open settings.json": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть settings.json"
+          }
+        }
+      }
+    },
+    "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открывает /usage у Claude Code (каждые 10 минут), Grok и Antigravity (каждые 30) в фоне и показывает внизу боковой панели, сколько израсходовано от каждого плана. Токены не тратит."
+          }
+        }
+      }
+    },
+    "Option key sends Alt (Meta)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Option работает как Alt (Meta)"
+          }
+        }
+      }
+    },
+    "Pane Above": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель выше"
+          }
+        }
+      }
+    },
+    "Pane Below": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель ниже"
+          }
+        }
+      }
+    },
+    "Pane on the Left": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель слева"
+          }
+        }
+      }
+    },
+    "Pane on the Right": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель справа"
+          }
+        }
+      }
+    },
+    "Paste": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вставить"
+          }
+        }
+      }
+    },
+    "Pause idle agents": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усыплять бездействующих агентов"
+          }
+        }
+      }
+    },
+    "Paused": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усыплён"
+          }
+        }
+      }
+    },
+    "Paused agents free memory and resume the same conversation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усыплённые агенты освобождают память и продолжают тот же разговор."
+          }
+        }
+      }
+    },
+    "Personal API key": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Личный API-ключ"
+          }
+        }
+      }
+    },
+    "Pick a section": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите раздел"
+          }
+        }
+      }
+    },
+    "Pick a workspace in the sidebar, or press ⌘N for a new one — a clean desk in the project for one task and its agents.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите рабочую область в боковой панели или нажмите ⌘N, чтобы создать новую — чистый стол в проекте для одной задачи и её агентов."
+          }
+        }
+      }
+    },
+    "Pin to Top": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрепить сверху"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закреплённые"
+          }
+        }
+      }
+    },
+    "Plan Limits": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лимиты планов"
+          }
+        }
+      }
+    },
+    "Pop Stash": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вернуть спрятанное"
+          }
+        }
+      }
+    },
+    "Preview": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Просмотр"
+          }
+        }
+      }
+    },
+    "Previous Change (⌥↑)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущее изменение (⌥↑)"
+          }
+        }
+      }
+    },
+    "Previous Match": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущее совпадение"
+          }
+        }
+      }
+    },
+    "Previous Match (⇧⌘G)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущее совпадение (⇧⌘G)"
+          }
+        }
+      }
+    },
+    "Previous Pane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущая панель"
+          }
+        }
+      }
+    },
+    "Previous Tab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущая вкладка"
+          }
+        }
+      }
+    },
+    "Previous Workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущая рабочая область"
+          }
+        }
+      }
+    },
+    "Profile name (e.g. work)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя профиля (например, work)"
+          }
+        }
+      }
+    },
+    "Projects": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проекты"
+          }
+        }
+      }
+    },
+    "Projects need `gh auth refresh -s read:project`": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для проектов нужен `gh auth refresh -s read:project`"
+          }
+        }
+      }
+    },
+    "Provider Presets": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готовые провайдеры"
+          }
+        }
+      }
+    },
+    "Publish Branch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Опубликовать ветку"
+          }
+        }
+      }
+    },
+    "Pull": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть"
+          }
+        }
+      }
+    },
+    "Pull Request": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull request"
+          }
+        }
+      }
+    },
+    "Pull Requests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull request'ы"
+          }
+        }
+      }
+    },
+    "Pull from and push to %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть из %@ и отправить туда"
+          }
+        }
+      }
+    },
+    "Pull request created": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull request создан"
+          }
+        }
+      }
+    },
+    "Pull request created: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pull request создан: %@"
+          }
+        }
+      }
+    },
+    "Pulled": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуто"
+          }
+        }
+      }
+    },
+    "Push": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить"
+          }
+        }
+      }
+    },
+    "Pushed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправлено"
+          }
+        }
+      }
+    },
+    "Pushes %@ and opens a PR titled from its commits.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправляет %@ и открывает PR с заголовком из коммитов."
+          }
+        }
+      }
+    },
+    "Quick Look": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрый просмотр"
+          }
+        }
+      }
+    },
+    "Quick Note": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "быстрой заметки"
+          }
+        }
+      }
+    },
+    "Quit Krill": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершить Krill"
+          }
+        }
+      }
+    },
+    "Ran all cells": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все ячейки выполнены"
+          }
+        }
+      }
+    },
+    "Re-running the failed jobs": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапуск упавших задач"
+          }
+        }
+      }
+    },
+    "Read %@ ago": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прочитано %@ назад"
+          }
+        }
+      }
+    },
+    "Read %@ ago; not since, so these may be out of date.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прочитано %@ назад и больше не обновлялось — данные могли устареть."
+          }
+        }
+      }
+    },
+    "Read from ~/.claude transcripts on this Mac (every account profile). Prices are Anthropic's list prices; a subscription bills differently.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По записям ~/.claude на этом Mac (все профили аккаунтов). Цены — прейскурант Anthropic; подписка считается иначе."
+          }
+        }
+      }
+    },
+    "Reading Claude Code's transcripts — the first time takes a minute.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Читаю записи Claude Code — в первый раз это занимает минуту."
+          }
+        }
+      }
+    },
+    "Reading it from %@…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Читаю с %@…"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готов"
+          }
+        }
+      }
+    },
+    "Ready for review": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово к проверке"
+          }
+        }
+      }
+    },
+    "Recent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недавние"
+          }
+        }
+      }
+    },
+    "Redo": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторить"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить"
+          }
+        }
+      }
+    },
+    "Reload": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить"
+          }
+        }
+      }
+    },
+    "Reload (⌘R)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить (⌘R)"
+          }
+        }
+      }
+    },
+    "Reload Ignoring Cache": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезагрузить без кеша"
+          }
+        }
+      }
+    },
+    "Remote (SSH)…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалённый (SSH)…"
+          }
+        }
+      }
+    },
+    "Remote Branches": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалённые ветки"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убрать"
+          }
+        }
+      }
+    },
+    "Remove Project…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убрать проект…"
+          }
+        }
+      }
+    },
+    "Remove from Krill…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убрать из Krill…"
+          }
+        }
+      }
+    },
+    "Remove “%@” from Krill?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убрать «%@» из Krill?"
+          }
+        }
+      }
+    },
+    "Rename": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать"
+          }
+        }
+      }
+    },
+    "Rename…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать…"
+          }
+        }
+      }
+    },
+    "Reopen": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть снова"
+          }
+        }
+      }
+    },
+    "Required": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обязательно"
+          }
+        }
+      }
+    },
+    "Reset to Default": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сбросить"
+          }
+        }
+      }
+    },
+    "Restart": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустить"
+          }
+        }
+      }
+    },
+    "Restart Background Service…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустить фоновую службу…"
+          }
+        }
+      }
+    },
+    "Restart Service": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустить службу"
+          }
+        }
+      }
+    },
+    "Restart the background service?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустить фоновую службу?"
+          }
+        }
+      }
+    },
+    "Restore Defaults": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вернуть стандартные"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продолжить"
+          }
+        }
+      }
+    },
+    "Reveal in Finder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать в Finder"
+          }
+        }
+      }
+    },
+    "Review Changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Просмотреть изменения"
+          }
+        }
+      }
+    },
+    "Review requested": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждут моего ревью"
+          }
+        }
+      }
+    },
+    "Review which commit?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Какой коммит смотреть?"
+          }
+        }
+      }
+    },
+    "Right": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Справа"
+          }
+        }
+      }
+    },
+    "Run": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запуск"
+          }
+        }
+      }
+    },
+    "Run All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполнить все"
+          }
+        }
+      }
+    },
+    "Run Workflow…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить workflow…"
+          }
+        }
+      }
+    },
+    "Run a command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполнить команду"
+          }
+        }
+      }
+    },
+    "Run this project's commands?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполнить команды этого проекта?"
+          }
+        }
+      }
+    },
+    "Run “%@” on %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Run “%1$@” on %2$@?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить «%@» в %@?"
+          }
+        }
+      }
+    },
+    "Running agent sessions end. Workspaces, history and settings are kept.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессии агентов завершатся. Рабочие области, история и настройки сохранятся."
+          }
+        }
+      }
+    },
+    "Running in This Workspace": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущено в этой рабочей области"
+          }
+        }
+      }
+    },
+    "Running…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполняется…"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить"
+          }
+        }
+      }
+    },
+    "Save All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить все"
+          }
+        }
+      }
+    },
+    "Save automatically": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранять автоматически"
+          }
+        }
+      }
+    },
+    "Saved": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранено"
+          }
+        }
+      }
+    },
+    "Scratch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Черновик"
+          }
+        }
+      }
+    },
+    "Screenshot copied": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Снимок скопирован"
+          }
+        }
+      }
+    },
+    "Search %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Искать: %@"
+          }
+        }
+      }
+    },
+    "Search in Files": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск по файлам"
+          }
+        }
+      }
+    },
+    "Search inside conversations": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Искать внутри разговоров"
+          }
+        }
+      }
+    },
+    "Search or enter address": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск или адрес"
+          }
+        }
+      }
+    },
+    "Search settings": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск настроек"
+          }
+        }
+      }
+    },
+    "Search titles and folders": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск по названиям и папкам"
+          }
+        }
+      }
+    },
+    "Search workspaces, agents, tabs, files and commands — # for pull requests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочие области, агенты, вкладки, файлы и команды — # для pull request'ов"
+          }
+        }
+      }
+    },
+    "Select All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбрать все"
+          }
+        }
+      }
+    },
+    "Select Pane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбрать панель"
+          }
+        }
+      }
+    },
+    "Select a project": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите проект"
+          }
+        }
+      }
+    },
+    "Select a workspace": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите рабочую область"
+          }
+        }
+      }
+    },
+    "Select an item": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите элемент"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить"
+          }
+        }
+      }
+    },
+    "Send Review Comments to Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить комментарии ревью агенту"
+          }
+        }
+      }
+    },
+    "Send Test Notification": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить пробное уведомление"
+          }
+        }
+      }
+    },
+    "Send to Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить агенту"
+          }
+        }
+      }
+    },
+    "Send to which agent?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Какому агенту отправить?"
+          }
+        }
+      }
+    },
+    "Sent %lld comments to agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенту отправлено комментариев: %lld"
+          }
+        }
+      }
+    },
+    "Sent to %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправлено: %@"
+          }
+        }
+      }
+    },
+    "Sent. If no banner appeared, check Focus.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправлено. Если баннер не появился, проверьте режим «Фокусирование»."
+          }
+        }
+      }
+    },
+    "Servers you start in this workspace's terminals and agents show up here. Or type an address above.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь появятся серверы, запущенные в терминалах и агентах этой рабочей области. Или введите адрес выше."
+          }
+        }
+      }
+    },
+    "Services": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Службы"
+          }
+        }
+      }
+    },
+    "Session": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия"
+          }
+        }
+      }
+    },
+    "Session History": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "История сессий"
+          }
+        }
+      }
+    },
+    "Session ended": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия завершена"
+          }
+        }
+      }
+    },
+    "Setting": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройка"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройки"
+          }
+        }
+      }
+    },
+    "Settings › Appearance": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройки › Оформление"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройки…"
+          }
+        }
+      }
+    },
+    "Show": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать"
+          }
+        }
+      }
+    },
+    "Show Agent Needing You": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать агента, который ждёт"
+          }
+        }
+      }
+    },
+    "Show All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать все"
+          }
+        }
+      }
+    },
+    "Show All Open": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать все открытые"
+          }
+        }
+      }
+    },
+    "Show All Panes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать все панели"
+          }
+        }
+      }
+    },
+    "Show Desktop": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "показа рабочего стола"
+          }
+        }
+      }
+    },
+    "Show Inspector": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать инспектор"
+          }
+        }
+      }
+    },
+    "Show Output": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать вывод"
+          }
+        }
+      }
+    },
+    "Show Sidebar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать боковую панель"
+          }
+        }
+      }
+    },
+    "Show all panes (⇧⌘↩)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать все панели (⇧⌘↩)"
+          }
+        }
+      }
+    },
+    "Show in Finder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать в Finder"
+          }
+        }
+      }
+    },
+    "Show minimap": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать мини-карту"
+          }
+        }
+      }
+    },
+    "Show or hide the inspector (⌥⌘0)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать или скрыть инспектор (⌥⌘0)"
+          }
+        }
+      }
+    },
+    "Show or hide the sidebar (⌘0)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать или скрыть боковую панель (⌘0)"
+          }
+        }
+      }
+    },
+    "Show plan limits": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать лимиты планов"
+          }
+        }
+      }
+    },
+    "Side by Side": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рядом"
+          }
+        }
+      }
+    },
+    "Side by Side (needs a wider pane)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рядом (нужна панель пошире)"
+          }
+        }
+      }
+    },
+    "Sidebar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Боковая панель"
+          }
+        }
+      }
+    },
+    "Sidebar and inspector text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Текст боковой панели и инспектора"
+          }
+        }
+      }
+    },
+    "Site": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сайт"
+          }
+        }
+      }
+    },
+    "Skill: change Krill settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Навык: менять настройки Krill"
+          }
+        }
+      }
+    },
+    "Skill: write Krill extensions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Навык: писать расширения Krill"
+          }
+        }
+      }
+    },
+    "Smaller Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мельче"
+          }
+        }
+      }
+    },
+    "Source Control": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Контроль версий"
+          }
+        }
+      }
+    },
+    "Source Control: changes and staging, commits, branches, the history graph and diffs.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Контроль версий: изменения и индекс, коммиты, ветки, граф истории и диффы."
+          }
+        }
+      }
+    },
+    "Space": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пробел"
+          }
+        }
+      }
+    },
+    "Split": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сплит"
+          }
+        }
+      }
+    },
+    "Split (needs a wider pane)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сплит (нужна панель пошире)"
+          }
+        }
+      }
+    },
+    "Split Down": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разделить вниз"
+          }
+        }
+      }
+    },
+    "Split Right": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разделить вправо"
+          }
+        }
+      }
+    },
+    "Squash and merge #%lld?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Влить #%lld со squash?"
+          }
+        }
+      }
+    },
+    "Stage": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В индекс"
+          }
+        }
+      }
+    },
+    "Stage Hunk": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фрагмент в индекс"
+          }
+        }
+      }
+    },
+    "Staged": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В индексе"
+          }
+        }
+      }
+    },
+    "Staged Changes": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В индексе"
+          }
+        }
+      }
+    },
+    "Start Task in New Worktree": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Начать задачу в новом worktree"
+          }
+        }
+      }
+    },
+    "Started %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущено: %@"
+          }
+        }
+      }
+    },
+    "Starting Jupyter Lab… it opens in the Browser tab": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запускаю Jupyter Lab… он откроется во вкладке браузера"
+          }
+        }
+      }
+    },
+    "Starts from %@ and switches to it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создаётся от %@, и Krill переключается на неё."
+          }
+        }
+      }
+    },
+    "Stash Changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Спрятать изменения"
+          }
+        }
+      }
+    },
+    "State": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Состояние"
+          }
+        }
+      }
+    },
+    "State:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Состояние:"
+          }
+        }
+      }
+    },
+    "Status": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус"
+          }
+        }
+      }
+    },
+    "Status:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус:"
+          }
+        }
+      }
+    },
+    "Status: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус: %@"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить"
+          }
+        }
+      }
+    },
+    "Stop %@ (ends its processes)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить %@ (завершит его процессы)"
+          }
+        }
+      }
+    },
+    "Stop %@?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить %@?"
+          }
+        }
+      }
+    },
+    "Stop %lld Agents": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агентов (%lld)"
+          }
+        }
+      }
+    },
+    "Stop %lld Agents and Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агентов (%lld) и закрыть"
+          }
+        }
+      }
+    },
+    "Stop %lld Agents…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агентов (%lld)…"
+          }
+        }
+      }
+    },
+    "Stop %lld Sessions and Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить сессии (%lld) и закрыть"
+          }
+        }
+      }
+    },
+    "Stop %lld agents?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агентов (%lld)?"
+          }
+        }
+      }
+    },
+    "Stop 1 Session and Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить сессию и закрыть"
+          }
+        }
+      }
+    },
+    "Stop Agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агента"
+          }
+        }
+      }
+    },
+    "Stop Agent and Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить агента и закрыть"
+          }
+        }
+      }
+    },
+    "Stop and Close": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить и закрыть"
+          }
+        }
+      }
+    },
+    "Stop this agent?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить этого агента?"
+          }
+        }
+      }
+    },
+    "Stop “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Остановить «%@»?"
+          }
+        }
+      }
+    },
+    "Stops %@ (PID %lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Stops %1$@ (PID %2$lld)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Останавливает %@ (PID %lld)"
+          }
+        }
+      }
+    },
+    "Switch Workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сменить рабочую область"
+          }
+        }
+      }
+    },
+    "Switch or create a branch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сменить или создать ветку"
+          }
+        }
+      }
+    },
+    "Sync": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизировать"
+          }
+        }
+      }
+    },
+    "Tab": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка"
+          }
+        }
+      }
+    },
+    "Tab 1": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 1"
+          }
+        }
+      }
+    },
+    "Tab 2": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 2"
+          }
+        }
+      }
+    },
+    "Tab 3": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 3"
+          }
+        }
+      }
+    },
+    "Tab 4": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 4"
+          }
+        }
+      }
+    },
+    "Tab 5": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 5"
+          }
+        }
+      }
+    },
+    "Tab 6": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 6"
+          }
+        }
+      }
+    },
+    "Tab 7": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 7"
+          }
+        }
+      }
+    },
+    "Tab 8": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 8"
+          }
+        }
+      }
+    },
+    "Tab 9": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладка 9"
+          }
+        }
+      }
+    },
+    "Table": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Таблица"
+          }
+        }
+      }
+    },
+    "Task list": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Список задач"
+          }
+        }
+      }
+    },
+    "Team: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда: %@"
+          }
+        }
+      }
+    },
+    "Terminal": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Терминал"
+          }
+        }
+      }
+    },
+    "Test": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тест"
+          }
+        }
+      }
+    },
+    "Tests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тесты"
+          }
+        }
+      }
+    },
+    "Text": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Текст"
+          }
+        }
+      }
+    },
+    "The agent is still working. Closing the tab ends its session.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент ещё работает. Закрытие вкладки завершит его сессию."
+          }
+        }
+      }
+    },
+    "The agents you use must be installed on that machine. Files open read-only.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужные агенты должны быть установлены на той машине. Файлы открываются только для чтения."
+          }
+        }
+      }
+    },
+    "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фоновая служба ещё старой версии. Перезапустите её, чтобы закончить обновление, — сессии агентов завершатся. Это можно сделать и позже из меню Krill."
+          }
+        }
+      }
+    },
+    "The browser, git and issues are extensions too. Turn off what you don't use.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Браузер, git и задачи — тоже расширения. Выключите то, чем не пользуетесь."
+          }
+        }
+      }
+    },
+    "The checkout and branch %@ are removed. Running agents stop.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checkout и ветка %@ удаляются. Запущенные агенты остановятся."
+          }
+        }
+      }
+    },
+    "The extension that shows “%@” is turned off or was removed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширение, которое показывает «%@», выключено или удалено."
+          }
+        }
+      }
+    },
+    "The repository on disk is not touched.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Репозиторий на диске не затрагивается."
+          }
+        }
+      }
+    },
+    "The terminal and the editor have their own font sizes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У терминала и редактора свои размеры шрифта."
+          }
+        }
+      }
+    },
+    "The window, terminal and editor together. Match System switches Krill Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Окно, терминал и редактор вместе. «Как в системе» переключает Krill Light / Dark вместе с macOS; Ghostty оставляет цвета вашего терминала Ghostty."
+          }
+        }
+      }
+    },
+    "Their sessions end": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Их сессии завершатся"
+          }
+        }
+      }
+    },
+    "Theme": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тема"
+          }
+        }
+      }
+    },
+    "Themes for the window, terminal and editor.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Темы окна, терминала и редактора."
+          }
+        }
+      }
+    },
+    "This can't be undone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это нельзя отменить."
+          }
+        }
+      }
+    },
+    "This folder isn't under git version control.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта папка не под контролем git."
+          }
+        }
+      }
+    },
+    "This is how you'll hear that an agent finished or needs you.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Так вы узнаете, что агент закончил или ждёт вас."
+          }
+        }
+      }
+    },
+    "This project has no “%@” command. Add one to .krill.yaml (%@: the command).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "This project has no “%1$@” command. Add one to .krill.yaml (%2$@: the command)."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У этого проекта нет команды «%@». Добавьте её в .krill.yaml (%@: команда)."
+          }
+        }
+      }
+    },
+    "Tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инструменты"
+          }
+        }
+      }
+    },
+    "Trust and Run": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доверять и выполнить"
+          }
+        }
+      }
+    },
+    "Trust it only if you know where this project comes from. Krill asks again if the file changes.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доверяйте, только если знаете, откуда этот проект. Krill спросит снова, если файл изменится."
+          }
+        }
+      }
+    },
+    "Turned Off": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключено"
+          }
+        }
+      }
+    },
+    "Turned off for Krill in System Settings › Notifications.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выключены для Krill в Системные настройки › Уведомления."
+          }
+        }
+      }
+    },
+    "Type shortcut…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажмите сочетание…"
+          }
+        }
+      }
+    },
+    "URL:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL:"
+          }
+        }
+      }
+    },
+    "Uncommitted": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не закоммичено"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отменить"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить"
+          }
+        }
+      }
+    },
+    "Unknown command %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неизвестная команда %@"
+          }
+        }
+      }
+    },
+    "Unpin": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открепить"
+          }
+        }
+      }
+    },
+    "Unstage": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Из индекса"
+          }
+        }
+      }
+    },
+    "Unstage Hunk": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фрагмент из индекса"
+          }
+        }
+      }
+    },
+    "Unstaged": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не в индексе"
+          }
+        }
+      }
+    },
+    "Untitled": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Без названия"
+          }
+        }
+      }
+    },
+    "Update": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить"
+          }
+        }
+      }
+    },
+    "Update %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить %@"
+          }
+        }
+      }
+    },
+    "Update available": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступно обновление"
+          }
+        }
+      }
+    },
+    "Usage": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расход"
+          }
+        }
+      }
+    },
+    "Use Disk Version": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Взять версию с диска"
+          }
+        }
+      }
+    },
+    "Use Selection for Find": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Искать выделенное"
+          }
+        }
+      }
+    },
+    "Used by New Agent (⌥⌘T).": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его запускает «Новый агент» (⌥⌘T)."
+          }
+        }
+      }
+    },
+    "Used for pull requests in repos whose origin is on bitbucket.org.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Для pull request'ов в репозиториях с origin на bitbucket.org."
+          }
+        }
+      }
+    },
+    "Username or email": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя пользователя или почта"
+          }
+        }
+      }
+    },
+    "Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.krill/agents — add a file to add any CLI agent.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значения *_KEY, *_TOKEN и *_SECRET хранятся в вашей связке ключей, а не в файле агента. Агенты — это JSON-файлы в ~/.krill/agents: добавьте файл, чтобы добавить любой CLI-агент."
+          }
+        }
+      }
+    },
+    "Version %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Версия %@"
+          }
+        }
+      }
+    },
+    "View": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вид"
+          }
+        }
+      }
+    },
+    "Waiting for your answer": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждёт вашего ответа"
+          }
+        }
+      }
+    },
+    "Web pages as tabs, dev servers open automatically, Design Mode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Веб-страницы во вкладках, dev-серверы открываются сами, режим дизайна."
+          }
+        }
+      }
+    },
+    "Week": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неделя"
+          }
+        }
+      }
+    },
+    "Week, ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неделя, "
+          }
+        }
+      }
+    },
+    "Welcome to Krill": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добро пожаловать в Krill"
+          }
+        }
+      }
+    },
+    "What changed since the agent's last prompt, even with other agents in the same folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что изменилось с последнего запроса агенту — даже если в той же папке работают другие агенты"
+          }
+        }
+      }
+    },
+    "What each agent reports for its plan; the fullest one first. Faded numbers are older than half an hour.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что каждый агент сообщает о своём плане; самый заполненный — первым. Бледные цифры старше получаса."
+          }
+        }
+      }
+    },
+    "Where is “%@” now?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Где теперь «%@»?"
+          }
+        }
+      }
+    },
+    "Where the panel icons sit above the inspector.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Где стоят значки панелей над инспектором."
+          }
+        }
+      }
+    },
+    "While agents work": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока работают агенты"
+          }
+        }
+      }
+    },
+    "Window": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Окно"
+          }
+        }
+      }
+    },
+    "With a Pull Request": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "С pull request'ом"
+          }
+        }
+      }
+    },
+    "Working": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работает"
+          }
+        }
+      }
+    },
+    "Working Tree": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая копия"
+          }
+        }
+      }
+    },
+    "Workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область"
+          }
+        }
+      }
+    },
+    "Workspace 1": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 1"
+          }
+        }
+      }
+    },
+    "Workspace 2": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 2"
+          }
+        }
+      }
+    },
+    "Workspace 3": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 3"
+          }
+        }
+      }
+    },
+    "Workspace 4": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 4"
+          }
+        }
+      }
+    },
+    "Workspace 5": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 5"
+          }
+        }
+      }
+    },
+    "Workspace 6": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 6"
+          }
+        }
+      }
+    },
+    "Workspace 7": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 7"
+          }
+        }
+      }
+    },
+    "Workspace 8": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 8"
+          }
+        }
+      }
+    },
+    "Workspace 9": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область 9"
+          }
+        }
+      }
+    },
+    "Workspace or agent": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочая область или агент"
+          }
+        }
+      }
+    },
+    "Writing Extensions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как писать расширения"
+          }
+        }
+      }
+    },
+    "You have %lld files with unsaved changes. Save them before quitting?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Несохранённых файлов: %lld. Сохранить их перед выходом?"
+          }
+        }
+      }
+    },
+    "Your changes will be lost if you don't save them.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Если не сохранить, изменения пропадут."
+          }
+        }
+      }
+    },
+    "Zoom": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить масштаб"
+          }
+        }
+      }
+    },
+    "a screenshot": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "снимка экрана"
+          }
+        }
+      }
+    },
+    "a screenshot of an area": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "снимка области"
+          }
+        }
+      }
+    },
+    "a screenshot to the clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "снимка экрана в буфер обмена"
+          }
+        }
+      }
+    },
+    "a system shortcut": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "системного сочетания"
+          }
+        }
+      }
+    },
+    "acme.atlassian.net": {},
+    "an area screenshot to the clipboard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "снимка области в буфер обмена"
+          }
+        }
+      }
+    },
+    "application windows": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "окон приложения"
+          }
+        }
+      }
+    },
+    "at API prices": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "по ценам API"
+          }
+        }
+      }
+    },
+    "checks passed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "проверки пройдены"
+          }
+        }
+      }
+    },
+    "macOS uses this for %@, so Krill won't see it (System Settings › Keyboard › Keyboard Shortcuts).": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS использует его для %@, и Krill его не получит (Системные настройки › Клавиатура › Сочетания клавиш)."
+          }
+        }
+      }
+    },
+    "moving a space left": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода на пространство влево"
+          }
+        }
+      }
+    },
+    "moving a space right": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода на пространство вправо"
+          }
+        }
+      }
+    },
+    "moving focus to the Dock": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода фокуса в Dock"
+          }
+        }
+      }
+    },
+    "moving focus to the active window": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода фокуса в активное окно"
+          }
+        }
+      }
+    },
+    "moving focus to the menu bar": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода фокуса в строку меню"
+          }
+        }
+      }
+    },
+    "moving focus to the next window": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "перехода фокуса в следующее окно"
+          }
+        }
+      }
+    },
+    "no checks": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "проверок нет"
+          }
+        }
+      }
+    },
+    "now": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "сейчас"
+          }
+        }
+      }
+    },
+    "or from Settings › Agents, and it shows up here.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "или в Настройки › Агенты, и он появится здесь."
+          }
+        }
+      }
+    },
+    "per active day": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "за активный день"
+          }
+        }
+      }
+    },
+    "screenshot options": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "параметров снимка экрана"
+          }
+        }
+      }
+    },
+    "see git status": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "смотрите git status"
+          }
+        }
+      }
+    },
+    "space separated": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "через пробел"
+          }
+        }
+      }
+    },
+    "the Help menu": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "меню «Справка»"
+          }
+        }
+      }
+    },
+    "the next input source": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "следующего источника ввода"
+          }
+        }
+      }
+    },
+    "the previous input source": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "предыдущего источника ввода"
+          }
+        }
+      }
+    },
+    "the process": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "процесс"
+          }
+        }
+      }
+    },
+    "the remote branch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "удалённую ветку"
+          }
+        }
+      }
+    },
+    "user@server or a Host from ~/.ssh/config": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "user@server или Host из ~/.ssh/config"
+          }
+        }
+      }
+    },
+    "· resets %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· сброс %@"
+          }
+        }
+      }
+    },
+    "“%@” already exists here.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» здесь уже есть."
+          }
+        }
+      }
+    },
+    "“%@” archived. Window › Archived Workspaces brings it back.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» в архиве. Вернуть — Окно › Архивные рабочие области."
+          }
+        }
+      }
+    },
+    "−%lld": {},
+    "⋯  %lld unchanged lines": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⋯  неизменных строк: %lld"
+          }
+        }
+      }
+    },
+    "⌘-click to open · ⌥⌘-click opens it in its app": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘-клик — открыть · ⌥⌘-клик — открыть в своём приложении"
+          }
+        }
+      }
+    },
+    "● %lld running": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "● выполняется: %lld"
+          }
+        }
+      }
+    },
+    "✓ checks passed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ проверки пройдены"
+          }
+        }
+      }
+    },
+    "✕ %lld failing": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✕ упало: %lld"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
