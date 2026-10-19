@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AgentAvailability.shared.refresh(force: true)
             _ = await Accounts.load()
             AppModel.shared.startSubagentPolling()
-            let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b || $0.note == b } }
+            let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b } }
             let last = UserDefaults.standard.string(forKey: "lastWorkspace").flatMap { AppModel.shared.worktree($0) }
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))
