@@ -25,7 +25,19 @@ final class EditorArea: NSViewController {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func loadView() { view = NSView() }
+    override func loadView() {
+        view = NSView()
+        track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
+    }
+
+    /// Turning an extension off takes its open tabs' content with it (they say how to turn it back on); turning it on
+    /// brings the content back.
+    private func extensionsChanged() {
+        let stale = contents.filter { (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
+        guard !stale.isEmpty else { return }
+        stale.forEach { contents[$0] = nil }
+        render()
+    }
 
     override func viewDidAppear() {
         super.viewDidAppear()
@@ -398,15 +410,20 @@ final class UnavailableTab: TabContent {
     let uri: String
     var onChange: (() -> Void)?
     let view: NSView
-    var title: String { "Unavailable" }
+    var title: String { "Turned Off" }
     var icon: NSImage? { .symbol("questionmark.square.dashed") }
     init(uri: String) {
         self.uri = uri
-        let l = NSTextField(wrappingLabelWithString: "Nothing can open “\(uri)”.\nThe extension that shows it may be disabled — see Settings › Extensions.")
+        let icon = NSImageView(image: .symbol("puzzlepiece.extension")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
+        icon.contentTintColor = .tertiaryLabelColor
+        let t = NSTextField(labelWithString: "Extension Turned Off"); t.font = .systemFont(ofSize: 13, weight: .semibold)
+        let l = NSTextField(wrappingLabelWithString: "The extension that shows “\(uri)” is turned off or was removed.")
         l.alignment = .center; l.textColor = .secondaryLabelColor
-        let v = NSView(); l.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(l)
-        NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: v.centerXAnchor), l.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-                                     l.widthAnchor.constraint(lessThanOrEqualToConstant: 420)])
+        let b = ClosureButton(title: "Extensions…") { SettingsWindow.show(section: "extensions") }; b.bezelStyle = .push
+        let stack = NSStackView(views: [icon, t, l, b]); stack.orientation = .vertical; stack.spacing = 8
+        let v = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(stack)
+        NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: v.centerXAnchor), stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+                                     stack.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32), l.widthAnchor.constraint(lessThanOrEqualToConstant: 420)])
         view = v
     }
     func focus() {}
