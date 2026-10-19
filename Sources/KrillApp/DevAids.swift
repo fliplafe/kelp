@@ -80,17 +80,10 @@ extension AppDelegate {
                 // KRILL_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
                 // reached otherwise without moving the user's pointer).
                 for text in (env["KRILL_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
-                // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
-                v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
-                let scale = w.backingScaleFactor, size = v.bounds.size
-                if let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
-                                                            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-                    ctx.scaleBy(x: scale, y: scale)
-                    var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }
-                    ctx.setFillColor(bg); ctx.fill(CGRect(origin: .zero, size: size))   // the window frame paints this on screen
-                    if v.isFlipped { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
-                    layer.render(in: ctx)
-                    if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
+                Self.render(v, scale: w.backingScaleFactor, to: path)
+                // A popover (limits details…) is its own window: next to the snapshot, as "<name>-popover.png".
+                for pop in NSApp.windows where pop.isVisible && pop.className.contains("Popover") {
+                    if let pv = pop.contentView?.superview ?? pop.contentView { Self.render(pv, scale: pop.backingScaleFactor, to: path.replacingOccurrences(of: ".png", with: "-popover.png")) }
                 }
                 for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
                 // Web content is drawn out of process and may be missing from the PNG: report what the page really shows
@@ -161,6 +154,21 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
+    /// Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
+    static func render(_ v: NSView, scale: CGFloat, to path: String) {
+        v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
+        let size = v.bounds.size
+        guard let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                                                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        ctx.scaleBy(x: scale, y: scale)
+        var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }
+        ctx.setFillColor(bg); ctx.fill(CGRect(origin: .zero, size: size))   // the window frame paints this on screen
+        if v.isFlipped { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
+        layer.render(in: ctx)
+        if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
+    }
+
     /// A visible label's text, or "@x,y": a point in the window, from its top-left corner (SwiftUI content has no labels).
     func click(text: String) {
         guard let w = main.window, let root = w.contentView?.superview else { return }
