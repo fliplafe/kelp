@@ -46,6 +46,14 @@ public struct StatusDetector: Sendable {
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
+    /// Removes an empty prompt's example text (Claude Code: `❯ Try "create a util logging.py…"`), which reads like a
+    /// task the agent is doing to anyone summarizing the screen.
+    public static func withoutPromptHints(_ s: String) -> String {
+        s.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { $0.range(of: #"^\s*[❯>›]\s*Try ""#, options: .regularExpression) == nil }
+            .joined(separator: "\n")
+    }
+
     public static func stripANSI(_ s: String) -> String {
         // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.
         s.replacingOccurrences(of: #"\x{1B}\[\d*[GC]"#, with: " ", options: .regularExpression)

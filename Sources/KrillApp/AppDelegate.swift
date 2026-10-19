@@ -14,9 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.regular)
         Self.watchHangs()
-        ExtensionRegistry.shared.reload()
-        main = MainWindowController()
-        main.showWindow(nil)
+        Perf.measure("registry") { ExtensionRegistry.shared.reload() }
+        Perf.measure("window") { main = MainWindowController() }
+        Perf.measure("show") { main.showWindow(nil) }
         notifier.onOpen = { id in Workbench.focus(session: id) }
         notifier.start()
         AppModel.shared.onChange.append { [weak self] in self?.main.editors.refresh() }
@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppModel.shared.startSubagentPolling()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b || $0.note == b } }
             let last = UserDefaults.standard.string(forKey: "lastWorkspace").flatMap { AppModel.shared.worktree($0) }
+            // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
+            try? await Task.sleep(for: .milliseconds(30))
             if let w = pick ?? last ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { Workbench.show(workspace: w.id) }
         }
         NSApp.activate()

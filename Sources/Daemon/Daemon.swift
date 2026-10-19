@@ -23,6 +23,7 @@ public final class Daemon: @unchecked Sendable {
     var usageCache: (at: Date, value: JSONValue)?
     var chats: [String: ChatSession] = [:]
     var rawConns = Set<Int>()
+    var lastMethod = ""
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
     var claudeLimits: [String: (reading: ClaudeLimits.Reading, at: Date)] = [:]
     func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
@@ -262,7 +263,11 @@ public final class Daemon: @unchecked Sendable {
     }
 
     /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
+    /// KRILL_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
+    static let debugWake = ProcessInfo.processInfo.environment["KRILL_DEBUG_WAKE"] != nil
+
     func wake(_ id: String) throws -> LiveSession {
+        if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         var argv = rec.argv

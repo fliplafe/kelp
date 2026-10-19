@@ -9,7 +9,8 @@ final class Workbench {
     var workspaceId: String? { didSet { if workspaceId != oldValue { UserDefaults.standard.set(workspaceId, forKey: "lastWorkspace") } } }
     var focusedSession: String?
     var focusedFile: String?
-    var inspectorPanel: String = UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {
+    var inspectorPanel: String = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_INSPECTOR"]
+        ?? UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {
         didSet { UserDefaults.standard.set(inspectorPanel, forKey: "inspectorPanel") }
     }
 }

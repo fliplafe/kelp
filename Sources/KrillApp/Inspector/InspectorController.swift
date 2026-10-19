@@ -71,4 +71,8 @@ final class InspectorController: NSViewController {
 
 /// SwiftUI panel in an AppKit host.
 @MainActor
-func hosting<V: View>(_ v: V) -> NSViewController { NSHostingController(rootView: v) }
+func hosting<V: View>(_ v: V) -> NSViewController {
+    let h = NSHostingController(rootView: v)
+    h.sizingOptions = []   // a panel fills the space it's given; it must never resize the window to its ideal size
+    return h
+}

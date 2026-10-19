@@ -12,6 +12,7 @@ extension JSONValue {
 
 extension Daemon {
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
+        if Self.debugWake { lock.withLock { lastMethod = method } }
         if let e = extra[method] { return try await e(self, p) }
         do {
             if let r = try await handleAsync(method, p, conn: conn) { return r }

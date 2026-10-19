@@ -11,7 +11,7 @@ extension Workbench {
     static func show(workspace id: String) {
         guard shared.workspaceId != id || editor == nil else { return }
         shared.workspaceId = id
-        window?.showWorkspace(id)
+        Perf.measure("workspace") { window?.showWorkspace(id) }
     }
 
     static func open(_ uri: String, split: SplitDirection? = nil, workspace: String? = nil) {

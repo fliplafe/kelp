@@ -34,9 +34,16 @@ extension AppDelegate {
         if env["KRILL_SNAPSHOT_DARK"] == nil { NSApp.appearance = NSAppearance(named: .aqua) }   // cacheDisplay mixes appearances otherwise
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [self] in
             main.window?.setFrame(NSRect(x: 80, y: 80, width: 1440, height: 900), display: true); main.window?.contentView?.layoutSubtreeIfNeeded()
+            print("FRAME", main.window?.frame ?? .zero, main.window?.contentView?.superview?.bounds ?? .zero)
             if let p = env["KRILL_SNAPSHOT_INSPECTOR"] { main.showInspector(panel: p) }
             if let u = env["KRILL_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
+            // KRILL_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
+            if let targets = env["KRILL_CLICK"]?.split(separator: "|") {
+                for (i, t) in targets.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.8) { [self] in click(text: String(t)) }
+                }
+            }
             // KRILL_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
             if let names = env["KRILL_SWITCH"]?.split(separator: ",") {
                 for (i, n) in names.enumerated() {
@@ -111,6 +118,20 @@ extension AppDelegate {
                 }
             }
         }
+    }
+}
+
+extension AppDelegate {
+    func click(text: String) {
+        guard let w = main.window, let root = w.contentView?.superview,
+              let field = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor })
+        else { print("CLICK no \(text)"); return }
+        let p = field.convert(NSPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                          windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { NSApp.sendEvent(e) }
+        }
+        print("CLICK \(text) → workspace \(AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-")")
     }
 }
 

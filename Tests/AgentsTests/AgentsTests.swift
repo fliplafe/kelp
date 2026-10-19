@@ -100,3 +100,9 @@ import Core
     #expect(ClaudeLimits.parse("5-hour limit reached ∙ resets 11pm").first?.percent == 100)
     #expect(ClaudeLimits.parse("nothing to see").isEmpty)
 }
+
+@Test func promptHintsAreNotTasks() {
+    let screen = "⏺ Done.\n────\n❯ Try \"create a util logging.py that...\"\n────\n  ⏵⏵ auto mode on"
+    #expect(!StatusDetector.withoutPromptHints(screen).contains("logging.py"))
+    #expect(StatusDetector.withoutPromptHints(screen).contains("Done."))
+}

@@ -2,6 +2,7 @@ import AppKit
 import UserNotifications
 import Core
 import LocalAI
+import Agents
 
 /// Banner + dock badge when an agent finishes or waits; clicking opens the right pane.
 @MainActor
@@ -32,7 +33,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         var s = s
         if LocalAI.isAvailable, let c = AppModel.shared.client,
            let tail = (try? await c.call("session.read", .obj(["id": .string(s.id), "bytes": 3000])))?.string,
-           let st = await LocalAI.agentState(tail: tail) {
+           let st = await LocalAI.agentState(tail: StatusDetector.withoutPromptHints(tail)) {
             s.summary = st.summary
             var p: [String: JSONValue] = ["id": .string(s.id), "summary": .string(st.summary)]
             if st.waitingForUser, s.status == .done { p["status"] = "waiting"; s.status = .waiting }

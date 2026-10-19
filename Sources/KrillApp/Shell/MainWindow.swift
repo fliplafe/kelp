@@ -14,7 +14,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: w)
-        let sb = NSSplitViewItem(sidebarWithViewController: NSHostingController(rootView: SidebarView()))
+        let sb = NSSplitViewItem(sidebarWithViewController: SidebarController())
         sb.minimumThickness = 220; sb.maximumThickness = 400; sb.canCollapse = true
         let content = NSSplitViewItem(viewController: editors)
         content.minimumThickness = 420
