@@ -23,7 +23,7 @@ final class StartView: NSView, NSTextViewDelegate {
         input.isAutomaticQuoteSubstitutionEnabled = false; input.allowsUndo = true; input.delegate = self
         input.drawsBackground = false; input.isVerticallyResizable = true; input.autoresizingMask = .width
         let scroll = NSScrollView(); scroll.documentView = input; scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
-        placeholder.textColor = .placeholderTextColor; placeholder.font = .systemFont(ofSize: 14)
+        placeholder.textColor = .placeholderTextColor; placeholder.font = .systemFont(ofSize: 14); placeholder.lineBreakMode = .byTruncatingTail
         placeholder.translatesAutoresizingMaskIntoConstraints = false; scroll.addSubview(placeholder)
 
         for a in agents {
@@ -63,6 +63,7 @@ final class StartView: NSView, NSTextViewDelegate {
             stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -40),
             width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
             card.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(equalToConstant: 96),
+            scroll.widthAnchor.constraint(equalTo: cardStack.widthAnchor),   // a vertical stack doesn't stretch its views
             cardStack.topAnchor.constraint(equalTo: card.topAnchor), cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             cardStack.leadingAnchor.constraint(equalTo: card.leadingAnchor), cardStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),

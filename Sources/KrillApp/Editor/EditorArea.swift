@@ -10,6 +10,7 @@ final class EditorArea: NSViewController {
     private(set) var layout: WorkspaceLayout
     private var contents: [String: TabContent] = [:]       // by tab id
     private var groupViews: [String: GroupView] = [:]
+    private var renders = 0
     private var start: StartView?
     private var responderObservation: NSKeyValueObservation?
     private var saveWork: DispatchWorkItem?
@@ -46,7 +47,21 @@ final class EditorArea: NSViewController {
         view.addSubview(v)
         NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: view.topAnchor), v.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                                      v.leadingAnchor.constraint(equalTo: view.leadingAnchor), v.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
-        for gid in root.sessions { refreshGroup(gid) }
+        // The focused group now, the others one per run-loop turn: restoring a browser, files and terminals together
+        // would otherwise hold the main thread for 100–200 ms. A newer render takes over the rest.
+        renders += 1
+        let gen = renders, first = layout.focusedGroup?.id ?? root.sessions.first
+        if let first { refreshGroup(first) }
+        var rest = root.sessions.filter { $0 != first }
+        func next() {
+            guard !rest.isEmpty else { return }
+            let gid = rest.removeFirst()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, renders == gen else { return }
+                refreshGroup(gid); next()
+            }
+        }
+        next()
         for gid in groupViews.keys where layout.groups[gid] == nil { groupViews[gid] = nil }
         let live = Set(layout.allTabs.map(\.id))
         for id in contents.keys where !live.contains(id) { contents[id] = nil }

@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 /// Developer aids driven by environment variables; inert in normal use.
 ///   KRILL_SNAPSHOT=/x.png  render the window to a PNG and quit (no screen-recording permission needed)
@@ -84,7 +85,16 @@ extension AppDelegate {
                     if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
                 }
                 for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
-                exit(0)
+                // Web content is drawn out of process and may be missing from the PNG: report what the page really shows.
+                let webs = v.allSubviews(of: WKWebView.self)
+                guard !webs.isEmpty else { exit(0) }
+                var left = webs.count
+                for web in webs {
+                    web.evaluateJavaScript("document.body ? document.body.innerText.length : -1") { n, _ in
+                        print("WEB", web.url?.absoluteString ?? "-", "frame", web.frame.size, "visible", web.window != nil && !web.isHiddenOrHasHiddenAncestor, "text", n ?? "nil")
+                        left -= 1; if left == 0 { exit(0) }
+                    }
+                }
             }
         }
     }
