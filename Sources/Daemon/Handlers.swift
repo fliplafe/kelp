@@ -162,6 +162,9 @@ extension Daemon {
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
             if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
             ls.hook(try p.req("event")); return .null
+        case "session.lastReply":   // the agent's last message, from its transcript (Claude Code), for summaries
+            guard let t = existing(try p.req("id"))?.transcriptPath else { return .null }
+            return Self.lastReply(transcript: URL(fileURLWithPath: t)).map { .string($0) } ?? .null
         case "session.subagents":   // Claude Code subagents of a session, from its transcript folder
             guard let t = existing(try p.req("id"))?.transcriptPath else { return .array([]) }
             let dir = URL(fileURLWithPath: t).deletingPathExtension().appendingPathComponent("subagents")
@@ -283,5 +286,24 @@ extension Daemon {
 
         default: throw RPCError.methodNotFound
         }
+    }
+}
+
+extension Daemon {
+    /// The text of the last assistant message in a Claude Code transcript (read from the file's tail).
+    static func lastReply(transcript url: URL) -> String? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > 262_144 ? size - 262_144 : 0)
+        guard let data = try? h.readToEnd() else { return nil }
+        for line in data.split(separator: 0x0A).reversed() {
+            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["type"] as? String == "assistant",
+                  let content = (o["message"] as? [String: Any])?["content"] as? [[String: Any]] else { continue }
+            let text = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return String(text.prefix(4000)) }
+        }
+        return nil
     }
 }

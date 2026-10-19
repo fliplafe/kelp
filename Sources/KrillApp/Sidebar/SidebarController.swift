@@ -115,6 +115,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let row = outline.row(forItem: n)
         guard row >= 0, outline.selectedRow != row, !(outline.item(atRow: outline.selectedRow) is Node && isAgent(outline.item(atRow: outline.selectedRow), in: id)) else { return }
         syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
+        // The workspace on screen is in view, with its agents under it.
+        if let last = n.children.last, outline.isItemExpanded(n) { outline.scrollRowToVisible(outline.row(forItem: last)) }
+        outline.scrollRowToVisible(row)
     }
     private func isAgent(_ item: Any?, in workspace: String) -> Bool {
         guard let n = item as? Node, case .agent(let sid) = n.kind else { return false }

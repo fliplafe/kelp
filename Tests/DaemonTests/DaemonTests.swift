@@ -249,3 +249,18 @@ final class ChatBox: @unchecked Sendable {
     #expect(FileManager.default.fileExists(atPath: repo.path))
     await #expect(throws: RPCError.self) { _ = try await c.call("worktree.remove", .obj(["id": .string(first.id)])) }
 }
+
+/// Summaries start from the agent's own last reply, not the terminal around it.
+@Test func lastReplyFromTranscript() throws {
+    let f = tmp().appendingPathComponent("t.jsonl")
+    let lines = [
+        #"{"type":"user","message":{"content":"hi"}}"#,
+        #"{"type":"assistant","message":{"content":[{"type":"text","text":"First answer."}]}}"#,
+        #"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}"#,
+        #"{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed the parser tests."}]}}"#,
+        #"{"type":"system","subtype":"stop"}"#
+    ]
+    try FileManager.default.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try (lines.joined(separator: "\n") + "\n").write(to: f, atomically: true, encoding: .utf8)
+    #expect(Daemon.lastReply(transcript: f) == "Fixed the parser tests.")
+}
