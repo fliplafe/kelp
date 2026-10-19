@@ -20,12 +20,13 @@ extension Daemon {
             if ["github.", "linear.", "jira.", "bitbucket."].contains(where: method.hasPrefix) || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
         }
-        catch let e as GitError { throw RPCError.internalError(e.description) }
+        catch let e as GitError { throw RPCError.internalError(e.message) }
         do { return try handleSync(method, p, conn: conn) }
-        catch let e as GitError { throw RPCError.internalError(e.description) }
+        catch let e as GitError { throw RPCError.internalError(e.message) }
     }
 
     private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
+        if method.hasPrefix("git."), let r = try handleGit(method, p) { return r }
         if method.hasPrefix("chat."), let r = try handleChat(method, p) { return r }
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
@@ -206,9 +207,10 @@ extension Daemon {
             else { throw RPCError.invalidParams("no such hunk") }
             try Git.applyHunk(w.path, diff: d, hunk: i, reverse: rev); return .null
         case "git.commit":
-            return .string(try Git.commit(cwd(forWorktree: p.req("id")).path, message: p.req("message"), all: p["all"]?.bool == true))
-        case "git.push":
-            let w = try cwd(forWorktree: p.req("id")); try Git.push(w.path, branch: w.branch); return .null
+            return .string(try Git.commit(cwd(forWorktree: p.req("id")).path, message: p.req("message"), all: p["all"]?.bool == true,
+                                          amend: p["amend"]?.bool == true))
+        case "git.push":   // the branch checked out now (a workspace's record can be stale after a switch)
+            try Git.remote(cwd(forWorktree: p.req("id")).path, .push); return .null
         case "git.merge":   // merge worktree branch into the repo's base branch (main checkout)
             let w = try cwd(forWorktree: p.req("id"))
             guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }

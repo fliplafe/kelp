@@ -94,7 +94,7 @@ extension Git {
         case .staged: a.append("--cached")
         case .allUncommitted: a.append("HEAD")
         case .branch(let base): a.append("\(base)...HEAD")
-        case .commit(let c): a = ["show", "--no-color", "--format=", "-U3", c]
+        case .commit(let c): a = ["show", "--no-color", "--format=", "-U3", "-M", "--diff-merges=first-parent", c]
         }
         if let file { a += ["--", file] }
         var diffs = parseDiff(try run(a, cwd: path))

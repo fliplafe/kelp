@@ -10,13 +10,9 @@ extension Git {
     }
 
     @discardableResult
-    public static func commit(_ path: String, message: String, all: Bool = false) throws -> String {
-        try run(["commit", "-q"] + (all ? ["-a"] : []) + ["-m", message], cwd: path)
+    public static func commit(_ path: String, message: String, all: Bool = false, amend: Bool = false) throws -> String {
+        try run(["commit", "-q"] + (all ? ["-a"] : []) + (amend ? ["--amend"] : []) + ["-m", message], cwd: path)
         return try run(["rev-parse", "--short", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    public static func push(_ path: String, branch: String) throws {
-        try run(["push", "-u", "origin", branch], cwd: path)
     }
 
     public struct MergeResult: Sendable, Equatable { public var merged: Bool; public var conflicts: [String] }

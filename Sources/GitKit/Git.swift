@@ -3,6 +3,14 @@ import Foundation
 public struct GitError: Error, CustomStringConvertible, Sendable {
     public var args: [String]; public var status: Int32; public var stderr: String
     public var description: String { "git \(args.joined(separator: " ")) failed (\(status)): \(stderr)" }
+    /// For people: git's first sentence without the command line or "fatal:" ("…overwritten by checkout:" keeps its next line).
+    public var message: String {
+        let lines = stderr.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard var first = lines.first else { return description }
+        for p in ["fatal: ", "error: "] where first.hasPrefix(p) { first.removeFirst(p.count) }
+        if first.hasSuffix(":"), lines.count > 1 { first += " " + lines[1] }
+        return first.prefix(1).uppercased() + first.dropFirst()
+    }
 }
 
 /// Thin wrapper over the system git. Behaviour matches what you'd see in a terminal.
