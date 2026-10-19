@@ -12,8 +12,8 @@ enum ExtensionAuthoring {
     }
 
     /// Describe what you want; an agent writes the extension next to the authoring guide while Krill reloads it live.
-    static func createWithAI() {
-        guard let what = prompt("Create an Extension with AI", "What should it show or do? e.g. “Docker containers with logs and shell”, “iOS simulators I can boot”."),
+    static func createWithAI(_ description: String? = nil, model: String? = nil) {
+        guard let what = description ?? prompt("Create an Extension with AI", "What should it show or do? e.g. “Docker containers with logs and shell”, “iOS simulators I can boot”."),
               !what.isEmpty else { return }
         guard let dir = scaffold(name: String(what.prefix(40)), description: what) else { return }
         startAgent(in: dir, prompt: """
@@ -21,7 +21,7 @@ enum ExtensionAuthoring {
         Read ../EXTENSIONS.md first — it is the complete format. Edit extension.json (and add files such as an HTML page if needed) in this folder only.
         Krill reloads the extension every time you save. Check it with `krill ext list` (load errors show there) and test list commands in the shell first — they must print JSON.
         When it works, say where it appears in Krill and how to use it.
-        """)
+        """, model: model)
     }
 
     static func improve(_ e: ExtensionInfo) {
@@ -38,8 +38,9 @@ enum ExtensionAuthoring {
         catch { Banner.show("Couldn't create the extension: \(error.localizedDescription)", style: .error); return nil }
     }
 
-    private static func startAgent(in dir: URL, prompt: String) {
+    private static func startAgent(in dir: URL, prompt: String, model: String? = nil) {
         var p: [String: JSONValue] = ["cwd": .string(dir.path), "agent": .string(AgentCatalog.defaultAgent), "prompt": .string(prompt), "title": "Extension builder"]
+        if let model { p["model"] = .string(model) }
         if let w = Workbench.shared.workspaceId { p["worktreeId"] = .string(w) }
         Task {
             guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }

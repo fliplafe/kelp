@@ -54,19 +54,25 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var effortArgs: [String: [String]] = [:]
     /// Prompts answered automatically in the first seconds of a session (e.g. "trust this folder?").
     public var autoAnswers: [AutoAnswer] = []
-    /// Args that resume the latest conversation in this directory (restart / hibernation).
+    /// Args that resume the latest conversation in this directory (restart / hibernation) when no id was pinned.
     public var resumeArgs: [String] = []
+    /// `--session-id <uuid>` pins a new conversation to the Krill session id; `--resume <uuid>` brings back exactly that one.
+    /// Without them, two agents in one folder resume each other's conversations.
+    public var sessionIdFlag: String?
+    public var resumeIdFlag: String?
     /// If set, `{mcpConfigFlag} <file>` is appended and the file registers the `krill` MCP server.
     public var mcpConfigFlag: String?
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
                 yoloArgs: [String] = [], modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
-                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], mcpConfigFlag: String? = nil) {
+                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], mcpConfigFlag: String? = nil,
+                sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
         self.yoloArgs = yoloArgs; self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.mcpConfigFlag = mcpConfigFlag
+        self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
     }
 
     public init(from decoder: Decoder) throws {
@@ -86,6 +92,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         autoAnswers = try c.decodeIfPresent([AutoAnswer].self, forKey: .autoAnswers) ?? []
         resumeArgs = try c.decodeIfPresent([String].self, forKey: .resumeArgs) ?? []
         mcpConfigFlag = try c.decodeIfPresent(String.self, forKey: .mcpConfigFlag)
+        sessionIdFlag = try c.decodeIfPresent(String.self, forKey: .sessionIdFlag)
+        resumeIdFlag = try c.decodeIfPresent(String.self, forKey: .resumeIdFlag)
     }
 
     public static let defaultWaiting = [
@@ -105,13 +113,27 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         return a
     }
 
+    /// True when `argv` already names the conversation to continue.
+    public func resumes(_ argv: [String]) -> Bool {
+        resumeIdFlag.map(argv.contains) == true || (!resumeArgs.isEmpty && argv.contains(where: resumeArgs.contains))
+    }
+
+    /// `argv` changed to continue its conversation: the pinned id when there is one, else the agent's "latest here".
+    public func resuming(_ argv: [String]) -> [String] {
+        if let f = sessionIdFlag, let r = resumeIdFlag, let i = argv.firstIndex(of: f), i + 1 < argv.count {
+            var a = argv; a[i] = r; return a
+        }
+        return resumes(argv) ? argv : argv + resumeArgs
+    }
+
     static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|one you trust|allow .* to work in this folder)"#, input: "\r",
                                   choose: #"(?i)(yes|trust|allow|proceed)"#)
 
     public static let presets: [AgentManifest] = [
         .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",
               yoloArgs: ["--dangerously-skip-permissions"], modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
-              autoAnswers: [trust], resumeArgs: ["--continue"], mcpConfigFlag: "--mcp-config"),
+              autoAnswers: [trust], resumeArgs: ["--continue"], mcpConfigFlag: "--mcp-config",
+              sessionIdFlag: "--session-id", resumeIdFlag: "--resume"),
         .init(id: "codex", name: "Codex", command: "codex", yoloArgs: ["--dangerously-bypass-approvals-and-sandbox"],
               modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
               effortArgs: ["low": ["-c", "model_reasoning_effort=low"], "medium": ["-c", "model_reasoning_effort=medium"], "high": ["-c", "model_reasoning_effort=high"]],
@@ -150,10 +172,20 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum Hooks {
-    /// Claude-style settings file: Stop → done, Notification → waiting. `krill` must be on PATH in the session.
+    /// Claude-style settings file: Stop → done, Notification → waiting (`krill hook` drops the idle reminder),
+    /// AskUserQuestion → waiting until answered. `krill` must be on PATH in the session.
     public static func settingsJSON() -> String {
-        func hook(_ ev: String) -> String { #"[{"hooks":[{"type":"command","command":"krill hook \#(ev)"}]}]"# }
-        return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working"))}}"#
+        func hook(_ ev: String, _ matcher: String? = nil) -> String {
+            #"[{\#(matcher.map { #""matcher":"\#($0)","# } ?? "")"hooks":[{"type":"command","command":"krill hook \#(ev)"}]}]"#
+        }
+        return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working")),"#
+            + #""PreToolUse":\#(hook("waiting", "AskUserQuestion")),"PostToolUse":\#(hook("working", "AskUserQuestion"))}}"#
+    }
+
+    /// Claude Code repeats "waiting for your input" a minute after a turn ends; that's a finished agent, not a question.
+    public static func isIdleReminder(_ payload: JSONValue) -> Bool {
+        payload["notification_type"]?.string == "idle_prompt"
+            || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
     }
 
     public static func writeSettings(to url: URL) throws {

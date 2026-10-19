@@ -203,3 +203,13 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     #expect(ClaudeUsage(root: nowhere).entries.isEmpty)
     #expect(CodexUsage.latest(root: nowhere) == nil)
 }
+
+@Test func claudeSessionsForOneFolder() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let dir = root.appendingPathComponent("-work-my-app")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let line = #"{"type":"user","sessionId":"abc","cwd":"/work/my_app","timestamp":"2026-10-19T00:00:00Z","message":{"content":"hi"}}"#
+    try Data((line + "\n").utf8).write(to: dir.appendingPathComponent("abc.jsonl"))
+    #expect(ClaudeHistory.sessions(cwd: "/work/my_app", root: root).map(\.id) == ["abc"])
+    #expect(ClaudeHistory.sessions(cwd: "/work/other", root: root).isEmpty)
+}

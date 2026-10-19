@@ -52,8 +52,7 @@ extension Daemon {
             existing(old.id)?.pty.kill()
             let m = try manifest(old.agent == "custom" || old.agent == "shell" ? old.agent : old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
-            if p["resume"]?.bool != false, !m.resumeArgs.isEmpty, !old.argv.contains(where: m.resumeArgs.contains) { o.argv = old.argv + m.resumeArgs }
-            else { o.argv = old.argv }
+            o.argv = p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv
             let s = try spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
             try store.delete(old)
             return try .from(s)

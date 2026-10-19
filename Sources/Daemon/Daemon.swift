@@ -3,6 +3,7 @@ import Core
 import GitKit
 import Agents
 import LocalAI
+import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
 public final class Daemon: @unchecked Sendable {
@@ -204,6 +205,10 @@ public final class Daemon: @unchecked Sendable {
             argv += [flag, f.path]
             rec.argv = argv
         }
+        if o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
+            argv += [flag, rec.id.lowercased()]
+            rec.argv = argv
+        }
         var env = manifest.env
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
@@ -274,8 +279,8 @@ public final class Daemon: @unchecked Sendable {
         if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
-        var argv = rec.argv
-        if !m.resumeArgs.isEmpty, !argv.contains(where: m.resumeArgs.contains) { argv += m.resumeArgs }
+        let argv = resumeArgv(rec, m)
+        rec.argv = argv   // the conversation it found is this session's from now on
         var env = m.env
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
         env["PATH"] = childPath
@@ -287,6 +292,30 @@ public final class Daemon: @unchecked Sendable {
         lock.withLock { live[rec.id] = ls }
         publish(ls.snapshot)
         return ls
+    }
+
+    /// argv that brings back this session's own conversation.
+    func resumeArgv(_ rec: Session, _ m: AgentManifest) -> [String] {
+        guard rec.agent == "claude", let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
+        if rec.argv.contains(flag) { return rec.argv }
+        let conversations = ClaudeHistory.sessions(cwd: rec.cwd)
+        if let i = rec.argv.firstIndex(of: pin), i + 1 < rec.argv.count {
+            // Pinned but nothing typed yet: no conversation to resume, start it under the same id.
+            return conversations.contains { $0.id.lowercased() == rec.argv[i + 1].lowercased() } ? m.resuming(rec.argv) : rec.argv
+        }
+        // From before ids were pinned (or restarted with "latest in this folder", which hands it another agent's
+        // conversation): the first conversation that started here between this session and the next one, unless another
+        // session has it; none → start fresh. Limit: misses prompts typed out of order across sessions.
+        let base = rec.argv.filter { !m.resumeArgs.contains($0) }
+        let all = (try? store.sessions()) ?? []
+        let claimed = Set(all.filter { $0.id != rec.id }.flatMap { s in
+            s.argv.indices.dropLast().filter { [pin, flag].contains(s.argv[$0]) }.map { s.argv[$0 + 1].lowercased() }
+        })
+        let next = all.filter { $0.agent == "claude" && $0.cwd == rec.cwd && $0.createdAt > rec.createdAt }.map(\.createdAt).min() ?? .distantFuture
+        let own = conversations
+            .filter { $0.started >= rec.createdAt.addingTimeInterval(-2) && $0.started < next && !claimed.contains($0.id.lowercased()) }
+            .min { $0.started < $1.started }
+        return own.map { base + [flag, $0.id] } ?? base
     }
 
     func publish(_ s: Session) {

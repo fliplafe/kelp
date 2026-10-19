@@ -32,6 +32,21 @@ public enum ClaudeHistory {
             .sorted { $0.updated > $1.updated }
     }
 
+    /// Interactive conversations started in `cwd`; Claude names the folder after the real path with every
+    /// non-alphanumeric as "-". `claude -p` runs (entrypoint sdk-…) are left out: no terminal owns them.
+    public static func sessions(cwd: String, root: URL = defaultRoot) -> [AgentSessionInfo] {
+        // realpath, not resolvingSymlinksInPath: that one strips "/private", and Claude keeps it (/tmp → /private/tmp).
+        let real = realpath(cwd, nil).map { p in defer { free(p) }; return String(cString: p) } ?? cwd
+        let dir = root.appendingPathComponent(String(real.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }))
+        return ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "jsonl" && !isScripted($0) }.compactMap(parse)
+    }
+
+    private static func isScripted(_ url: URL) -> Bool {
+        let head = (try? FileHandle(forReadingFrom: url)).flatMap { h in defer { try? h.close() }; return try? h.read(upToCount: 8192) } ?? Data()
+        return String(bytes: head, encoding: .utf8)?.contains(#""entrypoint":"sdk-"#) == true
+    }
+
     static func parse(_ url: URL) -> AgentSessionInfo? {
         guard let (lines, covered) = JSONL.headAndTail(url) else { return nil }
         var id: String?, cwd: String?, prompt: String?, summary: String?, aiTitle: String?, custom: String?, lastPrompt: String?

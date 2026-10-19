@@ -38,6 +38,8 @@ extension AppDelegate {
             if let p = env["KRILL_SNAPSHOT_INSPECTOR"] { main.showInspector(panel: p) }
             if let u = env["KRILL_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
+            // KRILL_AI_EXTENSION="…": the "Create with AI" flow without its question sheet.
+            if let what = env["KRILL_AI_EXTENSION"] { ExtensionAuthoring.createWithAI(what, model: env["KRILL_AI_MODEL"]) }
             // KRILL_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
             if let targets = env["KRILL_CLICK"]?.split(separator: "|") {
                 for (i, t) in targets.enumerated() {

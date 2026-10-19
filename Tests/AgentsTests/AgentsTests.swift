@@ -3,15 +3,16 @@ import Testing
 import Core
 @testable import Agents
 
-@Test func heuristicWaitingVsDone() {
+@Test func heuristicWaitingVsDone() throws {
     let t0 = Date()
-    var d = StatusDetector(manifest: .presets[0])
+    let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })   // no hooks: status comes from output
+    var d = StatusDetector(manifest: codex)
     d.output("\u{1B}[1mDo you want to proceed? [y/n]\u{1B}[0m", at: t0)
     #expect(d.status == .working)
     #expect(d.tick(at: t0.addingTimeInterval(1)) == .working)
     #expect(d.tick(at: t0.addingTimeInterval(4)) == .waiting)
 
-    var e = StatusDetector(manifest: .presets[0])
+    var e = StatusDetector(manifest: codex)
     e.output("all done, 3 files changed", at: t0)
     #expect(e.tick(at: t0.addingTimeInterval(4)) == .done)
 }
@@ -38,6 +39,12 @@ import Core
 @Test func hooksSettingsIsValidJSON() throws {
     let v = try JSONDecoder().decode(JSONValue.self, from: Data(Hooks.settingsJSON().utf8))
     #expect(v["hooks"]?["Stop"] != nil)
+    #expect(v["hooks"]?["PreToolUse"]?.array?.first?["matcher"]?.string == "AskUserQuestion")
+}
+
+@Test func idleReminderIsNotAQuestion() {
+    #expect(Hooks.isIdleReminder(.obj(["notification_type": "idle_prompt", "message": "Claude is waiting for your input"])))
+    #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
 }
 
 @Test func trustMenuPicksYes() {
@@ -125,4 +132,21 @@ import Core
     #expect(r.map(\.kind) == ["session", "week", "week · Fable"])
     #expect(r[1].percent == 82 && r[1].resets == "Oct 20 at 5am")
     #expect(r[0].resets == "7:40am")
+}
+
+@Test func resumeFindsThisConversationNotTheLatest() throws {
+    let claude = try #require(AgentManifest.presets.first { $0.id == "claude" })
+    let pinned = ["claude", "--settings", "h.json", "--session-id", "abc"]
+    #expect(claude.resuming(pinned) == ["claude", "--settings", "h.json", "--resume", "abc"])
+    #expect(claude.resuming(claude.resuming(pinned)) == claude.resuming(pinned))
+    #expect(claude.resuming(["claude"]) == ["claude", "--continue"])   // sessions from before ids were pinned
+    #expect(claude.resumes(["claude", "--resume", "x"]))
+}
+
+@Test func hookedAgentsDontGuessFromOutput() throws {
+    let claude = try #require(AgentManifest.presets.first { $0.id == "claude" })
+    var d = StatusDetector(manifest: claude)
+    d.output("✻ redraw", at: Date())
+    #expect(d.status == .idle)
+    d.hook("working"); #expect(d.status == .working)
 }

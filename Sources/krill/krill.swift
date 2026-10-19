@@ -145,6 +145,9 @@ func plist() -> String {
                 // Claude Code hooks pass a JSON payload on stdin (session id, transcript path).
                 if isatty(0) == 0, let d = try? FileHandle.standardInput.readToEnd(), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
                     if let t = v["transcript_path"]?.string { p["transcript"] = .string(t) }
+                    if v["notification_type"] != nil || v["message"] != nil {
+                        p["notification"] = .obj(["notification_type": v["notification_type"] ?? .null, "message": v["message"] ?? .null])
+                    }
                 }
                 _ = try await c.call("session.hook", .object(p))
             case "mcp": await serveMCP()

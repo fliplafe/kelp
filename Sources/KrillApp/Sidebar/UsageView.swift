@@ -15,8 +15,22 @@ struct UsageView: View {
     }
 
     var body: some View {
+        // The loader hangs off a container that always exists: on an EmptyView `.task` never runs.
+        VStack(alignment: .leading, spacing: 0) { list }
+            .task {
+                var quick = 6   // the daemon reads Claude's /usage in the background the first time: look again soon
+                while !Task.isCancelled {
+                    await load()
+                    let waiting = quick > 0 && !rows.contains { $0.agent == "Claude" && $0.used != nil }
+                    quick -= 1
+                    try? await Task.sleep(for: .seconds(waiting ? 8 : 60))
+                }
+            }
+    }
+
+    @ViewBuilder private var list: some View {
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 Button { expanded.toggle(); UserDefaults.standard.set(expanded, forKey: "usage.expanded") } label: {
                     HStack(spacing: 4) {
                         Text("Limits").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -43,13 +57,6 @@ struct UsageView: View {
                 }
             }
         }
-        EmptyView()
-            .task {
-                while !Task.isCancelled {
-                    await load()
-                    try? await Task.sleep(for: .seconds(60))
-                }
-            }
     }
 
     private func color(_ u: Double) -> Color { u >= 0.9 ? .red : u >= 0.7 ? .orange : .accentColor }

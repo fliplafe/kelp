@@ -156,6 +156,7 @@ extension Daemon {
         case "session.hook":
             let ls = try liveSession(p.req("id"))
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
+            if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
             ls.hook(try p.req("event")); return .null
         case "session.subagents":   // Claude Code subagents of a session, from its transcript folder
             guard let t = existing(try p.req("id"))?.transcriptPath else { return .array([]) }
