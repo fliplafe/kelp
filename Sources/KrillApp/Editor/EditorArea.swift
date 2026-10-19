@@ -28,10 +28,11 @@ final class EditorArea: NSViewController {
     override func loadView() {
         view = NSView()
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
-        // The empty workspace lists the agents that work; rebuild it when that list changes.
-        track { AgentAvailability.shared.ids } changed: { [weak self] _ in
-            guard let self, start != nil else { return }
-            start?.removeFromSuperview(); start = nil; showStart()
+        // The empty workspace lists the agents that work, with their icons; rebuild it when either changes.
+        track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
+        track { AgentIcons.shared.images.count } changed: { [weak self] _ in
+            self?.rebuildStart()
+            for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }   // agent tabs get the real icon
         }
     }
 
@@ -136,7 +137,16 @@ final class EditorArea: NSViewController {
             return Self.placeholder(t)
         }, selected: model.selectedTab?.id)
         g.show(visible?.view)
-        view.window?.isDocumentEdited = !editedFiles.isEmpty   // the dot in the window's close button, as in any Mac app
+        showEdited()
+    }
+
+    /// Unsaved files: the dot in the window's close button and "— Edited" after the subtitle, as in any Mac document app.
+    func showEdited() {
+        guard let w = view.window, let wt = worktree else { return }
+        let n = editedFiles.count
+        w.isDocumentEdited = n > 0
+        let base = "\(AppModel.shared.repo(wt.repoId)?.name ?? "") · \(wt.branch)"
+        w.subtitle = n == 0 ? base : base + (n == 1 ? " — Edited" : " — \(n) files edited")
     }
 
     /// Files with unsaved changes in this workspace (asked about on quit; the workspace isn't dropped from memory).
@@ -149,7 +159,7 @@ final class EditorArea: NSViewController {
         case "session":
             let s = AppModel.shared.session(body)
             let title = s.map { $0.title.isEmpty ? AgentCatalog.name($0.agent) : $0.title } ?? "Session"
-            return .init(id: t.id, title: title, icon: .symbol(AgentCatalog.symbol(s?.agent)), status: s.flatMap { $0.agent == "shell" ? nil : $0.status }, toolTip: title)
+            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.status }, toolTip: title)
         case "file":
             let p = TabURI.filePath(t.uri).path
             return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: NSWorkspace.shared.icon(forFile: p).resized(16), status: nil, toolTip: p)
@@ -176,6 +186,11 @@ final class EditorArea: NSViewController {
         }
         contents[t.id] = c
         return c
+    }
+
+    private func rebuildStart() {
+        guard start != nil else { return }
+        start?.removeFromSuperview(); start = nil; showStart()
     }
 
     private func showStart() {
@@ -316,10 +331,11 @@ final class EditorArea: NSViewController {
         let m = NSMenu()
         let agents = AgentCatalog.installed(AgentCatalog.all)
         for a in agents {
-            m.add(a.name, symbol: AgentCatalog.symbol(a.id)) { [weak self] in
+            let item = m.add(a.name) { [weak self] in
                 if let group { self?.layout.focused = group }
                 self?.newAgent(a.id)
             }
+            item.image = AgentCatalog.icon(a.id)
         }
         if agents.isEmpty { m.addItem(withTitle: "No agent CLIs found", action: nil, keyEquivalent: "").isEnabled = false }
         m.add("Terminal", symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
@@ -399,7 +415,11 @@ final class EditorArea: NSViewController {
 
     private func scheduleSave() {
         saveWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in guard let self else { return }; layout.save(workspaceId) }
+        let w = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            layout.save(workspaceId)
+            NotificationCenter.default.post(name: .krillLayout, object: workspaceId)   // the sidebar's "3 tabs"
+        }
         saveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
     }
 
@@ -445,4 +465,9 @@ extension NSMenu {
         if let symbol { i.image = .symbol(symbol) }
         return i
     }
+}
+
+extension Notification.Name {
+    /// A workspace's tabs changed (object: its id).
+    static let krillLayout = Notification.Name("krill.layout")
 }

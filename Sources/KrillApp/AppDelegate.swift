@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.regular)
         Self.watchHangs()
+        LatinShortcuts.install()
         // Krill no longer ships example extensions; remove the copies older versions wrote into its home.
         try? FileManager.default.removeItem(at: Paths.root.appendingPathComponent("bundled-extensions"))
         Perf.measure("registry") { ExtensionRegistry.shared.reload() }
@@ -94,7 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func saveAll() { main.editors.editedFiles.forEach { $0.save() } }
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }
-    @objc func closeTab() { editor?.closeFocusedTab() }
+    /// ⌘W: the focused tab; in a workspace with nothing open, the workspace itself.
+    @objc func closeTab() {
+        guard let e = editor else { return }
+        if e.focusedContent == nil, let w = e.worktree { WorkspaceActions.close(w) } else { e.closeFocusedTab() }
+    }
+    @objc func closeWorkspace() { if let w = editor?.worktree { WorkspaceActions.close(w) } }
     @objc func nextTab() { editor?.cycleTab(1) }
     @objc func prevTab() { editor?.cycleTab(-1) }
     @objc func nextGroup() { editor?.focusGroup(1) }
@@ -183,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(file, "Save All", #selector(saveAll), "s", [.command, .option])
         file.addItem(.separator())
         _ = item(file, "Close Tab", #selector(closeTab), "w")
+        _ = item(file, "Close Workspace", #selector(closeWorkspace), "w", [.command, .shift])
 
         let edit = sub("Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")

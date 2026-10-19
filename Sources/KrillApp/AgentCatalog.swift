@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Observation
 import Core
 import Agents
@@ -25,6 +26,15 @@ enum AgentCatalog {
         guard let id else { return "Terminal" }
         if id == "shell" { return "Terminal" }
         return all.first { $0.id == id }?.name ?? id.capitalized
+    }
+
+    /// The agent's real icon when there is one (AgentIcons), else its symbol.
+    @MainActor static func icon(_ id: String?, size: CGFloat = 16) -> NSImage? {
+        guard let id, id != "shell", id != "custom", let real = AgentIcons.shared.image(id)?.copy() as? NSImage else {
+            return .symbol(symbol(id))
+        }
+        real.size = NSSize(width: size, height: size)
+        return real
     }
 
     /// A few agents have a fitting symbol; any other one gets its initial in a circle.

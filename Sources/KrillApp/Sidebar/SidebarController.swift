@@ -56,6 +56,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
         track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
         track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
+        NotificationCenter.default.addObserver(forName: .krillLayout, object: nil, queue: .main) { [weak self] n in
+            MainActor.assumeIsolated { if let id = n.object as? String { self?.refreshCell("w:" + id) } }
+        }
     }
 
     private func buildEmpty() {
@@ -130,8 +133,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         switch (item as? Node)?.kind {
         case .project?: 26
-        case .workspace?: 28
-        default: 24
+        case .workspace?: 40
+        default: 36
         }
     }
 
@@ -236,7 +239,8 @@ final class SidebarCell: NSTableCellView {
     private let icon = NSImageView()
     private let mark = StatusMark(size: 14)
     private let title = NSTextField(labelWithString: "")
-    private let badge = NSTextField(labelWithString: "")
+    /// What's going on, in words: "1 working · 1 needs you", "Needs your input", "Done — fixed the parser tests".
+    private let detail = NSTextField(labelWithString: "")
     private let badgeMark = StatusMark(size: 12)
     private var add: NSButton?
 
@@ -244,7 +248,7 @@ final class SidebarCell: NSTableCellView {
         self.node = node; self.owner = owner
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
-        badge.font = .systemFont(ofSize: 11, weight: .semibold); badge.textColor = .systemOrange
+        detail.font = .systemFont(ofSize: 11); detail.lineBreakMode = .byTruncatingTail; detail.textColor = .secondaryLabelColor
         icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
         textField = title; imageView = icon
         switch node.kind {
@@ -256,15 +260,19 @@ final class SidebarCell: NSTableCellView {
             layout(row: [title, NSView(), b])
         case .workspace:
             title.font = .systemFont(ofSize: 13)
-            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            layout(row: [title, NSView(), badge, badgeMark])
+            layout(row: [lines(), NSView(), badgeMark])
         case .agent:
             title.font = .systemFont(ofSize: 13)
-            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            layout(row: [mark, title, NSView()])
+            layout(row: [mark, lines(), NSView()])
         }
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    private func lines() -> NSStackView {
+        let s = NSStackView(views: [title, detail]); s.orientation = .vertical; s.alignment = .leading; s.spacing = 1
+        for v in [title, detail, s] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
+        return s
+    }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -288,20 +296,65 @@ final class SidebarCell: NSTableCellView {
             // Bold = something new to look at (like unread mail); a paused agent has nothing new.
             title.font = .systemFont(ofSize: 13, weight: agents.contains { $0.unread && $0.status != .hibernated } ? .semibold : .regular)
             let waiting = agents.filter { $0.status == .waiting }.count
-            badge.stringValue = waiting > 1 ? "\(waiting)" : ""
             badgeMark.status = waiting > 0 ? .waiting : agents.contains { $0.status == .working } ? .working
                 : agents.contains { $0.status == .done && $0.unread } ? .done : nil
+            detail.stringValue = Self.summary(of: w, agents: agents, onOwnBranch: !isMain)
+            detail.textColor = waiting > 0 ? .systemOrange : .secondaryLabelColor
             // The branch and folder are one hover away (and in the title bar for the open workspace).
             toolTip = w.path + (isMain ? "" : "\nBranch \(w.branch)")
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
             mark.status = s.agent == "shell" ? nil : s.status
             if s.agent == "shell" { icon.image = .symbol("terminal") }
-            title.stringValue = s.title.isEmpty ? AgentCatalog.name(s.agent) : s.title
+            title.stringValue = Self.name(of: s, among: m.sessions.filter { $0.worktreeId == s.worktreeId && $0.status != .exited && $0.agent != "shell" })
             title.font = .systemFont(ofSize: 13, weight: s.unread && s.status != .hibernated ? .semibold : .regular)
             title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
+            detail.stringValue = Self.state(of: s)
+            detail.textColor = s.status == .waiting ? .systemOrange : .secondaryLabelColor
             toolTip = "\(AgentCatalog.name(s.agent)) · \(s.status.words)" + (s.summary.isEmpty ? "" : "\n\(s.summary)")
         }
+    }
+
+    /// A workspace in a few words: what its agents need, else how many there are, else what's open.
+    static func summary(of w: Worktree, agents: [Session], onOwnBranch: Bool) -> String {
+        func count(_ st: AgentStatus) -> Int { agents.filter { $0.status == st }.count }
+        var parts: [String] = []
+        if count(.waiting) > 0 { parts.append(count(.waiting) == 1 ? "1 needs you" : "\(count(.waiting)) need you") }
+        if count(.working) > 0 { parts.append("\(count(.working)) working") }
+        if count(.done) > 0 { parts.append("\(count(.done)) done") }
+        if parts.isEmpty {
+            if agents.isEmpty {
+                let tabs = Workbench.window?.editors.tabCount(w.id) ?? WorkspaceLayout.load(w.id).allTabs.count
+                parts.append(tabs == 0 ? "Empty" : tabs == 1 ? "1 tab" : "\(tabs) tabs")
+            } else {
+                let paused = agents.allSatisfy { $0.status == .hibernated }
+                parts.append((agents.count == 1 ? "1 agent" : "\(agents.count) agents") + (paused ? ", paused" : ", ready"))
+            }
+        }
+        if onOwnBranch { parts.append("branch \(w.branch)") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The agent's state in words, with what it did or asks when the local model has summed it up.
+    static func state(of s: Session) -> String {
+        let about = s.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch s.status {
+        case .working: return "Working…"
+        case .waiting: return about.isEmpty ? "Needs your input" : "Needs you — \(about)"
+        case .done: return about.isEmpty ? "Done" : "Done — \(about)"
+        case .idle: return "Ready for a task"
+        case .hibernated: return "Paused"
+        case .exited: return "Ended"
+        }
+    }
+
+    /// Its title, or the agent's name — numbered when the same agent runs twice in one workspace.
+    static func name(of s: Session, among peers: [Session]) -> String {
+        if !s.title.isEmpty { return s.title }
+        let same = peers.filter { $0.title.isEmpty && $0.agent == s.agent }.sorted { $0.createdAt < $1.createdAt }
+        let base = AgentCatalog.name(s.agent)
+        guard same.count > 1, let i = same.firstIndex(where: { $0.id == s.id }), i > 0 else { return base }
+        return "\(base) \(i + 1)"
     }
 
     func beginEditing(delegate: NSTextFieldDelegate) {

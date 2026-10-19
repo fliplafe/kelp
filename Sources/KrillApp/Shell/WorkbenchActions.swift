@@ -101,6 +101,8 @@ enum WorkspaceActions {
 
     /// A desk: its agents end, the folder stays. Asks only when agents are running there.
     static func close(_ w: Worktree) {
+        // The project's last workspace stays (removing the project is a separate, deliberate action).
+        guard AppModel.shared.worktrees.filter({ $0.repoId == w.repoId && !$0.archived }).count > 1 else { NSSound.beep(); return }
         let running = AppModel.shared.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.status != .hibernated }
         Task {
             if !running.isEmpty {

@@ -32,7 +32,7 @@ struct UsageView: View {
     }
 
     @ViewBuilder private var list: some View {
-        if !rows.isEmpty {
+        if rows.contains(where: { !$0.gauges.isEmpty || $0.note != "—" }) {
             VStack(alignment: .leading, spacing: 5) {
                 Button { expanded.toggle(); UserDefaults.standard.set(expanded, forKey: "usage.expanded") } label: {
                     HStack(spacing: 4) {
@@ -46,10 +46,14 @@ struct UsageView: View {
                 }
                 .buttonStyle(.plain)
                 if expanded {
-                    // A line for each agent that reports limits; the others as one row of icons (nothing to show for them).
+                    // Only agents that report their limits; the others have nothing to show here.
                     ForEach(rows.filter { !$0.gauges.isEmpty || $0.note != "—" }) { r in
                         HStack(spacing: 6) {
-                            Image(systemName: r.symbol).font(.caption).foregroundStyle(.secondary).frame(width: 14)
+                            if let img = AgentIcons.shared.image(r.id) {
+                                Image(nsImage: img).resizable().interpolation(.high).frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: r.symbol).font(.caption).foregroundStyle(.secondary).frame(width: 14)
+                            }
                             Text(r.name).font(.caption).lineLimit(1)
                             Spacer(minLength: 4)
                             if r.gauges.isEmpty { Text(r.note).font(.caption).foregroundStyle(.tertiary).lineLimit(1) }
@@ -58,14 +62,6 @@ struct UsageView: View {
                             }
                         }
                         .help(r.help)
-                    }
-                    let quiet = rows.filter { $0.gauges.isEmpty && $0.note == "—" }
-                    if !quiet.isEmpty {
-                        HStack(spacing: 5) {
-                            ForEach(quiet) { r in Image(systemName: r.symbol).font(.caption).foregroundStyle(.tertiary) }
-                            Spacer(minLength: 0)
-                        }
-                        .help(quiet.map(\.name).joined(separator: ", ") + (quiet.count == 1 ? " doesn't" : " don't") + " report usage limits.")
                     }
                 }
             }

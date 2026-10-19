@@ -45,6 +45,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
         }
         window?.title = w.displayName
         window?.subtitle = "\(r.name) · \(w.branch)"
+        editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
     }
 
     @objc func toggleInspectorPanel() {
@@ -106,6 +107,8 @@ final class EditorHost: NSViewController {
     private var recent: [String] = []
     private(set) var current: EditorArea?
     var editedFiles: [FileTab] { areas.values.flatMap(\.editedFiles) }
+    /// Tabs open in a workspace: the live layout when it's loaded, else the saved one.
+    func tabCount(_ id: String) -> Int { (areas[id]?.layout ?? WorkspaceLayout.load(id)).allTabs.count }
     private var welcome: NSView?
     private static let keep = 4
 

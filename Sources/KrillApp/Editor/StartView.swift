@@ -19,7 +19,7 @@ final class StartView: NSView {
         let def = AgentCatalog.defaultAgent
         let agents = AgentCatalog.installed(AgentCatalog.all).sorted { ($0.id == def ? 0 : 1, $0.name) < ($1.id == def ? 0 : 1, $1.name) }
         let tiles = agents.map { a in
-            StartRow(symbol: AgentCatalog.symbol(a.id), title: a.name, shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
+            StartRow(image: AgentCatalog.icon(a.id, size: 18), title: a.name, shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
         var rows: [NSView] = []
         if agents.isEmpty {
@@ -34,11 +34,11 @@ final class StartView: NSView {
             rows.append(grid)
             let sep = NSBox(); sep.boxType = .separator; rows.append(sep)
         }
-        rows.append(StartRow(symbol: "terminal", title: "Terminal", shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
+        rows.append(StartRow(image: .symbol("terminal"), title: "Terminal", shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
             let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(StartRow.symbols)
-            rows.append(StartRow(symbol: e.icon, title: e.title, shortcut: key) { e.open(IDEContext.current) })
+            rows.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.current) })
         }
 
         let list = NSStackView(views: rows); list.orientation = .vertical; list.alignment = .leading; list.spacing = 2
@@ -66,12 +66,12 @@ private final class StartRow: NSView {
     private let action: () -> Void
     private var hover = false { didSet { updateLayer() } }
 
-    init(symbol: String, title: String, shortcut: String?, action: @escaping () -> Void) {
+    init(image: NSImage?, title: String, shortcut: String?, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = 7
-        let icon = NSImageView(image: .symbol(symbol, title)); icon.symbolConfiguration = .init(pointSize: 15, weight: .regular)
-        icon.contentTintColor = .controlAccentColor
+        let icon = NSImageView(image: image ?? NSImage()); icon.symbolConfiguration = .init(pointSize: 15, weight: .regular)
+        icon.contentTintColor = .controlAccentColor   // symbols only; real icons keep their colors
         let label = NSTextField(labelWithString: title); label.font = .systemFont(ofSize: 13)
         let key = NSTextField(labelWithString: shortcut ?? ""); key.textColor = .tertiaryLabelColor; key.font = .systemFont(ofSize: 12)
         let row = NSStackView(views: [icon, label, NSView(), key]); row.spacing = 10
