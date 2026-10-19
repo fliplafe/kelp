@@ -25,7 +25,7 @@ public final class CodeEditor: NSObject {
         let cfg = SourceEditorConfiguration(
             appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),
-            peripherals: .init(showMinimap: ProcessInfo.processInfo.environment["KRILL_NO_MINIMAP"] == nil,
+            peripherals: .init(showMinimap: Self.showMinimap,
                                showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
         )
         let relay = Relay()
@@ -116,12 +116,15 @@ public final class CodeEditor: NSObject {
     public static var palette: Palette?
     public static var fontSize: CGFloat = 13
     public static var fontName: String?
+    /// Off by default: in a split next to an agent the minimap is a wide, mostly empty column.
+    public static var showMinimap = false
 
     /// Re-applies theme and font (after Settings change them).
     public func refreshAppearance() {
         var c = controller.configuration
         c.appearance.theme = Self.theme
         c.appearance.font = Self.font
+        c.peripherals.showMinimap = Self.showMinimap
         controller.configuration = c
     }
 

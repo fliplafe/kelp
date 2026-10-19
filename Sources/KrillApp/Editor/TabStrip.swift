@@ -126,25 +126,27 @@ private final class TabButton: NSView, NSDraggingSource {
     private let icon = NSImageView(), title = NSTextField(labelWithString: ""), close = NSButton()
     private let mark = StatusMark(size: 12)
     private var hover = false { didSet { updateLook() } }
-    private let underline = NSView()
 
+    /// Like Safari and Xcode: the close button takes the icon's place on hover; the selected tab is a quiet fill.
     init() {
         super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = 6
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
         title.font = .systemFont(ofSize: 12); title.lineBreakMode = .byTruncatingTail
-        close.image = .symbol("xmark", "Close Tab"); close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .bold)
+        close.image = .symbol("xmark", "Close Tab"); close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
         close.contentTintColor = .secondaryLabelColor; close.target = self; close.action = #selector(closeTapped)
-        underline.wantsLayer = true; underline.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; underline.layer?.cornerRadius = 1
-        let row = NSStackView(views: [icon, title, mark, close]); row.spacing = 5; row.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 5)
-        for v in [row, underline] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        let slot = NSView()
+        for v in [icon, close] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(v)
+            NSLayoutConstraint.activate([v.centerXAnchor.constraint(equalTo: slot.centerXAnchor), v.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
+        }
+        let row = NSStackView(views: [slot, title, mark]); row.spacing = 5; row.edgeInsets = NSEdgeInsets(top: 0, left: 7, bottom: 0, right: 9)
+        row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor, constant: 3), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
             widthAnchor.constraint(lessThanOrEqualToConstant: 220), widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
-            close.widthAnchor.constraint(equalToConstant: 14),
-            underline.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8), underline.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            underline.bottomAnchor.constraint(equalTo: bottomAnchor), underline.heightAnchor.constraint(equalToConstant: 2)
+            slot.widthAnchor.constraint(equalToConstant: 16), slot.heightAnchor.constraint(equalToConstant: 16)
         ])
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
@@ -159,14 +161,14 @@ private final class TabButton: NSView, NSDraggingSource {
     }
 
     private func updateLook() {
-        close.alphaValue = hover || selected ? 1 : 0
+        close.isHidden = !hover; icon.isHidden = hover
+        let active = selected && groupFocused
         title.textColor = selected ? .labelColor : .secondaryLabelColor
-        title.font = .systemFont(ofSize: 12, weight: selected ? .medium : .regular)
-        icon.contentTintColor = selected ? .labelColor : .secondaryLabelColor
-        underline.isHidden = !(selected && groupFocused)
+        title.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
+        icon.contentTintColor = active ? .controlAccentColor : .secondaryLabelColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = selected ? NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.6).cgColor
-                : hover ? NSColor.quaternaryLabelColor.withAlphaComponent(0.2).cgColor : NSColor.clear.cgColor
+            let fill = selected ? (groupFocused ? 0.12 : 0.07) : hover ? 0.05 : 0
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(fill).cgColor
         }
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateLook() }

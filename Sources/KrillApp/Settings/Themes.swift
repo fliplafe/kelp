@@ -100,8 +100,9 @@ final class ThemeManager {
         let palette = e.map { CodeEditor.Palette(background: $0.background, text: $0.text, keyword: $0.keyword, string: $0.string, comment: $0.comment,
                                                  type: $0.type, number: $0.number, function: $0.function, selection: $0.selection, lineHighlight: $0.lineHighlight) }
         let size = CGFloat(s.number("editor.fontSize") ?? 13), font = s.string("editor.fontFamily").flatMap { $0.isEmpty ? nil : $0 }
-        if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName {
-            CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font
+        let minimap = s.bool("editor.minimap") ?? false
+        if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap {
+            CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font; CodeEditor.showMinimap = minimap
             NotificationCenter.default.post(name: .krillAppearance, object: nil)
         }
     }

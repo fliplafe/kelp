@@ -62,6 +62,7 @@ enum Builtins {
         c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", extensionId: "krill.files", specs: [
             s("editor.fontFamily", "Font", "font", "", "Empty = SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
+            s("editor.minimap", "Show minimap", "boolean", false),
             s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
         ])]
         c.commands = [CommandSpec(id: "files.quickOpen", title: "Open File…", extensionId: "krill.files", key: "cmd+p") { _ in QuickOpen.shared.show(commandsOnly: false) }]
