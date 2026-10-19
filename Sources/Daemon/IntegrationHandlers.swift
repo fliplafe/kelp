@@ -84,7 +84,7 @@ extension Daemon {
 
         case "github.pr-create":   // push, draft title/body on-device if not given, open the PR, link it
             guard var w = try store.worktree(p.req("worktreeId")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-            try Git.push(w.path, branch: w.branch)
+            try Git.remote(w.path, .push)   // the branch checked out now
             var title = p["title"]?.string ?? "", body = p["body"]?.string ?? ""
             let link = w.issue.isEmpty ? nil : (w.issue.hasPrefix("#") ? "Fixes \(w.issue)" : "Refs \(w.issue)")
             if title.isEmpty || body.isEmpty {

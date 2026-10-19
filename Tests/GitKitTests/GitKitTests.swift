@@ -111,3 +111,43 @@ func tempRepo() throws -> String {
     #expect(a > b)
     #expect(ProjectFiles.fuzzyScore("abc", "abd") == nil)
 }
+
+@Test func graphLanesFollowBranchesAndMerges() {
+    // M merges P2 into P1; both come from B.
+    let g = Git.lanes([("M", ["P1", "P2"]), ("P1", ["B"]), ("P2", ["B"]), ("B", [])])
+    #expect(g.map(\.lane) == [0, 0, 1, 0])
+    #expect(g[0].top.isEmpty && g[0].bottom == [[0, 0], [0, 1]])
+    #expect(g[1].top == [[0, 0], [1, 1]] && g[1].bottom == [[1, 1], [0, 0]])
+    #expect(g[2].top == [[0, 0], [1, 1]] && g[2].bottom == [[0, 0], [1, 0]])   // P2 joins B's lane
+    #expect(g[3].top == [[0, 0]] && g[3].bottom.isEmpty)
+    // The trunk keeps lane 0 when a side branch already waits for the same parent further right.
+    let t = Git.lanes([("M", ["L", "D"]), ("D", ["X"]), ("L", ["X"]), ("X", [])])
+    #expect(t.map(\.lane) == [0, 1, 0, 0])
+    #expect(t[2].bottom == [[1, 1], [0, 0]] && t[3].top == [[0, 0], [1, 0]])
+}
+
+@Test func graphAndBranchesFromARealRepo() throws {
+    let repo = try tempRepo()
+    try Git.run(["switch", "-q", "-c", "feature"], cwd: repo)
+    try "g\n".write(toFile: repo + "/g.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "g.txt"], cwd: repo); try Git.run(["commit", "-qm", "feature work"], cwd: repo)
+    try Git.run(["switch", "-q", "main"], cwd: repo)
+    try Git.run(["merge", "-q", "--no-ff", "-m", "merge feature", "feature"], cwd: repo)
+    let (commits, more) = try Git.graph(repo, limit: 50)
+    #expect(!more && commits.first?.subject == "merge feature" && commits.first?.parents.count == 2)
+    #expect(commits.first?.refs.contains { $0.hasPrefix("HEAD -> ") } == true)
+    #expect(try Git.commitFiles(repo, commit: commits[0].hash).map(\.path) == ["g.txt"])
+    let b = try Git.branches(repo)
+    #expect(b.current == "main" && b.local.contains("feature") && !b.merging)
+    // Pop keeps what was staged staged.
+    try "x\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+    try Git.stage(repo, files: ["f.txt"]); try Git.stash(repo, pop: false); try Git.stash(repo, pop: true)
+    #expect(try Git.status(repo).first { $0.path == "f.txt" }?.staged == true)
+}
+
+@Test func gitErrorsReadAsOneSentence() {
+    let e = GitError(args: ["push"], status: 128, stderr: "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.")
+    #expect(e.message == "'origin' does not appear to be a git repository")
+    let c = GitError(args: ["switch"], status: 1, stderr: "error: Your local changes to the following files would be overwritten by checkout:\n\tf.txt\nAborting")
+    #expect(c.message == "Your local changes to the following files would be overwritten by checkout: f.txt")
+}

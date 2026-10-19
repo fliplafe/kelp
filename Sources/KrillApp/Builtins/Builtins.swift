@@ -72,7 +72,7 @@ enum Builtins {
     static let git = Builtin("krill.git", "Git", "Changes, staging, commits, push, pull requests and the review diff.", icon: "arrow.triangle.branch") {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["diff"], extensionId: "krill.git") { DiffTab(uri: $0) }]
-        c.panels = [PanelSpec(id: "git.changes", title: "Changes", icon: "arrow.triangle.branch", extensionId: "krill.git") { hosting(ChangesPanel()) }]
+        c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "krill.git") { SourceControlController() }]
         c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "krill.git", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", extensionId: "krill.git", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Krill names, e.g. “niko/”.")
