@@ -161,11 +161,15 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
+    /// A visible label's text, or "@x,y": a point in the window, from its top-left corner (SwiftUI content has no labels).
     func click(text: String) {
-        guard let w = main.window, let root = w.contentView?.superview,
-              let field = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor })
-        else { print("CLICK no \(text)"); return }
-        let p = field.convert(NSPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)
+        guard let w = main.window, let root = w.contentView?.superview else { return }
+        let p: NSPoint
+        if text.hasPrefix("@"), case let xy = text.dropFirst().split(separator: ",").compactMap({ Double($0) }), xy.count == 2 {
+            p = NSPoint(x: xy[0], y: w.frame.height - xy[1])
+        } else if let field = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }) {
+            p = field.convert(NSPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)
+        } else { print("CLICK no \(text)"); return }
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                           windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { NSApp.sendEvent(e) }

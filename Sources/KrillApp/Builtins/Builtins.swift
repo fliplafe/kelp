@@ -114,7 +114,7 @@ enum Builtins {
         return c
     }
 
-    static let appearance = Builtin("krill.appearance", "Appearance", "Light / dark, color themes for terminal and editor.", icon: "paintpalette", essential: true) {
+    static let appearance = Builtin("krill.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "krill.appearance", specs: [
             s("workbench.theme", "Theme", "theme", "auto",
