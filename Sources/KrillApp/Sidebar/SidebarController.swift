@@ -42,7 +42,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if let o = self?.outline, o.selectedRow >= 0 { o.scrollRowToVisible(o.selectedRow) } }
+            MainActor.assumeIsolated { self?.keepOpenInView(onlyIfShown: false) }
         }
 
         let footer = NSHostingView(rootView: SidebarFooterView())
@@ -117,6 +117,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
             // A workspace's second line comes and goes with its agents' state.
             NSAnimationContext.runAnimationGroup { $0.duration = 0; outline.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outline.numberOfRows)) }
+            keepOpenInView(onlyIfShown: true)
             return
         }
         roots = next; shape = nextShape
@@ -139,7 +140,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         if outline.selectedRow != row, !isAgent(outline.item(atRow: outline.selectedRow), in: id) {
             syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
         }
-        // The workspace on screen is in view, with its agents under it (they can show up after it was selected).
+        keepOpenInView(onlyIfShown: false)
+    }
+
+    /// The workspace on screen stays in view with its agents under it — they can show up, and its rows grow a second
+    /// line, after it was selected. `onlyIfShown`: leave it alone when the user scrolled it away.
+    private func keepOpenInView(onlyIfShown: Bool) {
+        guard let id = Workbench.shared.workspaceId, let n = node("w:" + id) else { return }
+        let row = outline.row(forItem: n)
+        guard row >= 0, !onlyIfShown || outline.visibleRect.intersects(outline.rect(ofRow: row)) else { return }
         if let last = n.children.last, outline.isItemExpanded(n) { outline.scrollRowToVisible(outline.row(forItem: last)) }
         outline.scrollRowToVisible(row)
     }
