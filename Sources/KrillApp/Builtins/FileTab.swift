@@ -8,7 +8,7 @@ import GitKit
 /// (Settings › Editor › Save automatically turns autosave on). Agents edit files on disk too: unchanged buffers
 /// follow the disk; conflicting edits ask.
 @MainActor
-final class FileTab: TabContent {
+final class FileTab: SavableTab {
     let path: String, url: URL
     var onChange: (() -> Void)?
     let view: NSView

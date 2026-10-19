@@ -195,7 +195,7 @@ final class EditorArea: NSViewController {
     func showEdited() { view.window?.isDocumentEdited = !editedFiles.isEmpty }
 
     /// Files with unsaved changes in this workspace (asked about on quit; the workspace isn't dropped from memory).
-    var editedFiles: [FileTab] { contents.values.compactMap { $0 as? FileTab }.filter(\.isEdited) }
+    var editedFiles: [SavableTab] { contents.values.compactMap { $0 as? SavableTab }.filter(\.isEdited) }
 
     /// Strip entry for a tab not built yet, from its URI alone.
     /// Two files with one name (README.md twice): each tab adds its folder, "README.md — docs", as Xcode does.
@@ -532,11 +532,14 @@ final class EditorArea: NSViewController {
     }
 
     /// Restart: the new session takes the old one's tab.
-    func replace(session old: String, with new: String) {
-        guard let t = layout.tab(uri: TabURI.session(old)), let gid = layout.group(of: t.id), var g = layout.groups[gid],
-              let i = g.tabs.firstIndex(of: t) else { open(TabURI.session(new)); return }
+    func replace(session old: String, with new: String) { replace(TabURI.session(old), with: TabURI.session(new)) }
+
+    /// `new` in the tab that showed `old`, in its place (a restarted session, a new file saved under a name).
+    func replace(_ old: String, with new: String) {
+        guard let t = layout.tab(uri: old), let gid = layout.group(of: t.id), var g = layout.groups[gid],
+              let i = g.tabs.firstIndex(of: t) else { open(new); return }
         contents[t.id] = nil
-        g.tabs[i].uri = TabURI.session(new); layout.groups[gid] = g
+        g.tabs[i].uri = new; layout.groups[gid] = g
         render(); select(t.id)
     }
 

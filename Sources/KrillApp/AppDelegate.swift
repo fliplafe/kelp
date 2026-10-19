@@ -135,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newAgent() { editor?.newAgent() }
     @objc func newAgentNamed(_ m: NSMenuItem) { editor?.newAgent(m.representedObject as? String) }
     @objc func newTerminal() { editor?.newTerminal() }
-    @objc func saveFile() { if let f = fileTab { f.save() } else { NSSound.beep() } }
+    @objc func saveFile() { if let f = Workbench.editor?.focusedContent as? SavableTab { f.save() } else { NSSound.beep() } }
     @objc func saveAll() { main.editors.editedFiles.forEach { $0.save() } }
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }

@@ -61,8 +61,10 @@ enum Builtins {
 
     static let files = Builtin("krill.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["file"], extensionId: "krill.files") { FileTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["file"], extensionId: "krill.files") { FileTab(uri: $0) },
+                  TabProvider(schemes: ["untitled"], extensionId: "krill.files") { UntitledTab(uri: $0) }]
         c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "krill.files") { FilesPanel() }]
+        c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus", extensionId: "krill.files") { _ in UntitledTab.next() }]
         c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", extensionId: "krill.files", specs: [
             s("editor.fontFamily", "Font", "font", "", "Empty = SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
@@ -71,6 +73,7 @@ enum Builtins {
             s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
         ])]
         c.commands = [CommandSpec(id: "files.quickOpen", title: "Open File…", extensionId: "krill.files", key: "cmd+p") { _ in QuickOpen.shared.show(commandsOnly: false) },
+                      CommandSpec(id: "files.new", title: "New File", extensionId: "krill.files", key: "opt+cmd+n") { _ in Workbench.open(UntitledTab.next()) },
                       CommandSpec(id: "markdown.cycleView", title: "Markdown: Source, Split, Preview", extensionId: "krill.files", key: "shift+cmd+v") { _ in
                           guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
                           md.cycleMode()

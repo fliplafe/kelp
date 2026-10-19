@@ -18,6 +18,15 @@ func runAsSheet(_ a: NSAlert) -> NSApplication.ModalResponse {
     return NSApp.runModal(for: a.window)
 }
 
+/// A save panel as a sheet on the front window, answered synchronously (closing a tab or quitting needs the answer).
+@MainActor
+func runAsSheet(_ p: NSSavePanel) -> NSApplication.ModalResponse {
+    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+          w.attachedSheet == nil else { return p.runModal() }
+    p.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
+    return NSApp.runModal(for: p)
+}
+
 /// Session-level agent actions shared by tabs and the sidebar.
 @MainActor
 enum AgentActions {

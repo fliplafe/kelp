@@ -169,7 +169,7 @@ final class EditorHost: NSViewController {
     private var areas: [String: EditorArea] = [:]
     private var recent: [String] = []
     private(set) var current: EditorArea?
-    var editedFiles: [FileTab] { areas.values.flatMap(\.editedFiles) }
+    var editedFiles: [SavableTab] { areas.values.flatMap(\.editedFiles) }
     private var welcome: NSView?
     private static let keep = 4
 

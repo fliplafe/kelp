@@ -24,6 +24,13 @@ protocol TabContent: AnyObject {
     func close() -> Bool
 }
 
+/// A tab holding work that can be unsaved: ⌘S, Save All and quitting save it.
+@MainActor
+protocol SavableTab: TabContent {
+    /// False when nothing was written (the user cancelled, or it failed and said why).
+    @discardableResult func save() -> Bool
+}
+
 extension TabContent {
     var status: AgentStatus? { nil }
     var unread: Bool { false }
