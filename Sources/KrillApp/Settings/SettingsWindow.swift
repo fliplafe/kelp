@@ -37,7 +37,6 @@ struct SettingsView: View {
                 }
                 Section {
                     Label("Extensions", systemImage: "puzzlepiece.extension").tag("extensions")
-                    Label("Quick Commands", systemImage: "text.badge.plus").tag("quick")
                 }
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
@@ -45,7 +44,6 @@ struct SettingsView: View {
             Group {
                 if !query.isEmpty { SearchResults(query: query) }
                 else if selection == "extensions" { ExtensionsSettings() }
-                else if selection == "quick" { QuickCommandsSettings() }
                 else if let s = registry.all.settings.first(where: { $0.id == selection }) { SectionForm(section: s) }
                 else { ContentUnavailableView("Pick a section", systemImage: "gearshape") }
             }

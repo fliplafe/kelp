@@ -71,9 +71,6 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         for c in ExtensionRegistry.shared.all.commands {
             items.append(Item(kind: "Command", icon: "puzzlepiece.extension", title: c.title, detail: c.key ?? "", action: { c.run([:]) }))
         }
-        for qc in QuickCommands.all(repoPath: AppModel.shared.repo(AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId)?.path) {
-            items.append(Item(kind: "Quick Command", icon: "bolt", title: qc.name, detail: qc.text.prefix(80).description, action: { QuickCommands.run(qc) }))
-        }
         if !commandsOnly {
             for w in AppModel.shared.worktrees where !w.archived {
                 let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
@@ -159,34 +156,5 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         img.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return row
-    }
-}
-
-/// Saved shell commands and prompt presets: global (Settings) and per repo (`command.<name>: text` in .krill.yaml).
-struct QuickCommand: Codable, Hashable { var name: String; var text: String; var newTab: Bool = false }
-
-@MainActor
-enum QuickCommands {
-    static var global: [QuickCommand] {
-        get { (UserDefaults.standard.data(forKey: "quickCommands")).flatMap { try? JSONDecoder().decode([QuickCommand].self, from: $0) } ?? [] }
-        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: "quickCommands") }
-    }
-    static func all(repoPath: String?) -> [QuickCommand] {
-        var r = global
-        if let p = repoPath, let text = try? String(contentsOfFile: p + "/.krill.yaml", encoding: .utf8) {
-            for line in text.split(separator: "\n") where line.hasPrefix("command.") {
-                let parts = line.dropFirst(8).split(separator: ":", maxSplits: 1)
-                if parts.count == 2 { r.append(QuickCommand(name: String(parts[0]).trimmingCharacters(in: .whitespaces), text: String(parts[1]).trimmingCharacters(in: .whitespaces))) }
-            }
-        }
-        return r
-    }
-    /// Into the focused agent's prompt (submitted), or a new tab when there's none / it asks for one.
-    static func run(_ q: QuickCommand) {
-        if !q.newTab, let sid = Workbench.shared.focusedSession {
-            Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(q.text)])) }
-        } else {
-            Workbench.editor?.run(command: q.text)
-        }
     }
 }
