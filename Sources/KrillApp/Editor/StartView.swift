@@ -15,15 +15,24 @@ final class StartView: NSView {
         let folder = NSTextField(labelWithString: (w.path as NSString).abbreviatingWithTildeInPath)
         folder.font = .systemFont(ofSize: 12); folder.textColor = .secondaryLabelColor; folder.lineBreakMode = .byTruncatingMiddle
 
-        let agents = AgentCatalog.installed(AgentCatalog.all)
-        var rows: [NSView] = agents.map { a in
-            StartRow(symbol: AgentCatalog.symbol(a.id), title: a.name,
-                     shortcut: a.id == AgentCatalog.defaultAgent ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
+        // The default agent first, then the others in two columns (people often have a dozen).
+        let def = AgentCatalog.defaultAgent
+        let agents = AgentCatalog.installed(AgentCatalog.all).sorted { ($0.id == def ? 0 : 1, $0.name) < ($1.id == def ? 0 : 1, $1.name) }
+        let tiles = agents.map { a in
+            StartRow(symbol: AgentCatalog.symbol(a.id), title: a.name, shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
+        var rows: [NSView] = []
         if agents.isEmpty {
-            let none = NSTextField(wrappingLabelWithString: "No agent found. Install Claude Code, Codex or another agent CLI, then come back.")
+            let none = NSTextField(wrappingLabelWithString: "No agent found. Install Claude Code or another agent CLI — Krill picks it up when you come back.")
             none.textColor = .secondaryLabelColor
             rows.append(none)
+        } else {
+            let grid = NSGridView(numberOfColumns: 2, rows: 0); grid.columnSpacing = 8; grid.rowSpacing = 2
+            for i in stride(from: 0, to: tiles.count, by: 2) {
+                grid.addRow(with: [tiles[i], i + 1 < tiles.count ? tiles[i + 1] : NSGridCell.emptyContentView])
+            }
+            rows.append(grid)
+            let sep = NSBox(); sep.boxType = .separator; rows.append(sep)
         }
         rows.append(StartRow(symbol: "terminal", title: "Terminal", shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
         // Changes live in Source Control; the rest of what extensions open is offered here.
@@ -36,7 +45,7 @@ final class StartView: NSView {
         let stack = NSStackView(views: [title, folder, list]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 4
         stack.setCustomSpacing(20, after: folder)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
-        let width = stack.widthAnchor.constraint(equalToConstant: 360); width.priority = .defaultHigh
+        let width = stack.widthAnchor.constraint(equalToConstant: 460); width.priority = .defaultHigh
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -40),
             width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
@@ -44,6 +53,7 @@ final class StartView: NSView {
             list.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         rows.forEach { $0.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true }
+        tiles.forEach { $0.widthAnchor.constraint(equalTo: list.widthAnchor, multiplier: 0.5, constant: -4).isActive = true }
     }
     required init?(coder: NSCoder) { fatalError() }
 

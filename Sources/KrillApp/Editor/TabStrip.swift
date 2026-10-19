@@ -6,7 +6,10 @@ extension NSPasteboard.PasteboardType { static let krillTab = NSPasteboard.Paste
 /// A group's tab strip: icon, title, agent status, close on hover; drag to reorder, move to another group, or split.
 @MainActor
 final class TabStrip: NSView {
-    struct Item { let id: String; let title: String; let icon: NSImage?; let status: AgentStatus?; let toolTip: String? }
+    struct Item {
+        let id: String; let title: String; let icon: NSImage?; let status: AgentStatus?; let toolTip: String?
+        var edited = false
+    }
 
     var onSelect: ((String) -> Void)?
     var onClose: ((String) -> Void)?
@@ -123,7 +126,7 @@ private final class TabButton: NSView, NSDraggingSource {
     private var item: TabStrip.Item?
     private var selected = false
     var groupFocused = false { didSet { updateLook() } }
-    private let icon = NSImageView(), title = NSTextField(labelWithString: ""), close = NSButton()
+    private let icon = NSImageView(), title = NSTextField(labelWithString: ""), close = NSButton(), editedDot = NSImageView()
     private let mark = StatusMark(size: 12)
     private var hover = false { didSet { updateLook() } }
 
@@ -135,8 +138,11 @@ private final class TabButton: NSView, NSDraggingSource {
         title.font = .systemFont(ofSize: 12); title.lineBreakMode = .byTruncatingTail
         close.image = .symbol("xmark", "Close Tab"); close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
         close.contentTintColor = .secondaryLabelColor; close.target = self; close.action = #selector(closeTapped)
+        // Unsaved changes: a dot where the close button goes (as in TextEdit's tabs); hovering shows the close button.
+        editedDot.image = .symbol("circle.fill", "Edited"); editedDot.symbolConfiguration = .init(pointSize: 7, weight: .bold)
+        editedDot.contentTintColor = .secondaryLabelColor
         let slot = NSView()
-        for v in [icon, close] as [NSView] {
+        for v in [icon, close, editedDot] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(v)
             NSLayoutConstraint.activate([v.centerXAnchor.constraint(equalTo: slot.centerXAnchor), v.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
         }
@@ -161,7 +167,8 @@ private final class TabButton: NSView, NSDraggingSource {
     }
 
     private func updateLook() {
-        close.isHidden = !hover; icon.isHidden = hover
+        let edited = item?.edited == true
+        close.isHidden = !hover; editedDot.isHidden = hover || !edited; icon.isHidden = hover || edited
         let active = selected && groupFocused
         title.textColor = selected ? .labelColor : .secondaryLabelColor
         title.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)

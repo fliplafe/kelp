@@ -25,11 +25,9 @@ final class AppModel {
     @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
 
     /// Workspaces of a project: the main one (the repo itself) first, then newest first.
+    /// In the order they were opened: Workspace 1, 2, 3… (older ones on their own branch included).
     func workspaces(of r: Repo) -> [Worktree] {
-        worktrees.filter { $0.repoId == r.id && !$0.archived }.sorted { a, b in
-            if (a.path == r.path) != (b.path == r.path) { return a.path == r.path }
-            return a.createdAt > b.createdAt
-        }
+        worktrees.filter { $0.repoId == r.id && !$0.archived }.sorted { $0.createdAt < $1.createdAt }
     }
 
     func upsert(_ s: Session) {

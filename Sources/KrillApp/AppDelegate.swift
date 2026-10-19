@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         buildMenu()
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }
+        track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
         ExtensionRegistry.shared.watch()
         // Extension commands and requirement checks need the user's PATH; reading it can take seconds.
         DispatchQueue.global(qos: .utility).async {
@@ -38,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await AppModel.shared.connect()
             ExtensionRegistry.shared.reload()   // settings (disabled extensions) are known now
+            AgentAvailability.shared.refresh(force: true)
             _ = await Accounts.load()
             AppModel.shared.startSubagentPolling()
             let pick = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.branch == b || $0.note == b } }
@@ -48,6 +50,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate()
         if let out = ProcessInfo.processInfo.environment["KRILL_SNAPSHOT"] { snapshotLater(out) }
+    }
+
+    /// Agents installed while Krill was in the background show up when it comes back.
+    func applicationDidBecomeActive(_ n: Notification) { AgentAvailability.shared.refresh() }
+
+    /// Unsaved files ask before quitting, like any Mac app.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let edited = main?.editors.editedFiles ?? []
+        guard !edited.isEmpty else { return .terminateNow }
+        let a = NSAlert()
+        a.messageText = edited.count == 1 ? "Do you want to save the changes you made to “\(edited[0].title)”?"
+            : "You have \(edited.count) files with unsaved changes. Save them before quitting?"
+        a.informativeText = "Your changes will be lost if you don't save them."
+        a.addButton(withTitle: edited.count == 1 ? "Save" : "Save All"); a.addButton(withTitle: "Cancel"); a.addButton(withTitle: "Don't Save")
+        switch runAsSheet(a) {
+        case .alertFirstButtonReturn: return edited.allSatisfy { $0.save() } ? .terminateNow : .terminateCancel
+        case .alertThirdButtonReturn: return .terminateNow
+        default: return .terminateCancel
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
@@ -69,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newAgent() { editor?.newAgent() }
     @objc func newAgentNamed(_ m: NSMenuItem) { editor?.newAgent(m.representedObject as? String) }
     @objc func newTerminal() { editor?.newTerminal() }
+    @objc func saveFile() { if let f = fileTab { f.save() } else { NSSound.beep() } }
+    @objc func saveAll() { main.editors.editedFiles.forEach { $0.save() } }
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }
     @objc func closeTab() { editor?.closeFocusedTab() }
@@ -155,6 +178,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
         _ = item(file, "Add Project…", #selector(addProject), "o")
+        file.addItem(.separator())
+        _ = item(file, "Save", #selector(saveFile), "s")
+        _ = item(file, "Save All", #selector(saveAll), "s", [.command, .option])
         file.addItem(.separator())
         _ = item(file, "Close Tab", #selector(closeTab), "w")
 

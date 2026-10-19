@@ -18,6 +18,7 @@ struct UsageView: View {
     var body: some View {
         // The loader hangs off a container that always exists: on an EmptyView `.task` never runs.
         VStack(alignment: .leading, spacing: 0) { list }
+            .onChange(of: AgentAvailability.shared.ids) { Task { await load() } }
             .task {
                 // Look again soon until the daemon answers (at launch) and has read Claude's /usage (seconds, the first time).
                 var quick = 12
@@ -45,7 +46,8 @@ struct UsageView: View {
                 }
                 .buttonStyle(.plain)
                 if expanded {
-                    ForEach(rows) { r in
+                    // A line for each agent that reports limits; the others as one row of icons (nothing to show for them).
+                    ForEach(rows.filter { !$0.gauges.isEmpty || $0.note != "—" }) { r in
                         HStack(spacing: 6) {
                             Image(systemName: r.symbol).font(.caption).foregroundStyle(.secondary).frame(width: 14)
                             Text(r.name).font(.caption).lineLimit(1)
@@ -56,6 +58,14 @@ struct UsageView: View {
                             }
                         }
                         .help(r.help)
+                    }
+                    let quiet = rows.filter { $0.gauges.isEmpty && $0.note == "—" }
+                    if !quiet.isEmpty {
+                        HStack(spacing: 5) {
+                            ForEach(quiet) { r in Image(systemName: r.symbol).font(.caption).foregroundStyle(.tertiary) }
+                            Spacer(minLength: 0)
+                        }
+                        .help(quiet.map(\.name).joined(separator: ", ") + (quiet.count == 1 ? " doesn't" : " don't") + " report usage limits.")
                     }
                 }
             }

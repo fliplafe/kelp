@@ -37,6 +37,10 @@ extension AppDelegate {
             main.window?.setFrame(NSRect(x: 80, y: 80, width: 1440, height: 900), display: true); main.window?.contentView?.layoutSubtreeIfNeeded()
             print("FRAME", main.window?.frame ?? .zero, main.window?.contentView?.superview?.bounds ?? .zero)
             if let p = env["KRILL_SNAPSHOT_INSPECTOR"] { main.showInspector(panel: p) }
+            // KRILL_SNAPSHOT_SIZE=1000x760: the window's content size (people's windows are rarely 1440 wide).
+            if let s = env["KRILL_SNAPSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), s.count == 2 {
+                main.window?.setContentSize(NSSize(width: s[0], height: s[1]))
+            }
             if let u = env["KRILL_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
             // KRILL_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.

@@ -13,6 +13,8 @@ public final class CodeEditor: NSObject {
     public var onChange: ((String) -> Void)?
     public var onSelection: (() -> Void)?
     private var suppress = false
+    /// The controller holds coordinators weakly: without this reference the relay is gone at once and no edit is reported.
+    private let relay = Relay()
 
     /// Big documents re-parse off the main thread so typing never waits for tree-sitter (highlighting catches up a frame later).
     private static let tuned: Void = { TreeSitterClient.Constants.maxSyncContentLength = 100_000 }()
@@ -28,7 +30,6 @@ public final class CodeEditor: NSObject {
             peripherals: .init(showMinimap: Self.showMinimap,
                                showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
         )
-        let relay = Relay()
         controller = TextViewController(string: text, language: lang, configuration: cfg, cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
         super.init()
         relay.owner = self

@@ -50,5 +50,6 @@ struct AgentsSettings: View {
         }, uniquingKeysWith: { $1 })
         try? AgentManifest.saveOverride(m); reload(); saved = true
         AppModel.shared.agents = AgentManifest.load()
+        AgentAvailability.shared.refresh(force: true)
     }
 }

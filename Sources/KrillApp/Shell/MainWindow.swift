@@ -84,7 +84,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
         }
     }
 
-    func windowWillClose(_ n: Notification) { NSApp.terminate(nil) }
+    /// Closing the window quits (the daemon keeps agents running) — through the unsaved-files question; Cancel keeps it.
+    func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
 }
 
 /// Fills the toolbar's "+" menu when it opens (agents installed now, extensions enabled now).
@@ -104,6 +105,7 @@ final class EditorHost: NSViewController {
     private var areas: [String: EditorArea] = [:]
     private var recent: [String] = []
     private(set) var current: EditorArea?
+    var editedFiles: [FileTab] { areas.values.flatMap(\.editedFiles) }
     private var welcome: NSView?
     private static let keep = 4
 
@@ -117,7 +119,8 @@ final class EditorHost: NSViewController {
         let area = areas[id] ?? EditorArea(workspaceId: id)
         if areas[id] == nil { areas[id] = area; addChild(area) }
         recent.removeAll { $0 == id }; recent.insert(id, at: 0)
-        for old in recent.dropFirst(Self.keep) { areas[old]?.removeFromParent(); areas[old] = nil }   // their terminals detach
+        // Their terminals detach; a workspace with unsaved files stays.
+        for old in recent.dropFirst(Self.keep) where areas[old]?.editedFiles.isEmpty != false { areas[old]?.removeFromParent(); areas[old] = nil }
         recent = Array(recent.prefix(Self.keep))
         current = area
         area.view.translatesAutoresizingMaskIntoConstraints = false

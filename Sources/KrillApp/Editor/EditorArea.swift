@@ -28,6 +28,11 @@ final class EditorArea: NSViewController {
     override func loadView() {
         view = NSView()
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
+        // The empty workspace lists the agents that work; rebuild it when that list changes.
+        track { AgentAvailability.shared.ids } changed: { [weak self] _ in
+            guard let self, start != nil else { return }
+            start?.removeFromSuperview(); start = nil; showStart()
+        }
     }
 
     /// Turning an extension off takes its open tabs' content with it (they say how to turn it back on); turning it on
@@ -127,11 +132,15 @@ final class EditorArea: NSViewController {
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(model.tabs.map { t in
-            if let c = contents[t.id] { return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, toolTip: c.toolTip) }
+            if let c = contents[t.id] { return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, toolTip: c.toolTip, edited: c.isEdited) }
             return Self.placeholder(t)
         }, selected: model.selectedTab?.id)
         g.show(visible?.view)
+        view.window?.isDocumentEdited = !editedFiles.isEmpty   // the dot in the window's close button, as in any Mac app
     }
+
+    /// Files with unsaved changes in this workspace (asked about on quit; the workspace isn't dropped from memory).
+    var editedFiles: [FileTab] { contents.values.compactMap { $0 as? FileTab }.filter(\.isEdited) }
 
     /// Strip entry for a tab not built yet, from its URI alone.
     static func placeholder(_ t: TabRef) -> TabStrip.Item {

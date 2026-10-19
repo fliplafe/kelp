@@ -145,7 +145,20 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "gemini", name: "Gemini CLI", command: "gemini", yoloArgs: ["--yolo"], modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", yoloArgs: ["--force"], modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
         .init(id: "pi", name: "Pi", command: "pi"),
-        .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"])
+        .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"]),
+        // Others people run; Krill offers whichever of these actually work on this Mac (AgentAvailability).
+        .init(id: "grok", name: "Grok", command: "grok"),
+        .init(id: "antigravity", name: "Antigravity", command: "agy"),
+        .init(id: "qwen", name: "Qwen Code", command: "qwen"),
+        .init(id: "kimi", name: "Kimi", command: "kimi"),
+        .init(id: "kilo", name: "Kilo Code", command: "kilo"),
+        .init(id: "crush", name: "Crush", command: "crush"),
+        .init(id: "droid", name: "Droid", command: "droid"),
+        .init(id: "copilot", name: "GitHub Copilot", command: "copilot"),
+        .init(id: "aider", name: "Aider", command: "aider"),
+        .init(id: "goose", name: "Goose", command: "goose"),
+        .init(id: "auggie", name: "Augment", command: "auggie"),
+        .init(id: "kiro", name: "Kiro", command: "kiro-cli")
     ]
 
     /// Presets overridden/extended by `*.json` files in `dir`. Bad files are skipped, never fatal.

@@ -34,7 +34,6 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private let outline = NSOutlineView()
     private let results = NSTableView()
     private let search = NSSearchField()
-    private let mode = NSSegmentedControl(labels: ["Files", "Search"], trackingMode: .selectOne, target: nil, action: nil)
     private let leftScroll = NSScrollView(), resultsScroll = NSScrollView()
     private var nodes: [FileNode] = []
     private var status: [String: FileChange] = [:]
@@ -60,14 +59,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let rc = NSTableColumn(identifier: .init("r")); results.addTableColumn(rc); results.headerView = nil; results.style = .sourceList
         results.dataSource = self; results.delegate = self; results.rowHeight = 34; results.target = self; results.action = #selector(openResult)
         resultsScroll.documentView = results; resultsScroll.hasVerticalScroller = true; resultsScroll.isHidden = true; resultsScroll.drawsBackground = false
-        search.placeholderString = "Search in workspace"; search.target = self; search.action = #selector(runSearch); search.sendsSearchStringImmediately = false
+        // One field, like Finder's: empty shows the tree, a search (↩) shows matches in their place, clearing it goes back.
+        search.placeholderString = "Search in Files"; search.target = self; search.action = #selector(runSearch); search.sendsSearchStringImmediately = false
         search.controlSize = .small
-        mode.selectedSegment = 0; mode.target = self; mode.action = #selector(modeChanged); mode.controlSize = .small
         let v = NSView()
-        for x in [mode, search, leftScroll, resultsScroll] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [search, leftScroll, resultsScroll] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            mode.topAnchor.constraint(equalTo: v.topAnchor, constant: 8), mode.centerXAnchor.constraint(equalTo: v.centerXAnchor),
-            search.topAnchor.constraint(equalTo: mode.bottomAnchor, constant: 8), search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10),
+            search.topAnchor.constraint(equalTo: v.topAnchor, constant: 8), search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10),
             search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
             leftScroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), leftScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             leftScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), leftScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor),
@@ -224,11 +222,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(n.path + " "), "enter": false])) }
     }
     // MARK: search
-    @objc private func modeChanged() { resultsScroll.isHidden = mode.selectedSegment == 0; leftScroll.isHidden = !resultsScroll.isHidden }
+    private func showResults(_ on: Bool) { resultsScroll.isHidden = !on; leftScroll.isHidden = on }
     @objc func runSearch() {
         guard let w = worktree else { return }
-        let q = search.stringValue
-        mode.selectedSegment = 1; modeChanged()
+        let q = search.stringValue.trimmingCharacters(in: .whitespaces)
+        showResults(!q.isEmpty)
+        guard !q.isEmpty else { return }
         Task {
             matches = (try? await AppModel.shared.client?.call("files.search", .obj(["id": .string(w.id), "query": .string(q)]), as: [SearchMatch].self)) ?? []
             results.reloadData()

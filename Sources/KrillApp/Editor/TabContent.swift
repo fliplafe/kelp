@@ -11,7 +11,9 @@ protocol TabContent: AnyObject {
     /// Agent tabs report their status; it shows on the tab.
     var status: AgentStatus? { get }
     var toolTip: String? { get }
-    /// Called when title / icon / status change.
+    /// Unsaved changes: the tab shows a dot, closing it asks first.
+    var isEdited: Bool { get }
+    /// Called when title / icon / status / edited state change.
     var onChange: (() -> Void)? { get set }
     func focus()
     /// Return false to keep the tab (e.g. the user cancelled).
@@ -21,6 +23,7 @@ protocol TabContent: AnyObject {
 extension TabContent {
     var status: AgentStatus? { nil }
     var toolTip: String? { nil }
+    var isEdited: Bool { false }
     func close() -> Bool { true }
 }
 

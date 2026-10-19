@@ -3,8 +3,10 @@ import Core
 import GitKit
 import EditorKit
 
-/// A file as a tab: code editor with autosave and LSP, Markdown with preview, notebooks, or a Quick Look preview.
-/// Agents edit files on disk too: unchanged buffers follow the disk; conflicting edits ask.
+/// A file as a tab: code editor with LSP, Markdown with preview, notebooks, or a Quick Look preview.
+/// Like a Mac document: edits show as a dot on the tab and the window's close button, ⌘S saves, closing asks
+/// (Settings › Editor › Save automatically turns autosave on). Agents edit files on disk too: unchanged buffers
+/// follow the disk; conflicting edits ask.
 @MainActor
 final class FileTab: TabContent {
     let path: String, url: URL
@@ -14,6 +16,9 @@ final class FileTab: TabContent {
     private var markdown: MarkdownTab?
     private var notebook: NotebookTab?
     private var lastSaved = ""
+    private var wasEdited = false
+    var isEdited: Bool { editor.map { $0.text != lastSaved } ?? false }
+    private static var autosave: Bool { SettingsStore.shared.bool("editor.autoSave") == true }
     private var saveTask: Task<Void, Never>?
     private var lspTask: Task<Void, Never>?
     private var watcher: FileWatcher?
@@ -58,7 +63,7 @@ final class FileTab: TabContent {
     }
     isolated deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
-        flush()
+        if Self.autosave { flush() }
         let path = path, root = root
         Task { await LSPManager.shared.client(root: root, path: path)?.close(path) }
     }
@@ -70,16 +75,31 @@ final class FileTab: TabContent {
     func goTo(line: Int) { editor?.goTo(line: line); editor?.focus() }
     var selectedText: String? { editor?.selectedText }
     var selectedLines: ClosedRange<Int>? { editor?.selectedLines }
-    func close() -> Bool { flush(); return true }
+    /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab.
+    func close() -> Bool {
+        if Self.autosave { flush(); return true }
+        guard isEdited else { return true }
+        let a = NSAlert(); a.messageText = "Do you want to save the changes you made to “\(title)”?"
+        a.informativeText = "Your changes will be lost if you don't save them."
+        a.addButton(withTitle: "Save"); a.addButton(withTitle: "Cancel"); a.addButton(withTitle: "Don't Save")
+        switch runAsSheet(a) {
+        case .alertFirstButtonReturn: return save()
+        case .alertThirdButtonReturn: return true
+        default: return false
+        }
+    }
 
     // MARK: saving
 
     private func edited(_ t: String) {
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(600))
-            if !Task.isCancelled { self?.save() }
+        if Self.autosave {
+            saveTask?.cancel()
+            saveTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(600))
+                if !Task.isCancelled { self?.save() }
+            }
         }
+        editedStateMayHaveChanged()
         markdown?.textChanged()
         if let wid = AppModel.shared.worktrees.first(where: { $0.path == root })?.id, let line = editor?.cursor?.line {
             Attribution.markHuman(worktree: wid, file: String(path.dropFirst(root.count + 1)), line: line)
@@ -93,17 +113,26 @@ final class FileTab: TabContent {
         }
     }
 
-    private func save() {
-        guard let e = editor, e.text != lastSaved else { return }
-        if let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved { diskChanged(); return }   // don't clobber an agent's edit
+    /// ⌘S. False when it couldn't be written (or an agent changed the file meanwhile and the user is asked).
+    @discardableResult
+    func save() -> Bool {
+        guard let e = editor, e.text != lastSaved else { return true }
+        if let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved { diskChanged(); return false }   // don't clobber an agent's edit
         do { try e.text.write(to: url, atomically: true, encoding: .utf8); lastSaved = e.text }
-        catch { Banner.show("Couldn't save \(title): \(error.localizedDescription)") }
+        catch { Banner.show("Couldn't save \(title): \(error.localizedDescription)"); return false }
+        editedStateMayHaveChanged()
+        return true
     }
     private func flush() { saveTask?.cancel(); save() }
 
+    private func editedStateMayHaveChanged() {
+        guard isEdited != wasEdited else { return }
+        wasEdited = isEdited; onChange?()
+    }
+
     private func diskChanged() {
         guard let e = editor, let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved else { return }
-        if e.text == lastSaved { e.setText(disk); lastSaved = disk; markdown?.textChanged(); return }   // no local edits: follow the disk
+        if e.text == lastSaved { e.setText(disk); lastSaved = disk; markdown?.textChanged(); editedStateMayHaveChanged(); return }   // no local edits: follow the disk
         let a = NSAlert(); a.messageText = "\(title) changed on disk"
         a.informativeText = "An agent edited this file while you had unsaved changes."
         a.addButton(withTitle: "Keep Mine"); a.addButton(withTitle: "Use Disk Version")
@@ -112,6 +141,7 @@ final class FileTab: TabContent {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if r == .alertFirstButtonReturn { self.lastSaved = disk; self.save() } else { e.setText(disk); self.lastSaved = disk }
+                self.editedStateMayHaveChanged()
             }
         }
     }

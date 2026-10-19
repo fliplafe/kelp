@@ -257,7 +257,7 @@ final class SidebarCell: NSTableCellView {
         case .workspace:
             title.font = .systemFont(ofSize: 13)
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            layout(row: [icon, title, NSView(), badge, badgeMark])
+            layout(row: [title, NSView(), badge, badgeMark])
         case .agent:
             title.font = .systemFont(ofSize: 13)
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -283,8 +283,7 @@ final class SidebarCell: NSTableCellView {
             guard let w = m.worktree(id) else { return }
             let isMain = w.path == m.repo(w.repoId)?.path
             let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
-            // A desk in the project folder; older workspaces on their own branch keep the branch icon.
-            icon.image = .symbol(isMain ? "rectangle.split.2x1" : "arrow.triangle.branch"); icon.contentTintColor = .controlAccentColor
+            // Every workspace looks the same — a name and, on the right, what its agents need; the agents show their state.
             title.stringValue = w.displayName
             // Bold = something new to look at (like unread mail); a paused agent has nothing new.
             title.font = .systemFont(ofSize: 13, weight: agents.contains { $0.unread && $0.status != .hibernated } ? .semibold : .regular)
