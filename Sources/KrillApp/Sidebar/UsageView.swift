@@ -33,7 +33,8 @@ struct UsageView: View {
                 await load()
                 let waiting = quick > 0 && !rows.contains { $0.id == "claude" }
                 quick -= 1
-                try? await Task.sleep(for: .seconds(waiting ? (rows.isEmpty ? 1 : 8) : 60))
+                // Every 20 s: cheap (the daemon answers from memory), and a plan read after a turn shows up soon.
+                try? await Task.sleep(for: .seconds(waiting ? (rows.isEmpty ? 1 : 8) : 20))
             }
         }
     }

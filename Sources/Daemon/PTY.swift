@@ -85,10 +85,19 @@ public final class PTY: @unchecked Sendable {
         var buf = [UInt8](repeating: 0, count: 65536)
         let fl = fcntl(master, F_GETFL); _ = fcntl(master, F_SETFL, fl | O_NONBLOCK)
         while true { let n = read(master, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
-        source?.cancel(); source = nil
-        close(master)
+        hangUp()
         onExit?(status)
     }
+
+    private var closed = false
+    private func hangUp() {
+        guard !closed else { return }
+        closed = true; source?.cancel(); source = nil; close(master)
+    }
+
+    /// Dropped while its program runs (the limits probe quits that way): hang up the terminal. A controlling process
+    /// waits in exit until its output is read, and nobody reads it any more.
+    deinit { hangUp() }
 
     /// The `krill` CLI next to the daemon binary.
     public static let trampoline: String? = {

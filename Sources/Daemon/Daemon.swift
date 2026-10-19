@@ -340,6 +340,7 @@ public final class Daemon: @unchecked Sendable {
     func publish(_ s: Session) {
         try? store.save(s)
         if let v = try? JSONValue.from(s) { notify("event.session", v) }
+        if s.status == .done || s.status == .waiting, let a = s.agent { planUsed(a) }
     }
 
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.

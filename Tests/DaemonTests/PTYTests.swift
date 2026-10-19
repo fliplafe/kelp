@@ -46,3 +46,24 @@ final class Box: @unchecked Sendable {
     #expect(try LoginPath.resolve("git").hasSuffix("/git"))
     #expect(throws: RPCError.self) { try LoginPath.resolve("krill-no-such-agent-cli") }
 }
+
+/// The limits probe drops its PTY right after signalling the agent, which still writes as it quits. As the terminal's
+/// controlling process it then waits in exit for that output to be read, and nobody read it any more: it hung there
+/// for good, each one holding a PTY until the daemon ran out of file descriptors.
+@Test func droppedPTYLetsItsProgramExit() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let krill = root.appendingPathComponent(".build/debug/krill").path
+    guard FileManager.default.isExecutableFile(atPath: krill) else { return }   // `swift build` first
+    let pid: pid_t
+    do {
+        let box = Box()
+        let p = try PTY(argv: ["/bin/sh", "-c", "trap 'echo bye; exit 0' TERM HUP; echo ready; while :; do sleep 0.1; done"],
+                        cwd: "/tmp", env: [:], trampoline: krill)
+        p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
+        for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
+        pid = p.pid
+        p.terminate()
+    }
+    for _ in 0..<50 where kill(pid, 0) == 0 { try await Task.sleep(for: .milliseconds(100)) }
+    #expect(kill(pid, 0) != 0, "still there: stuck exiting on a terminal nobody reads")
+}

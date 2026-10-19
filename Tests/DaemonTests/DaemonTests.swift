@@ -377,3 +377,16 @@ final class NoteBox: @unchecked Sendable {
     let real = URL(fileURLWithPath: there).resolvingSymlinksInPath().path
     #expect(try await waitFor(10) { (try await c.call("session.read", .obj(["id": .string(s.id)])).string ?? "").contains(real) })
 }
+
+/// A finished turn moves the agent's plan read up to half a minute away; it never puts a sooner one off.
+@Test func turnEndBringsPlanReadForward() throws {
+    let d = try Daemon(root: tmp())
+    let every = try #require(Daemon.planProbes.first { $0.agent == "claude" }).every
+    d.plans["claude"] = .init(at: Date())
+    d.planUsed("claude")
+    let due = try #require(d.plans["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
+    #expect(due > 25 && due <= 30)
+    d.plans["claude"]?.at = .distantPast
+    d.planUsed("claude")
+    #expect(d.plans["claude"]?.at == .distantPast)
+}

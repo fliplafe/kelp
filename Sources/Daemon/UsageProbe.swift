@@ -53,6 +53,16 @@ extension Daemon {
         }
     }
 
+    /// A turn just ended, so the agent's usage moved: read its plan half a minute from now instead of at the next round
+    /// (up to 10 minutes late for Claude). The UI's next `usage.get` starts the read.
+    func planUsed(_ agent: String) {
+        guard let p = Self.planProbes.first(where: { $0.agent == agent }) else { return }
+        lock.withLock {
+            guard let at = plans[agent]?.at else { return }
+            plans[agent]?.at = min(at, Date().addingTimeInterval(30 - p.every))
+        }
+    }
+
     /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
     /// per launch: it gets Krill's own folder and always the same session, so its history doesn't fill up.
     private func probeDir(_ agent: String) -> String? {
