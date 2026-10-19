@@ -41,6 +41,13 @@ Built-ins (Git, Files, Issues, Browser) can be turned off like any other extensi
 extensions: user extensions live in `~/.krill/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
 turned off or removed.
 
+## Source Control
+The Git built-in is a VS Code-style Source Control panel (`Builtins/SourceControl.swift`): branch menu, commit box
+(Commit / Commit & Push / Amend), Merge / Staged / Changes sections with stage, unstage and discard, and a history graph
+whose lanes GitKit computes (`GitKit/History.swift`). Rows open `diff:` tabs, side by side or inline with hunk staging.
+Git runs in the daemon (`Daemon/GitHandlers.swift`: `git.branches`, `git.switch`, `git.graph`, `git.commitFiles`,
+`git.discard`, `git.remote`, `git.stash` …), never on the main thread.
+
 ## Settings
 `~/.krill/settings.json`, owned by the daemon (`settings.get` / `settings.set`, `event.settings`
 on change, also when the file is edited by hand). Flat dotted keys, VS Code style.

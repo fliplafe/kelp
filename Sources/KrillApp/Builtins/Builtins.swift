@@ -69,7 +69,7 @@ enum Builtins {
         return c
     }
 
-    static let git = Builtin("krill.git", "Git", "Changes, staging, commits, push, pull requests and the review diff.", icon: "arrow.triangle.branch") {
+    static let git = Builtin("krill.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["diff"], extensionId: "krill.git") { DiffTab(uri: $0) }]
         c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "krill.git") { SourceControlController() }]
