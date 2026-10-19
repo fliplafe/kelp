@@ -50,7 +50,7 @@ final class ThemeManager {
     ]
 
     /// "auto" follows macOS light/dark; "ghostty" leaves the terminal to ~/.config/ghostty.
-    var themes: [Theme] { Self.builtin + ExtensionRegistry.shared.all.themes }
+    var themes: [Theme] { Self.builtin + Theme.popular + ExtensionRegistry.shared.all.themes }
 
     var isDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 

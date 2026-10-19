@@ -49,6 +49,7 @@ final class FileTab: TabContent {
         editor = e; lastSaved = text
         if ["md", "markdown"].contains(ext) {
             let md = MarkdownTab(editor: e, url: url, path: p); md.currentSession = { Workbench.shared.focusedSession }
+            md.startInPreview = p == Help.location.path   // the help is for reading
             markdown = md; view = md.view
         } else { view = e.view }
         e.onChange = { [weak self] t in self?.edited(t) }

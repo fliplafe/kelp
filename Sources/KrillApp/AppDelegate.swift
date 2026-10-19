@@ -115,6 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showHistory() { HistoryWindow.shared.show() }
     @objc func openSettings() { SettingsWindow.show() }
     @objc func openExtensions() { SettingsWindow.show(section: "extensions") }
+    /// Terminal and editor text zoom together, like a browser; the settings stay the one source.
+    private func zoomText(_ step: Double?) {
+        let s = SettingsStore.shared
+        for key in ["terminal.fontSize", "editor.fontSize"] {
+            s.set(key, .double(step.map { min(40, max(8, (s.number(key) ?? 13) + $0)) } ?? 13))
+        }
+    }
+    @objc func biggerText() { zoomText(1) }
+    @objc func smallerText() { zoomText(-1) }
+    @objc func defaultText() { zoomText(nil) }
+    @objc func openHelp() { Workbench.open(TabURI.file(Help.file.path)) }
+    @objc func openExtensionGuide() { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
     @objc func goToLine() { if let f = fileTab, let s = prompt("Go to line", ""), let n = Int(s) { f.goTo(line: n) } }
     @objc func jumpToDefinition() { fileTab?.jumpToDefinition() }
     @objc func findInWorkspace() { main.showInspector(panel: "files") }
@@ -169,7 +181,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = item(app, "Extensions…", #selector(openExtensions), "")
         _ = item(app, "Restart Background Service…", #selector(restartService))
         app.addItem(.separator())
+        // The standard application menu: Services, Hide / Hide Others / Show All, Quit.
+        let services = NSMenu(title: "Services"); NSApp.servicesMenu = services
+        app.setSubmenu(services, for: app.addItem(withTitle: "Services", action: nil, keyEquivalent: ""))
+        app.addItem(.separator())
         app.addItem(withTitle: "Hide Krill", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h").keyEquivalentModifierMask = [.command, .option]
+        app.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        app.addItem(.separator())
         app.addItem(withTitle: "Quit Krill", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let file = sub("File")
@@ -200,8 +219,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f").tag = Int(NSFindPanelAction.showFindPanel.rawValue)
-        _ = item(edit, "Find in Workspace…", #selector(findInWorkspace), "f", [.command, .shift])
+        // Find, as in every Mac editor: the panel, next / previous, use selection.
+        let find = NSMenu(title: "Find")
+        for (title, key, mods, action) in [("Find…", "f", NSEvent.ModifierFlags.command, NSFindPanelAction.showFindPanel),
+                                           ("Find Next", "g", [.command], .next), ("Find Previous", "G", [.command, .shift], .previous),
+                                           ("Use Selection for Find", "e", [.command], .setFindString)] {
+            let i = find.addItem(withTitle: title, action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: key)
+            i.keyEquivalentModifierMask = mods; i.tag = Int(action.rawValue)
+        }
+        _ = item(find, "Find in Workspace…", #selector(findInWorkspace), "f", [.command, .shift])
+        edit.setSubmenu(find, for: edit.addItem(withTitle: "Find", action: nil, keyEquivalent: ""))
         _ = item(edit, "Go to Line…", #selector(goToLine), "l")
         _ = item(edit, "Jump to Definition", #selector(jumpToDefinition), "j", [.command, .control])
         _ = item(edit, "Send Selection to Agent", #selector(sendSelection), "\r", [.command, .option])
@@ -213,6 +240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let m = item(view, "  " + p.title, #selector(showPanel(_:)), "\(i + 1)", [.command, .option]); m.representedObject = p.id
             m.image = .symbol(p.icon)
         }
+        view.addItem(.separator())
+        _ = item(view, "Bigger Text", #selector(biggerText), "+")
+        _ = item(view, "Smaller Text", #selector(smallerText), "-")
+        _ = item(view, "Default Text Size", #selector(defaultText), "=")
         view.addItem(.separator())
         _ = item(view, "Split Right", #selector(splitRight), "d")
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
@@ -229,11 +260,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
 
         // Commands from extensions (built-in ones are already in the menus above).
-        let tools = sub("Tools")
-        _ = item(tools, "Manage Extensions…", #selector(openExtensions))
+        // Extension commands (Extensions… itself is in the Krill menu, next to Settings).
         let menuIds: Set<String> = ["agents.new", "terminal.new", "terminal.splitRight", "terminal.splitDown", "files.quickOpen"]
         let cmds = ExtensionRegistry.shared.all.commands.filter { !menuIds.contains($0.id) }
-        if !cmds.isEmpty { tools.addItem(.separator()) }
+        let tools = cmds.isEmpty ? NSMenu() : sub("Tools")
         for c in cmds {
             let i = tools.addItem(withTitle: c.title, action: #selector(runCommand(_:)), keyEquivalent: "")
             i.target = self; i.representedObject = c.id
@@ -243,7 +273,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         win.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+        win.addItem(.separator())
+        win.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = win
+
+        // Help: macOS puts its menu search here.
+        let help = sub("Help")
+        _ = item(help, "How Krill Works", #selector(openHelp), "?")
+        _ = item(help, "Writing Extensions", #selector(openExtensionGuide))
+        NSApp.helpMenu = help
         NSApp.mainMenu = mainMenu
     }
 }

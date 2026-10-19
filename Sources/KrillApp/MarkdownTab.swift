@@ -14,6 +14,9 @@ final class MarkdownTab: NSViewController, WKScriptMessageHandler {
     private let split = NSSplitView()
     private var renderTask: Task<Void, Never>?
     var currentSession: () -> String? = { nil }
+    /// Documents to read (Krill's help) open as the preview.
+    var startInPreview = false
+    private var narrow = false
 
     init(editor: CodeEditor, url: URL, path: String) {
         self.editor = editor; self.url = url; self.path = path
@@ -26,7 +29,7 @@ final class MarkdownTab: NSViewController, WKScriptMessageHandler {
             let x = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip)!, target: self, action: sel)
             x.bezelStyle = .texturedRounded; x.toolTip = tip; return x
         }
-        mode.selectedSegment = 1; mode.target = self; mode.action = #selector(modeChanged)
+        mode.selectedSegment = startInPreview ? 2 : 1; mode.target = self; mode.action = #selector(modeChanged)
         let heading = NSPopUpButton(); heading.addItems(withTitles: ["Text", "Heading 1", "Heading 2", "Heading 3"]); heading.target = self; heading.action = #selector(headingPicked(_:))
         heading.bezelStyle = .texturedRounded
         let bar = NSStackView(views: [heading, b("bold", "Bold (⌘B)", #selector(bold)), b("italic", "Italic (⌘I)", #selector(italic)),
@@ -41,6 +44,7 @@ final class MarkdownTab: NSViewController, WKScriptMessageHandler {
         split.addArrangedSubview(editor.view); split.addArrangedSubview(web)
         editor.view.clipsToBounds = true
         view = pinned(bar: bar, body: split)
+        applyMode()
         render()
     }
 
@@ -48,6 +52,9 @@ final class MarkdownTab: NSViewController, WKScriptMessageHandler {
     override func viewDidLayout() {
         super.viewDidLayout()
         if !positioned, split.bounds.width > 700 { positioned = true; split.setPosition(split.bounds.width / 2, ofDividerAt: 0) }
+        // Split in a narrow pane squeezes the preview to a word per line: show the source until there's room.
+        let n = split.bounds.width > 0 && split.bounds.width < 760
+        if n != narrow { narrow = n; mode.setToolTip(n ? "Split (needs a wider pane)" : nil, forSegment: 1); applyMode() }
     }
 
     func textChanged() {
@@ -64,10 +71,13 @@ final class MarkdownTab: NSViewController, WKScriptMessageHandler {
         }
     }
 
-    @objc private func modeChanged() {
-        editor.view.isHidden = mode.selectedSegment == 2; web.isHidden = mode.selectedSegment == 0
+    @objc private func modeChanged() { applyMode() }
+
+    private func applyMode() {
+        let m = mode.selectedSegment
+        editor.view.isHidden = m == 2; web.isHidden = m == 0 || (m == 1 && narrow)
         split.adjustSubviews()
-        if mode.selectedSegment == 1 { split.setPosition(split.bounds.width / 2, ofDividerAt: 0) }
+        if m == 1, !narrow { split.setPosition(split.bounds.width / 2, ofDividerAt: 0) }
     }
 
     private func edit(_ f: (String, NSRange) -> (text: String, selection: NSRange)) {
