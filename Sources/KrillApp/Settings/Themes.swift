@@ -56,7 +56,10 @@ final class ThemeManager {
 
     func apply() {
         let s = SettingsStore.shared
-        let want: NSAppearance.Name? = switch s.string("workbench.appearance") ?? "system" {
+        // A theme with its own look (Krill Light, Dracula…) sets the whole window's, like VS Code;
+        // "Appearance" decides for Auto and Ghostty, which have none.
+        let themeLook = themes.first { $0.id == s.string("workbench.theme") }?.appearance
+        let want: NSAppearance.Name? = switch themeLook ?? s.string("workbench.appearance") ?? "system" {
         case "light": .aqua
         case "dark": .darkAqua
         default: nil

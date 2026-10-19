@@ -96,7 +96,7 @@ final class AppModel {
             let a = NSAlert(); a.messageText = "Krill was updated"
             a.informativeText = "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu."
             a.addButton(withTitle: "Restart Service"); a.addButton(withTitle: "Later")
-            guard a.runModal() == .alertFirstButtonReturn else { return false }
+            guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
         _ = try? await c.call("daemon.shutdown")
         c.close(); client = nil

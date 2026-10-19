@@ -125,7 +125,8 @@ enum Builtins {
     static let appearance = Builtin("krill.appearance", "Appearance", "Light / dark, color themes for terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "krill.appearance", specs: [
-            s("workbench.appearance", "Appearance", "enum", "system", options: ["system", "light", "dark"]),
+            s("workbench.appearance", "Appearance", "enum", "system", "With the Auto and Ghostty themes; a light or dark theme sets the window to match.",
+              options: ["system", "light", "dark"]),
             s("workbench.theme", "Color theme", "enum", "auto", "Terminal and editor colors. Auto follows light / dark; Ghostty config keeps your Ghostty colors.")
         ])]
         return c

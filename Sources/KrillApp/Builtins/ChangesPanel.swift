@@ -43,7 +43,7 @@ final class ChangesModel {
         guard let w = AppModel.shared.worktree(worktreeId) else { return }
         let a = NSAlert(); a.messageText = "Discard changes to \((f.path as NSString).lastPathComponent)?"; a.informativeText = "This can't be undone."
         a.addButton(withTitle: "Discard"); a.addButton(withTitle: "Cancel"); a.alertStyle = .warning
-        guard a.runModal() == .alertFirstButtonReturn else { return }
+        guard runAsSheet(a) == .alertFirstButtonReturn else { return }
         let args = f.untracked ? ["clean", "-f", "--", f.path] : ["checkout", "HEAD", "--", f.path]
         _ = try? Git.run(args, cwd: w.path)
         Task { await reload() }

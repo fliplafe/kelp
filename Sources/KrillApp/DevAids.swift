@@ -65,13 +65,15 @@ extension AppDelegate {
             case "settings": SettingsWindow.show(section: env["KRILL_SNAPSHOT_SECTION"])
             default: break
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + (env["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5)) { [self] in
+            // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
+            RunLoop.main.add(Timer(timeInterval: env["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5, repeats: false) { _ in MainActor.assumeIsolated { [self] in
                 let want = env["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History", "settings": "Settings"][$0] ?? $0 }
                 // The frame view includes the title bar and toolbar.
                 let picked = env["KRILL_SNAPSHOT_WINDOW"] == "settings" ? SettingsWindow.window : NSApp.windows.filter(\.isVisible).last { want != nil && $0.title.hasPrefix(want ?? "") }
                 guard let w = picked ?? main.window,
                       let v = w.contentView?.superview ?? w.contentView else { exit(2) }
                 if want != nil { print("WINDOW", w.title, w.frame) }
+                if let s = w.attachedSheet { print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty }) }
                 // Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
                 v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
                 let scale = w.backingScaleFactor, size = v.bounds.size
@@ -85,9 +87,10 @@ extension AppDelegate {
                     if let img = ctx.makeImage() { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
                 }
                 for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
-                // Web content is drawn out of process and may be missing from the PNG: report what the page really shows.
+                // Web content is drawn out of process and may be missing from the PNG: report what the page really shows
+                // (not under a sheet: its run loop may not deliver the script's answer).
                 let webs = v.allSubviews(of: WKWebView.self)
-                guard !webs.isEmpty else { exit(0) }
+                guard !webs.isEmpty, w.attachedSheet == nil else { exit(0) }
                 var left = webs.count
                 for web in webs {
                     web.evaluateJavaScript("document.body ? document.body.innerText.length : -1") { n, _ in
@@ -95,14 +98,14 @@ extension AppDelegate {
                         left -= 1; if left == 0 { exit(0) }
                     }
                 }
-            }
+            } }, forMode: .common)
         }
     }
 }
 
 extension AppDelegate {
     /// Dev aid: real key events through NSApp (menus, key equivalents, the terminal's keyDown/IME path).
-    /// "echo hi\r" types text; "{cmd+t}" / "{cmd+\\}" press shortcuts.
+    /// "echo hi\r" types text; "{cmd+t}" / "{cmd+\\}" press shortcuts; "{wait}" pauses a second (async UI).
     func typeKeys(_ spec: String) {
         let codes: [Character: UInt16] = ["a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,
             "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "o": 31,
@@ -120,8 +123,11 @@ extension AppDelegate {
         }
         main.window?.makeKeyAndOrderFront(nil)
         Workbench.editor?.focusSelected()
-        for (i, (ch, mods)) in events.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.05) { [self] in
+        var at = 0.3
+        for (ch, mods) in events {
+            if ch == "wait", mods.isEmpty { at += 1; continue }
+            at += 0.05
+            DispatchQueue.main.asyncAfter(deadline: .now() + at) { [self] in
                 let code = ch.count == 1 ? codes[Character(ch.lowercased())] ?? 0 : 0
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
                     if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime,

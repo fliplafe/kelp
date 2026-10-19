@@ -154,6 +154,7 @@ final class LiveSession: @unchecked Sendable {
 
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
     func send(_ text: String, enter: Bool) {
+        lock.withLock { detector.input() }
         let body = text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         pty.write(Data(body.utf8))
         if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
@@ -163,6 +164,7 @@ final class LiveSession: @unchecked Sendable {
     func userInput(_ d: Data) {
         pty.write(d)
         lock.lock(); defer { lock.unlock() }
+        detector.input()
         guard !sawFirstPrompt else { return }
         var s = String(decoding: d, as: UTF8.self)
         if s.hasPrefix("\u{1B}[200~") { s = s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "") }

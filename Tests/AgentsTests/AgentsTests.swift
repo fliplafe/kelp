@@ -150,3 +150,14 @@ import Core
     #expect(d.status == .idle)
     d.hook("working"); #expect(d.status == .working)
 }
+
+@Test func answeredQuestionIsNotAskedAgain() throws {
+    let t0 = Date()
+    let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })
+    var d = StatusDetector(manifest: codex)
+    d.output("Do you want to proceed? (y/n)\n", at: t0)
+    #expect(d.tick(at: t0.addingTimeInterval(4)) == .waiting)
+    d.input()
+    d.output("y\ndone, 2 files changed\n", at: t0.addingTimeInterval(5))
+    #expect(d.tick(at: t0.addingTimeInterval(9)) == .done)
+}

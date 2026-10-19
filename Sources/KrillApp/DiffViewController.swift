@@ -122,7 +122,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             for c in log.prefix(30) { let m = menu.addItem(withTitle: "\(c["hash"]?.string ?? "")  \(c["subject"]?.string ?? "")", action: nil, keyEquivalent: ""); m.representedObject = c["hash"]?.string }
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
             let a = NSAlert(); a.messageText = "Review which commit?"; a.accessoryView = pop; a.addButton(withTitle: "Show"); a.addButton(withTitle: "Cancel")
-            if a.runModal() == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
+            if runAsSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
         }
         askCommit = false
         diffs = (try? await AppModel.shared.client?.call("git.diff", srcParams(), as: [FileDiff].self)) ?? []
@@ -309,7 +309,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
         let a = NSAlert(); a.messageText = "Send to which agent?"; a.accessoryView = pop; a.addButton(withTitle: "Send"); a.addButton(withTitle: "Cancel")
-        return a.runModal() == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
+        return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 
     @objc private func commit() {

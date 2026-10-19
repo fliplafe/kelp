@@ -35,18 +35,26 @@ extension Workbench {
     static func addProject() {
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
         p.message = "Choose a git repository"; p.prompt = "Add Project"
-        guard p.runModal() == .OK, let u = p.url else { return }
-        Task {
-            guard let r = await AppModel.shared.call("repo.add", .obj(["path": .string(u.path)])), let rid = r["id"]?.string else { return }
-            await AppModel.shared.refresh()
-            if let main = AppModel.shared.worktrees.first(where: { $0.repoId == rid && $0.path == r["path"]?.string }) { show(workspace: main.id) }
+        let chosen = { (r: NSApplication.ModalResponse) in
+            guard r == .OK, let u = p.url else { return }
+            Task {
+                guard let r = await AppModel.shared.call("repo.add", .obj(["path": .string(u.path)])), let rid = r["id"]?.string else { return }
+                await AppModel.shared.refresh()
+                if let main = AppModel.shared.worktrees.first(where: { $0.repoId == rid && $0.path == r["path"]?.string }) { show(workspace: main.id) }
+            }
         }
+        // A sheet on the window, not an app-modal panel that stops everything else.
+        if let w = NSApp.mainWindow ?? NSApp.keyWindow { p.beginSheetModal(for: w, completionHandler: chosen) } else { p.begin(completionHandler: chosen) }
     }
 
     /// New isolated workspace in the project on screen (or the first one).
     static func newWorkspace(repo: String? = nil) {
-        guard let rid = repo ?? AppModel.shared.worktree(shared.workspaceId)?.repoId ?? AppModel.shared.repos.first?.id else { addProject(); return }
         Task {
+            // Right after launch the project list may not be in yet: ⌘N must not turn into "Add Project".
+            let m = AppModel.shared
+            for _ in 0..<50 where !m.connected { try? await Task.sleep(for: .milliseconds(100)) }
+            if m.repos.isEmpty { await m.refresh() }
+            guard let rid = repo ?? m.worktree(shared.workspaceId)?.repoId ?? m.repos.first?.id else { addProject(); return }
             guard let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(rid)])), let id = w["id"]?.string else { return }
             await AppModel.shared.refresh()
             show(workspace: id)

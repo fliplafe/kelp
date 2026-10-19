@@ -32,7 +32,7 @@ final class FanoutController: NSObject, NSTableViewDataSource, NSTableViewDelega
         box.frame = NSRect(x: 0, y: 0, width: 380, height: 100 + 26 * steppers.count)
         a.accessoryView = box; a.addButton(withTitle: "Start"); a.addButton(withTitle: "Cancel")
         a.window.initialFirstResponder = text
-        guard a.runModal() == .alertFirstButtonReturn, !text.string.isEmpty else { return }
+        guard runAsSheet(a) == .alertFirstButtonReturn, !text.string.isEmpty else { return }
         let agents = steppers.flatMap { Array(repeating: JSONValue.string($0.0), count: $0.1.integerValue) }
         guard !agents.isEmpty else { return }
         Task {
@@ -94,7 +94,7 @@ final class FanoutController: NSObject, NSTableViewDataSource, NSTableViewDelega
         let a = NSAlert(); a.messageText = "Merge this variant and archive the other \(others.count)?"
         a.informativeText = "Uncommitted changes in the winner must be committed first."
         a.addButton(withTitle: "Accept"); a.addButton(withTitle: "Cancel")
-        guard a.runModal() == .alertFirstButtonReturn else { return }
+        guard runAsSheet(a) == .alertFirstButtonReturn else { return }
         Task {
             guard let r = await AppModel.shared.call("fanout.accept", .obj(["id": .string(win), "others": .array(others.map { .string($0) })])) else { return }
             if r["merged"]?.bool == true { status.stringValue = "Merged. Others archived."; ids = [win]; await load(test: false) }

@@ -173,7 +173,7 @@ enum ExtActions {
         if let q = a.confirm {
             let alert = NSAlert(); alert.messageText = expand(q, item: item, quote: false)
             alert.addButton(withTitle: a.title); alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard runAsSheet(alert) == .alertFirstButtonReturn else { return }
         }
         if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
         else if let o = a.open { Workbench.open(TabURI.normalize(expand(o, item: item, quote: false), cwd: IDEContext.current.workspace?.path)) }

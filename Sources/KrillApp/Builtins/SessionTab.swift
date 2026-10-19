@@ -43,7 +43,7 @@ final class SessionTab: TabContent {
         if let s = session, s.agent != "shell", s.status == .working {
             let a = NSAlert(); a.messageText = "Stop \(title)?"; a.informativeText = "The agent is still working. Closing the tab ends its session."
             a.addButton(withTitle: "Stop Agent"); a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn else { return false }
+            guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
         Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sessionId)])) }
         return true

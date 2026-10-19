@@ -9,6 +9,16 @@ func runSheet(_ a: NSAlert) async -> NSApplication.ModalResponse {
     return await withCheckedContinuation { c in a.beginSheetModal(for: w) { c.resume(returning: $0) } }
 }
 
+/// An alert as a sheet on the front window, answered synchronously (for code that needs the answer right away).
+@MainActor
+func runAsSheet(_ a: NSAlert) -> NSApplication.ModalResponse {
+    // Key / main are nil while Krill isn't the active app; the sheet still belongs on its window.
+    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+          w.attachedSheet == nil else { return a.runModal() }
+    a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
+    return NSApp.runModal(for: a.window)
+}
+
 /// Agent + model + effort + permission mode, optionally with a prompt. Used by New Task, New Agent, Hand Off.
 @MainActor
 final class LaunchForm {
@@ -183,5 +193,5 @@ func prompt(_ title: String, _ info: String, initial: String = "") -> String? {
     let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); f.stringValue = initial
     a.accessoryView = f; a.addButton(withTitle: "OK"); a.addButton(withTitle: "Cancel")
     a.window.initialFirstResponder = f
-    return a.runModal() == .alertFirstButtonReturn ? f.stringValue : nil
+    return runAsSheet(a) == .alertFirstButtonReturn ? f.stringValue : nil
 }

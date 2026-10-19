@@ -46,6 +46,9 @@ public struct StatusDetector: Sendable {
 
     public mutating func exited() { status = .exited }
 
+    /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.
+    public mutating func input() { tail = "" }
+
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
