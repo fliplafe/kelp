@@ -36,7 +36,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
            let st = await LocalAI.agentState(tail: StatusDetector.withoutPromptHints(tail)) {
             s.summary = st.summary
             var p: [String: JSONValue] = ["id": .string(s.id), "summary": .string(st.summary)]
-            if st.waitingForUser, s.status == .done { p["status"] = "waiting"; s.status = .waiting }
+            // Agents with hooks report real questions themselves; a closing "let me know if…" isn't one.
+            let hooked = AgentCatalog.all.first { $0.id == s.agent }?.hooksSettingsFlag != nil
+            if st.waitingForUser, s.status == .done, !hooked { p["status"] = "waiting"; s.status = .waiting }
             _ = try? await AppModel.shared.client?.call("session.annotate", .object(p))
         }
         post(s)

@@ -9,15 +9,36 @@ enum AgentSkills {
     static func write() {
         let s = SettingsStore.shared
         put("krill-extensions", on: s.bool("agents.skills.extensions") != false,
-            description: "Create, change or remove a Krill extension — a panel, tab, command, setting or theme in the Krill IDE the user is working in. "
-                + "Use when asked for anything that should show up inside Krill.",
-            body: ExtensionGuide.markdown)
+            description: "Use when the user wants something added to or changed in Krill, the IDE this session runs in: a panel, list, tab, command, "
+                + "setting or theme — e.g. “add a Krill panel with my Docker containers”, “show Android emulators in Krill”. Krill extensions are "
+                + "extension.json folders in $KRILL_HOME/extensions; they are not Claude Code plugins, mods, hooks or MCP servers.",
+            body: extensionsSteps(ExtensionRegistry.userDir.path) + ExtensionGuide.markdown)
         put("krill-settings", on: s.bool("agents.skills.settings") != false,
-            description: "Read or change Krill IDE settings (theme, fonts, editor, terminal, agents, extensions on/off) when the user asks to configure Krill.",
+            description: "Use when the user wants to see or change how Krill, the IDE this session runs in, is set up: theme, fonts, editor, "
+                + "terminal, agents, turning extensions on or off. Done with the krill CLI (krill settings set …), not Claude Code's own settings.",
             body: settingsGuide())
         // The guide also sits next to the user's extensions, for people.
         let guide = ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md")
         writeIfChanged(guide, ExtensionGuide.markdown)
+    }
+
+    /// The exact folder this Krill loads extensions from (the guide below says ~/.krill, which a custom KRILL_HOME changes).
+    private static func extensionsSteps(_ folder: String) -> String { """
+        # Adding something to Krill
+
+        This session runs inside Krill and the `krill` CLI is on PATH. Krill loads extensions from `\(folder)`.
+
+        1. Write `\(folder)/<id>/extension.json` (and any script or HTML it uses next to it) following the guide below.
+           Prefer a `list` view fed by a shell command that prints one JSON object per line.
+        2. Run `krill ext reload`, then `krill ext list` — fix the manifest if it reports an error.
+        3. Tell the user where it appears (right inspector icon for panels, the + menu for tabs) and how to use it.
+
+        Never use Claude Code plugins, mods, hooks or MCP for this: Krill only loads its own extension folders.
+
+        ---
+
+
+        """
     }
 
     private static func put(_ name: String, on: Bool, description: String, body: String) {

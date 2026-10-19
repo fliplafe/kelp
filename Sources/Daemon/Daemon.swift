@@ -204,6 +204,8 @@ public final class Daemon: @unchecked Sendable {
         // Krill's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
         if o.argv == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
             argv += [flag, Paths.agentSkills.path]
+            // Without a word of context, "add a panel" reads as a request for the agent's own UI.
+            if let ctx = manifest.contextFlag, let text = Self.krillContext(Paths.agentSkills) { argv += [ctx, text] }
             rec.argv = argv
         }
         if o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
@@ -230,6 +232,15 @@ public final class Daemon: @unchecked Sendable {
         try store.save(rec)
         notify("event.session", try .from(rec))
         return rec
+    }
+
+    /// One sentence naming the skills that are turned on (their folders exist).
+    static func krillContext(_ dir: URL) -> String? {
+        let on = ["krill-extensions", "krill-settings"].filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
+        guard !on.isEmpty else { return nil }
+        return "This Claude Code session runs inside Krill, a macOS IDE; the user sees Krill's window, not Claude Code's UI. Any request to add "
+            + "or change a panel, tab, list, command, setting or theme means Krill: follow the \(on.joined(separator: " / ")) skill. "
+            + "Never create Claude Code mods, plugins, hooks or MCP servers for such requests — Krill doesn't load them."
     }
 
     static func hasPlugins(_ dir: URL) -> Bool {
