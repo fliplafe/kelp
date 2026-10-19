@@ -148,6 +148,18 @@ public final class GhosttyRuntime {
             return true
         case GHOSTTY_ACTION_RING_BELL:
             return true   // agents ring constantly; status dots carry that signal
+        case GHOSTTY_ACTION_START_SEARCH:
+            view?.onSearch?(.started(action.action.start_search.needle.map { String(cString: $0) } ?? ""))
+            return true
+        case GHOSTTY_ACTION_END_SEARCH:
+            view?.onSearch?(.ended)
+            return true
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            view?.onSearch?(.total(Int(action.action.search_total.total)))
+            return true
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            view?.onSearch?(.selected(Int(action.action.search_selected.selected)))
+            return true
         default:
             return false
         }
@@ -161,6 +173,9 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public var onOpenURL: ((URL) -> Void)?
     public var onExit: (() -> Void)?
     public var onFocus: (() -> Void)?
+    /// Find in the scrollback: Ghostty reports matches as it searches (-1 = not known yet).
+    public enum SearchEvent: Sendable { case started(String), ended, total(Int), selected(Int) }
+    public var onSearch: ((SearchEvent) -> Void)?
     var cellSize = NSSize(width: 8, height: 16)
     var cursor: NSCursor = .iBeam
     private var markedText = NSMutableAttributedString()
@@ -198,6 +213,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public required init?(coder: NSCoder) { fatalError() }
 
     isolated deinit {
+        if let o = occlusionObserver { NotificationCenter.default.removeObserver(o) }
         if let surface { ghostty_surface_free(surface) }
     }
 
@@ -211,6 +227,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public override var acceptsFirstResponder: Bool { true }
     public override func becomeFirstResponder() -> Bool {
         if let surface { ghostty_surface_set_focus(surface, true) }
+        setVisible(true)   // AppKit can miss an occlusion change (Spaces, full screen): typing here means it's on screen
         onFocus?(); return true
     }
     public override func resignFirstResponder() -> Bool {
@@ -219,7 +236,34 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     }
     public func focus() { window?.makeFirstResponder(self) }
 
-    public override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateSize() }
+    public var hasSelection: Bool { surface.map(ghostty_surface_has_selection) ?? false }
+
+    /// Columns × rows on screen now (nil before the first layout).
+    public var gridSize: (cols: Int, rows: Int)? {
+        guard let surface else { return nil }
+        let s = ghostty_surface_size(surface)
+        return s.columns > 0 && s.rows > 0 ? (Int(s.columns), Int(s.rows)) : nil
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow(); updateSize()
+        if let o = occlusionObserver { NotificationCenter.default.removeObserver(o); occlusionObserver = nil }
+        updateOcclusion()
+        guard let w = window else { return }
+        occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateOcclusion() }
+        }
+    }
+
+    // A terminal nobody can see (other tab, hidden or minimized window) stops drawing; its process runs on.
+    private var occlusionObserver: NSObjectProtocol?
+    private var lastVisible: Bool?
+    private func updateOcclusion() { setVisible(window?.occlusionState.contains(.visible) == true) }
+    private func setVisible(_ v: Bool) {
+        guard let surface, v != lastVisible else { return }
+        lastVisible = v
+        ghostty_surface_set_occlusion(surface, v)
+    }
     public override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); updateSize() }
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
@@ -391,6 +435,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
 
     public override func keyDown(with event: NSEvent) {
         guard let surface else { interpretKeyEvents([event]); return }
+        if window?.isKeyWindow == true { setVisible(true) }
         // Option-as-alt and friends: let Ghostty say which modifiers take part in translating to text.
         let tm = ghostty_surface_key_translation_mods(surface, Self.mods(event.modifierFlags))
         var translationMods = event.modifierFlags
@@ -441,9 +486,12 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
 
     // MARK: Edit menu (Copy / Paste / Select All reach the terminal from the menu bar too, not only as ⌘C / ⌘V)
 
-    private func ghosttyAction(_ name: String) {
-        guard let surface else { return }
-        _ = name.withCString { ghostty_surface_binding_action(surface, $0, UInt(name.utf8.count)) }
+    private func ghosttyAction(_ name: String) { perform(action: name) }
+    /// A Ghostty binding action by name ("search:text", "navigate_search:next", "end_search"…).
+    @discardableResult
+    public func perform(action name: String) -> Bool {
+        guard let surface else { return false }
+        return name.withCString { ghostty_surface_binding_action(surface, $0, UInt(name.utf8.count)) }
     }
     @objc public func copy(_ sender: Any?) { ghosttyAction("copy_to_clipboard") }
     @objc public func paste(_ sender: Any?) { ghosttyAction("paste_from_clipboard") }

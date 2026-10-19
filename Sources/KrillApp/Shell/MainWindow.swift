@@ -173,8 +173,8 @@ final class WelcomeView: NSView {
         let title = NSTextField(labelWithString: hasRepos ? "Select a workspace" : "Welcome to Krill")
         title.font = .systemFont(ofSize: 20, weight: .semibold)
         let body = NSTextField(wrappingLabelWithString: hasRepos
-            ? "Pick a workspace in the sidebar, or press ⌘N for a new one — its own branch and checkout, so agents don't step on each other."
-            : "Add a git repository. You can work in it directly, or give each task an isolated workspace where agents run side by side.")
+            ? "Pick a workspace in the sidebar, or press ⌘N for a new one — a clean desk in the project for one task and its agents."
+            : "Add a project folder. Each task gets its own workspace: agents, terminals and files side by side.")
         body.alignment = .center; body.textColor = .secondaryLabelColor
         let button = ClosureButton(title: hasRepos ? "New Workspace" : "Add Project…") { hasRepos ? Workbench.newWorkspace() : Workbench.addProject() }
         button.bezelStyle = .push; button.keyEquivalent = "\r"; button.controlSize = .large

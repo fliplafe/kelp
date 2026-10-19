@@ -38,3 +38,9 @@ import Testing
     #expect(IDE.uri(for: "my file.swift:7", cwd: "/w") == "file:///w/my%20file.swift#L7")
     #expect(IDE.uri(for: "session:abc-def", cwd: "/w") == "session:abc-def")
 }
+
+@Test func droppedPathsAreBackslashEscaped() {
+    #expect(IDE.escapedPath("/tmp/My File's (1).png") == #"/tmp/My\ File\'s\ \(1\).png"#)
+    #expect(IDE.escapedPath(#"/a\b"#) == #"/a\\b"#)
+    #expect(IDE.escapedPath("/plain/path.txt") == "/plain/path.txt")
+}

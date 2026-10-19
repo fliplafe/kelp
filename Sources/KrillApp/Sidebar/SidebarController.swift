@@ -107,9 +107,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         }
     }
 
-    private static let editors = [("VS Code", "com.microsoft.VSCode"), ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Zed", "dev.zed.Zed"),
-                                  ("Xcode", "com.apple.dt.Xcode"), ("Terminal", "com.apple.Terminal")]
-
     @objc private func searchChanged() { query = search.stringValue.trimmingCharacters(in: .whitespaces); refresh() }
 
     /// Same shape → refresh the visible cells; new shape → reload, keeping expansion and selection.
@@ -245,11 +242,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add("Rename") { [weak self] in self?.startRename(id) }
             menu.add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
             menu.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
-            // Whatever editors this Mac has, like "Open in…" in Finder.
-            for (name, bundle) in Self.editors {
-                guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { continue }
-                menu.add("Open in \(name)") { NSWorkspace.shared.open([URL(fileURLWithPath: w.path)], withApplicationAt: app, configuration: .init()) }
-            }
+            WorkspaceActions.addOpenIn(to: menu, path: w.path)
             menu.addItem(.separator())
             if w.path == m.repo(w.repoId)?.path {
                 // A desk: closing it ends its agents; the project's folder is untouched.

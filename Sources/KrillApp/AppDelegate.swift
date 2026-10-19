@@ -74,6 +74,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
 
+    /// Right-click on the Dock icon: the agents waiting for you, like Mail's dock menu offers what's new.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let m = NSMenu()
+        for s in AttentionQueue.sessions {
+            let place = AppModel.shared.worktree(s.worktreeId)?.displayName ?? ""
+            let i = m.add("\(s.displayTitle) — \(s.status == .waiting ? "needs you" : "finished") · \(place)") { NSApp.activate(); Workbench.focus(session: s.id) }
+            i.image = AgentCatalog.icon(s.agent, size: 16)
+        }
+        if !m.items.isEmpty { m.addItem(.separator()) }
+        m.add("New Workspace") { NSApp.activate(); Workbench.newWorkspace() }
+        return m
+    }
+
     /// No notification for an agent whose tab the user is looking at.
     func isViewing(session id: String) -> Bool {
         main.window?.isKeyWindow == true && Workbench.editor?.layout.focusedGroup?.selectedTab?.uri == TabURI.session(id)
@@ -95,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func saveAll() { main.editors.editedFiles.forEach { $0.save() } }
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }
+    @objc func toggleZoom() { editor?.toggleZoom() }
     /// ⌘W: the focused tab; in a workspace with nothing open, the workspace itself.
     @objc func closeTab() {
         guard let e = editor else { return }
@@ -106,6 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func nextGroup() { editor?.focusGroup(1) }
     @objc func prevGroup() { editor?.focusGroup(-1) }
     @objc func selectTab(_ m: NSMenuItem) { editor?.selectTab(index: m.tag - 1) }
+    @objc func revealInFinder() { WorkspaceActions.revealCurrent() }
+    @objc func nextWorkspace() { Workbench.showWorkspace(offset: 1) }
+    @objc func prevWorkspace() { Workbench.showWorkspace(offset: -1) }
+    @objc func selectWorkspace(_ m: NSMenuItem) { Workbench.showWorkspace(number: m.tag) }
+    @objc func nextNeedingAttention() { Workbench.showNextNeedingAttention() }
     @objc func toggleInspector() { main.toggleInspectorPanel() }
     @objc func toggleSidebar() { main.toggleSidebarPanel() }
     @objc func showPanel(_ m: NSMenuItem) { if let id = m.representedObject as? String { main.showInspector(panel: id) } }
@@ -204,6 +223,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
         _ = item(file, "Add Project…", #selector(addProject), "o")
         file.addItem(.separator())
+        _ = item(file, "Reveal in Finder", #selector(revealInFinder), "r", [.command, .option])
+        let openIn = NSMenu()
+        WorkspaceActions.addOpenIn(to: openIn, path: { AppModel.shared.worktree(Workbench.shared.workspaceId)?.path }, prefix: "")
+        if !openIn.items.isEmpty { file.setSubmenu(openIn, for: file.addItem(withTitle: "Open Workspace In", action: nil, keyEquivalent: "")) }
+        file.addItem(.separator())
         _ = item(file, "Save", #selector(saveFile), "s")
         _ = item(file, "Save All", #selector(saveAll), "s", [.command, .option])
         file.addItem(.separator())
@@ -247,11 +271,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.addItem(.separator())
         _ = item(view, "Split Right", #selector(splitRight), "d")
         _ = item(view, "Split Down", #selector(splitDown), "d", [.command, .shift])
+        _ = item(view, "Maximize Pane", #selector(toggleZoom), "\r", [.command, .shift])
         _ = item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
         _ = item(view, "Previous Tab", #selector(prevTab), "[", [.command, .shift])
         _ = item(view, "Next Group", #selector(nextGroup), "]")
         _ = item(view, "Previous Group", #selector(prevGroup), "[")
         for i in 1...9 { let m = item(view, "Tab \(i)", #selector(selectTab(_:)), "\(i)"); m.tag = i; m.isHidden = i > 3; m.allowsKeyEquivalentWhenHidden = true }
+        // ⌃Tab / ⌃⇧Tab as in Safari and Terminal, next to the ⇧⌘] / ⇧⌘[ shown above.
+        for (sel, mods) in [(#selector(nextTab), NSEvent.ModifierFlags.control), (#selector(prevTab), NSEvent.ModifierFlags([.control, .shift]))] {
+            let m = item(view, "", sel, "\t", mods); m.isHidden = true; m.allowsKeyEquivalentWhenHidden = true
+        }
         view.addItem(.separator())
         _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
         _ = item(view, "Open Quickly…", #selector(quickOpen), "p")
@@ -273,6 +302,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         win.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+        win.addItem(.separator())
+        _ = item(win, "Show Agent Needing You", #selector(nextNeedingAttention), "u", [.command, .shift])
+        // NSUpArrowFunctionKey / NSDownArrowFunctionKey
+        _ = item(win, "Next Workspace", #selector(nextWorkspace), "\u{F701}", [.command, .control])
+        _ = item(win, "Previous Workspace", #selector(prevWorkspace), "\u{F700}", [.command, .control])
+        for i in 1...9 { let m = item(win, "Workspace \(i)", #selector(selectWorkspace(_:)), "\(i)", .control); m.tag = i; m.isHidden = i > 1; m.allowsKeyEquivalentWhenHidden = true }
         win.addItem(.separator())
         win.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         NSApp.windowsMenu = win

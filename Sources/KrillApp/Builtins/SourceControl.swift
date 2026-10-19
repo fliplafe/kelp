@@ -86,6 +86,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40)
         ])
         view = v
+        updateHeader()   // NSButton's own "Button" title must not show while the branch loads
         track { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
     }
 

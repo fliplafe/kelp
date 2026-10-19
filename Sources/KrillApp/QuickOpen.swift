@@ -60,7 +60,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         func walk(_ m: NSMenu, path: String) {
             for i in m.items {
                 if let s = i.submenu { walk(s, path: path.isEmpty ? i.title : path + " › " + i.title); continue }
-                guard let a = i.action, !i.isSeparatorItem, !i.title.isEmpty else { continue }
+                guard let a = i.action, !i.isSeparatorItem, !i.isHidden, !i.title.isEmpty else { continue }
                 let key = i.keyEquivalent.isEmpty ? "" : Self.shortcut(i)
                 items.append(Item(kind: "Command", icon: "command", title: i.title, detail: [path, key].filter { !$0.isEmpty }.joined(separator: "   "), action: {
                     NSApp.sendAction(a, to: i.target, from: i)
@@ -119,7 +119,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         let m = i.keyEquivalentModifierMask
         if m.contains(.control) { s += "⌃" }; if m.contains(.option) { s += "⌥" }
         if m.contains(.shift) || i.keyEquivalent != i.keyEquivalent.lowercased() { s += "⇧" }; if m.contains(.command) { s += "⌘" }
-        let k = i.keyEquivalent == "\r" ? "↩" : i.keyEquivalent.uppercased()
+        let k = ["\r": "↩", "\t": "⇥", "\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→"][i.keyEquivalent] ?? i.keyEquivalent.uppercased()
         return s + k
     }
 

@@ -7,7 +7,7 @@ extension NSPasteboard.PasteboardType { static let krillPane = NSPasteboard.Past
 /// One terminal bound to one daemon session. libghostty renders it when available (attached via `krill attach`,
 /// so the daemon keeps the process); SwiftTerm is the fallback. A slim header appears only inside splits.
 @MainActor
-final class PaneView: NSView, NSDraggingSource {
+final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     let sessionId: String
     private var termView = NSView()
     #if canImport(GhosttyKit)
@@ -74,6 +74,7 @@ final class PaneView: NSView, NSDraggingSource {
             let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KRILL_SOCKET": Paths.socket.path, "KRILL_HOME": Paths.root.path])
             g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
             g.onExit = { [weak self] in self?.sessionEnded() }
+            g.onSearch = { [weak self] in self?.searchEvent($0) }
             g.onOpenURL = { url in
                 // ⌘-click: local pages open as a browser tab, the rest in the default browser.
                 if url.host == "localhost" || url.host == "127.0.0.1" || url.isFileURL { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
@@ -156,6 +157,20 @@ final class PaneView: NSView, NSDraggingSource {
         swiftTerm?.focus()
     }
 
+    /// Columns × rows now; the last one seen anywhere sizes the next terminal before it's on screen.
+    static var lastGrid: (cols: Int, rows: Int)? = {   // kept across launches: the window usually opens at the same size
+        let g = UserDefaults.standard.array(forKey: "terminal.lastGrid") as? [Int] ?? []
+        return g.count == 2 ? (g[0], g[1]) : nil
+    }() {
+        didSet { if let g = lastGrid, g != oldValue ?? (0, 0) { UserDefaults.standard.set([g.cols, g.rows], forKey: "terminal.lastGrid") } }
+    }
+    var gridSize: (cols: Int, rows: Int)? {
+        #if canImport(GhosttyKit)
+        if let g = ghostty?.gridSize { Self.lastGrid = g; return g }
+        #endif
+        return nil
+    }
+
     /// What's on screen (tests, "copy context" fallback).
     var visibleText: String {
         #if canImport(GhosttyKit)
@@ -171,6 +186,74 @@ final class PaneView: NSView, NSDraggingSource {
         #endif
         AppModel.shared.write(session: sessionId, Data(text.utf8))
     }
+
+    /// Right-click where the program in the terminal doesn't take the mouse itself, like Terminal's menu.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        #if canImport(GhosttyKit)
+        guard let g = ghostty else { return nil }
+        let m = NSMenu()
+        m.addItem(withTitle: "Copy", action: #selector(GhosttyTerminalView.copy(_:)), keyEquivalent: "").target = g
+        m.items.last?.isEnabled = g.hasSelection; m.autoenablesItems = false
+        m.addItem(withTitle: "Paste", action: #selector(GhosttyTerminalView.paste(_:)), keyEquivalent: "").target = g
+        m.addItem(withTitle: "Select All", action: #selector(GhosttyTerminalView.selectAll(_:)), keyEquivalent: "").target = g
+        m.addItem(.separator())
+        m.add("Find…") { [weak self] in self?.showFind(nil) }
+        m.addItem(.separator())
+        m.add("Split Right") { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.right) }
+        m.add("Split Down") { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.down) }
+        return m
+        #else
+        return nil
+        #endif
+    }
+
+    // MARK: find (Edit › Find reaches the pane through the responder chain)
+    private var findBar: FindBar?
+
+    @objc func performFindPanelAction(_ sender: Any?) {
+        #if canImport(GhosttyKit)
+        guard let g = ghostty else { return }
+        switch NSFindPanelAction(rawValue: UInt((sender as? NSMenuItem)?.tag ?? 1)) {
+        case .next?: g.perform(action: "navigate_search:next")
+        case .previous?: g.perform(action: "navigate_search:previous")
+        case .setFindString?: g.perform(action: "search_selection")   // Ghostty answers with start_search and the text
+        default: showFind(nil)
+        }
+        #endif
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        #if canImport(GhosttyKit)
+        if item.action == #selector(performFindPanelAction(_:)) { return ghostty != nil }
+        #endif
+        return true
+    }
+
+    #if canImport(GhosttyKit)
+    private func showFind(_ needle: String?) {
+        guard let g = ghostty else { return }
+        let bar = findBar ?? {
+            let b = FindBar()
+            b.onSearch = { g.perform(action: "search:" + $0) }
+            b.onStep = { g.perform(action: "navigate_search:" + ($0 ? "next" : "previous")) }
+            b.onClose = { [weak self] in g.perform(action: "end_search"); self?.focus() }
+            b.translatesAutoresizingMaskIntoConstraints = false; addSubview(b)
+            NSLayoutConstraint.activate([b.topAnchor.constraint(equalTo: termView.topAnchor, constant: 8),
+                                         b.trailingAnchor.constraint(equalTo: termView.trailingAnchor, constant: -14)])
+            findBar = b; return b
+        }()
+        bar.begin(needle)
+    }
+
+    private func searchEvent(_ e: GhosttyTerminalView.SearchEvent) {
+        switch e {
+        case .started(let needle): showFind(needle)
+        case .ended: findBar?.isHidden = true
+        case .total(let n): findBar?.total = n
+        case .selected(let n): findBar?.selected = n
+        }
+    }
+    #endif
 
     @objc private func closeTapped() { onClose?(self) }
     @objc private func restartTapped() { onRestart?(self) }
@@ -221,7 +304,7 @@ final class PaneView: NSView, NSDraggingSource {
         }
         if paths.isEmpty, let text = pb.string(forType: .string) { insert(text); return true }
         guard !paths.isEmpty else { return false }
-        insert(paths.map { "'\($0.replacingOccurrences(of: "'", with: "'\\''"))'" }.joined(separator: " ") + " ")
+        insert(paths.map(IDE.escapedPath).joined(separator: " ") + " ")
         focus()
         return true
     }

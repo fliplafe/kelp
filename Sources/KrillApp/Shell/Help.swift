@@ -26,6 +26,7 @@ enum Help {
     | none | ready for a task |
 
     A project's header says how many agents need you. A collapsed workspace shows its agents' most urgent mark.
+    ⇧⌘U goes to the next agent that needs you, wherever it is (also in the Dock icon's menu).
 
     **Limits** at the bottom: a ring per agent — how full its fullest limit is (orange from 70 %, red from 90 %), read
     from the agents' own /usage (Claude Code, Grok, Antigravity) and Codex's logs. Hover or click for every limit and
@@ -33,8 +34,12 @@ enum Help {
 
     ## The middle: tabs and splits
     The toolbar **+** opens an agent, a terminal, a browser or what extensions add. ⌘D splits right, ⇧⌘D down; drag a tab to
-    an edge to split, between groups to move it. ⌘W closes a tab (in an empty workspace, the workspace).
-    Edited files show a dot on their tab and in the window's close button; ⌘S saves.
+    an edge to split, between groups to move it. ⇧⌘↩ lets the focused pane fill the area and brings the others back.
+    ⌘W closes a tab (in an empty workspace, the workspace). Edited files show a dot on their tab and in the window's close
+    button; ⌘S saves.
+
+    In a terminal ⌘F finds text in its scrollback (⌘G / ⇧⌘G next / previous, ⌘E the selection). Right-click for copy,
+    paste and splits. Drop files to type their paths; ⌘K clears, ⌘+ / ⌘− change the text size.
 
     ## The right panel
     Files (⌥⌘1), Source Control (⌥⌘2) — changes, staging, commit, history graph; click a file for its diff — Issues, and
@@ -50,8 +55,9 @@ enum Help {
 
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·
-    ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ next / previous tab · ⌘] / ⌘[ next / previous group · ⌘0 sidebar · ⌥⌘0 right panel ·
-    ⌘S save · ⌘W close tab · ⇧⌘W close workspace. Shortcuts work on any keyboard layout.
+    ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous group ·
+    ⌃1…9 workspaces · ⌃⌘↓ / ⌃⌘↑ next / previous workspace · ⇧⌘U agent that needs you · ⌘F find · ⌥⌘R reveal in Finder ·
+    ⌘0 sidebar · ⌥⌘0 right panel · ⌘S save · ⌘W close tab · ⇧⌘W close workspace. Shortcuts work on any keyboard layout.
     """
 
     static var location: URL { Paths.root.appendingPathComponent("HELP.md") }

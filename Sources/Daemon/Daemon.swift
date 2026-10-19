@@ -102,7 +102,7 @@ public final class Daemon: @unchecked Sendable {
                         continue
                     }
                     if req.method == "session.stream" {   // this connection becomes a raw byte pipe (krill attach)
-                        stream(fd: fd, conn: id, session: req.params?["id"]?.string ?? "", leftover: lb.takeRemainder())
+                        stream(fd: fd, conn: id, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
                         break reading
                     }
                     Task { await self.respond(req, conn: id, fd: fd) }
@@ -118,9 +118,11 @@ public final class Daemon: @unchecked Sendable {
 
     /// Raw attach (`krill attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
     /// writes is the user's typing. Terminal replies (DA, kitty keyboard) flow back the same way, so the agent sees a real terminal.
-    private func stream(fd: Int32, conn: Int, session: String, leftover: Data) {
+    /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
+    private func stream(fd: Int32, conn: Int, session: String, size: JSONValue?, leftover: Data) {
         lock.withLock { _ = rawConns.insert(conn) }   // before waking: its status events must not land in the byte stream
-        guard let ls = try? liveSession(session) else {
+        let cols = UInt16(clamping: size?["cols"]?.int ?? 120), rows = UInt16(clamping: size?["rows"]?.int ?? 32)
+        guard let ls = try? liveSession(session, cols: cols > 0 ? cols : 120, rows: rows > 0 ? rows : 32) else {
             _ = Unix.writeAll(fd, Data("krill: no such session\r\n".utf8)); lock.withLock { _ = rawConns.remove(conn) }; return
         }
         let history = ls.attach(conn)
@@ -164,11 +166,11 @@ public final class Daemon: @unchecked Sendable {
     /// A running session, without waking a paused one.
     func existing(_ id: String) -> LiveSession? { lock.withLock { live[id] } }
 
-    func liveSession(_ id: String) throws -> LiveSession {
+    func liveSession(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
         if let s = lock.withLock({ live[id] }) { return s }
         return try wakeLock.withLock {   // paused sessions wake on first use
             if let s = lock.withLock({ live[id] }) { return s }
-            return try wake(id)
+            return try wake(id, cols: cols, rows: rows)
         }
     }
 
@@ -277,7 +279,7 @@ public final class Daemon: @unchecked Sendable {
     /// KRILL_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
     static let debugWake = ProcessInfo.processInfo.environment["KRILL_DEBUG_WAKE"] != nil
 
-    func wake(_ id: String) throws -> LiveSession {
+    func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
         if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
@@ -287,7 +289,7 @@ public final class Daemon: @unchecked Sendable {
         env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
         env["PATH"] = childPath
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: 120, rows: 32)
+        let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self] s in self?.publish(s) }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }

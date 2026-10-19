@@ -131,7 +131,8 @@ extension AppDelegate {
                 let combo = rest[rest.index(after: rest.startIndex)..<end].split(separator: "+")
                 var mods: NSEvent.ModifierFlags = []
                 for m in combo.dropLast() { mods.insert(["cmd": .command, "shift": .shift, "opt": .option, "ctrl": .control][String(m)] ?? []) }
-                let key = String(combo.last ?? "")
+                var key = String(combo.last ?? "")
+                key = ["up": "\u{F700}", "down": "\u{F701}", "left": "\u{F702}", "right": "\u{F703}", "tab": "\t", "esc": "\u{1B}"][key] ?? key
                 events.append((mods.contains(.shift) ? key.uppercased() : key, mods)); rest = rest[rest.index(after: end)...]
             } else { events.append((String(c), [])); rest = rest.dropFirst() }
         }
@@ -142,9 +143,15 @@ extension AppDelegate {
             if ch == "wait", mods.isEmpty { at += 1; continue }
             at += 0.05
             DispatchQueue.main.asyncAfter(deadline: .now() + at) { [self] in
-                let code = ch.count == 1 ? codes[Character(ch.lowercased())] ?? 0 : 0
+                let named: [String: UInt16] = ["\u{F700}": 126, "\u{F701}": 125, "\u{F702}": 123, "\u{F703}": 124, "\t": 48, "\u{1B}": 53]
+                let code = named[ch] ?? (ch.count == 1 ? codes[Character(ch.lowercased())] ?? 0 : 0)
+                defer { if !mods.isEmpty { DispatchQueue.main.async { print("KEY", mods.rawValue, ch.unicodeScalars.map { String($0.value, radix: 16) }, "→", AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-") } } }
+                // In the background (launched from a shell) there's no key window, so menu items that go to the
+                // responder chain (Find…, Copy) are disabled: send their action along the window's chain instead.
+                if !NSApp.isActive, mods.contains(.command), let item = Self.menuItem(ch, mods), item.target == nil, let a = item.action,
+                   main.window?.firstResponder?.tryToPerform(a, with: item) == true { return }
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
-                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime,
+                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: (123...126).contains(code) ? mods.union([.numericPad, .function]) : mods, timestamp: ProcessInfo.processInfo.systemUptime,
                                                 windowNumber: main.window?.windowNumber ?? 0, context: nil, characters: ch, charactersIgnoringModifiers: ch,
                                                 isARepeat: false, keyCode: code) { NSApp.sendEvent(e) }
                 }
@@ -154,6 +161,15 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
+    static func menuItem(_ key: String, _ mods: NSEvent.ModifierFlags, in menu: NSMenu? = NSApp.mainMenu) -> NSMenuItem? {
+        for i in menu?.items ?? [] {
+            if let found = menuItem(key, mods, in: i.submenu) { return found }
+            let m = i.keyEquivalentModifierMask.union(i.keyEquivalent != i.keyEquivalent.lowercased() ? .shift : [])
+            if i.keyEquivalent.lowercased() == key.lowercased(), m.intersection([.command, .shift, .option, .control]) == mods { return i }
+        }
+        return nil
+    }
+
     /// Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.
     static func render(_ v: NSView, scale: CGFloat, to path: String) {
         v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
@@ -173,12 +189,14 @@ extension AppDelegate {
     func click(text: String) {
         guard let w = main.window, let root = w.contentView?.superview else { return }
         let p: NSPoint
+        let right = text.hasPrefix("r@")   // "r@x,y": a right click (context menus)
+        let text = right ? String(text.dropFirst()) : text
         if text.hasPrefix("@"), case let xy = text.dropFirst().split(separator: ",").compactMap({ Double($0) }), xy.count == 2 {
             p = NSPoint(x: xy[0], y: w.frame.height - xy[1])
         } else if let field = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }) {
             p = field.convert(NSPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)
         } else { print("CLICK no \(text)"); return }
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        for type in right ? [NSEvent.EventType.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp] {
             if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                           windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { NSApp.sendEvent(e) }
         }

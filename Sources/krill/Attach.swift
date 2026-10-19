@@ -7,7 +7,9 @@ enum Attach {
     static func run(_ sessionId: String) -> Never {
         let socket = ProcessInfo.processInfo.environment["KRILL_SOCKET"] ?? Paths.socket.path
         guard let fd = try? Unix.connect(socket) else { fail("krill attach: daemon not reachable at \(socket)") }
-        guard let req = try? Wire.line(RPCRequest(id: nil, method: "session.stream", params: .obj(["id": .string(sessionId)]))) else { exit(1) }
+        var ws = winsize()   // a paused agent wakes at this size, so its first screen isn't drawn for another width
+        let size: [String: JSONValue] = ioctl(1, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 ? ["cols": .int(Int(ws.ws_col)), "rows": .int(Int(ws.ws_row))] : [:]
+        guard let req = try? Wire.line(RPCRequest(id: nil, method: "session.stream", params: .object(["id": .string(sessionId)].merging(size) { a, _ in a }))) else { exit(1) }
         Unix.writeAll(fd, req)
 
         // Raw mode: every key goes to the agent as typed; the agent's terminal handles echo and line editing.

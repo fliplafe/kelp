@@ -15,6 +15,8 @@ final class EditorArea: NSViewController {
     private var responderObservation: NSKeyValueObservation?
     private var saveWork: DispatchWorkItem?
     private var reconciledOnce = false
+    /// The group shown alone (⇧⌘↩), not saved: a relaunch shows every pane.
+    private var zoomed: String?
 
     var worktree: Worktree? { AppModel.shared.worktree(workspaceId) }
 
@@ -58,8 +60,9 @@ final class EditorArea: NSViewController {
 
     func render() {
         view.subviews.forEach { $0.removeFromSuperview() }
-        guard let root = layout.root, !layout.allTabs.isEmpty else { showStart(); return }
+        guard var root = layout.root, !layout.allTabs.isEmpty else { showStart(); return }
         start = nil
+        if let z = zoomed, layout.groups[z] != nil, root.sessions.count > 1 { root = .pane(z) } else { zoomed = nil }
         let v = build(root)
         v.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(v)
@@ -110,6 +113,7 @@ final class EditorArea: NSViewController {
         g.strip.onClose = { [weak self] id in self?.closeTab(id) }
         g.strip.onMenu = { [weak self] id in self?.tabMenu(id) }
         g.strip.addMenu = { [weak self] in self?.newTabMenu(group: gid) ?? NSMenu() }
+        g.strip.onUnzoom = { [weak self] in self?.toggleZoom() }
         g.strip.onDropTab = { [weak self] id, index in self?.layout.move(id, to: gid, index: index); self?.render() }
         g.onDropTab = { [weak self] id, edge in
             guard let self else { return }
@@ -130,6 +134,7 @@ final class EditorArea: NSViewController {
     private func refreshGroup(_ gid: String) {
         guard let g = groupViews[gid], let model = layout.groups[gid] else { return }
         g.strip.focused = layout.focused == gid || (layout.focused == nil && layout.root?.sessions.first == gid)
+        g.strip.zoomed = zoomed == gid
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(model.tabs.map { t in
@@ -267,7 +272,7 @@ final class EditorArea: NSViewController {
             if let u = URL(string: uri), u.scheme?.hasPrefix("http") == true { NSWorkspace.shared.open(u); return }   // browser extension off
         }
         var target: String? = layout.focusedGroup?.id
-        if let split, let f = target { target = layout.newGroup(beside: f, vertical: split == .right) }
+        if let split, let f = target { target = layout.newGroup(beside: f, vertical: split == .right); zoomed = nil }
         let t = layout.add(uri, to: target)
         render()
         select(t.id)
@@ -293,13 +298,22 @@ final class EditorArea: NSViewController {
         guard let g = layout.focusedGroup, let cur = g.selectedTab, let i = g.tabs.firstIndex(of: cur), !g.tabs.isEmpty else { return }
         select(g.tabs[(i + offset + g.tabs.count) % g.tabs.count].id)
     }
+    /// ⇧⌘↩: the focused group fills the editor area, or every pane comes back (like zooming a split in Terminal or Ghostty).
+    func toggleZoom() {
+        guard let g = layout.focusedGroup, (layout.root?.sessions.count ?? 0) > 1 else { NSSound.beep(); return }
+        zoomed = zoomed == nil ? g.id : nil
+        render(); focusSelected()
+    }
+
     func focusGroup(_ offset: Int) {
+        zoomed = nil
         guard let ids = layout.root?.sessions, let cur = layout.focusedGroup?.id, let i = ids.firstIndex(of: cur), ids.count > 1 else { return }
         let gid = ids[(i + offset + ids.count) % ids.count]
         if let t = layout.groups[gid]?.selectedTab { select(t.id) }
     }
     /// Moves the focused tab into a new group to the right / below.
     func splitFocused(_ dir: SplitDirection) {
+        zoomed = nil
         guard let g = layout.focusedGroup, let t = g.selectedTab else { return }
         if g.tabs.count == 1 { newTerminal(split: dir); return }   // nothing to move: open a terminal there, like a terminal app
         layout.split(t.id, from: g.id, vertical: dir == .right, before: false)
@@ -316,6 +330,12 @@ final class EditorArea: NSViewController {
             m.add("Rename…") { AgentActions.rename(sid) }
             m.add("Restart") { AgentActions.restart(sid) }
             m.add("Copy Context") { AgentActions.copyContext(sid) }
+            m.addItem(.separator())
+        }
+        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "file" {
+            let path = TabURI.filePath(uri).path
+            m.add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+            m.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
             m.addItem(.separator())
         }
         m.add("Close Tab") { [weak self] in self?.closeTab(id) }
@@ -369,10 +389,24 @@ final class EditorArea: NSViewController {
     }
 
     private func createSession(_ p: [String: JSONValue], split: SplitDirection?) {
+        var p = p
+        if let (cols, rows) = terminalSize(split: split) { p["cols"] = .int(cols); p["rows"] = .int(rows) }
         Task {
             guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
             AppModel.shared.upsert(s)
             open(TabURI.session(s.id), split: split)
+        }
+    }
+
+    /// The size the new terminal will have, so the shell's first screen isn't drawn for another width (zsh's stray "%"
+    /// line, an agent's banner wrapped twice). A split gets half; a guess on the small side only leaves room.
+    private func terminalSize(split: SplitDirection?) -> (Int, Int)? {
+        let shown = contents.values.compactMap { ($0 as? SessionTab)?.pane }.filter { $0.window != nil }
+        guard let g = ((focusedContent as? SessionTab)?.pane ?? shown.first)?.gridSize ?? PaneView.lastGrid else { return nil }
+        switch split {
+        case .right?: return (max(20, g.cols / 2 - 1), g.rows)
+        case .down?: return (g.cols, max(5, g.rows / 2 - 1))
+        case nil: return (g.cols, g.rows)
         }
     }
 

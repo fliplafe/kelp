@@ -9,13 +9,16 @@ enum LatinShortcuts {
     static func install() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
             guard e.modifierFlags.contains(.command), let typed = e.charactersIgnoringModifiers,
-                  typed.unicodeScalars.contains(where: { !$0.isASCII }), let latin = latin(e),
+                  typed.unicodeScalars.contains(where: isLetterOfAnotherScript), let latin = latin(e),
                   let t = NSEvent.keyEvent(with: .keyDown, location: e.locationInWindow, modifierFlags: e.modifierFlags, timestamp: e.timestamp,
                                            windowNumber: e.windowNumber, context: nil, characters: latin, charactersIgnoringModifiers: latin,
                                            isARepeat: e.isARepeat, keyCode: e.keyCode) else { return e }
             return t
         }
     }
+
+    /// ⌘Ц yes; ⌘↓ no: arrows and other function keys come as private-use characters (NSUpArrowFunctionKey…).
+    static func isLetterOfAnotherScript(_ c: Unicode.Scalar) -> Bool { !c.isASCII && !(0xF700...0xF8FF).contains(c.value) }
 
     /// The character this key types on the current ASCII-capable layout (shift kept, other modifiers dropped).
     static func latin(_ e: NSEvent) -> String? {

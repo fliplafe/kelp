@@ -114,3 +114,20 @@ struct StatusIcon: View {
             .help(status.words)
     }
 }
+
+/// Agents waiting for the user, in the order to visit them: questions before finished work, oldest first.
+@MainActor
+enum AttentionQueue {
+    static var sessions: [Session] {
+        AppModel.shared.sessions
+            .filter { $0.agent != "shell" && ($0.status == .waiting || ($0.status == .done && $0.unread)) }
+            .sorted { ($0.status == .waiting ? 0 : 1, $0.statusAt ?? $0.createdAt) < ($1.status == .waiting ? 0 : 1, $1.statusAt ?? $1.createdAt) }
+    }
+
+    /// The one after `current` (wrapping), so pressing again walks the whole queue.
+    static func next(after current: String?) -> Session? {
+        let q = sessions
+        guard let i = q.firstIndex(where: { $0.id == current }) else { return q.first }
+        return q.count > 1 ? q[(i + 1) % q.count] : nil
+    }
+}

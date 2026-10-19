@@ -16,6 +16,10 @@ final class TabStrip: NSView {
     var onMenu: ((String) -> NSMenu?)?
     var onDropTab: ((String, Int) -> Void)?        // tab id, index in this strip
     var addMenu: (() -> NSMenu)?
+    var onUnzoom: (() -> Void)?
+    /// This group fills the editor area (⇧⌘↩); the button says so and brings the other panes back.
+    var zoomed = false { didSet { unzoom.isHidden = !zoomed } }
+    private let unzoom = NSButton()
     var focused = false { didSet { if focused != oldValue { buttons.forEach { $0.groupFocused = focused } } } }
     private let stack = NSStackView()
     private let scroll = NSScrollView()
@@ -34,22 +38,31 @@ final class TabStrip: NSView {
         overflow.image = .symbol("chevron.down", "All Tabs"); overflow.isBordered = false; overflow.contentTintColor = .secondaryLabelColor
         overflow.symbolConfiguration = .init(pointSize: 10, weight: .semibold); overflow.toolTip = "All tabs in this group"
         overflow.target = self; overflow.action = #selector(overflowTapped); overflow.isHidden = true
+        unzoom.image = .symbol("arrow.down.right.and.arrow.up.left", "Show All Panes"); unzoom.isBordered = false
+        unzoom.contentTintColor = .controlAccentColor; unzoom.symbolConfiguration = .init(pointSize: 11, weight: .medium)
+        unzoom.toolTip = "Show all panes (⇧⌘↩)"; unzoom.target = self; unzoom.action = #selector(unzoomTapped); unzoom.isHidden = true
+        let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
-        for v in [scroll, overflow, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [scroll, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 30),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            scroll.trailingAnchor.constraint(equalTo: overflow.leadingAnchor, constant: -2),
+            scroll.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            overflow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), overflow.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
             overflow.widthAnchor.constraint(equalToConstant: 18),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
+        // Below the split view's holding priority (250): a full strip must never move the divider.
+        let fit = stack.widthAnchor.constraint(lessThanOrEqualTo: scroll.widthAnchor); fit.priority = .init(245); fit.isActive = true
+        // The stacks' own hugging and clipping resistance would beat `fit` and keep every title whole.
+        stack.setHuggingPriority(.init(200), for: .horizontal); stack.setClippingResistancePriority(.init(200), for: .horizontal)
         registerForDraggedTypes([.krillTab])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -81,6 +94,8 @@ final class TabStrip: NSView {
         stack.layoutSubtreeIfNeeded()
         buttons[i].scrollToVisible(buttons[i].bounds.insetBy(dx: -24, dy: 0))
     }
+
+    @objc private func unzoomTapped() { onUnzoom?() }
 
     @objc private func overflowTapped() {
         let m = NSMenu()
@@ -154,7 +169,8 @@ private final class TabButton: NSView, NSDraggingSource {
             widthAnchor.constraint(lessThanOrEqualToConstant: 220), widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
             slot.widthAnchor.constraint(equalToConstant: 16), slot.heightAnchor.constraint(equalToConstant: 16)
         ])
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        title.setContentCompressionResistancePriority(.init(240), for: .horizontal)
+        row.setClippingResistancePriority(.init(230), for: .horizontal)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
     }
     required init?(coder: NSCoder) { fatalError() }

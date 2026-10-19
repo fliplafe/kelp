@@ -20,6 +20,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func updateBadge() {
         let n = AppModel.shared.sessions.filter { $0.unread && $0.status != .exited }.count
         NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil
+        clearSeen()
+    }
+
+    /// Banners already answered (the agent was looked at, or moved on) leave Notification Center, like Messages does.
+    private var posted: [String: String] = [:]   // session → request id
+    private func clearSeen() {
+        let stale = posted.filter { sid, rid in
+            guard let s = AppModel.shared.session(sid) else { return true }
+            return !s.unread || !rid.hasSuffix(s.status.rawValue)
+        }
+        guard !stale.isEmpty else { return }
+        center?.removeDeliveredNotifications(withIdentifiers: Array(stale.values))
+        stale.keys.forEach { posted[$0] = nil }
     }
 
     private func statusChanged(_ s: Session, _ old: Session?) {
@@ -66,7 +79,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         c.subtitle = wt?.branch ?? ""
         c.body = s.summary.isEmpty ? (s.status == .waiting ? "Waiting for your answer" : "Ready for review") : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]
-        center?.add(UNNotificationRequest(identifier: "\(s.id)-\(s.status.rawValue)", content: c, trigger: nil))
+        let rid = "\(s.id)-\(s.status.rawValue)"
+        center?.add(UNNotificationRequest(identifier: rid, content: c, trigger: nil))
+        posted[s.id] = rid
         NSApp.requestUserAttention(.informationalRequest)
     }
 

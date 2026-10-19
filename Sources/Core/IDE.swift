@@ -5,6 +5,14 @@ public enum IDE {
     /// A daemon RPC: method, params → result.
     public typealias Call = @Sendable (String, JSONValue) async throws -> JSONValue
 
+    /// A path dropped into an agent's prompt: backslash escapes, which shells and agents (Claude Code, Codex) all read;
+    /// Claude strips only one pair of quotes, so the POSIX `'…'\''…'` form leaks into the path (Ghostty does the same).
+    public static func escapedPath(_ path: String) -> String {
+        var out = ""
+        for c in path { if "\\ ()[]{}<>\"'`!#$&;|*?\t".contains(c) { out.append("\\") }; out.append(c) }
+        return out
+    }
+
     // MARK: open
 
     /// What `ui.open` gets for a CLI/agent target: http(s) and tab URIs as is, `path:12` → `file:///abs/path#L12`, other paths made absolute.

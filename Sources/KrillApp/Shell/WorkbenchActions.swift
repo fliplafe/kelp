@@ -27,6 +27,29 @@ extension Workbench {
         if s.unread { Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(id)])) } }
     }
 
+    /// Workspaces in sidebar order (⌃1–9, ⌃⌘↑ / ↓).
+    static var workspacesInOrder: [Worktree] { AppModel.shared.repos.flatMap { AppModel.shared.workspaces(of: $0) } }
+
+    static func showWorkspace(offset: Int) {
+        let all = workspacesInOrder
+        guard !all.isEmpty else { NSSound.beep(); return }
+        let i = all.firstIndex { $0.id == shared.workspaceId }.map { ($0 + offset + all.count) % all.count } ?? 0
+        show(workspace: all[i].id)
+    }
+
+    static func showWorkspace(number n: Int) {
+        let all = workspacesInOrder
+        guard all.indices.contains(n - 1) else { NSSound.beep(); return }
+        show(workspace: all[n - 1].id)
+    }
+
+    /// ⇧⌘U: the next agent that asked something or finished, wherever it is.
+    static func showNextNeedingAttention() {
+        let current = editor?.layout.focusedGroup?.selectedTab.map(\.uri).flatMap { TabURI.scheme($0) == "session" ? TabURI.body($0) : nil }
+        guard let s = AttentionQueue.next(after: current) else { NSSound.beep(); return }
+        focus(session: s.id)
+    }
+
     static func closeTab(uri: String) {
         guard let e = editor, let t = e.layout.tab(uri: uri) else { return }
         e.closeTab(t.id)
@@ -84,6 +107,29 @@ enum UIRequests {
 
 @MainActor
 enum WorkspaceActions {
+    private static let editors = [("VS Code", "com.microsoft.VSCode"), ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Zed", "dev.zed.Zed"),
+                                  ("Xcode", "com.apple.dt.Xcode"), ("Terminal", "com.apple.Terminal")]
+
+    /// "Open in VS Code"… for whatever editors this Mac has, like "Open With" in Finder.
+    static func addOpenIn(to menu: NSMenu, path: @escaping @MainActor () -> String?, prefix: String = "Open in ") {
+        for (name, bundle) in editors {
+            guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { continue }
+            let i = menu.add(prefix + name) {
+                guard let p = path() else { NSSound.beep(); return }
+                NSWorkspace.shared.open([URL(fileURLWithPath: p)], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            }
+            i.image = NSWorkspace.shared.icon(forFile: app.path).resized(16)
+        }
+    }
+    static func addOpenIn(to menu: NSMenu, path: String) { addOpenIn(to: menu, path: { path }) }
+
+    /// The file in the focused tab, else the workspace's folder (Xcode's "Show in Finder" works on the selection).
+    static func revealCurrent() {
+        if let f = Workbench.editor?.focusedContent as? FileTab { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: f.path)]); return }
+        guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { NSSound.beep(); return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)])
+    }
+
     static func delete(_ w: Worktree) {
         Task {
             let dirty = await AppModel.shared.call("worktree.dirty", .obj(["id": .string(w.id)]))?.bool ?? false
