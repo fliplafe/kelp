@@ -157,14 +157,8 @@ final class EditorArea: NSViewController {
         showEdited()
     }
 
-    /// Unsaved files: the dot in the window's close button and "— Edited" after the subtitle, as in any Mac document app.
-    func showEdited() {
-        guard let w = view.window, let wt = worktree else { return }
-        let n = editedFiles.count
-        w.isDocumentEdited = n > 0
-        let base = "\(AppModel.shared.repo(wt.repoId)?.name ?? "") · \(wt.branch)"
-        w.subtitle = n == 0 ? base : base + (n == 1 ? " — Edited" : " — \(n) files edited")
-    }
+    /// Unsaved files: the dot in the window's close button (and on their tabs), as in any Mac document app.
+    func showEdited() { view.window?.isDocumentEdited = !editedFiles.isEmpty }
 
     /// Files with unsaved changes in this workspace (asked about on quit; the workspace isn't dropped from memory).
     var editedFiles: [FileTab] { contents.values.compactMap { $0 as? FileTab }.filter(\.isEdited) }

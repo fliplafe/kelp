@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Right side: a row of panel icons (from extensions) over the selected panel — a scope bar like Mail's and Finder's:
-/// plain icons, the selected one on a soft background.
+/// plain icons, the selected one on a soft background. The row is the inspector's part of the title bar.
 @MainActor
 final class InspectorController: NSViewController {
     private let selector = NSStackView()
@@ -19,10 +19,13 @@ final class InspectorController: NSViewController {
         host.clipsToBounds = true
         let sep = NSBox(); sep.boxType = .separator
         for x in [selector, sep, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        let center = selector.centerXAnchor.constraint(equalTo: v.centerXAnchor); center.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            selector.topAnchor.constraint(equalTo: v.safeAreaLayoutGuide.topAnchor, constant: 2), selector.centerXAnchor.constraint(equalTo: v.centerXAnchor),
+            // Level with the tabs; clear of the inspector toggle in the corner.
+            selector.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2), center,
             selector.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), selector.heightAnchor.constraint(equalToConstant: 26),
-            sep.topAnchor.constraint(equalTo: selector.bottomAnchor, constant: 2), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            selector.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -44),
+            sep.bottomAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             host.topAnchor.constraint(equalTo: sep.bottomAnchor), host.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: v.trailingAnchor), host.bottomAnchor.constraint(equalTo: v.bottomAnchor),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),

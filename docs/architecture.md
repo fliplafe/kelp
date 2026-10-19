@@ -31,7 +31,7 @@ contributions, the command palette and settings.
 | Point | Where it shows |
 | --- | --- |
 | panels | right inspector (selector icons) |
-| editors | center tab types, listed in the toolbar "+" menu and the empty workspace |
+| editors | center tab types, listed in each pane's "+" menu and the empty workspace |
 | commands | command palette (⇧⌘P), menus, key bindings |
 | settings | Settings window (generated forms) and `~/.krill/settings.json` |
 | themes | Appearance settings; drive terminal + editor colors |

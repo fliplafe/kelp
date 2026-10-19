@@ -2,18 +2,24 @@ import AppKit
 import SwiftUI
 import Core
 
-/// The window: projects & agents | editor area | inspector, under a unified toolbar.
+/// The window: projects & agents | editor area | inspector, without a toolbar: the panes' tab strips sit in the title
+/// bar (like Safari's compact tabs), beside the traffic lights and the two panel toggles, so chrome takes one row.
 @MainActor
-final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindowDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate {
     let editors = EditorHost()
     let inspector = InspectorController()
     private let split = NSSplitViewController()
     private var inspectorItem: NSSplitViewItem!
+    /// Fixed in the window's top corners, whichever panels are open.
+    private let sidebarToggle = NSButton.titlebar("sidebar.left", "Sidebar", tip: "Show or hide the sidebar (⌘0)")
+    private let inspectorToggle = NSButton.titlebar("sidebar.trailing", "Inspector", tip: "Show or hide the inspector (⌥⌘0)")
 
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: w)
+        // The title stays set: the Window menu, Mission Control and VoiceOver read it.
+        w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.titlebarSeparatorStyle = .none
         let sb = NSSplitViewItem(sidebarWithViewController: SidebarController())
         sb.minimumThickness = 220; sb.maximumThickness = 400; sb.canCollapse = true
         let content = NSSplitViewItem(viewController: editors)
@@ -23,11 +29,22 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
         inspectorItem.isCollapsed = UserDefaults.standard.bool(forKey: "inspector.collapsed")
         [sb, content, inspectorItem].forEach(split.addSplitViewItem)
         split.splitView.autosaveName = "main.split"
-        w.contentViewController = split
+        let root = NSViewController(); root.view = NSView(); root.addChild(split)
+        sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
+        inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
+        for v in [split.view, sidebarToggle, inspectorToggle] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        let lights = w.standardWindowButton(.zoomButton).map { $0.convert($0.bounds, to: nil).maxX } ?? 69
+        NSLayoutConstraint.activate([
+            split.view.topAnchor.constraint(equalTo: root.view.topAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
+            split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+            // The title bar is as tall as a tab strip, so the traffic lights, the toggles and the tabs share a centre line.
+            sidebarToggle.leadingAnchor.constraint(equalTo: root.view.leadingAnchor, constant: lights + 12),
+            sidebarToggle.centerYAnchor.constraint(equalTo: root.view.topAnchor, constant: TabStrip.height / 2),
+            inspectorToggle.trailingAnchor.constraint(equalTo: root.view.trailingAnchor, constant: -10),
+            inspectorToggle.centerYAnchor.constraint(equalTo: sidebarToggle.centerYAnchor)
+        ])
+        w.contentViewController = root
         w.title = "Krill"; w.setFrameAutosaveName("main"); w.delegate = self
-        w.titlebarSeparatorStyle = .automatic
-        let tb = NSToolbar(identifier: "main"); tb.delegate = self; tb.displayMode = .iconOnly; tb.allowsUserCustomization = false
-        w.toolbar = tb; w.toolbarStyle = .unifiedCompact   // the title bar holds a title and two buttons: no need for a tall one
         if w.frame.origin == .zero { w.center() }
         track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
     }
@@ -40,14 +57,15 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
     }
 
     private func updateTitle() {
-        guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId), let r = AppModel.shared.repo(w.repoId) else {
-            window?.title = "Krill"; window?.subtitle = ""; window?.representedURL = nil; return
-        }
-        window?.title = w.displayName
-        // The folder's icon by the title, as in Xcode and Finder: ⌘-click for its path, drag it to Terminal or Finder.
-        window?.representedURL = URL(fileURLWithPath: w.path)
-        window?.subtitle = "\(r.name) · \(w.branch)"
+        window?.title = AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "Krill"
         editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
+    }
+
+    /// What a tab strip in the title bar keeps clear of (window coordinates): the traffic lights with the sidebar
+    /// toggle when the sidebar is closed, the inspector toggle when the inspector is.
+    var titlebarObstacles: [NSRect] {
+        let s = sidebarToggle.convert(sidebarToggle.bounds, to: nil)
+        return [NSRect(x: 0, y: s.minY, width: s.maxX + 6, height: s.height), inspectorToggle.convert(inspectorToggle.bounds, to: nil).insetBy(dx: -6, dy: 0)]
     }
 
     @objc func toggleInspectorPanel() {
@@ -60,52 +78,17 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
     }
     @objc func toggleSidebarPanel() { split.toggleSidebar(nil) }
 
-    // MARK: toolbar
-    // The one place to add a tab (like Safari's "+"); the empty workspace offers the same choices.
-    private static let newTab = NSToolbarItem.Identifier("newTab"), inspectorToggle = NSToolbarItem.Identifier("inspector")
-    private static let addProject = NSToolbarItem.Identifier("addProject")
-
-    func toolbarDefaultItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .flexibleSpace, Self.addProject, .sidebarTrackingSeparator, .flexibleSpace, Self.newTab,
-         .inspectorTrackingSeparator, .flexibleSpace, Self.inspectorToggle]
-    }
-    func toolbarAllowedItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(t) }
-
-    func toolbar(_ t: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch id {
-        case Self.newTab:
-            let i = NSMenuToolbarItem(itemIdentifier: id)
-            i.image = .symbol("plus", "New Tab"); i.label = "New Tab"; i.toolTip = "New agent, terminal, browser…"
-            i.showsIndicator = false
-            i.menu = NSMenu()
-            i.menu.delegate = NewTabMenuSource.shared
-            return i
-        case Self.addProject:   // over the projects it adds to, where people look for it
-            let i = NSToolbarItem(itemIdentifier: id)
-            i.image = .symbol("folder.badge.plus", "Add Project"); i.label = "Add Project"; i.toolTip = "Add a project folder (⌘O)"
-            i.target = NSApp.delegate; i.action = #selector(AppDelegate.addProject)
-            return i
-        case Self.inspectorToggle:
-            let i = NSToolbarItem(itemIdentifier: id)
-            i.image = .symbol("sidebar.trailing", "Inspector"); i.label = "Inspector"; i.toolTip = "Show or hide the inspector (⌥⌘0)"
-            i.target = self; i.action = #selector(toggleInspectorPanel)
-            return i
-        default: return nil
-        }
-    }
-
     /// Closing the window quits (the daemon keeps agents running) — through the unsaved-files question; Cancel keeps it.
     func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
 }
 
-/// Fills the toolbar's "+" menu when it opens (agents installed now, extensions enabled now).
-@MainActor
-final class NewTabMenuSource: NSObject, NSMenuDelegate {
-    static let shared = NewTabMenuSource()
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        guard let e = Workbench.editor else { menu.addItem(withTitle: "Select a workspace first", action: nil, keyEquivalent: "").isEnabled = false; return }
-        for i in e.newTabMenu(group: nil).items { i.menu?.removeItem(i); menu.addItem(i) }
+extension NSButton {
+    /// An icon button for the title bar, outlined on hover like the toolbar buttons it stands in for.
+    static func titlebar(_ symbol: String, _ label: String, tip: String) -> NSButton {
+        let b = NSButton(image: .symbol(symbol, label), target: nil, action: nil)
+        b.bezelStyle = .recessed; b.showsBorderOnlyWhileMouseInside = true; b.toolTip = tip
+        b.symbolConfiguration = .init(pointSize: 14, weight: .regular)
+        return b
     }
 }
 
@@ -135,7 +118,8 @@ final class EditorHost: NSViewController {
         current = area
         area.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(area.view)
-        NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+        // Up into the title bar: the top panes' tab strips are the window's title bar.
+        NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor),
                                      area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                                      area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
         area.reconcile()

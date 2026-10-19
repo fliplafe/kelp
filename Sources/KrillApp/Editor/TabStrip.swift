@@ -4,8 +4,11 @@ import Core
 extension NSPasteboard.PasteboardType { static let krillTab = NSPasteboard.PasteboardType("dev.krill.tab") }
 
 /// A group's tab strip: icon, title, agent status, close on hover; drag to reorder, move to another group, or split.
+/// The top panes' strips are the window's title bar: their empty space moves the window, as a title bar's does.
 @MainActor
 final class TabStrip: NSView {
+    /// The title bar's height without a toolbar, so tabs line up with the traffic lights.
+    static let height: CGFloat = 28
     struct Item {
         let id: String; let title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
@@ -24,6 +27,8 @@ final class TabStrip: NSView {
     private let stack = NSStackView()
     private let scroll = NSScrollView()
     private let overflow = NSButton()
+    private let add = NSButton()
+    private var leadingInset: NSLayoutConstraint!, trailingInset: NSLayoutConstraint!
     private var items: [Item] = []
     private var selectedId: String?
     private var buttons: [TabButton] = []
@@ -41,21 +46,28 @@ final class TabStrip: NSView {
         unzoom.image = .symbol("arrow.down.right.and.arrow.up.left", "Show All Panes"); unzoom.isBordered = false
         unzoom.contentTintColor = .controlAccentColor; unzoom.symbolConfiguration = .init(pointSize: 11, weight: .medium)
         unzoom.toolTip = "Show all panes (⇧⌘↩)"; unzoom.target = self; unzoom.action = #selector(unzoomTapped); unzoom.isHidden = true
-        let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6
+        // The one way to add a tab, in each pane (like Safari's "+"); the empty workspace offers the same choices.
+        add.image = .symbol("plus", "New Tab"); add.isBordered = false; add.contentTintColor = .secondaryLabelColor
+        add.symbolConfiguration = .init(pointSize: 12, weight: .medium); add.toolTip = "New agent, terminal, browser…"
+        add.target = self; add.action = #selector(addTapped)
+        let trailing = NSStackView(views: [unzoom, overflow, add]); trailing.spacing = 6
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
+        scroll.automaticallyAdjustsContentInsets = false   // in the title bar it would push the tabs down
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
         for v in [scroll, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
+        leadingInset = scroll.leadingAnchor.constraint(equalTo: leadingAnchor)
+        trailingInset = trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6)
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 30),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+            heightAnchor.constraint(equalToConstant: Self.height), leadingInset, trailingInset,
+            scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
             scroll.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
-            overflow.widthAnchor.constraint(equalToConstant: 18),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
+            overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 22),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
@@ -83,9 +95,22 @@ final class TabStrip: NSView {
     }
 
     override func layout() {
+        clearCorners()
         super.layout()
         stack.layoutSubtreeIfNeeded()
         overflow.isHidden = stack.fittingSize.width <= scroll.bounds.width + 1
+    }
+
+    /// In the title bar, the strip keeps clear of the traffic lights and the panel toggles when its pane runs under them
+    /// (the sidebar or inspector closed).
+    private func clearCorners() {
+        let me = convert(bounds, to: nil)
+        var lead: CGFloat = 0, trail: CGFloat = 0
+        for r in (window?.windowController as? MainWindowController)?.titlebarObstacles ?? [] where r.intersects(me) {
+            if r.midX < me.midX { lead = max(lead, r.maxX - me.minX) } else { trail = max(trail, me.maxX - r.minX) }
+        }
+        if leadingInset.constant != lead { leadingInset.constant = lead }
+        if trailingInset.constant != -6 - trail { trailingInset.constant = -6 - trail }
     }
 
     /// Keeps the selected tab in view when the strip is scrolled or squeezed.
@@ -96,6 +121,7 @@ final class TabStrip: NSView {
     }
 
     @objc private func unzoomTapped() { onUnzoom?() }
+    @objc private func addTapped() { addMenu?().popUp(positioning: nil, at: NSPoint(x: 0, y: add.bounds.height + 4), in: add) }
 
     @objc private func overflowTapped() {
         let m = NSMenu()
@@ -106,7 +132,7 @@ final class TabStrip: NSView {
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: overflow.bounds.height + 4), in: overflow)
     }
 
-    /// Double-click on the empty strip: new tab, like Safari's tab bar.
+    /// Double-click on the empty strip: new tab, like Safari's tab bar (in the title bar, the window zooms instead).
     override func mouseDown(with e: NSEvent) {
         guard e.clickCount == 2, let m = addMenu?() else { super.mouseDown(with: e); return }
         m.popUp(positioning: nil, at: convert(e.locationInWindow, from: nil), in: self)
@@ -195,6 +221,12 @@ private final class TabButton: NSView, NSDraggingSource {
         }
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateLook() }
+    /// The whole tab takes the click, label and icon included: in the title bar they would move the window instead.
+    override func hitTest(_ p: NSPoint) -> NSView? {
+        guard let v = super.hitTest(p) else { return nil }
+        return v.isDescendant(of: close) ? v : self
+    }
+    override var mouseDownCanMoveWindow: Bool { false }
     override func mouseEntered(with e: NSEvent) { hover = true }
     override func mouseExited(with e: NSEvent) { hover = false }
     override func mouseDown(with e: NSEvent) { if let id = item?.id { strip?.onSelect?(id) } }

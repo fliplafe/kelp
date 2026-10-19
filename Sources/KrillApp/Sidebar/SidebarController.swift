@@ -51,9 +51,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let v = NSView()
         search.placeholderString = "Workspace or agent"; search.delegate = self; search.controlSize = .small
         search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
-        for x in [search, scroll, footer, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        // In the title bar, by the traffic lights: over the projects it adds to, where people look for it.
+        let add = NSButton.titlebar("folder.badge.plus", "Add Project", tip: "Add a project folder (⌘O)")
+        add.target = NSApp.delegate; add.action = #selector(AppDelegate.addProject)
+        for x in [add, search, scroll, footer, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            search.topAnchor.constraint(equalTo: v.safeAreaLayoutGuide.topAnchor, constant: 6),
+            add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10), add.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
+            search.topAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height + 6),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
             scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
@@ -385,7 +389,7 @@ final class SidebarCell: NSTableCellView {
     }
 }
 
-/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is in the toolbar above.)
+/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is in the title bar above.)
 struct SidebarFooterView: View {
     var body: some View { UsageView() }
 }
