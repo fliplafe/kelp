@@ -30,7 +30,8 @@ final class Box: @unchecked Sendable {
     let box = Box()
     let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: krill)
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
-    try await Task.sleep(for: .milliseconds(400))
+    // Wait for the child rather than a fixed time: a busy machine (parallel builds) starts it late.
+    for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
     #expect(box.text.contains("ready"))
     #expect(!box.text.contains("tty=??"), "no controlling terminal: \(box.text.debugDescription)")
     #expect(box.text.contains("size=30 100"), "initial size lost: \(box.text.debugDescription)")

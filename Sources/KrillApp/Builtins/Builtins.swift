@@ -17,20 +17,22 @@ struct Builtin {
 
 @MainActor
 enum Builtins {
-    static let all: [Builtin] = [agents, appearance, files, git, browser, issues, chat]
+    static let all: [Builtin] = [agents, appearance, files, git, browser, issues]
 
     private static func s(_ key: String, _ title: String, _ type: String, _ def: JSONValue?, _ desc: String? = nil, options: [String]? = nil) -> SettingSpec {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
     }
 
-    static let agents = Builtin("krill.agents", "Agents & Terminals", "Agent sessions and terminals as tabs, the Agent inspector.", icon: "sparkles", essential: true) {
+    static let agents = Builtin("krill.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["session"], extensionId: "krill.agents") { SessionTab(uri: $0) }]
-        c.panels = [PanelSpec(id: "agent", title: "Agent", icon: "sparkles", extensionId: "krill.agents") { hosting(AgentPanel()) }]
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", extensionId: "krill.agents", specs: [
-                s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T) and the start screen.", options: AgentCatalog.all.map(\.id)),
-                s("agents.permissionMode", "Permissions", "enum", "ask", "Yolo skips approval prompts — agents edit and run commands freely in their workspace.", options: ["ask", "yolo"]),
+                s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: AgentCatalog.all.map(\.id)),
+                s("agents.skills.extensions", "Skill: write Krill extensions", "boolean", true,
+                  "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
+                s("agents.skills.settings", "Skill: change Krill settings", "boolean", true,
+                  "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask."),
                 s("sessions.hibernateMinutes", "Pause idle agents after (minutes)", "number", 0, "0 = never. Paused agents free memory and resume the same conversation."),
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
                 s("usage.readClaudePlan", "Show Claude plan limits", "boolean", true,
@@ -48,10 +50,7 @@ enum Builtins {
             CommandSpec(id: "agents.new", title: "New Agent", extensionId: "krill.agents", key: "opt+cmd+t") { args in Workbench.editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string) },
             CommandSpec(id: "terminal.new", title: "New Terminal", extensionId: "krill.agents", key: "cmd+t") { _ in Workbench.editor?.newTerminal() },
             CommandSpec(id: "terminal.splitRight", title: "Split Right", extensionId: "krill.agents", key: "cmd+d") { _ in Workbench.editor?.splitFocused(.right) },
-            CommandSpec(id: "terminal.splitDown", title: "Split Down", extensionId: "krill.agents", key: "shift+cmd+d") { _ in Workbench.editor?.splitFocused(.down) },
-            CommandSpec(id: "terminal.run", title: "Run Command in Terminal…", extensionId: "krill.agents") { args in
-                if let cmd = args["command"]?.string ?? prompt("Run command", "Any command or CLI agent:") { Workbench.editor?.run(command: cmd) }
-            }
+            CommandSpec(id: "terminal.splitDown", title: "Split Down", extensionId: "krill.agents", key: "shift+cmd+d") { _ in Workbench.editor?.splitFocused(.down) }
         ]
         return c
     }
@@ -113,15 +112,6 @@ enum Builtins {
         return c
     }
 
-    static let chat = Builtin("krill.chat", "Chat", "Structured chat with Claude Code: Markdown answers, tool calls, plans, costs.", icon: "bubble.left.and.text.bubble.right") {
-        var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["chat"], extensionId: "krill.chat") { ChatTab(uri: $0) }]
-        c.editors = [EditorSpec(id: "chat.new", title: "Chat with Claude", icon: "bubble.left.and.text.bubble.right", extensionId: "krill.chat", open: { ctx in
-            if let w = ctx.workspace { ChatViewController.start(worktree: w) { Workbench.open("chat:\($0)") } }
-        })]
-        return c
-    }
-
     static let appearance = Builtin("krill.appearance", "Appearance", "Light / dark, color themes for terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "krill.appearance", specs: [
@@ -131,21 +121,4 @@ enum Builtins {
         ])]
         return c
     }
-}
-
-/// `chat:<id>` — the structured chat as a tab.
-@MainActor
-final class ChatTab: TabContent {
-    let uri: String
-    var onChange: (() -> Void)?
-    private let controller: ChatViewController
-    var view: NSView { controller.view }
-    var title: String { "Chat" }
-    var icon: NSImage? { .symbol("bubble.left.and.text.bubble.right") }
-    init?(uri: String) {
-        guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { return nil }
-        self.uri = uri
-        controller = ChatViewController(chatId: TabURI.body(uri), worktree: w)
-    }
-    func focus() { controller.focusInput() }
 }

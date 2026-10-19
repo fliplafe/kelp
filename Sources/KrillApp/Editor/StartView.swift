@@ -1,96 +1,102 @@
 import AppKit
 import Core
 
-/// An empty workspace: say what the agent should do, or open a terminal / browser / anything an extension offers.
+/// An empty workspace: what can be opened here, one click each (like Xcode's welcome window) — the installed agents,
+/// a terminal, and whatever extensions add (the browser…).
 @MainActor
-final class StartView: NSView, NSTextViewDelegate {
-    var onStart: ((String, String) -> Void)?
+final class StartView: NSView {
+    var onAgent: ((String) -> Void)?
     var onOpen: ((String) -> Void)?
-    private let input = NSTextView()
-    private let placeholder = NSTextField(labelWithString: "What should the agent do? (the workspace is named from it)")
-    private let agent = NSPopUpButton()
-    private let agents = AgentCatalog.installed(AgentCatalog.all)
-    private let card = NSView()
 
     init(worktree w: Worktree) {
         super.init(frame: .zero)
         let title = NSTextField(labelWithString: w.displayName)
         title.font = .systemFont(ofSize: 22, weight: .semibold); title.lineBreakMode = .byTruncatingTail
-        let sub = NSTextField(labelWithString: "⎇ \(w.branch)")
-        sub.font = .systemFont(ofSize: 12); sub.textColor = .secondaryLabelColor; sub.toolTip = w.path
+        let folder = NSTextField(labelWithString: (w.path as NSString).abbreviatingWithTildeInPath)
+        folder.font = .systemFont(ofSize: 12); folder.textColor = .secondaryLabelColor; folder.lineBreakMode = .byTruncatingMiddle
 
-        input.isRichText = false; input.font = .systemFont(ofSize: 14); input.textContainerInset = NSSize(width: 8, height: 10)
-        input.isAutomaticQuoteSubstitutionEnabled = false; input.allowsUndo = true; input.delegate = self
-        input.drawsBackground = false; input.isVerticallyResizable = true; input.autoresizingMask = .width
-        let scroll = NSScrollView(); scroll.documentView = input; scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
-        placeholder.textColor = .placeholderTextColor; placeholder.font = .systemFont(ofSize: 14); placeholder.lineBreakMode = .byTruncatingTail
-        placeholder.translatesAutoresizingMaskIntoConstraints = false; scroll.addSubview(placeholder)
-
-        for a in agents {
-            agent.addItem(withTitle: a.name); agent.lastItem?.representedObject = a.id
-            agent.lastItem?.image = .symbol(AgentCatalog.symbol(a.id))
+        let agents = AgentCatalog.installed(AgentCatalog.all)
+        var rows: [NSView] = agents.map { a in
+            StartRow(symbol: AgentCatalog.symbol(a.id), title: a.name,
+                     shortcut: a.id == AgentCatalog.defaultAgent ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
-        agent.selectItem(at: agents.firstIndex { $0.id == AgentCatalog.defaultAgent } ?? 0)
-        agent.isBordered = false; agent.controlSize = .small; agent.isHidden = agents.isEmpty
-        let startButton = NSButton(title: "Start", target: self, action: #selector(startTapped))
-        startButton.bezelStyle = .push; startButton.keyEquivalent = "\r"; startButton.isEnabled = !agents.isEmpty
-        let hint = NSTextField(labelWithString: agents.isEmpty ? "No agent CLI found — install Claude Code, Codex or another agent." : "↩ start  ·  ⇧↩ new line")
-        hint.font = .systemFont(ofSize: 11); hint.textColor = agents.isEmpty ? .systemOrange : .tertiaryLabelColor
-        let bar = NSStackView(views: [agent, hint, NSView(), startButton]); bar.spacing = 8
-        bar.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 8, right: 8)
-        let cardStack = NSStackView(views: [scroll, bar]); cardStack.orientation = .vertical; cardStack.spacing = 0
-        cardStack.translatesAutoresizingMaskIntoConstraints = false
-        card.wantsLayer = true; card.layer?.cornerRadius = 12; card.layer?.borderWidth = 1; card.addSubview(cardStack)
-        card.translatesAutoresizingMaskIntoConstraints = false
-
-        func action(_ t: String, _ sym: String, _ run: @escaping () -> Void) -> NSButton {
-            let b = ClosureButton(title: t) { run() }
-            b.image = .symbol(sym); b.bezelStyle = .accessoryBarAction; b.imagePosition = .imageLeading
-            b.contentTintColor = .secondaryLabelColor; b.font = .systemFont(ofSize: 12)
-            return b
+        if agents.isEmpty {
+            let none = NSTextField(wrappingLabelWithString: "No agent found. Install Claude Code, Codex or another agent CLI, then come back.")
+            none.textColor = .secondaryLabelColor
+            rows.append(none)
         }
-        var quick = [action("Terminal", "terminal") { [weak self] in self?.onOpen?("terminal:") }]
-        for e in ExtensionRegistry.shared.all.editors.prefix(4) { quick.append(action(e.title, e.icon) { e.open(IDEContext.current) }) }
-        let actions = NSStackView(views: quick); actions.spacing = 6
+        rows.append(StartRow(symbol: "terminal", title: "Terminal", shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") })
+        // Changes live in Source Control; the rest of what extensions open is offered here.
+        for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
+            let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(StartRow.symbols)
+            rows.append(StartRow(symbol: e.icon, title: e.title, shortcut: key) { e.open(IDEContext.current) })
+        }
 
-        let stack = NSStackView(views: [title, sub, card, actions])
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
-        stack.setCustomSpacing(18, after: sub); stack.setCustomSpacing(14, after: card)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        let width = stack.widthAnchor.constraint(equalToConstant: 620); width.priority = .defaultHigh
+        let list = NSStackView(views: rows); list.orientation = .vertical; list.alignment = .leading; list.spacing = 2
+        let stack = NSStackView(views: [title, folder, list]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 4
+        stack.setCustomSpacing(20, after: folder)
+        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        let width = stack.widthAnchor.constraint(equalToConstant: 360); width.priority = .defaultHigh
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -40),
             width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
-            card.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(equalToConstant: 96),
-            scroll.widthAnchor.constraint(equalTo: cardStack.widthAnchor),   // a vertical stack doesn't stretch its views
-            cardStack.topAnchor.constraint(equalTo: card.topAnchor), cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
-            cardStack.leadingAnchor.constraint(equalTo: card.leadingAnchor), cardStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-            title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
-            placeholder.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: 13), placeholder.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 10),
-            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: scroll.trailingAnchor, constant: -13)
+            title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor), folder.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            list.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
+        rows.forEach { $0.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func updateLayer() {
-        card.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
-    }
-    override var wantsUpdateLayer: Bool { true }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; updateLayer() }
+    func focus() {}
+}
 
-    func focus() { window?.makeFirstResponder(input) }
-    func textDidChange(_ n: Notification) { placeholder.isHidden = !input.string.isEmpty }
-    func textView(_ tv: NSTextView, doCommandBy sel: Selector) -> Bool {
-        if sel == #selector(NSResponder.insertNewline(_:)), NSApp.currentEvent?.modifierFlags.isDisjoint(with: [.shift, .option]) ?? true {
-            startTapped(); return true
-        }
-        return false
+/// One action: symbol, title, its shortcut on the right; highlights on hover.
+@MainActor
+private final class StartRow: NSView {
+    private let action: () -> Void
+    private var hover = false { didSet { updateLayer() } }
+
+    init(symbol: String, title: String, shortcut: String?, action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        wantsLayer = true; layer?.cornerRadius = 7
+        let icon = NSImageView(image: .symbol(symbol, title)); icon.symbolConfiguration = .init(pointSize: 15, weight: .regular)
+        icon.contentTintColor = .controlAccentColor
+        let label = NSTextField(labelWithString: title); label.font = .systemFont(ofSize: 13)
+        let key = NSTextField(labelWithString: shortcut ?? ""); key.textColor = .tertiaryLabelColor; key.font = .systemFont(ofSize: 12)
+        let row = NSStackView(views: [icon, label, NSView(), key]); row.spacing = 10
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 34), icon.widthAnchor.constraint(equalToConstant: 22),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+        setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(title)
     }
-    @objc private func startTapped() {
-        guard let id = agent.selectedItem?.representedObject as? String else { return }
-        onStart?(id, input.string.trimmingCharacters(in: .whitespacesAndNewlines))
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = hover ? NSColor.quaternaryLabelColor.withAlphaComponent(0.35).cgColor : NSColor.clear.cgColor
+        }
+    }
+    override func mouseEntered(with e: NSEvent) { hover = true }
+    override func mouseExited(with e: NSEvent) { hover = false }
+    override func mouseUp(with e: NSEvent) { if bounds.contains(convert(e.locationInWindow, from: nil)) { action() } }
+    override func accessibilityPerformPress() -> Bool { action(); return true }
+
+    /// "shift+cmd+b" → "⇧⌘B".
+    static func symbols(_ key: String) -> String? {
+        guard let (k, mods) = AppDelegate.parseKey(key) else { return nil }
+        var s = ""
+        if mods.contains(.control) { s += "⌃" }
+        if mods.contains(.option) { s += "⌥" }
+        if mods.contains(.shift) { s += "⇧" }
+        if mods.contains(.command) { s += "⌘" }
+        return s + k.uppercased()
     }
 }
 

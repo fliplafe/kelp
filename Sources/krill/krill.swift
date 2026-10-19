@@ -26,7 +26,6 @@ usage: krill <command>
   ui state                             what the app shows: workspace, tabs, extensions, commands
   run <command-id> [json-args]         run an app command (ids from `krill ui state`)
   ext list | new <id> [--name N] [--description D] | enable <id> | disable <id> | reload | path
-  mcp                                  MCP server on stdio (Claude Code sessions get it automatically)
 """
 
 // Internal: the daemon starts agents through this so the PTY becomes their controlling terminal
@@ -70,19 +69,6 @@ func show(_ v: JSONValue) {
 
 /// A CLI value: JSON when it parses (3, true, [1], "x"), else the text itself.
 func jsonOrText(_ s: String) -> JSONValue { (try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))) ?? .string(s) }
-
-/// `krill mcp`: one daemon connection per tool call, so a restarted daemon (app update) doesn't break the agent's server.
-func serveMCP() async {
-    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-    let server = MCPServer(version: version, call: { method, params in
-        let c = try connect(); defer { c.close() }
-        return try await c.call(method, params)
-    }, scaffold: { try IDE.scaffoldExtension(id: $0, name: $1, description: $2) })
-    while let line = readLine() {
-        guard !line.trimmingCharacters(in: .whitespaces).isEmpty, let reply = await server.handle(line) else { continue }
-        FileHandle.standardOutput.write(Data((reply + "\n").utf8))
-    }
-}
 
 func inside(_ cwd: String, _ path: String) -> Bool {
     let r = { (p: String) in URL(fileURLWithPath: p).resolvingSymlinksInPath().path }
@@ -150,7 +136,6 @@ func plist() -> String {
                     }
                 }
                 _ = try await c.call("session.hook", .object(p))
-            case "mcp": await serveMCP()
             default:
                 let c = try connect()
                 try await run(cmd, c)

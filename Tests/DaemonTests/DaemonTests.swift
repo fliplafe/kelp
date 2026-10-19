@@ -234,3 +234,18 @@ final class ChatBox: @unchecked Sendable {
     #expect(w.note == "Workspace 2" && w.branch == "ws-2")
     await #expect(throws: RPCError.self) { _ = try await c.call("worktree.remove", .obj(["id": .string(main?.id ?? "")])) }
 }
+
+/// A workspace is a desk in the project folder: no branch, no checkout; closing one leaves the files, the last stays.
+@Test func desksShareTheProjectFolder() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let desk: Worktree = try await c.call("workspace.create", .obj(["repoId": .string(repo.id)]), as: Worktree.self)   // before any list
+    let first = try #require(try await c.call("worktree.list", .obj(["repoId": .string(repo.id)]), as: [Worktree].self).first { $0.id != desk.id })
+    #expect(first.note == "Workspace 1" && first.path == repo.path)
+    #expect(desk.note == "Workspace 2" && desk.path == repo.path && desk.branch == first.branch)
+    #expect(!Git.branchExists(repo.path, "ws-2"))
+    _ = try await c.call("worktree.remove", .obj(["id": .string(desk.id)]))
+    #expect(FileManager.default.fileExists(atPath: repo.path))
+    await #expect(throws: RPCError.self) { _ = try await c.call("worktree.remove", .obj(["id": .string(first.id)])) }
+}

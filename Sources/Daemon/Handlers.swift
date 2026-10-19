@@ -56,6 +56,9 @@ extension Daemon {
             try store.delete(r); notify("event.changed", "repo"); return .null
 
         // MARK: worktrees
+        case "workspace.create":
+            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
+            return try .from(createDesk(in: r))
         case "worktree.create":
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
             let auto = try nextWorkspace(in: r)
@@ -101,7 +104,7 @@ extension Daemon {
             return .obj(["exit": .int(Int(pr.terminationStatus)), "passed": .bool(pr.terminationStatus == 0)])
         case "worktree.archive", "worktree.remove":
             guard var w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-            if isMain(w, r) { throw RPCError.invalidParams("The main workspace is the repository itself; remove the project instead.") }
+            if isMain(w, r) { try removeDesk(w, r); return .null }
             let remove = method == "worktree.remove"
             if FileManager.default.fileExists(atPath: w.path) {
                 try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)

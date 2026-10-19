@@ -55,7 +55,7 @@ extension Workbench {
             for _ in 0..<50 where !m.connected { try? await Task.sleep(for: .milliseconds(100)) }
             if m.repos.isEmpty { await m.refresh() }
             guard let rid = repo ?? m.worktree(shared.workspaceId)?.repoId ?? m.repos.first?.id else { addProject(); return }
-            guard let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(rid)])), let id = w["id"]?.string else { return }
+            guard let w = await AppModel.shared.call("workspace.create", .obj(["repoId": .string(rid)])), let id = w["id"]?.string else { return }
             await AppModel.shared.refresh()
             show(workspace: id)
         }
@@ -96,6 +96,24 @@ enum WorkspaceActions {
             }
             await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id), "force": .bool(dirty)]))
             Attribution.reset(worktree: w.id)
+        }
+    }
+
+    /// A desk: its agents end, the folder stays. Asks only when agents are running there.
+    static func close(_ w: Worktree) {
+        let running = AppModel.shared.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.status != .hibernated }
+        Task {
+            if !running.isEmpty {
+                let a = NSAlert(); a.messageText = "Close “\(w.displayName)”?"
+                a.informativeText = "\(running.count) running \(running.count == 1 ? "agent stops" : "agents stop"). Files in the project are not touched."
+                a.addButton(withTitle: "Close"); a.addButton(withTitle: "Cancel")
+                guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            }
+            if Workbench.shared.workspaceId == w.id, let other = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
+                Workbench.show(workspace: other.id)
+            }
+            await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id)]))
+            await AppModel.shared.refresh()
         }
     }
 

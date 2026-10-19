@@ -201,8 +201,9 @@ public final class Daemon: @unchecked Sendable {
             argv += [flag, f.path]
             rec.argv = argv
         }
-        if o.argv == nil, let flag = manifest.mcpConfigFlag, let f = try writeMCPConfig() {
-            argv += [flag, f.path]
+        // Krill's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
+        if o.argv == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
+            argv += [flag, Paths.agentSkills.path]
             rec.argv = argv
         }
         if o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
@@ -231,16 +232,8 @@ public final class Daemon: @unchecked Sendable {
         return rec
     }
 
-    /// Claude Code's `--mcp-config` file for the `krill` MCP server; nil when no `krill` ships next to this binary.
-    func writeMCPConfig() throws -> URL? {
-        guard let krill = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("krill"),
-              FileManager.default.isExecutableFile(atPath: krill.path) else { return nil }
-        let env: JSONValue = .obj(["KRILL_SOCKET": .string(socketPath), "KRILL_HOME": .string(root.path)])
-        let cfg: JSONValue = .obj(["mcpServers": .obj(["krill": .obj(["command": .string(krill.path), "args": .array(["mcp"]), "env": env])])])
-        let f = root.appendingPathComponent("mcp-krill.json")
-        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try e.encode(cfg).write(to: f, options: .atomic)
-        return f
+    static func hasPlugins(_ dir: URL) -> Bool {
+        ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []).contains(where: \.hasDirectoryPath)
     }
 
     /// Account profiles keep each agent login in its own config dir: switching needs no re-login.

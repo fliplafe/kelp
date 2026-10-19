@@ -26,6 +26,7 @@ final class SettingsStore {
         guard o != values else { return }
         values = o
         ThemeManager.shared.apply()
+        AgentSkills.write()
         if !ExtensionRegistry.shared.extensions.isEmpty, Set((o["extensions.disabled"]?.array ?? []).compactMap(\.string)) != ExtensionRegistry.shared.disabledLoaded {
             ExtensionRegistry.shared.reload()
         }
@@ -61,7 +62,7 @@ final class SettingsStore {
         let d = UserDefaults.standard
         guard !d.bool(forKey: "settings.migrated") else { return }
         d.set(true, forKey: "settings.migrated")
-        let map = ["defaultAgent": "agents.default", "permissionMode": "agents.permissionMode", "branchPrefix": "git.branchPrefix", "lspEnabled": "editor.lsp"]
+        let map = ["defaultAgent": "agents.default", "branchPrefix": "git.branchPrefix", "lspEnabled": "editor.lsp"]
         for (old, new) in map where values[new] == nil {
             if let s = d.string(forKey: old) { set(new, .string(s)) } else if let b = d.object(forKey: old) as? Bool { set(new, .bool(b)) }
         }

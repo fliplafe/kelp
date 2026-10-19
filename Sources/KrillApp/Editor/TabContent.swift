@@ -24,7 +24,7 @@ extension TabContent {
     func close() -> Bool { true }
 }
 
-/// URI helpers: "session:ID", "file:///abs#L12", "diff:path", "https://…", "chat:ID", "ext:id/view".
+/// URI helpers: "session:ID", "file:///abs#L12", "diff:path", "https://…", "ext:id/view".
 enum TabURI {
     static func scheme(_ uri: String) -> String {
         guard let i = uri.firstIndex(of: ":") else { return "file" }
@@ -47,7 +47,7 @@ enum TabURI {
     }
     /// What the user typed or an agent sent: path, path:line, URL.
     static func normalize(_ s: String, cwd: String?) -> String {
-        if s.contains("://") || ["session:", "chat:", "ext:", "diff:"].contains(where: s.hasPrefix) { return s }
+        if s.contains("://") || ["session:", "ext:", "diff:"].contains(where: s.hasPrefix) { return s }
         if s.hasPrefix("localhost") || s.hasPrefix("127.0.0.1") { return "http://" + s }
         var p = s, line: Int?
         if let r = s.range(of: #":(\d+)$"#, options: .regularExpression) { line = Int(s[r].dropFirst()); p = String(s[..<r.lowerBound]) }

@@ -172,7 +172,7 @@ final class EditorArea: NSViewController {
     private func showStart() {
         guard start == nil, let w = worktree else { return }
         let s = StartView(worktree: w)
-        s.onStart = { [weak self] agent, prompt in self?.newAgent(agent, prompt: prompt) }
+        s.onAgent = { [weak self] agent in self?.newAgent(agent) }
         s.onOpen = { [weak self] uri in self?.open(uri) }
         start = s
         s.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(s)
@@ -292,8 +292,6 @@ final class EditorArea: NSViewController {
             m.add("Rename…") { AgentActions.rename(sid) }
             m.add("Restart") { AgentActions.restart(sid) }
             m.add("Copy Context") { AgentActions.copyContext(sid) }
-            m.add("Fork to New Workspace…") { AgentActions.fork(sid) }
-            m.add("Hand Off to Another Agent…") { AgentActions.handoff(sid) }
             m.addItem(.separator())
         }
         m.add("Close Tab") { [weak self] in self?.closeTab(id) }
@@ -335,7 +333,6 @@ final class EditorArea: NSViewController {
         p["worktreeId"] = .string(workspaceId)
         p["agent"] = .string(agent ?? AgentCatalog.defaultAgent)
         if let prompt, !prompt.isEmpty { p["prompt"] = .string(prompt) }
-        if p["mode"] == nil, agent != "shell", SettingsStore.shared.string("agents.permissionMode") == "yolo" { p["mode"] = "yolo" }
         createSession(p, split: split)
     }
     func newTerminal(split: SplitDirection? = nil) { createSession(["worktreeId": .string(workspaceId), "agent": "shell"], split: split) }

@@ -27,8 +27,9 @@ final class GroupView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func show(_ v: NSView?) {
-        guard v !== shown else { return }
-        shown?.removeFromSuperview()
+        guard v !== shown || v?.superview !== container else { return }
+        // Only if it's still here: a tab moved to another group took its view along.
+        if shown?.superview === container { shown?.removeFromSuperview() }
         shown = v
         guard let v else { return }
         v.removeFromSuperview()

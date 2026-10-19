@@ -72,3 +72,14 @@ final class StatusMark: NSView {
         toolTip = s.words
     }
 }
+
+/// Status as an SF Symbol, animated while the agent works.
+struct StatusIcon: View {
+    let status: AgentStatus
+    var body: some View {
+        Image(systemName: status == .working ? "circle.dotted" : status.symbol)
+            .foregroundStyle(status.color)
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: status == .working)
+            .help(status.words)
+    }
+}

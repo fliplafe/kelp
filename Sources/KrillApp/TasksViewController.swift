@@ -248,24 +248,13 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         return row
     }
 
+    /// The default agent starts on the issue in the workspace on screen, briefed with its text.
     private func startTask(_ r: JSONValue, linear: Bool, jira: Bool = false) {
-        guard let repoId else { return }
-        let form = LaunchForm(withPrompt: true, promptPlaceholder: "Optional extra instructions. The task description is sent automatically.")
-        let a = NSAlert(); a.messageText = "Start Task"; a.informativeText = "Creates a branch named after the task, a worktree, and an agent briefed with the description."
-        a.accessoryView = form.view; a.addButton(withTitle: "Start"); a.addButton(withTitle: "Cancel")
-        Task {
-            guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            var p = form.params; p["repoId"] = .string(repoId)
-            p["ref"] = .string(jira ? (r["key"]?.string ?? "") : linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)")
-            p["title"] = r["title"] ?? ""; p["body"] = ((linear || jira) ? r["description"] : r["body"]) ?? ""; p["url"] = r["url"] ?? ""
-            if linear { p["linearId"] = r["id"] ?? ""; if let b = r["branchName"]?.string { p["branch"] = .string(b) } }
-            if let pre = UserDefaults.standard.string(forKey: "branchPrefix") { p["branchPrefix"] = .string(pre) }
-            let extra = form.prompt.string.trimmingCharacters(in: .whitespacesAndNewlines); if !extra.isEmpty { p["prompt"] = .string(extra) }
-            guard let res = await AppModel.shared.call("task.fromIssue", .object(p)), let wid = res["worktree"]?["id"]?.string,
-                  let s = try? res["session"]?.decode(Session.self) else { return }
-            await AppModel.shared.refresh()
-            AppModel.shared.upsert(s); Workbench.show(workspace: wid); Workbench.open(TabURI.session(s.id))
-        }
+        let ref = jira ? (r["key"]?.string ?? "") : linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
+        let body = ((linear || jira) ? r["description"] : r["body"])?.string ?? ""
+        let brief = ["Work on \(ref): \(r["title"]?.string ?? "")", body, r["url"]?.string ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        guard let editor = Workbench.editor else { NSSound.beep(); return }
+        editor.newAgent(nil, prompt: brief)
     }
 
     private func agentSession(_ wt: Worktree) -> String? {

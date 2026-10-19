@@ -7,50 +7,54 @@ contributions, the command palette and settings.
 
 ```
 ┌ Sidebar ────────┐┌ Editor area ─────────────────────────────┐┌ Inspector ──────┐
-│ Project         ││ [Claude ●][Terminal][app.ts][Browser]  + ││ ⎇  ☰  ◉  ⚑  ⧉   │
-│  ▾ Workspace 1  ││ ┌──────────────────┬──────────────────┐  ││ Changes / Files │
-│     ✻ Claude ⚙  ││ │ agent terminal   │ file / browser / │  ││ Issues / Agent  │
-│     ✻ Codex ?   ││ │                  │ diff / ext view  │  ││ Docker / …      │
-│  ▸ fix-login ✓  ││ └──────────────────┴──────────────────┘  ││ (extension      │
-│ + Add Project   ││   groups split freely, tabs of any kind  ││  panels)        │
+│ Project       + ││ [Claude ●][Terminal][app.ts][Browser]    ││ ▤  ⎇  ☰  …      │
+│  ▾ Workspace 1  ││ ┌──────────────────┬──────────────────┐  ││ Files / Source  │
+│     ✻ Claude ⚙  ││ │ agent terminal   │ file / browser / │  ││ Control / Issues│
+│     ✻ Codex ?   ││ │                  │ diff / ext view  │  ││ + extension     │
+│  ▸ Workspace 2 ✓││ └──────────────────┴──────────────────┘  ││   panels        │
+│ Limits          ││   groups split freely, tabs of any kind  ││                 │
 └─────────────────┘└──────────────────────────────────────────┘└─────────────────┘
 ```
 
 ## Concepts
 - **Project**: a git repository (`repo.*` RPCs).
-- **Workspace**: a working copy of a project with its own agents and layout (`worktree.*` RPCs).
-  Every project has a *main* workspace on the repo itself; "+" makes isolated ones (a git worktree
-  on a new branch) instantly, named "Workspace N" until the first agent prompt names it (on-device AI).
+- **Workspace**: a desk in the project's folder — its own tabs, splits and agents, nothing on disk
+  (`workspace.create`, stored as worktree records whose path is the repo path). "+" opens a new one instantly,
+  named "Workspace N" until its first agent prompt names it (on-device AI); several desks share the folder.
+  Closing one ends its agents and leaves the files. (Workspaces from older versions may be git worktrees.)
 - **Agent**: a session in a workspace (`session.*`). Status: working · needs input · done · idle · paused · ended.
 - **Tab**: anything shown in the editor area, addressed by a URI:
-  `session:<id>`, `file:<path>#L12`, `diff:<path>`, `https://…`, `chat:<id>`, `ext:<extension>/<view>`.
+  `session:<id>`, `file:<path>#L12`, `diff:<path>`, `https://…`, `ext:<extension>/<view>`.
   Groups of tabs split right/down; drag tabs between groups or onto an edge to split.
 
 ## Contribution points (built-in Swift extensions and `extension.json` folders use the same ones)
 | Point | Where it shows |
 | --- | --- |
 | panels | right inspector (selector icons) |
-| editors | center tab types, listed in the "+" menu |
+| editors | center tab types, listed in the toolbar "+" menu and the empty workspace |
 | commands | command palette (⇧⌘P), menus, key bindings |
 | settings | Settings window (generated forms) and `~/.krill/settings.json` |
 | themes | Appearance settings; drive terminal + editor colors |
-| agents | agent CLIs offered in "+" menus |
+| agents | agent CLIs offered in the "+" menu and the empty workspace |
 
-Built-ins (Git, Files, Issues, Browser, Chat, Agents) can be disabled like any other extension.
-User extensions live in `~/.krill/extensions/<id>/` — see [extensions.md](extensions.md).
+Built-ins (Git, Files, Issues, Browser) can be turned off like any other extension. Krill ships no example
+extensions: user extensions live in `~/.krill/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
+turned off or removed.
 
 ## Settings
 `~/.krill/settings.json`, owned by the daemon (`settings.get` / `settings.set`, `event.settings`
 on change, also when the file is edited by hand). Flat dotted keys, VS Code style.
 
-## AI agents drive the IDE
-Every agent session gets `KRILL_SOCKET` and the `krill` CLI on PATH; Claude Code sessions also get
-the `krill` MCP server (`--mcp-config`). Both expose the same verbs: open files/URLs/terminals in the
-editor area, read what the user is looking at, read/write settings, list/create/enable extensions,
-run commands. "New Extension with AI…" scaffolds a folder and starts an agent on it; the app reloads
-extensions when their files change.
+## AI agents and the IDE: skills
+Every agent session gets `KRILL_SOCKET` and the `krill` CLI on PATH (open files/URLs, settings, extensions,
+`ui state`). What an agent should *do* with it comes from two skills the app writes as Claude Code plugins in
+`~/.krill/agent-skills/` (`AgentSkills`): **krill-extensions** (this repo's docs/extensions.md: where an extension
+goes, its format, how to reload) and **krill-settings** (every setting key, generated from the registry, and how to
+change it). The daemon loads that folder per Claude session with `--plugin-dir`; turning a skill off in
+Settings › Agents removes it. Nothing is written to the agent's own config. The app reloads extensions when their
+files change.
 
 ## UI ↔ daemon
 The app talks to the daemon only through JSON-RPC. IDE actions requested by agents go
-`krill`/MCP → daemon `ui.*` → `event.ui` to the app. The app publishes what it shows with
+`krill` → daemon `ui.*` → `event.ui` to the app. The app publishes what it shows with
 `ui.publish` so agents can ask (`ui.state`).

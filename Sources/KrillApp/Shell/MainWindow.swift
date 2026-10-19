@@ -58,10 +58,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
     @objc func toggleSidebarPanel() { split.toggleSidebar(nil) }
 
     // MARK: toolbar
-    private static let newTab = NSToolbarItem.Identifier("newTab"), run = NSToolbarItem.Identifier("run"), inspectorToggle = NSToolbarItem.Identifier("inspector")
+    // The one place to add a tab (like Safari's "+"); the empty workspace offers the same choices.
+    private static let newTab = NSToolbarItem.Identifier("newTab"), inspectorToggle = NSToolbarItem.Identifier("inspector")
 
     func toolbarDefaultItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, Self.run, Self.newTab, .inspectorTrackingSeparator, .flexibleSpace, Self.inspectorToggle]
+        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, Self.newTab, .inspectorTrackingSeparator, .flexibleSpace, Self.inspectorToggle]
     }
     func toolbarAllowedItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(t) }
 
@@ -73,11 +74,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSWindo
             i.showsIndicator = false
             i.menu = NSMenu()
             i.menu.delegate = NewTabMenuSource.shared
-            return i
-        case Self.run:
-            let i = NSToolbarItem(itemIdentifier: id)
-            i.image = .symbol("play.fill", "Run"); i.label = "Run"; i.toolTip = "Run the dev server (⌃⌘R)"
-            i.target = NSApp.delegate; i.action = #selector(AppDelegate.runDevServer)
             return i
         case Self.inspectorToggle:
             let i = NSToolbarItem(itemIdentifier: id)

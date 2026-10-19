@@ -16,7 +16,6 @@ final class TabStrip: NSView {
     var focused = false { didSet { if focused != oldValue { buttons.forEach { $0.groupFocused = focused } } } }
     private let stack = NSStackView()
     private let scroll = NSScrollView()
-    private let add = NSButton()
     private let overflow = NSButton()
     private var items: [Item] = []
     private var selectedId: String?
@@ -27,9 +26,6 @@ final class TabStrip: NSView {
         super.init(frame: frame)
         stack.orientation = .horizontal; stack.spacing = 1; stack.distribution = .fill
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
-        add.image = .symbol("plus", "New Tab"); add.isBordered = false; add.contentTintColor = .secondaryLabelColor
-        add.symbolConfiguration = .init(pointSize: 11, weight: .medium)
-        add.toolTip = "New agent, terminal, browser…"; add.target = self; add.action = #selector(addTapped)
         insertion.wantsLayer = true; insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; insertion.isHidden = true
         // Too many tabs to fit: the strip scrolls (trackpad / wheel) and the chevron lists them all, like Safari.
         overflow.image = .symbol("chevron.down", "All Tabs"); overflow.isBordered = false; overflow.contentTintColor = .secondaryLabelColor
@@ -39,7 +35,7 @@ final class TabStrip: NSView {
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
-        for v in [scroll, overflow, add, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [scroll, overflow, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 30),
@@ -47,10 +43,8 @@ final class TabStrip: NSView {
             scroll.trailingAnchor.constraint(equalTo: overflow.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            overflow.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -2), overflow.centerYAnchor.constraint(equalTo: centerYAnchor),
+            overflow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6), overflow.centerYAnchor.constraint(equalTo: centerYAnchor),
             overflow.widthAnchor.constraint(equalToConstant: 18),
-            add.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8), add.centerYAnchor.constraint(equalTo: centerYAnchor),
-            add.widthAnchor.constraint(equalToConstant: 22),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         registerForDraggedTypes([.krillTab])
@@ -94,12 +88,11 @@ final class TabStrip: NSView {
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: overflow.bounds.height + 4), in: overflow)
     }
 
-    @objc private func addTapped() {
-        guard let m = addMenu?() else { return }
-        m.popUp(positioning: nil, at: NSPoint(x: 0, y: add.bounds.height + 4), in: add)
+    /// Double-click on the empty strip: new tab, like Safari's tab bar.
+    override func mouseDown(with e: NSEvent) {
+        guard e.clickCount == 2, let m = addMenu?() else { super.mouseDown(with: e); return }
+        m.popUp(positioning: nil, at: convert(e.locationInWindow, from: nil), in: self)
     }
-
-    override func mouseDown(with e: NSEvent) { if e.clickCount == 2 { addTapped() } else { super.mouseDown(with: e) } }
 
     // MARK: drops between tabs
     private func index(at p: NSPoint) -> Int {

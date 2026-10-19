@@ -11,6 +11,8 @@ public enum Paths {
     public static var worktrees: URL { root.appendingPathComponent("worktrees") }
     public static var agents: URL { root.appendingPathComponent("agents") }
     public static var extensions: URL { root.appendingPathComponent("extensions") }
+    /// Claude Code plugins with Krill's skills (one per skill that's turned on), loaded per session with --plugin-dir.
+    public static var agentSkills: URL { root.appendingPathComponent("agent-skills") }
 
     public static func ensure(_ u: URL) throws {
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)

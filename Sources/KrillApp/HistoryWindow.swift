@@ -87,12 +87,12 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     @objc private func resume() {
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard rows.indices.contains(r) else { return }
-        let d = NSApp.delegate as? AppDelegate
         Task {
             guard let res = await AppModel.shared.call("history.resume", .obj(["session": rows[r]])), let s = try? res.decode(Session.self) else { return }
-            AppModel.shared.sessions.append(s)
-            _ = d; AppModel.shared.upsert(s); if let w = s.worktreeId { Workbench.show(workspace: w); Workbench.open(TabURI.session(s.id)) }
-            else { FloatingTerminal.shared.show(session: s) }
+            AppModel.shared.upsert(s)
+            // A conversation from a folder that isn't a project opens in the workspace on screen (it keeps its own folder).
+            if let w = s.worktreeId { Workbench.show(workspace: w) }
+            Workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }

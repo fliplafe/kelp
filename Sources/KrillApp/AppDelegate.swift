@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.regular)
         Self.watchHangs()
+        // Krill no longer ships example extensions; remove the copies older versions wrote into its home.
+        try? FileManager.default.removeItem(at: Paths.root.appendingPathComponent("bundled-extensions"))
         Perf.measure("registry") { ExtensionRegistry.shared.reload() }
         Perf.measure("window") { main = MainWindowController() }
         Perf.measure("show") { main.showWindow(nil) }
@@ -66,7 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func addProject() { Workbench.addProject() }
     @objc func newAgent() { editor?.newAgent() }
     @objc func newAgentNamed(_ m: NSMenuItem) { editor?.newAgent(m.representedObject as? String) }
-    @objc func newAgentSheet() { if let w = Workbench.shared.workspaceId { AgentActions.newAgent(worktree: w) } }
     @objc func newTerminal() { editor?.newTerminal() }
     @objc func splitRight() { editor?.splitFocused(.right) }
     @objc func splitDown() { editor?.splitFocused(.down) }
@@ -80,14 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleSidebar() { main.toggleSidebarPanel() }
     @objc func showPanel(_ m: NSMenuItem) { if let id = m.representedObject as? String { main.showInspector(panel: id) } }
     @objc func runCommand(_ m: NSMenuItem) { if let id = m.representedObject as? String { ExtensionRegistry.shared.command(id)?.run([:]) } }
-    @objc func floatingTerminal() { FloatingTerminal.shared.toggle() }
     @objc func quickOpen() { QuickOpen.shared.show(commandsOnly: false) }
     @objc func commandPalette() { QuickOpen.shared.show(commandsOnly: true) }
     @objc func showHistory() { HistoryWindow.shared.show() }
-    @objc func showDashboard() { DashboardController.shared.show() }
     @objc func openSettings() { SettingsWindow.show() }
     @objc func openExtensions() { SettingsWindow.show(section: "extensions") }
-    @objc func createExtensionWithAI() { ExtensionAuthoring.createWithAI() }
     @objc func goToLine() { if let f = fileTab, let s = prompt("Go to line", ""), let n = Int(s) { f.goTo(line: n) } }
     @objc func jumpToDefinition() { fileTab?.jumpToDefinition() }
     @objc func findInWorkspace() { main.showInspector(panel: "files") }
@@ -96,18 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let lines = f.selectedLines.map { $0.lowerBound == $0.upperBound ? "line \($0.lowerBound)" : "lines \($0.lowerBound)-\($0.upperBound)" } ?? ""
         Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string("In \(f.path) \(lines):\n```\n\(text)\n```\n"), "enter": false])) }
         Workbench.focus(session: sid)
-    }
-    @objc func runDevServer() {
-        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
-        Task {
-            guard let r = await AppModel.shared.call("worktree.run", .obj(["id": .string(wid)])), let s = try? r.decode(Session.self) else { return }
-            AppModel.shared.upsert(s)
-            Workbench.open(TabURI.session(s.id))
-        }
-    }
-    @objc func fanout() {
-        if let r = AppModel.shared.repo(AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId) ?? AppModel.shared.repos.first { FanoutController.start(repo: r) }
-        else { addProject() }
     }
     @objc func restartService() {
         let a = NSAlert(); a.messageText = "Restart the background service?"; a.informativeText = "Running agent sessions end. Workspaces, history and settings are kept."
@@ -164,15 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let with = NSMenu()
         for a in AgentCatalog.installed(AgentCatalog.all) { let i = item(with, a.name, #selector(newAgentNamed(_:))); i.representedObject = a.id }
         with.addItem(.separator())
-        _ = item(with, "Agent with Options…", #selector(newAgentSheet), "n", [.command, .option])
         for e in ExtensionRegistry.shared.all.editors {
             with.add(e.title, symbol: e.icon) { e.open(IDEContext.current) }
         }
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
         _ = item(file, "Add Project…", #selector(addProject), "o")
-        file.addItem(.separator())
-        _ = item(file, "Run Dev Server", #selector(runDevServer), "r", [.command, .control])
-        _ = item(file, "Fan Out Task…", #selector(fanout), "f", [.command, .option])
         file.addItem(.separator())
         _ = item(file, "Close Tab", #selector(closeTab), "w")
 
@@ -209,15 +191,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.addItem(.separator())
         _ = item(view, "Command Palette…", #selector(commandPalette), "p", [.command, .shift])
         _ = item(view, "Open Quickly…", #selector(quickOpen), "p")
-        _ = item(view, "Floating Terminal", #selector(floatingTerminal), "a", [.command, .option])
-        _ = item(view, "Agents Dashboard", #selector(showDashboard), "d", [.command, .option])
         _ = item(view, "Session History", #selector(showHistory), "h", [.command, .shift])
         view.addItem(.separator())
         view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
 
         // Commands from extensions (built-in ones are already in the menus above).
         let tools = sub("Tools")
-        _ = item(tools, "Create Extension with AI…", #selector(createExtensionWithAI))
         _ = item(tools, "Manage Extensions…", #selector(openExtensions))
         let menuIds: Set<String> = ["agents.new", "terminal.new", "terminal.splitRight", "terminal.splitDown", "files.quickOpen"]
         let cmds = ExtensionRegistry.shared.all.commands.filter { !menuIds.contains($0.id) }

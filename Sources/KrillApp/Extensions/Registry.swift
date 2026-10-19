@@ -126,10 +126,6 @@ final class ExtensionRegistry {
         }
         for b in Builtins.all { take(b.info, b.contribute()) }
         // Requirement checks need the login-shell PATH; until it's read (in the background) assume tools are there.
-        for folder in BundledExtensions.materialize() {
-            let loaded = DeclarativeExtension.load(folder, builtin: true, checkRequirements: Self.pathReady)
-            take(loaded.info, loaded.contributions)
-        }
         for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where folder.hasDirectoryPath {
             let loaded = DeclarativeExtension.load(folder, checkRequirements: Self.pathReady)
             take(loaded.info, loaded.contributions)
@@ -139,6 +135,7 @@ final class ExtensionRegistry {
         all = merged
         revision += 1
         ThemeManager.shared.apply()
+        AgentSkills.write()
         AppModel.shared.publishUIState()
     }
 

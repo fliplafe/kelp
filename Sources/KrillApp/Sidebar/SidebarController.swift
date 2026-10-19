@@ -25,7 +25,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private var shape: [String] = []
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsed") ?? [])
     private var syncing = false
-    private var creating: String?
     private var renaming: String?
     private let empty = NSStackView()
 
@@ -77,7 +76,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             let p = Node(.project(r.id))
             p.children = m.workspaces(of: r).map { w in
                 let n = Node(.workspace(w.id))
-                n.children = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited }.map { Node(.agent($0.id)) }
+                // Agents only: terminals are tabs, not something to keep an eye on.
+                n.children = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.agent != "shell" }.map { Node(.agent($0.id)) }
                 return n
             }
             return p
@@ -166,17 +166,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     // MARK: actions
 
-    func newWorkspace(_ repo: String) {
-        creating = repo; refreshCell("p:" + repo)
-        Task {
-            if let w = await AppModel.shared.call("worktree.create", .obj(["repoId": .string(repo)])), let id = w["id"]?.string {
-                await AppModel.shared.refresh()
-                Workbench.show(workspace: id)
-            }
-            creating = nil; refreshCell("p:" + repo)
-        }
-    }
-    func isCreating(_ repo: String) -> Bool { creating == repo }
+    func newWorkspace(_ repo: String) { Workbench.newWorkspace(repo: repo) }
     private func refreshCell(_ key: String) {
         guard let n = node(key) else { return }
         let row = outline.row(forItem: n)
@@ -214,18 +204,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add("Remove Project…") { WorkspaceActions.removeProject(r) }
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
-            let agents = NSMenu()
-            for a in AgentCatalog.installed(AgentCatalog.all) {
-                agents.add(a.name, symbol: AgentCatalog.symbol(a.id)) { Workbench.show(workspace: id); Workbench.editor?.newAgent(a.id) }
-            }
-            menu.setSubmenu(agents, for: menu.addItem(withTitle: "New Agent", action: nil, keyEquivalent: ""))
-            menu.add("New Terminal") { Workbench.show(workspace: id); Workbench.editor?.newTerminal() }
-            menu.addItem(.separator())
             menu.add("Rename") { [weak self] in self?.startRename(id) }
             menu.add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
             menu.add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
-            if w.path != m.repo(w.repoId)?.path {
-                menu.addItem(.separator())
+            menu.addItem(.separator())
+            if w.path == m.repo(w.repoId)?.path {
+                // A desk: closing it ends its agents; the project's folder is untouched.
+                let item = menu.add("Close Workspace") { WorkspaceActions.close(w) }
+                item.isEnabled = m.worktrees.filter { $0.repoId == w.repoId && $0.path == w.path }.count > 1
+            } else {
                 menu.add("Archive") { Task { await AppModel.shared.call("worktree.archive", .obj(["id": .string(id)])) } }
                 menu.add("Delete Workspace & Branch…") { WorkspaceActions.delete(w) }
             }
@@ -234,8 +221,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add("Rename…") { AgentActions.rename(sid) }
             menu.add("Restart") { AgentActions.restart(sid) }
             menu.addItem(.separator())
-            menu.add("Fork to New Workspace…") { AgentActions.fork(sid) }
-            menu.add("Hand Off to Another Agent…") { AgentActions.handoff(sid) }
             menu.add("Copy Context") { AgentActions.copyContext(sid) }
             menu.addItem(.separator())
             menu.add("Stop") { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) } }
@@ -254,7 +239,6 @@ final class SidebarCell: NSTableCellView {
     private let badge = NSTextField(labelWithString: "")
     private let badgeMark = StatusMark(size: 12)
     private var add: NSButton?
-    private let spinner = NSProgressIndicator()
 
     init(node: SidebarController.Node, owner: SidebarController) {
         self.node = node; self.owner = owner
@@ -262,7 +246,6 @@ final class SidebarCell: NSTableCellView {
         title.lineBreakMode = .byTruncatingTail
         badge.font = .systemFont(ofSize: 11, weight: .semibold); badge.textColor = .systemOrange
         icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
-        spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
         textField = title; imageView = icon
         switch node.kind {
         case .project(let id):
@@ -270,7 +253,7 @@ final class SidebarCell: NSTableCellView {
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", "New Workspace"); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
             b.toolTip = "New workspace (⌘N)"; add = b
-            layout(row: [title, NSView(), spinner, b])
+            layout(row: [title, NSView(), b])
         case .workspace:
             title.font = .systemFont(ofSize: 13)
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -296,14 +279,12 @@ final class SidebarCell: NSTableCellView {
         case .project(let id):
             let r = m.repo(id)
             title.stringValue = r?.name ?? ""; toolTip = r?.path
-            let busy = owner?.isCreating(id) == true
-            if busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
-            add?.isHidden = busy
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
             let isMain = w.path == m.repo(w.repoId)?.path
             let agents = m.sessions.filter { $0.worktreeId == id && $0.status != .exited && $0.agent != "shell" }
-            icon.image = .symbol(isMain ? "house" : "arrow.triangle.branch"); icon.contentTintColor = .controlAccentColor
+            // A desk in the project folder; older workspaces on their own branch keep the branch icon.
+            icon.image = .symbol(isMain ? "rectangle.split.2x1" : "arrow.triangle.branch"); icon.contentTintColor = .controlAccentColor
             title.stringValue = w.displayName
             // Bold = something new to look at (like unread mail); a paused agent has nothing new.
             title.font = .systemFont(ofSize: 13, weight: agents.contains { $0.unread && $0.status != .hibernated } ? .semibold : .regular)
@@ -312,7 +293,7 @@ final class SidebarCell: NSTableCellView {
             badgeMark.status = waiting > 0 ? .waiting : agents.contains { $0.status == .working } ? .working
                 : agents.contains { $0.status == .done && $0.unread } ? .done : nil
             // The branch and folder are one hover away (and in the title bar for the open workspace).
-            toolTip = (isMain ? "\(w.branch) · the repository itself" : "Branch \(w.branch)") + "\n" + w.path
+            toolTip = w.path + (isMain ? "" : "\nBranch \(w.branch)")
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
             mark.status = s.agent == "shell" ? nil : s.status

@@ -148,7 +148,6 @@ struct SettingRow: View {
         switch key {
         case "agents.default": return AgentCatalog.name(v)
         case "workbench.theme": return v == "auto" ? "Auto (Krill Light / Dark)" : v == "ghostty" ? "Ghostty config" : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
-        case "agents.permissionMode": return v == "yolo" ? "Yolo (skip approvals)" : "Ask before actions"
         case "power.keepAwake": return ["agents": "While agents work", "always": "Always", "off": "Never"][v] ?? v
         default: return v.prefix(1).uppercased() + v.dropFirst()
         }
@@ -182,7 +181,6 @@ private struct ExtensionsSettings: View {
                             Menu {
                                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
                                 Button("Edit extension.json") { Workbench.open(TabURI.file(p.appendingPathComponent("extension.json").path)) }
-                                Button("Improve with AI…") { ExtensionAuthoring.improve(e) }
                                 Divider()
                                 Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }
                             } label: { Image(systemName: "ellipsis.circle") }
@@ -196,18 +194,19 @@ private struct ExtensionsSettings: View {
                     .padding(.vertical, 2)
                 }
             } header: {
-                Text("Everything in Krill — the browser, git, issues — is an extension. Turn off what you don't use.")
+                Text("The browser, git and issues are extensions too. Turn off what you don't use.")
             }
             Section {
+                Text("To add one, ask Claude Code in an agent tab, e.g. “make a Krill panel that lists my Docker containers”. "
+                     + "It knows how through the extensions skill (Settings › Agents).")
+                    .foregroundStyle(.secondary)
                 HStack {
-                    Button { ExtensionAuthoring.createWithAI() } label: { Label("Create with AI…", systemImage: "sparkles") }
-                    Button { ExtensionAuthoring.create() } label: { Label("New Extension…", systemImage: "plus") }
+                    Button("How Extensions Work") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
+                        .buttonStyle(.link)
                     Spacer()
+                    Button("Show in Finder") { NSWorkspace.shared.open(ExtensionRegistry.userDir) }
                     Button("Reload") { registry.reload() }
-                    Button("Open Folder") { NSWorkspace.shared.open(ExtensionRegistry.userDir) }
                 }
-                Button("How to write an extension") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
-                    .buttonStyle(.link)
             }
         }
         .formStyle(.grouped)

@@ -39,8 +39,6 @@ extension AppDelegate {
             if let p = env["KRILL_SNAPSHOT_INSPECTOR"] { main.showInspector(panel: p) }
             if let u = env["KRILL_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             if let keys = env["KRILL_TYPE"] { typeKeys(keys) }
-            // KRILL_AI_EXTENSION="…": the "Create with AI" flow without its question sheet.
-            if let what = env["KRILL_AI_EXTENSION"] { ExtensionAuthoring.createWithAI(what, model: env["KRILL_AI_MODEL"]) }
             // KRILL_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
             if let targets = env["KRILL_CLICK"]?.split(separator: "|") {
                 for (i, t) in targets.enumerated() {
@@ -60,14 +58,13 @@ extension AppDelegate {
                 }
             }
             switch env["KRILL_SNAPSHOT_WINDOW"] {
-            case "dashboard": showDashboard()
             case "history": showHistory()
             case "settings": SettingsWindow.show(section: env["KRILL_SNAPSHOT_SECTION"])
             default: break
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
             RunLoop.main.add(Timer(timeInterval: env["KRILL_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5, repeats: false) { _ in MainActor.assumeIsolated { [self] in
-                let want = env["KRILL_SNAPSHOT_WINDOW"].map { ["dashboard": "Agents", "history": "Session History", "settings": "Settings"][$0] ?? $0 }
+                let want = env["KRILL_SNAPSHOT_WINDOW"].map { ["history": "Session History", "settings": "Settings"][$0] ?? $0 }
                 // The frame view includes the title bar and toolbar.
                 let picked = env["KRILL_SNAPSHOT_WINDOW"] == "settings" ? SettingsWindow.window : NSApp.windows.filter(\.isVisible).last { want != nil && $0.title.hasPrefix(want ?? "") }
                 guard let w = picked ?? main.window,

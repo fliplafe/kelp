@@ -17,7 +17,6 @@ final class AppModel {
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
     @ObservationIgnored var onChange: [() -> Void] = []
-    @ObservationIgnored var onChatLine: ((String, String) -> Void)?
     /// Claude Code subagents per session (title, active), polled while the parent works.
     var subagents: [String: [Subagent]] = [:]
     struct Subagent: Equatable { var title: String; var active: Bool }
@@ -154,11 +153,8 @@ final class AppModel {
             let old = sessions.first { $0.id == s.id }
             if old != s { upsert(s) }
             NotificationCenter.default.post(name: .krillSession, object: s.id)
-            if old?.status != s.status { DashboardController.events.append(AgentEvent(date: Date(), session: s, status: s.status)); if DashboardController.events.count > 500 { DashboardController.events.removeFirst(100) } }
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
-        case "event.chat":
-            if let id = p["id"]?.string, let line = p["line"]?.string { onChatLine?(id, line) }
         case "event.devserver":
             if let w = p["worktree"]?.string, let u = p["url"]?.string {
                 NotificationCenter.default.post(name: .krillDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])

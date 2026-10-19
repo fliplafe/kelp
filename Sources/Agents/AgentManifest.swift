@@ -60,18 +60,18 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     /// Without them, two agents in one folder resume each other's conversations.
     public var sessionIdFlag: String?
     public var resumeIdFlag: String?
-    /// If set, `{mcpConfigFlag} <file>` is appended and the file registers the `krill` MCP server.
-    public var mcpConfigFlag: String?
+    /// If set, `{pluginDirFlag} <dir>` loads Krill's skills (extensions, settings) for the session only.
+    public var pluginDirFlag: String?
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
                 yoloArgs: [String] = [], modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
-                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], mcpConfigFlag: String? = nil,
+                autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
         self.yoloArgs = yoloArgs; self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
-        self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.mcpConfigFlag = mcpConfigFlag
+        self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
     }
 
@@ -91,7 +91,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
         autoAnswers = try c.decodeIfPresent([AutoAnswer].self, forKey: .autoAnswers) ?? []
         resumeArgs = try c.decodeIfPresent([String].self, forKey: .resumeArgs) ?? []
-        mcpConfigFlag = try c.decodeIfPresent(String.self, forKey: .mcpConfigFlag)
+        pluginDirFlag = try c.decodeIfPresent(String.self, forKey: .pluginDirFlag)
         sessionIdFlag = try c.decodeIfPresent(String.self, forKey: .sessionIdFlag)
         resumeIdFlag = try c.decodeIfPresent(String.self, forKey: .resumeIdFlag)
     }
@@ -132,7 +132,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public static let presets: [AgentManifest] = [
         .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",
               yoloArgs: ["--dangerously-skip-permissions"], modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
-              autoAnswers: [trust], resumeArgs: ["--continue"], mcpConfigFlag: "--mcp-config",
+              autoAnswers: [trust], resumeArgs: ["--continue"], pluginDirFlag: "--plugin-dir",
               sessionIdFlag: "--session-id", resumeIdFlag: "--resume"),
         .init(id: "codex", name: "Codex", command: "codex", yoloArgs: ["--dangerously-bypass-approvals-and-sandbox"],
               modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
