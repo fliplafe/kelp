@@ -93,9 +93,13 @@ final class AppModel {
             reconnectSoon(); return
         }
         retryDelay = 1; failing = false
-        if await checkDaemonVersion(c) { return }
+        // Before anything that waits (the version check can show a sheet): a daemon that drops meanwhile is still noticed.
         c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
-        c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.connected = false; self?.reconnectSoon() } }
+        c.onClose = { [weak self] in Task { @MainActor in
+            guard let self, self.client === c else { return }   // a newer connection took over: nothing to undo
+            self.client = nil; self.connected = false; self.reconnectSoon()
+        } }
+        if await checkDaemonVersion(c) { return }
         await UIState.load(c)
         if UIState.strings("sidebar.order") != order { order = UIState.strings("sidebar.order") }
         await SettingsStore.shared.load()

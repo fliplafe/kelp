@@ -9,8 +9,23 @@ public final class RPCClient: @unchecked Sendable {   // mutable state (nextID, 
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var closed = false
-    public var onNotification: (@Sendable (String, JSONValue) -> Void)?
-    public var onClose: (@Sendable () -> Void)?
+    private var notificationHandler: (@Sendable (String, JSONValue) -> Void)?
+    private var closeHandler: (@Sendable () -> Void)?
+    private var readerDone = false
+
+    /// Read by the reader thread, so kept under the lock like the rest.
+    public var onNotification: (@Sendable (String, JSONValue) -> Void)? {
+        get { lock.withLock { notificationHandler } }
+        set { lock.withLock { notificationHandler = newValue } }
+    }
+    /// Set after the connection already dropped, it runs at once: a caller that installs it late is still told.
+    public var onClose: (@Sendable () -> Void)? {
+        get { lock.withLock { closeHandler } }
+        set {
+            let runNow = lock.withLock { () -> Bool in closeHandler = newValue; return readerDone }
+            if runNow { newValue?() }
+        }
+    }
 
     public init(socket: String = Paths.socket.path) throws {
         fd = try Unix.connect(socket)
@@ -33,16 +48,16 @@ public final class RPCClient: @unchecked Sendable {   // mutable state (nextID, 
             for line in lb.append(Data(buf[0..<n])) {
                 guard let m = try? JSONDecoder().decode(RPCMessage.self, from: line) else { continue }
                 if let method = m.method {
-                    onNotification?(method, m.params ?? .null)
+                    lock.withLock { notificationHandler }?(method, m.params ?? .null)
                 } else if let id = m.id {
                     lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
                     if let e = m.error { c?.resume(throwing: e) } else { c?.resume(returning: m.result ?? .null) }
                 }
             }
         }
-        lock.lock(); let all = pending; pending = [:]; closed = true; lock.unlock()
+        lock.lock(); let all = pending; pending = [:]; closed = true; readerDone = true; let done = closeHandler; lock.unlock()
         for (_, c) in all { c.resume(throwing: RPCError.internalError("connection closed")) }
-        onClose?()
+        done?()
     }
 
     /// Fire-and-forget, written in call order (keystrokes must not overtake each other).

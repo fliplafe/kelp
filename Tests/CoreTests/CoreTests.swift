@@ -126,3 +126,37 @@ import Testing
     Keychain.delete(account)
     #expect(Keychain.get(account) == nil)
 }
+
+/// The app installs its handlers after connecting (with awaits in between): a daemon that drops first must still be noticed.
+@Test func aCloseHandlerInstalledAfterTheDropStillRuns() async throws {
+    let path = NSTemporaryDirectory() + "kelp-late-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try RPCClient(socket: path)
+    let peer = accept(server, nil, nil)
+    close(peer)                                                       // the daemon goes away before anyone listens for that
+    await #expect(throws: (any Error).self) { _ = try await client.call("ping", timeout: 5) }   // the reader has seen the close
+    let told = Flag()
+    client.onClose = { told.set() }
+    #expect(told.value)                                               // installed late, run at once
+}
+
+@Test func notificationsReachAHandlerSetWhileReading() async throws {
+    let path = NSTemporaryDirectory() + "kelp-note-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try RPCClient(socket: path)
+    let peer = accept(server, nil, nil)
+    defer { close(peer) }
+    let got = Flag()
+    client.onNotification = { m, _ in if m == "event.test" { got.set() } }
+    Unix.writeAll(peer, try Wire.line(RPCRequest(id: nil, method: "event.test", params: nil)))
+    for _ in 0..<50 where !got.value { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(got.value)
+}
+
+private final class Flag: @unchecked Sendable {   // the bool under lock
+    private let lock = NSLock(); private var on = false
+    func set() { lock.withLock { on = true } }
+    var value: Bool { lock.withLock { on } }
+}
