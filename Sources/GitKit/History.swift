@@ -101,22 +101,37 @@ extension Git {
         return out
     }
 
+    /// Source Control reads this on every change in the folder: one for-each-ref answers what took five git processes
+    /// (each an ssh round trip for a remote project). Detached or before the first commit, HEAD is asked for itself.
     public static func branches(_ path: String) throws -> BranchInfo {
-        func lines(_ a: [String]) -> [String] {
-            ((try? run(a, cwd: path)) ?? "").split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        let refs = try run(["for-each-ref", "--format=%(HEAD)%00%(refname)%00%(objectname:short)%00%(upstream:short)%00%(upstream:track,nobracket)",
+                            "refs/heads", "refs/remotes"], cwd: path)
+        var b = BranchInfo(current: nil, head: nil, local: [], remote: [], upstream: nil, ahead: nil, behind: nil, merging: false)
+        for line in refs.split(separator: "\n") {
+            let f = line.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
+            guard f.count == 5 else { continue }
+            if f[1].hasPrefix("refs/remotes/") {
+                if !f[1].hasSuffix("/HEAD") { b.remote.append(String(f[1].dropFirst("refs/remotes/".count))) }
+                continue
+            }
+            let name = String(f[1].dropFirst("refs/heads/".count))
+            b.local.append(name)
+            guard f[0] == "*" else { continue }
+            b.current = name; b.head = f[2]
+            guard !f[3].isEmpty, f[4] != "gone" else { continue }   // "gone": the upstream branch was deleted
+            b.upstream = f[3]; b.ahead = 0; b.behind = 0
+            for part in f[4].split(separator: ",") {   // "ahead 2, behind 1"; "" when even
+                let w = part.split(separator: " ")
+                if w.count == 2, w[0] == "ahead" { b.ahead = Int(w[1]) } else if w.count == 2, w[0] == "behind" { b.behind = Int(w[1]) }
+            }
         }
-        let current = try run(["symbolic-ref", "--short", "-q", "HEAD"], cwd: path, ok: [0, 1]).trimmingCharacters(in: .whitespacesAndNewlines)
-        let head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let upstream = (try? run(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        var ahead: Int?, behind: Int?
-        if upstream != nil, let c = try? run(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: path) {
-            let n = c.split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
-            if n.count == 2 { behind = n[0]; ahead = n[1] }
+        if b.current == nil {
+            let c = try run(["symbolic-ref", "--short", "-q", "HEAD"], cwd: path, ok: [0, 1]).trimmingCharacters(in: .whitespacesAndNewlines)
+            b.current = c.isEmpty ? nil : c
+            b.head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path)) != nil
-        return BranchInfo(current: current.isEmpty ? nil : current, head: head, local: lines(["branch", "--format=%(refname:short)"]),
-                          remote: lines(["branch", "-r", "--format=%(refname:short)"]).filter { !$0.hasSuffix("/HEAD") && $0.contains("/") },
-                          upstream: upstream, ahead: ahead, behind: behind, merging: merging)
+        b.merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path)) != nil
+        return b
     }
 
     /// Switch to a local branch, a remote one (creates the tracking branch), or a new one.

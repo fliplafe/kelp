@@ -153,7 +153,7 @@ extension Git {
     }
 
     static func untrackedDiffs(_ path: String, only: String?) throws -> [FileDiff] {
-        try status(path).filter { $0.untracked && (only == nil || $0.path == only) }.compactMap { f in
+        try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }.compactMap { f in
             let full = (path as NSString).appendingPathComponent(f.path)
             let hdr = "diff --git a/\(f.path) b/\(f.path)\nnew file mode 100644\n--- /dev/null\n+++ b/\(f.path)"
             let asBinary = FileDiff(path: f.path, header: hdr, hunks: [], binary: true)

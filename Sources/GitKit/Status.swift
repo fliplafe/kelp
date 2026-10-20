@@ -73,7 +73,8 @@ extension Git {
         }
     }
 
-    public static func status(_ path: String) throws -> [FileChange] {
-        parseStatus(try run(["status", "--porcelain=v2", "-z", "-uall"], cwd: path))
+    /// `only`: one file's status (a diff of one file mustn't walk every untracked folder in the repository).
+    public static func status(_ path: String, only file: String? = nil) throws -> [FileChange] {
+        parseStatus(try run(["status", "--porcelain=v2", "-z", "-uall"] + (file.map { ["--"] + literal([$0]) } ?? []), cwd: path))
     }
 }
