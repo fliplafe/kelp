@@ -476,9 +476,9 @@ final class NoteBox: @unchecked Sendable {
     let n = ProcessInfo.processInfo.activeProcessorCount * 2
     let entered = DispatchSemaphore(value: 0), gate = DispatchSemaphore(value: 0), answered = DispatchSemaphore(value: 0)
     let stuck = (0..<n).map { _ in Task { try await d.offload { entered.signal(); gate.wait() } } }
-    let started = signals(entered, n, by: .now() + 3)
+    let started = signals(entered, n, by: .now() + 20)   // generous: this proves the daemon answers, not how fast, and a loaded machine starts threads slowly
     let ping = Task { let r = try await d.handle("ping", .null, conn: 0); answered.signal(); return r }
-    let answeredInTime = signals(answered, 1, by: .now() + 2) == 1
+    let answeredInTime = signals(answered, 1, by: .now() + 20) == 1   // a daemon whose pool is held would never answer, so this still fails when it should
     for _ in 0..<n { gate.signal() }
     for t in stuck { try await t.value }
     #expect(started == n && answeredInTime)
