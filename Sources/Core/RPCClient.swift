@@ -1,7 +1,7 @@
 import Foundation
 
 /// Client for the daemon socket. Requests are async; server notifications go to `onNotification`.
-public final class RPCClient: @unchecked Sendable {
+public final class RPCClient: @unchecked Sendable {   // mutable state (nextID, pending, closed) under lock; writes under writeLock
     private let fd: Int32
     private let lock = NSLock()
     /// One line on the wire at a time: a long request written in pieces must not get another one in between.

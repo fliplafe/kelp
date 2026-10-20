@@ -4,7 +4,7 @@ import Core
 /// A child process on a pseudo-terminal. The daemon owns this, so the process outlives any UI.
 /// Once the program has exited its fd and pid are gone for good: they may already name another session's terminal or
 /// another process, so nothing is written to the one or signalled at the other after that.
-public final class PTY: @unchecked Sendable {
+public final class PTY: @unchecked Sendable {   // closed under io, reaped under life; source and the rest on q
     public let pid: pid_t
     private let primaryFD: Int32
     private var source: DispatchSourceRead?

@@ -108,7 +108,7 @@ extension Daemon {
 }
 
 /// Output collected from a probe's PTY.
-private final class ScreenBuffer: @unchecked Sendable {
+private final class ScreenBuffer: @unchecked Sendable {   // data and last under lock
     private let lock = NSLock()
     private var data = Data()
     private var last = Date()

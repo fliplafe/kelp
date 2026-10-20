@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// SQLite persistence for repos, worktrees, sessions and diff comments.
-public final class Store: @unchecked Sendable {
+public final class Store: Sendable {
     public let db: DatabaseQueue
 
     public init(path: String? = nil) throws {

@@ -6,7 +6,7 @@ import GitKit
 /// or is cancelled) and a new empty project (`git init`, like the scratch project).
 extension Daemon {
     /// Running clones by the id the app gave them, for `repo.cloneCancel`.
-    final class Clones: @unchecked Sendable {
+    final class Clones: @unchecked Sendable {   // running clones under their own lock
         private let lock = NSLock()
         private var running: [String: Process] = [:]
         func set(_ id: String, _ p: Process?) { lock.withLock { running[id] = p } }
@@ -83,7 +83,7 @@ extension Daemon {
 }
 
 /// git's stderr during a clone: the last progress line, and what it said when it failed.
-final class CloneLog: @unchecked Sendable {
+final class CloneLog: @unchecked Sendable {   // progress and failure under lock
     private let lock = NSLock()
     private var text = "", sent = Date.distantPast
 

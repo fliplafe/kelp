@@ -3,7 +3,7 @@ import Core
 
 /// `settings.json` in the Kelp home: one flat object with dotted keys (VS Code style).
 /// Hand edits are picked up by `reloadIfChanged`; a file that doesn't parse is ignored and the last good settings stay.
-final class SettingsStore: @unchecked Sendable {
+final class SettingsStore: @unchecked Sendable {   // values and mtime under lock
     let url: URL
     private let lock = NSLock()
     private var values: [String: JSONValue] = [:]

@@ -5,7 +5,7 @@ import Agents
 import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
-public final class Daemon: @unchecked Sendable {
+public final class Daemon: @unchecked Sendable {   // mutable state (live, appConns…) under lock
     public let store: Store
     let socketPath: String
     let root: URL

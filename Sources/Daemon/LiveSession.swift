@@ -5,7 +5,7 @@ import GitKit
 
 /// A running PTY plus its history ring buffer, disk log and status detector.
 /// The `on…` callbacks are set before `start()` and not changed after.
-final class LiveSession: @unchecked Sendable {
+final class LiveSession: @unchecked Sendable {   // ring, detector, log, discarded under lock; on… callbacks set once before start()
     static let ringLimit = 1 << 20
     /// Past this the log keeps only what the ring holds: a chatty dev server must not fill the disk.
     static let logLimit = 8 << 20

@@ -4,7 +4,7 @@ import Core
 /// A client of the socket. Writes leave in order from the connection's own queue, so no caller waits on a client that
 /// reads slowly (or not at all), and its fd closes only after them: a reply can't land in a later connection or a
 /// PTY that got the same number.
-final class Connection: @unchecked Sendable {
+final class Connection: @unchecked Sendable {   // queued/closing/closed under lock; writes serialized on q
     let id: Int
     let fd: Int32
     private let q = DispatchQueue(label: "kelp.connection")

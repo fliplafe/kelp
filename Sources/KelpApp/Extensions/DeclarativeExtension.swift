@@ -250,7 +250,7 @@ enum Shell {
 }
 
 /// A pipe's output, collected as it arrives (on the file handle's own queue).
-private final class PipeText: @unchecked Sendable {
+private final class PipeText: @unchecked Sendable {   // collected text under lock
     let pipe = Pipe()
     private let lock = NSLock()
     private var data = Data(), eof = false

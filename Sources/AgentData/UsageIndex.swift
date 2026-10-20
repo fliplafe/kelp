@@ -3,7 +3,7 @@ import Foundation
 /// What Claude Code used, by local day, model and folder, kept up to date cheaply: each transcript is read once, then only
 /// the bytes appended since (the index remembers how far it got, on disk). Lines are not parsed whole: only their small
 /// `usage` object and a few fields are, so gigabytes of transcripts take seconds the first time and nothing after.
-public final class UsageIndex: @unchecked Sendable {
+public final class UsageIndex: @unchecked Sendable {   // files under lock
     public struct Tally: Codable, Sendable, Equatable {
         public var tokens = TokenCounts(); public var cost = 0.0
         public init(tokens: TokenCounts = TokenCounts(), cost: Double = 0) { self.tokens = tokens; self.cost = cost }

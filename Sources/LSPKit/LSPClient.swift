@@ -36,7 +36,7 @@ public struct Location: Sendable, Equatable { public var path: String; public va
 
 /// One language server process for one workspace root. Once the process has exited every request fails at once
 /// (the manager starts a new client); a request the server never answers fails after its timeout.
-public final class LSPClient: @unchecked Sendable {
+public final class LSPClient: @unchecked Sendable {   // pending, versions, opened under lock; stdin writes serialized on writes
     private let proc = Process()
     private let input = Pipe(), output = Pipe()
     private let lock = NSLock()
