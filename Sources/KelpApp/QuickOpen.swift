@@ -14,7 +14,12 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void
         /// ⇧↩: the same thing in a split to the right (files, agents, tabs).
         var split: (() -> Void)?
+        /// An agent's: its state where the icon goes, as on its tab.
+        var session: Session?
     }
+    /// A list row: a group's heading ("Files", "Agents"…) while searching, or an item.
+    private enum Row { case heading(String), item(Item) }
+    private var rows: [Row] = []
 
     private var panel: QuickPanel!
     /// What the empty field shows, made once per opening so rows don't move under the pointer.
@@ -24,7 +29,6 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private let field = NSSearchField()
     private let table = NSTableView()
     private var all: [Item] = []
-    private var shown: [Item] = []
     private var commandsOnly = false
 
     func show(commandsOnly: Bool) {
@@ -43,7 +47,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     }
 
     private func build() {
-        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .fullSizeContentView, .closable], backing: .buffered, defer: false)
+        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 460), styleMask: [.titled, .fullSizeContentView, .closable], backing: .buffered, defer: false)
         panel.onNumber = { [weak self] n in self?.pickRecent(n) ?? false }
         panel.title = String(localized: "Open Quickly")   // hidden; the Window menu and VoiceOver read it
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isMovableByWindowBackground = true
@@ -57,12 +61,19 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         table.rowHeight = 34; table.dataSource = self; table.delegate = self; table.style = .plain; table.backgroundColor = .clear
         table.target = self; table.doubleAction = #selector(activate)
         let sv = NSScrollView(); sv.documentView = table; sv.hasVerticalScroller = true; sv.drawsBackground = false
-        for v in [field, sv] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; effect.addSubview(v) }
+        // The keys it knows, under the list (they're not written anywhere else).
+        let keys = NSTextField(labelWithString: String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests"))
+        keys.font = .systemFont(ofSize: 11); keys.textColor = .secondaryLabelColor
+        let line = NSBox(); line.boxType = .separator
+        for v in [field, sv, line, keys] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; effect.addSubview(v) }
         NSLayoutConstraint.activate([
             field.topAnchor.constraint(equalTo: effect.topAnchor, constant: 18), field.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 14),
             field.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -14),
             sv.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 10), sv.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 6),
-            sv.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -6), sv.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -6)
+            sv.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -6), sv.bottomAnchor.constraint(equalTo: line.topAnchor, constant: -4),
+            line.leadingAnchor.constraint(equalTo: effect.leadingAnchor), line.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
+            line.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -28),
+            keys.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 16), keys.centerYAnchor.constraint(equalTo: effect.bottomAnchor, constant: -14)
         ])
         panel.contentView = effect
     }
@@ -111,8 +122,9 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(wt?.displayName ?? "")",
-                                  action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) }))
+                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
+                                  action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                                  session: s))
             }
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 Task {
@@ -137,7 +149,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         var out = (queue + rest).prefix(6).map { s -> Item in
             let w = m.worktree(s.worktreeId)
             return Item(kind: s.status.words, icon: "terminal", title: AgentCatalog.displayName(s), detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
-                        action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) })
+                        action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                        session: s)
         }
         let shown = Set(Workbench.shared.visits.reversed())
         for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && shown.contains(id) {
@@ -163,13 +176,11 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             let prs = (try? await AppModel.shared.client?.call("github.prs", .obj(["repoId": .string(repo), "filter": "open"])).array) ?? []
             guard let self, !Task.isCancelled, field.stringValue == q else { return }
             let term = String(q.dropFirst()).lowercased()
-            shown = prs.filter { p in term.isEmpty || "\(p["number"]?.int ?? 0)".hasPrefix(term) || (p["title"]?.string ?? "").lowercased().contains(term) }.map { p in
+            setRows(prs.filter { p in term.isEmpty || "\(p["number"]?.int ?? 0)".hasPrefix(term) || (p["title"]?.string ?? "").lowercased().contains(term) }.map { p in
                 let url = p["url"]?.string ?? ""
                 return Item(kind: "Pull Request", icon: "arrow.triangle.pull", title: "#\(p["number"]?.int ?? 0) \(p["title"]?.string ?? "")",
                             detail: [p["author"]?.string, p["headRefName"]?.string].compactMap { $0 }.joined(separator: " · "), action: { Workbench.open(url) })
-            }
-            table.reloadData()
-            if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+            }, grouped: false)
         }
     }
 
@@ -200,20 +211,41 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private func filter() {
         let q = field.stringValue
         let pool = commandsOnly ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
-        if !commandsOnly, q.hasPrefix("#") { shown = []; table.reloadData(); searchPullRequests(q); return }
+        if !commandsOnly, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
         if q.isEmpty {
             showingRecents = !commandsOnly && !recents.isEmpty
-            shown = showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200))
+            setRows(showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200)), grouped: false)
         } else {
             showingRecents = false
-            shown = pool.compactMap { it -> (Item, Int)? in
+            setRows(pool.compactMap { it -> (Item, Int)? in
                 // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
                 if it.kind == "File" { return ProjectFiles.fuzzyScore(it.detail, q).map { (it, $0) } }
                 return Self.wordScore(it.title, q).map { (it, $0 + (it.kind == "Command" ? 2 : 0)) }
-            }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0)
+            }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0), grouped: !commandsOnly)
+        }
+    }
+
+    /// Searching, the results come in groups under a heading, the group with the best match first.
+    private func setRows(_ items: [Item], grouped: Bool) {
+        if grouped {
+            var order: [String] = [], byGroup: [String: [Item]] = [:]
+            for it in items {
+                let g = Self.group(it.kind)
+                if byGroup[g] == nil { order.append(g) }
+                byGroup[g, default: []].append(it)
+            }
+            rows = order.flatMap { g in [Row.heading(g)] + (byGroup[g] ?? []).map(Row.item) }
+        } else {
+            rows = items.map(Row.item)
         }
         table.reloadData()
-        if !shown.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false); table.scrollRowToVisible(0) }
+        if let first = rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
+            table.selectRowIndexes([first], byExtendingSelection: false); table.scrollRowToVisible(0)
+        }
+    }
+
+    private static func group(_ kind: String) -> String {
+        ["File": "Files", "Agent": "Agents", "Command": "Commands", "Setting": "Settings", "Workspace": "Workspaces", "Tab": "Tabs"][kind] ?? kind
     }
 
     func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
@@ -225,36 +257,67 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         default: return false
         }
     }
+    /// Up and down skip the groups' headings.
     private func move(_ d: Int) {
-        guard !shown.isEmpty else { return }
-        let r = max(0, min(shown.count - 1, table.selectedRow + d))
+        var r = table.selectedRow + d
+        while rows.indices.contains(r), case .heading = rows[r] { r += d }
+        guard rows.indices.contains(r) else { return }
         table.selectRowIndexes([r], byExtendingSelection: false); table.scrollRowToVisible(r)
     }
     @objc private func activate() { choose(split: false) }
     private func choose(split: Bool) {
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
-        guard shown.indices.contains(r) else { return }
+        guard rows.indices.contains(r), case .item(let it) = rows[r] else { return }
         panel.orderOut(nil)
         NSApp.mainWindow?.makeKeyAndOrderFront(nil)
-        if split, let s = shown[r].split { s() } else { shown[r].action() }
+        if split, let s = it.split { s() } else { it.action() }
     }
     func windowDidResignKey(_ n: Notification) { panel.orderOut(nil) }
 
-    func numberOfRows(in t: NSTableView) -> Int { shown.count }
+    func numberOfRows(in t: NSTableView) -> Int { rows.count }
+    func tableView(_ t: NSTableView, shouldSelectRow row: Int) -> Bool { if case .item = rows[row] { true } else { false } }
+    func tableView(_ t: NSTableView, heightOfRow row: Int) -> CGFloat { if case .item = rows[row] { 36 } else { 24 } }
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
-        let it = shown[row]
+        guard case .item(let it) = rows[row] else {
+            guard case .heading(let g) = rows[row] else { return nil }
+            let h = NSTextField(labelWithString: loc(g)); h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
+            let v = NSStackView(views: [h]); v.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 0, right: 10)
+            return v
+        }
         let img = NSImageView(image: it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage())
         img.contentTintColor = .secondaryLabelColor
-        let t1 = NSTextField(labelWithString: it.title); t1.font = .systemFont(ofSize: 13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
+        // An agent: its state while there's something to see (as on its tab), else its own icon.
+        let lead: NSView
+        if let s = it.session, [.working, .waiting, .error].contains(s.status) || (s.status == .done && s.unread) {
+            let m = StatusMark(size: 14); m.status = s.status; m.unread = s.unread
+            let box = NSView(); m.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(m)
+            NSLayoutConstraint.activate([m.centerXAnchor.constraint(equalTo: box.centerXAnchor), m.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+                                         box.heightAnchor.constraint(equalToConstant: 18)])
+            lead = box
+        } else {
+            if let s = it.session, let i = AgentCatalog.icon(s.agent, size: 18) { img.image = i }
+            lead = img
+        }
+        let t1 = NSTextField(labelWithString: ""); t1.attributedStringValue = Self.highlighted(it.title, field.stringValue); t1.lineBreakMode = .byTruncatingTail
         let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingMiddle
         // Empty field: the agents on ⌘1–⌘6 say so.
         let n = showingRecents && row < 6 && it.kind != "Workspace" ? "⌘\(row + 1)  " : ""
-        let kind = NSTextField(labelWithString: n + loc(it.kind)); kind.font = .systemFont(ofSize: 10, weight: .medium); kind.textColor = .tertiaryLabelColor
+        let kind = NSTextField(labelWithString: n + (showingRecents ? loc(it.kind) : "")); kind.font = .systemFont(ofSize: 11); kind.textColor = .secondaryLabelColor
         let texts = NSStackView(views: [t1, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
-        let row = NSStackView(views: [img, texts, NSView(), kind]); row.spacing = 10; row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
-        img.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        let line = NSStackView(views: [lead, texts, NSView(), kind]); line.spacing = 10; line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
+        lead.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return row
+        return line
+    }
+
+    /// The title with what was typed in bold: each word of the query where it first occurs.
+    static func highlighted(_ title: String, _ query: String) -> NSAttributedString {
+        let s = NSMutableAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 13)])
+        for word in query.split(separator: " ") where !word.isEmpty {
+            let r = (title as NSString).range(of: String(word), options: .caseInsensitive)
+            if r.location != NSNotFound { s.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .bold), range: r) }
+        }
+        return s
     }
 }
 
