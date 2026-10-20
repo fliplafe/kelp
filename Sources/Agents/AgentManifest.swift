@@ -45,8 +45,6 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var quietSeconds: Double = 3
     /// If set, hooks are supported: `{hooksSettingsFlag} <file>` is appended and the file holds Stop/Notification hooks.
     public var hooksSettingsFlag: String?
-    /// Extra args for "Yolo" permission mode (skip approval prompts).
-    public var yoloArgs: [String] = []
     /// `--model`-style flag and suggested models for the picker.
     public var modelFlag: String?
     public var models: [String] = []
@@ -70,12 +68,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
-                yoloArgs: [String] = [], modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
+                modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
                 autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil, contextFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
-        self.yoloArgs = yoloArgs; self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
+        self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag; self.contextFlag = contextFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
     }
@@ -90,7 +88,6 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         waitingPatterns = try c.decodeIfPresent([String].self, forKey: .waitingPatterns) ?? d.waitingPatterns
         quietSeconds = try c.decodeIfPresent(Double.self, forKey: .quietSeconds) ?? d.quietSeconds
         hooksSettingsFlag = try c.decodeIfPresent(String.self, forKey: .hooksSettingsFlag)
-        yoloArgs = try c.decodeIfPresent([String].self, forKey: .yoloArgs) ?? []
         modelFlag = try c.decodeIfPresent(String.self, forKey: .modelFlag)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
@@ -149,9 +146,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var commandLine: [String] { [command] + args }
 
     /// Full argv for a launch with the chosen options.
-    public func argv(yolo: Bool = false, model: String? = nil, effort: String? = nil, resume: Bool = false) -> [String] {
+    public func argv(model: String? = nil, effort: String? = nil, resume: Bool = false) -> [String] {
         var a = commandLine
-        if yolo { a += yoloArgs }
         if let model, !model.isEmpty, let f = modelFlag { a += [f, model] }
         if let effort, let e = effortArgs[effort] { a += e }
         if resume { a += resumeArgs }
@@ -176,18 +172,17 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public static let presets: [AgentManifest] = [
         .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",
-              yoloArgs: ["--dangerously-skip-permissions"], modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
+              modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
               autoAnswers: [trust], resumeArgs: ["--continue"], pluginDirFlag: "--plugin-dir", contextFlag: "--append-system-prompt",
               sessionIdFlag: "--session-id", resumeIdFlag: "--resume"),
-        .init(id: "codex", name: "Codex", command: "codex", yoloArgs: ["--dangerously-bypass-approvals-and-sandbox"],
-              modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
+        .init(id: "codex", name: "Codex", command: "codex", modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
               effortArgs: ["low": ["-c", "model_reasoning_effort=low"], "medium": ["-c", "model_reasoning_effort=medium"], "high": ["-c", "model_reasoning_effort=high"]],
               autoAnswers: [trust], resumeArgs: ["resume", "--last"]),
         .init(id: "opencode", name: "OpenCode", command: "opencode", modelFlag: "-m", resumeArgs: ["--continue"]),
-        .init(id: "gemini", name: "Gemini CLI", command: "gemini", yoloArgs: ["--yolo"], modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
-        .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", yoloArgs: ["--force"], modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
+        .init(id: "gemini", name: "Gemini CLI", command: "gemini", modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
+        .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
         .init(id: "pi", name: "Pi", command: "pi"),
-        .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"]),
+        .init(id: "amp", name: "Amp", command: "amp"),
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy"),

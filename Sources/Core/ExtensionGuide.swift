@@ -133,7 +133,7 @@ public enum ExtensionGuide {
     takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). Pick the theme in Settings › Appearance › File Icon Theme.
 
     ## agents
-    Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
+    Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "resumeArgs", … }`.
 
     ## languages
     Which files a language covers, the language server that gives them completion and jump to definition, and the
