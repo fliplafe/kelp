@@ -242,7 +242,8 @@ extension AppDelegate {
     }
     private static func composited(_ w: NSWindow, to path: String) -> Bool {
         typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        guard let sym = dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreateImage"),
+        // A sleeping (or locked) display: the window server hands back white, so the layers are drawn instead.
+        guard CGDisplayIsAsleep(CGMainDisplayID()) == 0, let sym = dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreateImage"),
               let img = unsafeBitCast(sym, to: Capture.self)(.null, 1 << 3, UInt32(w.windowNumber), 1)?.takeRetainedValue(),
               let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil

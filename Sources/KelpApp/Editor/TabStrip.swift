@@ -4,11 +4,12 @@ import Core
 extension NSPasteboard.PasteboardType { static let kelpTab = NSPasteboard.PasteboardType("dev.kelp.tab") }
 
 /// A group's tab strip: icon, title, agent status, close on hover; drag to reorder, move to another group, or split.
-/// The top panes' strips are the window's title bar: their empty space moves the window, as a title bar's does.
+/// The top panes' strips make the window's second row, under the window bar, level with the sidebar's search and the
+/// inspector's panel icons.
 @MainActor
 final class TabStrip: NSView {
-    /// The title bar's height without a toolbar, so tabs line up with the traffic lights (28 pt before macOS 26, 32 after).
-    static let height = NSWindow.frameRect(forContentRect: .zero, styleMask: [.titled]).height
+    /// Room around the tabs: they don't run into the strip's edges or the pane dividers.
+    static let height: CGFloat = 36
     struct Item {
         let id: String; var title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
@@ -29,7 +30,6 @@ final class TabStrip: NSView {
     private let scroll = NSScrollView()
     private let overflow = NSButton()
     private let add = NSButton()
-    private var leadingInset: NSLayoutConstraint!, trailingInset: NSLayoutConstraint!
     private var items: [Item] = []
     private var selectedId: String?
     private var buttons: [TabButton] = []
@@ -39,7 +39,7 @@ final class TabStrip: NSView {
         super.init(frame: frame)
         setAccessibilityElement(true); setAccessibilityRole(.tabGroup); setAccessibilityLabel("Tabs")
         stack.orientation = .horizontal; stack.spacing = 1; stack.distribution = .fill
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
         insertion.wantsLayer = true; insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; insertion.isHidden = true
         // Too many tabs to fit: the strip scrolls (trackpad / wheel) and the chevron lists them all, like Safari.
         overflow.image = .symbol("chevron.down", String(localized: "All Tabs")); overflow.isBordered = false; overflow.contentTintColor = .secondaryLabelColor
@@ -55,15 +55,14 @@ final class TabStrip: NSView {
         let trailing = NSStackView(views: [unzoom, overflow, add]); trailing.spacing = 6
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
-        scroll.automaticallyAdjustsContentInsets = false   // in the title bar it would push the tabs down
+        scroll.automaticallyAdjustsContentInsets = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
         for v in [scroll, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
-        leadingInset = scroll.leadingAnchor.constraint(equalTo: leadingAnchor)
-        trailingInset = trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6)
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: Self.height), leadingInset, trailingInset,
+            heightAnchor.constraint(equalToConstant: Self.height),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
             scroll.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
@@ -97,26 +96,9 @@ final class TabStrip: NSView {
     }
 
     override func layout() {
-        clearCorners()
         super.layout()
         stack.layoutSubtreeIfNeeded()
         overflow.isHidden = stack.fittingSize.width <= scroll.bounds.width + 1
-    }
-
-    /// In the title bar, the strip keeps clear of the traffic lights and the panel toggles when its pane runs under them
-    /// (the sidebar or inspector closed).
-    private func clearCorners() {
-        let me = convert(bounds, to: nil)
-        var lead: CGFloat = 0, trail: CGFloat = 0
-        // Another window with its content under the title bar (the Scratch panel): just its own buttons.
-        let lights = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window?.standardWindowButton($0) }
-            .filter { !$0.isHidden }.map { $0.convert($0.bounds, to: nil) }.reduce(NSRect.null) { $0.union($1) }
-        let others = window?.styleMask.contains(.fullSizeContentView) == true && !lights.isNull ? [NSRect(x: 0, y: lights.minY, width: lights.maxX + 8, height: lights.height)] : []
-        for r in (window?.windowController as? MainWindowController)?.titlebarObstacles ?? others where r.intersects(me) {
-            if r.midX < me.midX { lead = max(lead, r.maxX - me.minX) } else { trail = max(trail, me.maxX - r.minX) }
-        }
-        if leadingInset.constant != lead { leadingInset.constant = lead }
-        if trailingInset.constant != -6 - trail { trailingInset.constant = -6 - trail }
     }
 
     /// Keeps the selected tab in view when the strip is scrolled or squeezed.
@@ -138,7 +120,7 @@ final class TabStrip: NSView {
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: overflow.bounds.height + 4), in: overflow)
     }
 
-    /// Double-click on the empty strip: new tab, like Safari's tab bar (in the title bar, the window zooms instead).
+    /// Double-click on the empty strip: new tab, like Safari's tab bar.
     override func mouseDown(with e: NSEvent) {
         guard e.clickCount == 2, let m = addMenu?() else { super.mouseDown(with: e); return }
         m.popUp(positioning: nil, at: convert(e.locationInWindow, from: nil), in: self)
@@ -167,8 +149,8 @@ final class TabStrip: NSView {
     }
 }
 
-/// An NSControl, not a plain view: in the title bar the window server moves the window on a drag over anything but
-/// controls, whatever `mouseDownCanMoveWindow` says, so a dragged tab would take the window with it.
+/// An NSControl, not a plain view: under a transparent title bar the window server moves the window on a drag over
+/// anything but controls, whatever `mouseDownCanMoveWindow` says, so a dragged tab would take the window with it.
 @MainActor
 private final class TabButton: NSControl, NSDraggingSource {
     weak var strip: TabStrip?
@@ -200,12 +182,12 @@ private final class TabButton: NSControl, NSDraggingSource {
         row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 3), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
-            widthAnchor.constraint(lessThanOrEqualToConstant: 220), widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
+            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor), heightAnchor.constraint(equalToConstant: 28),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 300), widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
             slot.widthAnchor.constraint(equalToConstant: 16), slot.heightAnchor.constraint(equalToConstant: 16)
         ])
+        // Below the strip's `fit` (245): a squeezed tab truncates its title with "…" (the row never clips it).
         title.setContentCompressionResistancePriority(.init(240), for: .horizontal)
-        row.setClippingResistancePriority(.init(230), for: .horizontal)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
         // VoiceOver: a tab like NSTabView's (radio button, tab subrole); the close button only exists on hover, so it's an action.
         setAccessibilityElement(true); setAccessibilityRole(.radioButton); setAccessibilitySubrole(.init(rawValue: "AXTabButton"))   // kAXTabButtonSubrole

@@ -74,16 +74,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         search.placeholderString = String(localized: "Workspace or agent"); search.delegate = self; search.controlSize = .small
         search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
         setFilterMenu()
-        // In the title bar, by the traffic lights: over the projects it adds to, where people look for it.
+        // Beside the search, over the projects it adds to, where people look for it.
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project folder (⌘O)"))
         add.target = NSApp.delegate; add.action = #selector(AppDelegate.addProject)
-        let openIn = OpenInButton()
-        for x in [add, openIn, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [add, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10), add.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
-            openIn.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -6), openIn.centerYAnchor.constraint(equalTo: add.centerYAnchor),
-            search.topAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height + 6),
-            search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
+            // The window's second row: level with the tab strips and the inspector's panel icons.
+            search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
+            search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
+            add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
             scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -657,7 +656,7 @@ final class SidebarCell: NSTableCellView {
     }
 }
 
-/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is in the title bar above.)
+/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is beside the search above.)
 struct SidebarFooterView: View {
     var body: some View { UsageView() }
 }

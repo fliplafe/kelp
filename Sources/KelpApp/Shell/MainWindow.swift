@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 import Core
 
-/// The window: projects & agents | editor area | inspector, without a toolbar: the panes' tab strips sit in the title
-/// bar (like Safari's compact tabs), beside the traffic lights and the two panel toggles, so chrome takes one row.
+/// The window: the window bar (where you are, ⌘P, the panel toggles) across the top, and under it projects & agents |
+/// editor area | inspector, whose own first rows (search, tab strips, panel icons) line up as the second row.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let editors = EditorHost()
@@ -17,7 +17,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Settings › Appearance › Auto-hide: that panel stays away the same way, for good.
     private var autoHide = (sidebar: false, inspector: false)
     private let leftEdge = EdgeTrigger(), rightEdge = EdgeTrigger()
-    /// Fixed in the window's top corners, whichever panels are open.
+    private let bar = WindowBar()
+    /// Fixed in the window bar's corners, whichever panels are open.
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
     private let inspectorToggle = NSButton.titlebar("sidebar.trailing", String(localized: "Inspector"), tip: String(localized: "Show or hide the inspector (⌥⌘0)"))
 
@@ -40,24 +41,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let root = NSViewController(); root.view = NSView(); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
-        for v in [split.view, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        for v in [bar, split.view, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
         editors.onPointerEntered = { [weak self] in self?.endPeek() }
         let lights = w.standardWindowButton(.zoomButton).map { $0.convert($0.bounds, to: nil).maxX } ?? 69
         NSLayoutConstraint.activate([
-            split.view.topAnchor.constraint(equalTo: root.view.topAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
+            bar.topAnchor.constraint(equalTo: root.view.topAnchor), bar.heightAnchor.constraint(equalToConstant: WindowBar.height),
+            bar.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+            split.view.topAnchor.constraint(equalTo: bar.bottomAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
             split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
-            // The title bar is as tall as a tab strip, so the traffic lights, the toggles and the tabs share a centre line.
+            // The bar is as tall as the title bar, so the traffic lights and the toggles share a centre line.
             sidebarToggle.leadingAnchor.constraint(equalTo: root.view.leadingAnchor, constant: lights + 12),
-            sidebarToggle.centerYAnchor.constraint(equalTo: root.view.topAnchor, constant: TabStrip.height / 2),
+            sidebarToggle.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            // The workspace starts over the editor area; with the sidebar away, after its toggle.
+            bar.context.leadingAnchor.constraint(greaterThanOrEqualTo: sidebarToggle.trailingAnchor, constant: 12),
+            { let c = bar.context.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor, constant: 12); c.priority = .init(700); return c }(),
             inspectorToggle.trailingAnchor.constraint(equalTo: root.view.trailingAnchor, constant: -10),
             inspectorToggle.centerYAnchor.constraint(equalTo: sidebarToggle.centerYAnchor),
             leftEdge.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), leftEdge.widthAnchor.constraint(equalToConstant: 4),
-            leftEdge.topAnchor.constraint(equalTo: root.view.topAnchor, constant: TabStrip.height), leftEdge.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
+            leftEdge.topAnchor.constraint(equalTo: bar.bottomAnchor), leftEdge.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
             rightEdge.trailingAnchor.constraint(equalTo: root.view.trailingAnchor), rightEdge.widthAnchor.constraint(equalToConstant: 4),
-            rightEdge.topAnchor.constraint(equalTo: root.view.topAnchor, constant: TabStrip.height), rightEdge.bottomAnchor.constraint(equalTo: root.view.bottomAnchor)
+            rightEdge.topAnchor.constraint(equalTo: bar.bottomAnchor), rightEdge.bottomAnchor.constraint(equalTo: root.view.bottomAnchor)
         ])
         w.contentViewController = root
         w.title = String(localized: "Kelp"); w.setFrameAutosaveName("main"); w.delegate = self
@@ -77,13 +83,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateTitle() {
         window?.title = AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? String(localized: "Kelp")
         editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
-    }
-
-    /// What a tab strip in the title bar keeps clear of (window coordinates): the traffic lights with the sidebar
-    /// toggle when the sidebar is closed, the inspector toggle when the inspector is.
-    var titlebarObstacles: [NSRect] {
-        let s = sidebarToggle.convert(sidebarToggle.bounds, to: nil)
-        return [NSRect(x: 0, y: s.minY, width: s.maxX + 6, height: s.height), inspectorToggle.convert(inspectorToggle.bounds, to: nil).insetBy(dx: -6, dy: 0)]
     }
 
     @objc func toggleInspectorPanel() {
