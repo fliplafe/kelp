@@ -281,6 +281,7 @@ extension AppDelegate: NSMenuItemValidation {
         case "workbench.toggleSidebar": item.title = main.sidebarShown ? String(localized: "Hide Sidebar") : String(localized: "Show Sidebar")
         case "workbench.toggleInspector": item.title = main.inspectorShown ? String(localized: "Hide Inspector") : String(localized: "Show Inspector")
         case "workbench.toggleFocusMode": item.state = main.inFocusMode ? .on : .off
+        case "power.keepAwake": item.state = SettingsStore.shared.string("power.keepAwake") == "always" ? .on : .off
         case "scripts.run", "scripts.test", "scripts.edit": return Workbench.shared.workspaceId != nil
         case "scripts.stop": return ScriptsMenu.shared.canStop
         // Off elsewhere, so a terminal still gets their keys.

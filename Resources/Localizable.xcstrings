@@ -3333,6 +3333,17 @@
         }
       }
     },
+    "Keep Mac Awake": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не давать Mac засыпать"
+          }
+        }
+      }
+    },
     "Keep Mac awake": {
       "extractionState": "manual",
       "localizations": {

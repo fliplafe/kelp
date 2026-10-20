@@ -74,7 +74,11 @@ enum Builtins {
             cmd("kelp.agents", "terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
             cmd("kelp.agents", "agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
             cmd("kelp.agents", "agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
-            cmd("kelp.agents", "agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() }
+            cmd("kelp.agents", "agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() },
+            // Like Caffeine: ticked keeps the Mac awake until unticked, which goes back to the setting's default.
+            cmd("kelp.agents", "power.keepAwake", "Keep Mac Awake") {
+                SettingsStore.shared.set("power.keepAwake", SettingsStore.shared.string("power.keepAwake") == "always" ? nil : .string("always"))
+            }
         ]
         return c
     }
