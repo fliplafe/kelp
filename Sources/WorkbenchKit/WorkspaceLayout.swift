@@ -1,5 +1,4 @@
 import Foundation
-import Core
 
 public struct TabRef: Codable, Hashable {
     public var id = UUID().uuidString

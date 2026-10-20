@@ -100,3 +100,23 @@ import WorkbenchKit
     }
     #expect(KeySpec(key: "\u{7f}", mods: [.command]).description == "cmd+delete")
 }
+
+@Test func layoutSplitMoveRemove() {
+    var l = LayoutNode.pane("a")
+    l = l.inserting("b", beside: "a", vertical: true, before: false)
+    l = l.inserting("c", beside: "b", vertical: false, before: false)
+    #expect(l.sessions == ["a", "b", "c"])
+    let moved = l.removing("c")!.inserting("c", beside: "a", vertical: true, before: true)
+    #expect(moved.sessions == ["c", "a", "b"])
+    #expect(LayoutNode.pane("a").removing("a") == nil)
+    #expect(l.removing("a")?.removing("b")?.removing("c") == nil)
+    #expect(l.neighbor(of: "c", step: 1) == "a")
+}
+
+/// Divider positions are kept per split: the key survives tab changes and changes when the split gets another pane.
+@Test func layoutSplitKeys() {
+    let l = LayoutNode.pane("a").inserting("b", beside: "a", vertical: true, before: false).inserting("c", beside: "b", vertical: false, before: false)
+    #expect(l.splitKeys == ["a,b", "b,c"])
+    #expect(LayoutNode.pane("a").splitKeys.isEmpty)
+    #expect(l.removing("c")?.splitKeys == ["a,b"])
+}
