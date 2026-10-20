@@ -15,7 +15,7 @@ public enum FixRecipes {
         (["glab auth login", "401 Unauthorized"], Fix(command: "glab auth login")),
         (["Please tell me who you are", "Author identity unknown", "unable to auto-detect email address"],
          Fix(command: #"git config --global user.name "Your Name" && git config --global user.email "you@example.com""#)),
-        (["has no upstream branch", "no upstream branch"], Fix(command: "git push -u origin HEAD")),
+        (["no upstream branch"], Fix(command: "git push -u origin HEAD")),
         (["Updates were rejected because the remote contains work", "fetch first", "non-fast-forward"], Fix(command: "git pull --rebase")),
         (["Permission denied (publickey)"], Fix(command: "ssh -T git@github.com"))
     ]

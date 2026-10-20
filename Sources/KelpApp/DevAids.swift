@@ -4,8 +4,7 @@ import WebKit
 
 /// Developer aids driven by environment variables; inert in normal use.
 ///   KELP_SNAPSHOT=/x.png  render the window to a PNG and quit (no screen-recording permission needed)
-///   KELP_SNAPSHOT_MODE / _WORKTREE / _OPEN / _RUN / _WINDOW / _DESIGN / _FANOUT / _DELAY  set the scene first
-///   KELP_TYPING_BENCH=1|raw  time synthetic keystrokes in the open file
+///   KELP_SNAPSHOT_MODE / _WORKTREE / _OPEN / _RUN / _WINDOW / _DELAY  set the scene first
 extension AppDelegate {
     /// Dev aid: KELP_SNAPSHOT=/path.png writes the window contents and quits (works without screen-recording permission).
     /// KELP_SNAPSHOT_MODE=Review|Terminals picks the mode first.
