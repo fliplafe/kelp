@@ -15,6 +15,7 @@ final class WindowBar: NSView {
     private let icon = NSImageView(), name = NSTextField(labelWithString: "")
     private let folder = WindowBar.chip(nil), branch = WindowBar.chip("arrow.triangle.branch"), pr = WindowBar.chip("arrow.triangle.pull")
     private let search = SearchPill()
+    private let awake = NSButton.titlebar("cup.and.saucer", String(localized: "Keep Mac Awake"), tip: "")
     private var info: BranchInfo?
 
     private var worktree: Worktree? { AppModel.shared.worktree(Workbench.shared.workspaceId) }
@@ -31,7 +32,8 @@ final class WindowBar: NSView {
         pr.target = self; pr.action = #selector(openPR)
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
-        for v in [context, search] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        awake.target = self; awake.action = #selector(toggleAwake)
+        for v in [context, search, awake] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         // Short of room, the search leaves the centre first, then narrows; only then does the path shorten.
         let wide = search.widthAnchor.constraint(equalToConstant: 280); wide.priority = .init(250)
         let center = search.centerXAnchor.constraint(equalTo: centerXAnchor); center.priority = .init(200)
@@ -41,8 +43,11 @@ final class WindowBar: NSView {
             search.heightAnchor.constraint(equalToConstant: 22), wide, center,
             search.widthAnchor.constraint(greaterThanOrEqualToConstant: 120), search.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
             search.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
-            search.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
+            awake.leadingAnchor.constraint(equalTo: search.trailingAnchor, constant: 6), awake.centerYAnchor.constraint(equalTo: centerYAnchor),
+            awake.widthAnchor.constraint(equalToConstant: 28),   // the three cups differ in width; the search mustn't shift
+            awake.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
+        track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }
             self.info = nil; self.reload()
@@ -126,6 +131,33 @@ final class WindowBar: NSView {
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
     }
+
+    /// The setting ("always", "agents", "off"), or "working": agents keep the Mac awake right now (as the daemon counts them).
+    private static var awakeMode: String {
+        let mode = SettingsStore.shared.string("power.keepAwake") ?? "agents"
+        let working = AppModel.shared.sessions.contains { $0.agent != "shell" && $0.status == .working }
+        return mode == "agents" && working ? "working" : mode
+    }
+
+    /// The cup right of the search: empty while the Mac may sleep, steaming while agents keep it awake, orange while it's on
+    /// for good. A click is Keep Mac Awake; a right-click picks the mode.
+    private func showAwake(_ mode: String) {
+        let (symbol, tip) = switch mode {
+        case "always": ("cup.and.heat.waves.fill", String(localized: "The Mac stays awake until you click here"))
+        case "working": ("cup.and.heat.waves", String(localized: "The Mac stays awake while agents work. Click to keep it awake always"))
+        default: ("cup.and.saucer", String(localized: "The Mac can sleep. Click to keep it awake"))
+        }
+        let cup = NSImage.symbol(symbol, String(localized: "Keep Mac Awake"))   // a recessed button ignores contentTintColor
+        awake.image = mode == "always" ? cup.withSymbolConfiguration(.init(paletteColors: [.systemOrange])) : cup
+        awake.toolTip = tip
+        let m = NSMenu()
+        for (v, title) in [("agents", String(localized: "While agents work")), ("always", String(localized: "Always")), ("off", String(localized: "Never"))] {
+            m.add(title) { SettingsStore.shared.set("power.keepAwake", .string(v)) }.state = (mode == "working" ? "agents" : mode) == v ? .on : .off
+        }
+        awake.menu = m
+    }
+
+    @objc private func toggleAwake() { ExtensionRegistry.shared.command("power.keepAwake")?.run([:]) }
 
     @objc private func openPR() {
         guard let w = badgeFolder, let u = RowBadges.shared.prs[w.id]?["url"]?.string else { return }

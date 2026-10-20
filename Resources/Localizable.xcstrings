@@ -7121,6 +7121,39 @@
         }
       }
     },
+    "The Mac can sleep. Click to keep it awake": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac может уснуть. Нажмите, чтобы не давать ему засыпать"
+          }
+        }
+      }
+    },
+    "The Mac stays awake until you click here": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac не уснёт, пока вы не нажмёте здесь"
+          }
+        }
+      }
+    },
+    "The Mac stays awake while agents work. Click to keep it awake always": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac не уснёт, пока работают агенты. Нажмите, чтобы он не засыпал совсем"
+          }
+        }
+      }
+    },
     "The project has no other git worktrees.": {
       "localizations": {
         "ru": {
