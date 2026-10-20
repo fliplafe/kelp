@@ -110,10 +110,13 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
         } else { c?.resume(returning: m["result"] ?? .null) }
     }
 
+    /// Encoded on the write queue too: didChange sends the whole document, and the caller is usually the main thread.
     private func send(_ o: [String: JSONValue]) {
-        guard let d = try? JSONEncoder().encode(JSONValue.object(o)) else { return }
         let h = input.fileHandleForWriting   // not self: a blocked write must not keep the client alive
-        writes.async { try? h.write(contentsOf: LSPFramer.frame(d)) }
+        writes.async {
+            guard let d = try? JSONEncoder().encode(JSONValue.object(o)) else { return }
+            try? h.write(contentsOf: LSPFramer.frame(d))
+        }
     }
 
     public func request(_ method: String, _ params: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {

@@ -226,7 +226,10 @@ final class AppModel {
         contextWatch = Task { [weak self] in
             var first = true
             while !Task.isCancelled, let self {
-                for s in sessions where s.agent != "shell" && s.status != .exited && (first || s.status == .working) { readContext(s.id) }
+                // Not while no window shows the rings (each read is a 1 MB transcript tail per working agent).
+                if first || NSApp.occlusionState.contains(.visible) {
+                    for s in sessions where s.agent != "shell" && s.status != .exited && (first || s.status == .working) { readContext(s.id) }
+                }
                 first = false
                 try? await Task.sleep(for: .seconds(15))
             }

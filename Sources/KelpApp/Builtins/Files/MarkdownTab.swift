@@ -13,6 +13,8 @@ final class MarkdownTab: NSViewController {
     private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")], trackingMode: .selectOne, target: nil, action: nil)
     private let split = NSSplitView()
     private var renderTask: Task<Void, Never>?
+    /// Edited while the preview was hidden (Edit mode): rendered when it shows.
+    private var dirty = false
     /// Documents to read (Kelp's help) open as the preview.
     var startInPreview = false
     private var narrow = false
@@ -44,7 +46,7 @@ final class MarkdownTab: NSViewController {
         editor.view.clipsToBounds = true
         view = pinned(bar: bar, body: split)
         applyMode()
-        render()
+        rerender()
     }
 
     private var positioned = false
@@ -56,18 +58,24 @@ final class MarkdownTab: NSViewController {
         if n != narrow { narrow = n; mode.setToolTip(n ? String(localized: "Split (needs a wider pane)") : nil, forSegment: 1); applyMode() }
     }
 
-    func textChanged() {
-        renderTask?.cancel()
-        renderTask = Task { try? await Task.sleep(for: .milliseconds(250)); if !Task.isCancelled { render() } }
-    }
+    func textChanged() { rerender(after: .milliseconds(250)) }
 
-    private func render() {
-        let text = editor.text, dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let html = MarkdownHTML.page(body: MarkdownHTML.render(text), baseURL: url.deletingLastPathComponent(), dark: dark) + (MarkdownHTML.mermaid(for: text, dark: dark) ?? "")
-        // Keep the reader's place across re-renders.
-        web.evaluateJavaScript("window.scrollY") { [weak self] y, _ in
-            guard let self else { return }
-            self.web.loadHTMLString(html + "<script>window.scrollTo(0, \((y as? Double) ?? 0))</script>", baseURL: self.url.deletingLastPathComponent())
+    /// The page is built off the main thread (a long document, or mermaid's 3.5 MB script inlined), and not at all
+    /// while only the source shows.
+    private func rerender(after delay: Duration = .zero) {
+        renderTask?.cancel()
+        guard !web.isHidden else { dirty = true; return }
+        dirty = false
+        renderTask = Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            let text = editor.text, base = url.deletingLastPathComponent(), dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let html = await Task.detached { MarkdownHTML.page(body: MarkdownHTML.render(text), baseURL: base, dark: dark) + (MarkdownHTML.mermaid(for: text, dark: dark) ?? "") }.value
+            guard !Task.isCancelled else { return }
+            // Keep the reader's place across re-renders (scrollY is always a number, so the async call can't trap on nil).
+            let y = (try? await web.evaluateJavaScript("window.scrollY")) as? Double ?? 0
+            guard !Task.isCancelled else { return }
+            web.loadHTMLString(html + "<script>window.scrollTo(0, \(y))</script>", baseURL: base)
         }
     }
 
@@ -86,6 +94,7 @@ final class MarkdownTab: NSViewController {
         editor.view.isHidden = m == 2; web.isHidden = m == 0 || (m == 1 && narrow)
         split.adjustSubviews()
         if m == 1, !narrow { split.setPosition(split.bounds.width / 2, ofDividerAt: 0) }
+        if dirty, !web.isHidden { rerender() }
     }
 
     private func edit(_ f: (String, NSRange) -> (text: String, selection: NSRange)) {

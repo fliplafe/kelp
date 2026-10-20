@@ -17,20 +17,21 @@ enum Highlighter {
     }()
     static let alias = ["tsx": "ts", "jsx": "js", "mjs": "js", "yml": "yaml", "py": "py"]
 
+    /// Keyword, number, string and comment patterns, compiled once per language: a diff paints each row as it scrolls in.
+    @MainActor private static var patterns: [String: [NSRegularExpression]] = [:]
+
     @MainActor static func attributed(_ s: String, ext: String, font: NSFont) -> NSAttributedString {
         let a = NSMutableAttributedString(string: s, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
         let lang = alias[ext] ?? ext
         guard let kw = keywords[lang] else { return a }
-        func paint(_ pattern: String, _ color: NSColor) {
-            guard let re = try? NSRegularExpression(pattern: pattern) else { return }
-            for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)) { a.addAttribute(.foregroundColor, value: color, range: m.range) }
-        }
+        let res = patterns[lang] ?? [#"\b(\#(kw.joined(separator: "|")))\b"#, #"\b\d+(\.\d+)?\b"#, #""(\\.|[^"\\])*"|'(\\.|[^'\\])*'"#,
+                                     lang == "py" || lang == "yaml" ? #"#.*$"# : #"//.*$"#].compactMap { try? NSRegularExpression(pattern: $0) }
+        patterns[lang] = res
         // The editor theme's colors, so a diff reads like the file it changes.
         let c = CodeEditor.tokenColors
-        paint(#"\b(\#(kw.joined(separator: "|")))\b"#, c.keyword)
-        paint(#"\b\d+(\.\d+)?\b"#, c.number)
-        paint(#""(\\.|[^"\\])*"|'(\\.|[^'\\])*'"#, c.string)
-        paint(lang == "py" || lang == "yaml" ? #"#.*$"# : #"//.*$"#, c.comment)
+        for (re, color) in zip(res, [c.keyword, c.number, c.string, c.comment]) {
+            for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)) { a.addAttribute(.foregroundColor, value: color, range: m.range) }
+        }
         return a
     }
 }

@@ -15,7 +15,7 @@ enum ProjectIcon {
 
     static func image(for repo: String) -> NSImage {
         if let i = cache[repo] { return i }
-        if RemoteHost.of(repo) != nil { return NSImage.symbol("network") }   // on another machine
+        if RemoteHost.of(repo) != nil { let i = NSImage.symbol("network"); cache[repo] = i; return i }   // on another machine
         // The cell's image view scales it to fit; a wordmark (much wider than tall) would be a line, so it's the initial.
         // A Mac app's icon loses its margin and fills a tile, like the agents' icons.
         let file = find(in: repo)
