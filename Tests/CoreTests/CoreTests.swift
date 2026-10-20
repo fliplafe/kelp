@@ -115,6 +115,7 @@ import Testing
 }
 
 @Test func keychainSetUpdatesInPlaceAndDeleteRemoves() throws {
+    if getenv("KELP_KEYCHAIN_SERVICE") == nil { setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1) }   // never the real keys
     let account = "kelp-test-\(UUID().uuidString)"
     defer { Keychain.delete(account) }
     #expect(Keychain.get(account) == nil)

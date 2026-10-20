@@ -5,7 +5,18 @@ import GitKit
 @testable import Daemon
 import Agents
 
+/// Every test that starts a daemon goes through `tmp()`, so its keys (Jira, Linear, agent secrets) live in a keychain service
+/// of their own, never the real one: a test must not read or overwrite what the app saved, nor wait on a keychain prompt.
+let isolatedKeychain: String = {
+    // One service for the whole test process: whichever test target gets here first names it, and the others keep it.
+    if let have = getenv("KELP_KEYCHAIN_SERVICE") { return String(cString: have) }
+    let s = "dev.kelp.tests.\(UUID().uuidString)"
+    setenv("KELP_KEYCHAIN_SERVICE", s, 1)
+    return s
+}()
+
 func tmp() -> URL {
+    _ = isolatedKeychain
     // short path: unix socket paths are limited to ~104 bytes
     let u = URL(fileURLWithPath: "/tmp/kr-\(UUID().uuidString.prefix(8))")
     try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)

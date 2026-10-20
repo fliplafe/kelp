@@ -93,3 +93,19 @@ final class Box: @unchecked Sendable {
     }
     #expect(got == 0)
 }
+
+/// A shell running `sleep` is busy with it; at its prompt it is not (closing it would stop that program).
+@Test func aShellRunningAProgramReportsItAsForeground() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let kelp = root.appendingPathComponent(".build/debug/kelp").path
+    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
+    let p = try PTY(argv: ["/bin/zsh", "-f", "-i"], cwd: "/tmp", env: [:], trampoline: kelp)   // job control needs the controlling terminal
+    p.start()
+    defer { p.kill() }
+    try await Task.sleep(for: .seconds(1))
+    #expect(p.foregroundProgram == nil)   // at the prompt
+    p.write(Data("sleep 30\n".utf8))
+    var seen: String?
+    for _ in 0..<60 where seen == nil { try await Task.sleep(for: .milliseconds(100)); seen = p.foregroundProgram }
+    #expect(seen == "sleep")
+}
