@@ -30,6 +30,11 @@ extension Git {
 
     public struct MergeResult: Sendable, Equatable { public var merged: Bool; public var conflicts: [String] }
 
+    /// A merge is under way in this checkout (MERGE_HEAD exists): its conflicts and resolutions are the user's.
+    public static func isMerging(_ path: String) -> Bool {
+        (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path)) != nil
+    }
+
     /// Merge `branch` into the branch checked out in `target` (usually the main checkout). Aborts on conflict
     /// unless `keepConflicts`, so the caller can show them and hand them to an agent.
     /// `onto`: the branch `target` must have checked out (the base); anything else is refused rather than merged into.
@@ -41,6 +46,8 @@ extension Git {
             }
             guard branch != onto else { throw GitError(args: ["merge", branch], status: 1, stderr: "\(branch) is the branch being merged into") }
         }
+        // Only a merge started here is ever aborted here: one the user had under way is refused, untouched.
+        guard !isMerging(target) else { throw GitError(args: ["merge", branch], status: 1, stderr: "a merge is already in progress in \(target)") }
         do {
             try run(["merge", "--no-edit", branch], cwd: target)
             return MergeResult(merged: true, conflicts: [])

@@ -37,7 +37,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// From the agents' own /usage screens, by agent id (UsageProbe).
     var plans: [String: PlanState] = [:]
     func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
-    private let wakeLock = NSLock()   // one wake per session even when several clients open it at once
+    let wakeLock = NSLock()   // one wake per session even when several clients open it at once; pausing holds it too
+    let trustLock = NSLock()  // trusted-configs.json: read-modify-write under it
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {

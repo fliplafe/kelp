@@ -185,6 +185,7 @@ final class Box: @unchecked Sendable {
         p.onExit = { ended.exit($0) }
         p.start()
         #expect(try await waitFor(5) { ended.code != nil })
+        withExtendedLifetime(p) {}   // alive until it finished (Swift may release it right after its last use)
     }   // each is dropped here: deinit after finish
     // A pipe opened now gets one of the freed numbers; it must still work after any late close.
     let pipe = Pipe()

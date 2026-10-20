@@ -46,14 +46,18 @@ extension Daemon {
     func pauseSessions(of wid: String) throws {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         var pids: [pid_t] = []
-        for s in try store.sessions() where s.worktreeId == wid {
-            guard let ls = existing(s.id) else { continue }
-            pids.append(ls.pty.pid)
-            if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
-                let paused = ls.markHibernated(); ls.pty.kill(); lock.withLock { live[s.id] = nil }; publish(paused)
-            } else { ls.pty.kill() }
+        // Under wakeLock, as idle pausing is: a wake that comes meanwhile waits until the programs are gone instead of
+        // starting a second one (on the same log, in a folder about to be removed).
+        try wakeLock.withLock {
+            for s in try store.sessions() where s.worktreeId == wid {
+                guard let ls = lock.withLock({ () -> LiveSession? in let l = live[s.id]; live[s.id] = nil; return l }) else { continue }
+                pids.append(ls.pty.pid)
+                if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
+                    let paused = ls.markHibernated(); ls.pty.kill(); publish(paused)
+                } else { ls.pty.kill() }
+            }
+            Self.waitGone(pids)
         }
-        Self.waitGone(pids)
     }
 
     /// Until these processes have exited (or 3 s, for one that ignores the hangup).

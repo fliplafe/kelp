@@ -119,10 +119,10 @@ extension Daemon {
             let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? (p["branch"] == nil ? auto.name : ""), base: base)
             try store.save(w)
             var result = try JSONValue.from(w)
-            let cfg = RepoConfig.load(repoPath: r.path)
             // Everything .kelp.yaml does waits for the user's trust in this version of the file, not only `setup`: `tabs`
             // starts agents and `shared` links folders, and a freshly cloned repository wrote that file, not the user.
-            let trustedConfig = trusted(repoPath: r.path)
+            // Checked and used from one read.
+            let read = configAndTrust(r.path), cfg = read.config, trustedConfig = read.trusted
             if trustedConfig {
                 Git.linkShared(cfg.shared, repo: r.path, worktree: path)
                 if p["tabs"]?.bool != false { for t in cfg.tabs { _ = try? spawn(cwd: path, manifest: manifest(t, command: nil), worktreeId: w.id) } }
@@ -287,6 +287,9 @@ extension Daemon {
             let w = try cwd(forWorktree: p.req("id"))
             guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
             if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
+            // The main checkout too: a merge (and the abort a conflict brings) must never touch the user's own work there.
+            if Git.isMerging(r.path) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
+            if try Git.isDirty(r.path) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
             // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
             let branch = (try? Git.currentBranch(w.path)) ?? w.branch
             let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: p["keepConflicts"]?.bool == true)

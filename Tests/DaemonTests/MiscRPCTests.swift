@@ -321,3 +321,59 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
     #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)   // paused, not ended
 }
+
+@Test func mergeNeverTouchesTheUsersOwnWorkInTheMainCheckout() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "feat/safe")
+    try "theirs\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    try Git.run(["commit", "-qam", "theirs"], cwd: wt.path)
+    // The user has uncommitted work in the main checkout.
+    try "mine, unsaved\n".write(toFile: w.repo.path + "/a.txt", atomically: true, encoding: .utf8)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.merge", .obj(["id": .string(wt.id)])) }
+    #expect(try String(contentsOfFile: w.repo.path + "/a.txt", encoding: .utf8) == "mine, unsaved\n")
+    // The user is halfway through a merge of their own, conflicts and all.
+    try Git.run(["checkout", "-q", "--", "a.txt"], cwd: w.repo.path)
+    try Git.run(["switch", "-q", "-c", "side"], cwd: w.repo.path)
+    try "side\n".write(toFile: w.repo.path + "/a.txt", atomically: true, encoding: .utf8); try Git.run(["commit", "-qam", "side"], cwd: w.repo.path)
+    try Git.run(["switch", "-q", "main"], cwd: w.repo.path)
+    try "main\n".write(toFile: w.repo.path + "/a.txt", atomically: true, encoding: .utf8); try Git.run(["commit", "-qam", "main"], cwd: w.repo.path)
+    _ = try? Git.run(["merge", "side"], cwd: w.repo.path)   // conflicts: the user's merge is under way
+    #expect(Git.isMerging(w.repo.path))
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.merge", .obj(["id": .string(wt.id)])) }
+    #expect(Git.isMerging(w.repo.path))   // their merge is still there, not aborted
+}
+
+@Test func trustingTwoProjectsAtOnceKeepsBoth() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    for round in 0..<10 {
+        var ids: [String] = []
+        for i in 0..<2 {
+            let path = try makeRepo()
+            try "script.go: echo \(round)\(i)\n".write(toFile: path + "/.kelp.yaml", atomically: true, encoding: .utf8)
+            let r = try await w.c.call("repo.add", .obj(["path": .string(path)]), as: Repo.self)
+            ids.append(try #require(try await w.c.call("worktree.list", .obj(["repoId": .string(r.id)]), as: [Worktree].self).first?.id))
+        }
+        let (first, second) = (ids[0], ids[1])
+        async let a = w.c.call("scripts.trust", .obj(["worktreeId": .string(first)]))
+        async let b = w.c.call("scripts.trust", .obj(["worktreeId": .string(second)]))
+        _ = try await (a, b)
+        for id in ids { #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(id)]))["trusted"]?.bool == true, "round \(round)") }
+    }
+}
+
+@Test func aStuckGitOrSshCallIsStopped() throws {
+    let t = Date()
+    #expect(throws: (any Error).self) { try Git.runData(["30"], cwd: "/tmp", executable: "/bin/sleep", timeLimit: 0.5) }
+    #expect(Date().timeIntervalSince(t) < 5)   // stopped, not waited out
+    #expect(RemoteHost(host: "box", path: "/x").sshArgs(tty: false).contains("ConnectTimeout=15"))
+}
+
+@Test func testsRunInTheirOwnHomeWhateverWasInherited() throws {
+    _ = isolatedKeychain
+    let home = NSHomeDirectory()
+    for (key, real) in [("KELP_HOME", home + "/.kelp"), ("CLAUDE_CONFIG_DIR", home + "/.claude"), ("CODEX_HOME", home + "/.codex")] {
+        let v = String(cString: getenv(key))
+        #expect(v.hasPrefix(testRoot) && v != real, "\(key) = \(v)")
+    }
+    #expect(Paths.root.path.hasPrefix(testRoot))
+}

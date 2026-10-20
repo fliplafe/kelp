@@ -24,7 +24,9 @@ public enum Git {
     /// `run`, its output as the bytes git wrote (a diff of a file that isn't UTF-8 goes back to `git apply` unchanged).
     @discardableResult
     public static func runData(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
-                               env extra: [String: String] = [:]) throws -> Data {
+                               env extra: [String: String] = [:], timeLimit: TimeInterval = 300) throws -> Data {
+        // timeLimit: longest a git / gh / ssh run may take before it's stopped (it then fails like any other error). Five
+        // minutes: far past any real fetch or push, short of a thread lost for good.
         var args = args, executable = executable, cwd = cwd
         if executable == "/usr/bin/git" {
             args = ["-c", "core.quotePath=false"] + args   // paths as they are, not C-quoted ("\321\204…" for "ф")
@@ -46,6 +48,10 @@ public enum Git {
         p.standardOutput = out; p.standardError = err
         if stdin != nil { p.standardInput = inp }
         try p.run()
+        // A host that drops packets or a credential helper waiting on nobody must not hold this thread for good.
+        let watchdog = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeLimit, execute: watchdog)
+        defer { watchdog.cancel() }
         if let stdin {
             let w = inp.fileHandleForWriting
             _ = fcntl(w.fileDescriptor, F_SETNOSIGPIPE, 1)   // git (or ssh) gone early fails the write; its exit status says why

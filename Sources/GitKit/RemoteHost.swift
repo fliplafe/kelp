@@ -54,7 +54,7 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     /// ssh's options for this host: the shared connection; no password prompts where nobody can answer them.
     public func sshArgs(tty: Bool) -> [String] {
         (tty ? ["-tt"] : ["-T", "-o", "BatchMode=yes"])
-            + ["-o", "ControlMaster=auto", "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
+            + ["-o", "ConnectTimeout=15", "-o", "ControlMaster=auto", "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
     }
 
     /// What the host's shell runs: `argv` in the project's folder, through a login shell so the host's PATH applies;
