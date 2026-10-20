@@ -8,7 +8,7 @@ import GitKit
 @MainActor
 final class HoverCard {
     private let popover = NSPopover()
-    private var pending: DispatchWorkItem?
+    private let pending = Debounce()
     private(set) var shownKey: String?
     private var warmUntil = Date.distantPast
 
@@ -17,20 +17,13 @@ final class HoverCard {
     /// The pointer is over a row (`key` "w:…" / "a:…"), or over nothing.
     func hover(_ key: String?, rect: NSRect, in view: NSView) {
         guard key != shownKey || !popover.isShown else { return }
-        pending?.cancel()
-        guard let key else {
-            let w = DispatchWorkItem { [weak self] in self?.close() }
-            pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)
-            return
-        }
-        let w = DispatchWorkItem { [weak self, weak view] in if let view { self?.show(key, rect: rect, in: view) } }
-        pending = w
+        guard let key else { pending.after(0.15) { [weak self] in self?.close() }; return }
         let warm = popover.isShown || Date() < warmUntil
-        DispatchQueue.main.asyncAfter(deadline: .now() + (warm ? 0 : 0.5), execute: w)
+        pending.after(warm ? 0 : 0.5) { [weak self, weak view] in if let view { self?.show(key, rect: rect, in: view) } }
     }
 
     func close() {
-        pending?.cancel()
+        pending.cancel()
         if popover.isShown { warmUntil = Date().addingTimeInterval(0.8); popover.close() }
         shownKey = nil
     }

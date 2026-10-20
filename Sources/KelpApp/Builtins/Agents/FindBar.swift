@@ -10,7 +10,7 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     var onSearch: ((String) -> Void)?
     var onStep: ((_ next: Bool) -> Void)?
     var onClose: (() -> Void)?
-    private var pending: DispatchWorkItem?
+    private let pending = Debounce()
     /// From the terminal; -1 while it's still counting.
     var total = -1 { didSet { updateCount() } }
     var selected = -1 { didSet { updateCount() } }
@@ -61,10 +61,9 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     // One or two letters match half the scrollback: wait for a pause before searching for them.
     func controlTextDidChange(_ n: Notification) {
-        pending?.cancel()
+        pending.cancel()
         guard field.stringValue.count < 3, !field.stringValue.isEmpty else { search(); return }
-        let w = DispatchWorkItem { [weak self] in self?.search() }
-        pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
+        pending.after(0.3) { [weak self] in self?.search() }
     }
     private func search() { total = -1; selected = -1; onSearch?(field.stringValue) }
 
@@ -84,5 +83,5 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     @objc private func stepped() { onStep?(steps.selectedSegment == 1) }
-    @objc func close() { pending?.cancel(); isHidden = true; onClose?() }
+    @objc func close() { pending.cancel(); isHidden = true; onClose?() }
 }

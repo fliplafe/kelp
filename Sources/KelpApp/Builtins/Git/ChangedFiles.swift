@@ -11,7 +11,7 @@ final class ChangedFiles {
     private(set) var count = 0
     @ObservationIgnored private var wid: String?
     @ObservationIgnored private var watcher: FileWatcher?
-    @ObservationIgnored private var pending: DispatchWorkItem?
+    @ObservationIgnored private let pending = Debounce()
     /// The Source Control panel, once built: while it shows this workspace its own reloads report the count.
     @ObservationIgnored weak var panel: SourceControlController?
 
@@ -28,11 +28,7 @@ final class ChangedFiles {
         reload()
     }
 
-    private func scheduleReload() {
-        pending?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.reload() }
-        pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
-    }
+    private func scheduleReload() { pending.after(0.4) { [weak self] in self?.reload() } }
 
     private func reload() {
         guard let wid, panel?.workspace != wid, let c = AppModel.shared.client else { return }

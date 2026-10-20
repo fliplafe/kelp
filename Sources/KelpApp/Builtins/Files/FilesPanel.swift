@@ -55,7 +55,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private var watcher: FileWatcher?
     private var worktree: Worktree?
     var root: String { worktree?.path ?? "/" }
-    private var treeReload: DispatchWorkItem?
+    private let treeReload = Debounce()
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("f")); outline.addTableColumn(col); outline.outlineTableColumn = col
@@ -146,11 +146,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         return rel == ".git/index" || rel == ".git/HEAD"   // staging, commits, branch switches
     }
 
-    private func scheduleReload() {
-        treeReload?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.reloadTree() }
-        treeReload = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
-    }
+    private func scheduleReload() { treeReload.after(0.4) { [weak self] in self?.reloadTree() } }
 
     override func viewDidAppear() { super.viewDidAppear(); if stale { reloadTree() } }
 
@@ -171,7 +167,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
                 let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
                 let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
                 nodes = FileNode.tree(paths); outline.reloadData()
-                func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
+                @MainActor func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
                 expand(nodes)
                 if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
             }
@@ -445,13 +441,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     /// A search that found nothing says so (and the tree is one click away), rather than an empty list.
     private let noMatches = NSTextField(wrappingLabelWithString: "")
     private var noResults: NSView?
-    private var typing: DispatchWorkItem?
+    private let typing = Debounce()
     /// Results follow the typing (a pause of a quarter second), like Xcode's Find navigator.
     func controlTextDidChange(_ n: Notification) {
         guard n.object as? NSSearchField === search else { return }
-        typing?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.runSearch() }
-        typing = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
+        typing.after(0.25) { [weak self] in self?.runSearch() }
     }
     /// ↓ from the field goes into the results; ↩ there opens the line.
     func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {

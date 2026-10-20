@@ -14,7 +14,7 @@ final class EditorArea: NSViewController {
     private var renders = 0
     var start: StartView?
     private var responderObservation: NSKeyValueObservation?
-    private var saveWork: DispatchWorkItem?
+    private let saveWork = Debounce()
     var reconciledOnce = false
     /// Sessions whose tab was just closed: until their kill lands, a daemon update mustn't bring the tab back.
     var closed: Set<String> = []
@@ -474,14 +474,7 @@ final class EditorArea: NSViewController {
 
     // MARK: persistence
 
-    private func scheduleSave() {
-        saveWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            layout.save(workspaceId)
-        }
-        saveWork = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
-    }
+    private func scheduleSave() { saveWork.after(0.5) { [weak self] in self.map { $0.layout.save($0.workspaceId) } } }
 
     /// Every open tab (URI and title), for the palette.
     var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? Self.placeholder($0).title) } }

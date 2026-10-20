@@ -158,12 +158,8 @@ final class ExtensionRegistry {
         try? FileManager.default.createDirectory(at: Self.userDir, withIntermediateDirectories: true)
         let guide = Self.userDir.appendingPathComponent("EXTENSIONS.md")
         if (try? String(contentsOf: guide, encoding: .utf8)) != ExtensionGuide.markdown { try? ExtensionGuide.markdown.write(to: guide, atomically: true, encoding: .utf8) }
-        var pending: DispatchWorkItem?
-        watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in
-            pending?.cancel()
-            let w = DispatchWorkItem { self?.reload() }
-            pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: w)
-        }
+        let pending = Debounce()
+        watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in pending.after(0.3) { self?.reload() } }
     }
 
     /// Follows symlinks: a VS Code extension can be linked in rather than copied.

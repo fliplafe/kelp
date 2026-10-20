@@ -18,11 +18,7 @@ extension SourceControlController {
     /// so the badge counts by itself.
     var workspace: String? { view.window == nil ? nil : worktreeId }
 
-    private func scheduleReload() {
-        pending?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.reloadAll() }
-        pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
-    }
+    private func scheduleReload() { pending.after(0.4) { [weak self] in self?.reloadAll() } }
 
     func reloadAll() {
         // Swapped out of the inspector: no git until it shows again.

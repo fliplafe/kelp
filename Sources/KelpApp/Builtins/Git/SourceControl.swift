@@ -52,7 +52,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var roots: [Node] = [], graphRoots: [Node] = []
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
     var watcher: FileWatcher?
-    var pending: DispatchWorkItem?
+    let pending = Debounce()
     /// Something changed while the panel was out of the window.
     var stale = false
     var busy = false { didSet { updateCommitButton() } }

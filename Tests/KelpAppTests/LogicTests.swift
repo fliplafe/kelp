@@ -91,3 +91,15 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(await AgentAvailability.runs("git"))
     #expect(!(await AgentAvailability.runs("kelp-no-such-agent")))
 }
+
+/// A burst of calls runs once, the last one, after the pause; cancel drops it.
+@MainActor @Test func debounceRunsTheLastCallOnce() async throws {
+    let d = Debounce()
+    var ran: [Int] = []
+    for i in 1...3 { d.after(0.05) { ran.append(i) } }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(ran == [3])
+    d.after(0.05) { ran.append(4) }; d.cancel()
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(ran == [3])
+}
