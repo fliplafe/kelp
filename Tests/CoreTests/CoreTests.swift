@@ -18,7 +18,25 @@ import Testing
     var b = LineBuffer()
     #expect(b.append(Data("{\"a\":".utf8)).isEmpty)
     let lines = b.append(Data("1}\n{\"b\":2}\nrest".utf8))
-    #expect(lines.count == 2)
+    #expect(lines.map { String(decoding: $0, as: UTF8.self) } == ["{\"a\":1}", "{\"b\":2}"])
+    #expect(b.append(Data("\n\n".utf8)).map { String(decoding: $0, as: UTF8.self) } == ["rest", ""])
+    // A long line in small reads comes out whole, once.
+    let long = String(repeating: "x", count: 100_000)
+    var got: [Data] = []
+    for chunk in Data((long + "\nnext").utf8).chunked(8192) { got += b.append(chunk) }
+    #expect(got.map { String(decoding: $0, as: UTF8.self) } == [long])
+    #expect(String(decoding: b.takeRemainder(), as: UTF8.self) == "next")
+}
+
+private extension Data {
+    func chunked(_ n: Int) -> [Data] { stride(from: 0, to: count, by: n).map { self[$0..<Swift.min($0 + n, count)] } }
+}
+
+@Test func jsonValueKeepsEachType() throws {
+    let text = #"{"n":null,"b":true,"i":3,"d":2.5,"s":"x","a":[1,"y",false],"o":{"k":[]}}"#
+    let v = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+    #expect(v == .object(["n": .null, "b": .bool(true), "i": .int(3), "d": .double(2.5), "s": .string("x"),
+                          "a": .array([.int(1), .string("y"), .bool(false)]), "o": .object(["k": .array([])])]))
 }
 
 @Test func callTimesOutWhenNoReplyComes() async throws {

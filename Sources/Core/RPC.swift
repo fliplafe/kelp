@@ -75,13 +75,14 @@ public enum Wire {
 public struct LineBuffer: Sendable {
     private var buf = Data()
     public init() {}
+    /// Only the new bytes are searched and the consumed lines dropped once: a multi-MB reply arrives in 8 KB reads,
+    /// and rescanning (and shifting) the whole buffer on each one was quadratic.
     public mutating func append(_ d: Data) -> [Data] {
+        var from = buf.endIndex   // the bytes already here hold no newline
         buf.append(d)
-        var out: [Data] = []
-        while let i = buf.firstIndex(of: 0x0A) {
-            out.append(buf[buf.startIndex..<i])
-            buf.removeSubrange(buf.startIndex...i)
-        }
+        var out: [Data] = [], start = buf.startIndex
+        while let i = buf[from...].firstIndex(of: 0x0A) { out.append(buf[start..<i]); start = i + 1; from = start }
+        if start != buf.startIndex { buf = Data(buf[start...]) }
         return out
     }
     /// Bytes received after the last complete line (a connection switching to a raw stream keeps them).

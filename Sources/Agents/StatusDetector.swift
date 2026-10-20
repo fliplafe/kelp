@@ -26,6 +26,7 @@ public struct StatusDetector: Sendable {
     }
 
     public mutating func output(_ chunk: String, at now: Date = Date()) {
+        guard !hooked else { return }   // the agent reports itself: nothing here is read (tick checks the same)
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
         // Redraws with no words (spinners, timers, borders) aren't the agent doing anything.
@@ -35,8 +36,9 @@ public struct StatusDetector: Sendable {
         if !hooked, manifest.quietSeconds < 1e8 { status = .working }   // plain shells don't track status
     }
 
+    private static let letters = CharacterSet.letters
     static func hasWords(_ s: String) -> Bool {
-        s.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count >= 3
+        s.unicodeScalars.lazy.filter { letters.contains($0) }.prefix(3).count == 3
     }
 
     /// Call periodically; returns the (possibly new) status.
@@ -82,9 +84,14 @@ public struct StatusDetector: Sendable {
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
+    // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.
+    private static let cursorMoves = try? NSRegularExpression(pattern: #"\x{1B}\[\d*[GC]"#)
+    private static let escapes = try? NSRegularExpression(pattern: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]"#)
+
+    /// Runs on every chunk of every session: compiled once, and text without an escape is returned as is.
     public static func stripANSI(_ s: String) -> String {
-        // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.
-        s.replacingOccurrences(of: #"\x{1B}\[\d*[GC]"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]"#, with: "", options: .regularExpression)
+        guard s.utf8.contains(0x1B), let cursorMoves, let escapes else { return s }
+        let spaced = cursorMoves.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " ")
+        return escapes.stringByReplacingMatches(in: spaced, range: NSRange(spaced.startIndex..., in: spaced), withTemplate: "")
     }
 }
