@@ -328,10 +328,9 @@ final class EditorArea: NSViewController {
         default: break
         }
         // A file already open (at another line): that tab, moved to the line asked for.
-        if TabURI.scheme(uri) == "file", layout.tab(uri: uri) == nil,
-           let t = layout.allTabs.first(where: { TabURI.scheme($0.uri) == "file" && TabURI.filePath($0.uri).path == TabURI.filePath(uri).path }) {
+        if layout.tab(uri: uri) == nil, let t = layout.fileTab(sameFileAs: uri) {
             select(t.id, focus: focus)
-            if let l = uri.split(separator: "#").last.flatMap({ $0.hasPrefix("L") ? Int($0.dropFirst()) : nil }) { (contents[t.id] as? FileTab)?.goTo(line: l) }
+            if let l = TabURI.filePath(uri).line { (contents[t.id] as? FileTab)?.goTo(line: l) }
             return
         }
         if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
@@ -374,10 +373,7 @@ final class EditorArea: NSViewController {
         guard let g = layout.focusedGroup, g.tabs.indices.contains(index) else { return }
         select(g.tabs[index].id)
     }
-    func cycleTab(_ offset: Int) {
-        guard let g = layout.focusedGroup, let cur = g.selectedTab, let i = g.tabs.firstIndex(of: cur), !g.tabs.isEmpty else { return }
-        select(g.tabs[(i + offset + g.tabs.count) % g.tabs.count].id)
-    }
+    func cycleTab(_ offset: Int) { if let id = layout.tab(cycling: offset) { select(id) } }
     /// ⇧⌘↩: the focused group fills the editor area, or every pane comes back (like zooming a split in Terminal or Ghostty).
     func toggleZoom() {
         guard let g = layout.focusedGroup, (layout.root?.sessions.count ?? 0) > 1 else { NSSound.beep(); return }
@@ -387,26 +383,21 @@ final class EditorArea: NSViewController {
 
     func focusGroup(_ offset: Int) {
         zoomed = nil
-        guard let ids = layout.root?.sessions, let cur = layout.focusedGroup?.id, let i = ids.firstIndex(of: cur), ids.count > 1 else { return }
-        let gid = ids[(i + offset + ids.count) % ids.count]
-        if let t = layout.groups[gid]?.selectedTab { select(t.id) }
+        if let id = layout.tabInGroup(cycling: offset) { select(id) }
     }
     /// ⌥⌘ arrows: the pane on that side of the focused one, the nearest by center (Ghostty's goto_split).
     func focusGroup(toward edge: NSRectEdge) {
         guard let cur = layout.focusedGroup?.id, let from = groupViews[cur], from.window != nil else { return }
-        let a = from.convert(from.bounds, to: nil)
-        let near = groupViews.compactMap { id, v -> (String, CGFloat)? in
-            guard id != cur, v.window != nil else { return nil }
-            let b = v.convert(v.bounds, to: nil)
-            let beyond = switch edge {   // window coordinates: y grows upward
-            case .minX: b.maxX <= a.minX + 2
-            case .maxX: b.minX >= a.maxX - 2
-            case .minY: b.maxY <= a.minY + 2
-            default: b.minY >= a.maxY - 2
-            }
-            return beyond ? (id, hypot(b.midX - a.midX, b.midY - a.midY)) : nil
-        }.min { $0.1 < $1.1 }
-        guard let gid = near?.0, let t = layout.groups[gid]?.selectedTab else { NSSound.beep(); return }
+        var others: [String: CGRect] = [:]
+        for (id, v) in groupViews where id != cur && v.window != nil { others[id] = v.convert(v.bounds, to: nil) }
+        let side: PaneEdge = switch edge {
+        case .minX: .left
+        case .maxX: .right
+        case .minY: .down
+        default: .up
+        }
+        guard let gid = WorkspaceLayout.nearestPane(from: from.convert(from.bounds, to: nil), among: others, toward: side),
+              let t = layout.groups[gid]?.selectedTab else { NSSound.beep(); return }
         select(t.id)
     }
 
