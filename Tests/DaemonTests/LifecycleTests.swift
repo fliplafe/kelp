@@ -161,11 +161,12 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 @Test func aRequestIsAnsweredWhileManySlowOnesRun() async throws {
     let release = DispatchSemaphore(value: 0), held = 80
     let root = tmp()
-    let d = try Daemon(root: root, extra: ["test.slow": { d, _ in try await d.offload { release.wait(); return .null } }])
+    let started = Locked(0)
+    let d = try Daemon(root: root, extra: ["test.slow": { d, _ in try await d.offload { started.withLock { $0 += 1 }; release.wait(); return .null } }])
     try d.start(); defer { for _ in 0..<held { release.signal() }; d.stop() }
     let slow = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(slow) }
     for i in 0..<held { Unix.writeAll(slow, try Wire.line(RPCRequest(id: i, method: "test.slow"))) }
-    try await Task.sleep(for: .milliseconds(500))
+    #expect(try await waitFor(10) { started.current == held })   // all of them running, holding their threads
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
     var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     Unix.writeAll(fd, try Wire.line(RPCRequest(id: 1, method: "session.list")))

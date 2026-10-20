@@ -99,7 +99,7 @@ extension Daemon {
             guard var r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
             let root = try Git.root(of: p.req("path")), old = r.path
             r.path = root; try store.save(r)
-            for var w in try store.worktrees(repo: r.id) where w.path == old { w.path = root; try store.save(w) }
+            for w in try store.worktrees(repo: r.id) where w.path == old { try store.updateWorktree(w.id) { $0.path = root } }
             notify("event.changed", "repo"); return try .from(r)
         case "repo.remove":   // its workspaces go with it, and so do their agents: none keeps working out of sight
             guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
@@ -158,11 +158,11 @@ extension Daemon {
                 try Git.removeWorktree(repo: r.path, path: w.path, branch: branch, force: force, dropCommits: drop)
             } else { try pauseSessions(of: w.id) }
             if remove { for s in (try store.sessions()) where s.worktreeId == w.id { discard(s) } }
-            if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
+            if remove { try store.delete(w) } else { try store.updateWorktree(w.id) { $0.archived = true } }
             notify("event.changed", "worktree"); return .null
         case "worktree.unarchive":
-            guard var w = try store.worktree(p.req("id")) else { throw RPCError.invalidParams("no worktree") }
-            w.archived = false; try store.save(w); notify("event.changed", "worktree"); return .null
+            guard try store.updateWorktree(p.req("id"), { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
+            notify("event.changed", "worktree"); return .null
         case "worktree.unmerged":   // {id} → commits on its branch that no other branch or remote has (lost if it's deleted)
             let w = try cwd(forWorktree: p.req("id"))
             guard let r = try store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return .int(0) }
@@ -348,8 +348,8 @@ extension GitDiscardHunk: Handled {
 
 extension WorktreeNote: Handled {
     func handle(_ d: Daemon) throws -> Done {
-        guard var w = try d.store.worktree(id) else { throw RPCError.invalidParams("no worktree") }
-        w.note = note; try d.store.save(w); d.notify("event.changed", "worktree"); return Done()
+        guard try d.store.updateWorktree(id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
+        d.notify("event.changed", "worktree"); return Done()
     }
 }
 

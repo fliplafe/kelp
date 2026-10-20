@@ -72,9 +72,20 @@ extension Daemon {
         }
         let used = ((try? store.sessions()) ?? []).filter { $0.agent == agent }.sorted { $0.createdAt > $1.createdAt }.map(\.cwd)
         let trusted = agent == "antigravity" ? Self.antigravityTrusted() : agent == "claude" ? Self.claudeTrusted() : []
-        return Self.probeFolder(used: used, trusted: trusted, remoteRoot: root.appendingPathComponent("remote").path) {
-            FileManager.default.fileExists(atPath: $0) && RemoteHost.of($0) == nil
+        let worktrees = (try? store.worktrees()) ?? []
+        return Self.probeFolder(used: used, trusted: trusted, remoteRoot: root.appendingPathComponent("remote").path) { dir in
+            guard FileManager.default.fileExists(atPath: dir), RemoteHost.of(dir) == nil else { return false }
+            let w = worktrees.first { AgentTrust.normal($0.path) == AgentTrust.normal(dir) }
+            return Self.quietFolder(dir, base: w.flatMap { try? store.repo($0.repoId)?.baseBranch })
         }
+    }
+
+    /// Nobody watches the hidden copy, so it only opens where the project's agent config (hooks, MCP servers) can't have
+    /// come in unseen: a Kelp workspace whose config matches its base branch (the check a launch makes before answering
+    /// trust), or any other folder with no agent config at all.
+    static func quietFolder(_ dir: String, base: String?) -> Bool {
+        if let base { return !changesAgentConfig(dir, base: base) }
+        return !agentConfig.contains { FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent($0)) }
     }
 
     /// Where the hidden copy of an agent opens: a folder it already trusts, or it stops at its trust question and `/usage`

@@ -18,10 +18,11 @@ extension Daemon {
             let branch = (try? Git.currentBranch(r.path)) ?? r.baseBranch
             let desks = all.filter { isMain($0, r) }
             if desks.isEmpty { try store.save(Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace 1", base: branch)) }
-            for var w in desks where w.branch != branch || w.note.isEmpty {
-                w.branch = branch
-                if w.note.isEmpty { w.note = "Workspace 1" }   // was the project's "main" workspace
-                try store.save(w)
+            for w in desks where w.branch != branch || w.note.isEmpty {
+                try store.updateWorktree(w.id) {
+                    $0.branch = branch
+                    if $0.note.isEmpty { $0.note = "Workspace 1" }   // was the project's "main" workspace
+                }
             }
         }
     }
@@ -53,8 +54,11 @@ extension Daemon {
                 guard let ls = lock.withLock({ () -> LiveSession? in let l = live[s.id]; live[s.id] = nil; return l }) else { continue }
                 pids.append(ls.pty.pid)
                 if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
-                    let paused = ls.markHibernated(); ls.pty.kill(); publish(paused)
-                } else { ls.pty.kill() }
+                    publish(ls.markHibernated())
+                } else {
+                    ls.overrideStatus(.exited)   // said here: once out of `live`, nothing records its exit
+                }
+                ls.pty.terminate()   // SIGKILL after 2 s for one that ignores the hangup, so it's gone within waitGone's 3
             }
             Self.waitGone(pids)
         }
@@ -71,7 +75,7 @@ extension Daemon {
             throw RPCError.invalidParams("A project keeps at least one workspace.")
         }
         try pauseSessions(of: w.id)
-        var a = w; a.archived = true; try store.save(a)
+        try store.updateWorktree(w.id) { $0.archived = true }
         notify("event.changed", "worktree")
     }
 

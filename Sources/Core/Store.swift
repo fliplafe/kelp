@@ -93,6 +93,15 @@ public final class Store: Sendable {
     public func sessions() throws -> [Session] { try db.read { try Session.order(Column("createdAt")).fetchAll($0) } }
     public func session(_ id: String) throws -> Session? { try db.read { try Session.fetchOne($0, key: id) } }
     public func save<R: PersistableRecord>(_ r: R) throws { try db.write { try r.save($0) } }
+    /// Changes a workspace record in one write: read, change, save with nothing in between. Saving a copy read earlier
+    /// would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
+    @discardableResult
+    public func updateWorktree(_ id: String, _ change: (inout Worktree) throws -> Void) throws -> Worktree? {
+        try db.write { d in
+            guard var w = try Worktree.fetchOne(d, key: id) else { return nil }
+            try change(&w); try w.save(d); return w
+        }
+    }
     public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) } }
     public func comments(worktree: String) throws -> [DiffComment] {
         try db.read { try DiffComment.filter(Column("worktreeId") == worktree).fetchAll($0) }

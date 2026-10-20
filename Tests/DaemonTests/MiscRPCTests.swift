@@ -185,9 +185,8 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
 @Test func stateSentAsNotificationsEndsAtTheLastValue() async throws {
     let w = try await world(); defer { w.d.stop() }
     for i in 1...300 { w.c.notify(StateSet(key: "layout.test", value: .int(i))) }   // as the app saves a layout while you drag
-    #expect(try await waitFor(10) { try await w.c.call(StateGet(key: "layout.test")) == .int(300) })
-    try await Task.sleep(for: .milliseconds(200))
-    #expect(try await w.c.call(StateGet(key: "layout.test")) == .int(300))   // and nothing older lands after it
+    // Notifications are applied as they are read, so a request sent after them sees the last one: no waiting needed.
+    #expect(try await w.c.call(StateGet(key: "layout.test")) == .int(300))
 }
 
 @Test func aSizeSentAsANotificationReachesTheTerminal() async throws {
@@ -328,6 +327,20 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
     #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)   // paused, not ended
+}
+
+/// A plain program (no conversation to resume) ends with its workspace, as the record says, even one that ignores the
+/// hangup; unarchived, the workspace doesn't show it running.
+@Test func archivingAWorkspaceEndsItsPlainProgramsForGood() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "plain")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id),
+        "command": "trap '' HUP TERM; echo ready; while :; do sleep 0.1; done"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    #expect(kill(s.pid, 0) != 0)   // gone when archive returns, though it ignored SIGTERM
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .exited)
 }
 
 @Test func mergeNeverTouchesTheUsersOwnWorkInTheMainCheckout() async throws {
@@ -476,4 +489,36 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "printf '\\033[?2004hready\\n'; exec cat -v",   // a TUI that takes pastes
                                                                  "prompt": "!touch pwned"]), as: Session.self)
     #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("[200~!touch pwned^[[201~") == true })
+}
+
+/// The hidden usage probe opens no folder whose agent config (hooks, MCP servers) came in unseen.
+@Test func theUsageProbeAvoidsFoldersWithNewAgentConfig() throws {
+    let repo = try makeRepo()
+    #expect(Daemon.quietFolder(repo, base: "main"))                       // config as on main
+    try Git.run(["checkout", "-qb", "pr"], cwd: repo)
+    try FileManager.default.createDirectory(atPath: repo + "/.claude", withIntermediateDirectories: true)
+    try #"{"hooks":{"SessionStart":[]}}"#.write(toFile: repo + "/.claude/settings.json", atomically: true, encoding: .utf8)
+    #expect(!Daemon.quietFolder(repo, base: "main"))                      // not committed yet
+    try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "hook"], cwd: repo)
+    #expect(!Daemon.quietFolder(repo, base: "main"))                      // committed on the branch
+    // A folder Kelp has no base for: only one without agent config.
+    let plain = tmp().path
+    #expect(Daemon.quietFolder(plain, base: nil))
+    try "{}".write(toFile: plain + "/.mcp.json", atomically: true, encoding: .utf8)
+    #expect(!Daemon.quietFolder(plain, base: nil))
+}
+
+/// Two quick sends are two submits, each with its own Enter, in order.
+@Test func twoQuickSendsAreTwoSubmits() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "sends")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "stty -echo; echo ready; exec cat"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    async let a: JSONValue = w.c.call("session.send", .obj(["id": .string(s.id), "text": "first"]))
+    async let b: JSONValue = w.c.call("session.send", .obj(["id": .string(s.id), "text": "second"]))
+    _ = try await (a, b)
+    #expect(try await waitFor(10) {
+        let t = (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? ""
+        return t.contains("first\r\n") && t.contains("second\r\n")   // each line on its own, not "firstsecond"
+    })
 }

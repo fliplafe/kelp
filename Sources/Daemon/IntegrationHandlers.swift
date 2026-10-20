@@ -149,8 +149,8 @@ extension Daemon {
             } else {
                 url = try await offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true) }
             }
-            w.prURL = url; w.prNumber = Int(url.split(separator: "/").last ?? "")
-            try store.save(w); notify("event.changed", "worktree")
+            try store.updateWorktree(w.id) { $0.prURL = url; $0.prNumber = Int(url.split(separator: "/").last ?? "") }
+            notify("event.changed", "worktree")
             await moveLinear(w, to: .inReview)
             await moveJira(w, toName: "review", category: "indeterminate")
             return .obj(["url": .string(url), "title": .string(title)])
@@ -232,9 +232,9 @@ extension Daemon {
             let wv = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: conn)
             // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
             let (w, s) = try await offload { [self] () throws -> (Worktree, Session) in
-                guard var w = try store.worktree(try wv.req("id")) else { throw RPCError.internalError("worktree vanished") }
-                w.issue = ref; w.issueURL = url; w.linearIssueId = p["linearId"]?.string ?? ""
-                try store.save(w)
+                guard let w = try store.updateWorktree(try wv.req("id"), {
+                    $0.issue = ref; $0.issueURL = url; $0.linearIssueId = p["linearId"]?.string ?? ""
+                }) else { throw RPCError.internalError("worktree vanished") }
                 let cfg = trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
                 let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
                 var prompt = cfg.issueCommand.map { t in vars.reduce(t) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) } }

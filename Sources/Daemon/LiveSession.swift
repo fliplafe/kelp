@@ -330,9 +330,13 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let text = Self.typeable(text)
         // A program that never asked for pastes (a plain line reader) has no modes to trip: it gets the text as is.
         let body = (paste && pasteMode) || text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
-        pty.write(Data(body.utf8))
-        if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
+        // One after another, Enter included: two quick sends must arrive as text, Enter, text, Enter, not text, text, Enter, Enter.
+        sends.async { [weak self] in
+            self?.pty.write(Data(body.utf8))
+            if enter { Thread.sleep(forTimeInterval: 0.3); self?.pty.write(Data("\r".utf8)) }
+        }
     }
+    private let sends = DispatchQueue(label: "kelp.session.send")
 
     /// Text from elsewhere (an issue, a recipe, a review comment) as plain text: no escape sequences and no control keys but
     /// newlines and tabs. An issue body with ESC[201~ would end the paste, then Return, Shift-Tab or "!cmd" would act as keys.

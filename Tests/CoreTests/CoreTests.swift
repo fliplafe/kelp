@@ -219,3 +219,18 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     await withTaskGroup(of: Void.self) { g in for _ in 0..<1000 { g.addTask { n.withLock { $0 += 1 } } } }
     #expect(n.current == 1000)
 }
+
+/// Two changes to one workspace at once (a rename and a PR link) both stay: neither saves back a copy read before the other.
+@Test func workspaceChangesAtTheSameTimeAllStay() async throws {
+    let s = try Store()
+    let r = Repo(name: "demo", path: "/tmp/demo"); try s.save(r)
+    let w = Worktree(repoId: r.id, branch: "b", path: "/p")
+    try s.save(w)
+    await withTaskGroup(of: Void.self) { g in
+        for i in 0..<200 {
+            g.addTask { _ = try? s.updateWorktree(w.id) { if i.isMultiple(of: 2) { $0.note += "n" } else { $0.prURL += "u" } } }
+        }
+    }
+    let after = try #require(try s.worktree(w.id))
+    #expect(after.note.count == 100 && after.prURL.count == 100)
+}

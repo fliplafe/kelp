@@ -168,17 +168,18 @@ extension Daemon {
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(s)
         // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
-        if var w = try? store.worktree(s.worktreeId ?? ""), w.note.range(of: Self.placeholderName, options: .regularExpression) != nil {
-            w.note = title; try? store.save(w); notify("event.changed", "worktree")
+        let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
+            if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
         }
+        if renamed?.note == title { notify("event.changed", "worktree") }
         if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
            let r = try? store.repo(w.repoId), w.path != r.path {
             let base = Naming.slug(prompt)
             var b = base, n = 2
             while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
             if !base.isEmpty, (try? Git.renameBranch(w.path, from: w.branch, to: b)) != nil {
-                var nw = w; nw.branch = b; if nw.note.isEmpty { nw.note = title }
-                try? store.save(nw); notify("event.changed", "worktree")
+                _ = try? store.updateWorktree(w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } }
+                notify("event.changed", "worktree")
             }
         }
     }
@@ -190,10 +191,10 @@ extension Daemon {
         let old = ls.snapshot.title
         let s = ls.update { if !$0.titleManual { $0.title = topic } }
         publish(s)
-        if var w = try? store.worktree(s.worktreeId ?? ""),
-           (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil {
-            w.note = topic; try? store.save(w); notify("event.changed", "worktree")
+        let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
+            if (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = topic }
         }
+        if renamed?.note == topic { notify("event.changed", "worktree") }
     }
 
     func manifest(_ id: String?, command: String?, fallbackArgv: [String]? = nil) throws -> AgentManifest {
