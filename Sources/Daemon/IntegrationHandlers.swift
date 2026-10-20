@@ -273,7 +273,8 @@ extension Daemon {
             await moveLinear(w, to: .inProgress)
             await moveJira(w, toName: "progress", category: "indeterminate")
             notify("event.changed", "worktree")
-            return .obj(["worktree": try .from(w), "session": try .from(s)])
+            // An untrusted .kelp.yaml's setup didn't run: said, as worktree.create says it, so the caller can ask.
+            return .obj(["worktree": try .from(w), "session": try .from(s), "setupNeedsTrust": .bool(wv["setupNeedsTrust"]?.bool == true)])
         default: return nil
         }
     }

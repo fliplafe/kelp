@@ -219,8 +219,13 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         if req.method == "session.attach", !req.isNotification, let sid = req.params?["id"]?.string,
            existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
            let ls = try? await offload({ [self] in try liveSession(sid) }) {
-            _ = ls.attach(c.id) { history in
-                if let d = try? Wire.line(Reply(id: id, result: .obj(["history": .string(history.base64EncodedString())]), error: nil)) { c.send(d) }
+            // Under the lock the reader's cleanup takes: a connection that closed while the session woke isn't subscribed
+            // (it would count as watching for good, and the session would never pause).
+            lock.withLock {
+                guard conns[c.id] != nil else { return }
+                _ = ls.attach(c.id) { history in
+                    if let d = try? Wire.line(Reply(id: id, result: .obj(["history": .string(history.base64EncodedString())]), error: nil)) { c.send(d) }
+                }
             }
             return
         }
@@ -344,7 +349,9 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         ls.onStatus = { [weak self, weak ls] s in
             guard let self, let ls, !ls.isDiscarded else { return }
-            publish(s); ls.noteTurn(s.status)
+            // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
+            // The turn bookkeeping gets each change, in order.
+            publish(ls.snapshot); ls.noteTurn(s.status)
             if s.status == .exited { lock.withLock { if live[s.id] === ls { live[s.id] = nil } } }
         }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }

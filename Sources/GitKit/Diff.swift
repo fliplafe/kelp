@@ -161,11 +161,18 @@ extension Git {
     }
 
     static func untrackedDiffs(_ path: String, only: String?) throws -> [FileDiff] {
-        try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }.compactMap { f in
+        let remote = RemoteHost.of(path)
+        return try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }.compactMap { f in
             let full = (path as NSString).appendingPathComponent(f.path)
             let mode = FileManager.default.isExecutableFile(atPath: full) ? "100755" : "100644"   // staged as it is: a script stays runnable
             let hdr = "diff --git a/\(f.path) b/\(f.path)\nnew file mode \(mode)\n--- /dev/null\n+++ b/\(f.path)"
             let asBinary = FileDiff(path: f.path, header: hdr, hunks: [], binary: true)
+            if let remote {   // the files are on the host: read there, at most a byte past the limit (the folder here is a marker)
+                let cmd = "head -c 1000001 -- " + RemoteHost.quote(remote.path + "/" + f.path)
+                guard let data = try? Git.runData(remote.sshArgs(tty: false) + [cmd], cwd: NSHomeDirectory(), executable: RemoteHost.ssh),
+                      data.count <= 1_000_000 else { return asBinary }
+                return added(data, f.path, hdr) ?? asBinary
+            }
             // A symlink is shown as git stores it, its target path; following it could read /dev/zero or a huge file.
             if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: full) {
                 let h = Hunk(header: "@@ -0,0 +1 @@", oldStart: 0, newStart: 1, lines: [DiffLine(kind: .add, text: target, oldLine: nil, newLine: 1, noNewline: true)])
@@ -174,14 +181,19 @@ extension Git {
             guard let size = (try? FileManager.default.attributesOfItem(atPath: full))?[.size] as? Int else { return nil }
             guard size <= 1_000_000 else { return asBinary }   // a log, a dataset, a folder that should be ignored: not read
             guard let data = FileManager.default.contents(atPath: full) else { return nil }
-            guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { return asBinary }
-            var lines = text.components(separatedBy: "\n")
-            let lastNewline = lines.last == ""
-            if lastNewline { lines.removeLast() }
-            var added = lines.enumerated().map { DiffLine(kind: .add, text: $1, oldLine: nil, newLine: $0 + 1) }
-            if !lastNewline, !added.isEmpty { added[added.count - 1].noNewline = true }
-            let h = Hunk(header: "@@ -0,0 +1,\(lines.count) @@", oldStart: 0, newStart: 1, lines: added)
-            return FileDiff(path: f.path, header: hdr, hunks: lines.isEmpty ? [] : [h], binary: false)
+            return added(data, f.path, hdr) ?? asBinary
         }
+    }
+
+    /// A new file's text as one added hunk; nil when it isn't text.
+    private static func added(_ data: Data, _ path: String, _ hdr: String) -> FileDiff? {
+        guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { return nil }
+        var lines = text.components(separatedBy: "\n")
+        let lastNewline = lines.last == ""
+        if lastNewline { lines.removeLast() }
+        var added = lines.enumerated().map { DiffLine(kind: .add, text: $1, oldLine: nil, newLine: $0 + 1) }
+        if !lastNewline, !added.isEmpty { added[added.count - 1].noNewline = true }
+        let h = Hunk(header: "@@ -0,0 +1,\(lines.count) @@", oldStart: 0, newStart: 1, lines: added)
+        return FileDiff(path: path, header: hdr, hunks: lines.isEmpty ? [] : [h], binary: false)
     }
 }

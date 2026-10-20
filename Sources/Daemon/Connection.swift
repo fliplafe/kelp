@@ -19,16 +19,18 @@ final class Connection: @unchecked Sendable {   // queued/closing/closed under l
     init(id: Int, fd: Int32) { self.id = id; self.fd = fd; peer = Unix.peerExecutable(fd) }
 
     func send(_ d: Data) {
-        let ok = lock.withLock { () -> Bool in
-            guard !closing else { return false }
-            queued += d.count; return true
+        // Queued under the lock that `close` takes too: a write checked before the close is also queued before it, so
+        // it never runs after the fd was closed (and its number given to a new client or a PTY).
+        let behind = lock.withLock { () -> Int? in
+            guard !closing else { return nil }
+            queued += d.count
+            q.async { [self] in
+                Unix.writeAll(fd, d)
+                lock.withLock { queued -= d.count }
+            }
+            return queued
         }
-        guard ok else { return }
-        if lock.withLock({ queued }) > Self.backlogLimit { hangUp() }
-        q.async { [self] in
-            Unix.writeAll(fd, d)
-            lock.withLock { queued -= d.count }
-        }
+        if let behind, behind > Self.backlogLimit { hangUp() }
     }
 
     /// Reading and writing stop now (a stalled client, the daemon quitting): its reader sees EOF, queued writes fail fast.
@@ -36,7 +38,9 @@ final class Connection: @unchecked Sendable {   // queued/closing/closed under l
 
     /// Nothing more is sent; the fd closes once what's queued is out.
     func close() {
-        lock.withLock { closing = true }
-        q.async { [self] in lock.withLock { closed = true; _ = Darwin.close(fd) } }
+        lock.withLock {
+            closing = true
+            q.async { [self] in lock.withLock { closed = true; _ = Darwin.close(fd) } }
+        }
     }
 }

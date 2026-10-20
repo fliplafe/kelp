@@ -19,7 +19,8 @@ import Daemon
 }
 private func git(_ args: [String], _ cwd: String) throws { _ = try Git.run(args, cwd: cwd) }
 
-@MainActor @Test func sourceControlListsStagedAndChangedFilesFromTheDaemon() async throws {
+extension SharedAppModel {
+@Test func sourceControlListsStagedAndChangedFilesFromTheDaemon() async throws {
     _ = testHome
     let root = URL(fileURLWithPath: "/tmp/ks-\(UUID().uuidString.prefix(6))")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -52,4 +53,5 @@ private func git(_ args: [String], _ cwd: String) throws { _ = try Git.run(args,
     #expect(shown.contains { $0.localizedCaseInsensitiveContains("Staged") })   // its section header
     let staged = try #require(shown.firstIndex(of: "staged.txt")), changed = try #require(shown.firstIndex(of: "kept.txt"))
     #expect(staged < changed)   // staged first, then the rest, as VS Code lists them
+}
 }

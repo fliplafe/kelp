@@ -42,7 +42,9 @@ private func texts(_ v: NSView) -> [String] {
 private let project = Repo(id: "r1", name: "Atlas", path: "/tmp/kelp-screen-atlas")
 private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree { Worktree(id: id, repoId: "r1", branch: branch, path: "/tmp/kelp-screen-atlas/\(id)", note: note) }
 
-@MainActor @Test func theSidebarListsTheProjectItsWorkspacesAndTheirAgents() throws {
+// AppModel.shared is shared with the other screen tests: one at a time.
+extension SharedAppModel {
+@Test func theSidebarListsTheProjectItsWorkspacesAndTheirAgents() throws {
     let agent = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .working, title: "Fix login bug")
     try withSidebar(repos: [project], worktrees: [desk("w1", "feat/login"), desk("w2", "feat/billing", note: "Billing rewrite")], sessions: [agent]) { _, o in
         let r = rows(of: o)
@@ -54,7 +56,7 @@ private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree
     }
 }
 
-@MainActor @Test func anEndedAgentAndAPlainTerminalAreNotListed() throws {
+@Test func anEndedAgentAndAPlainTerminalAreNotListed() throws {
     let ended = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .exited, title: "Old chat")
     let shell = Session(worktreeId: "w1", cwd: "/", command: "zsh", agent: "shell", status: .idle, title: "zsh")
     try withSidebar(repos: [project], worktrees: [desk("w1", "main")], sessions: [ended, shell]) { _, o in
@@ -64,14 +66,14 @@ private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree
     }
 }
 
-@MainActor @Test func withNoProjectsTheSidebarShowsItsEmptyStateNotAnEmptyList() throws {
+@Test func withNoProjectsTheSidebarShowsItsEmptyStateNotAnEmptyList() throws {
     try withSidebar(repos: [], worktrees: [], sessions: []) { vc, o in
         #expect(o.numberOfRows == 0)
         #expect(texts(vc.view).contains { $0.localizedCaseInsensitiveContains("project") })   // it says what to do
     }
 }
 
-@MainActor @Test func theAgentWaitingForYouIsPulledToTheTopWhenThereAreSeveralWorkspaces() throws {
+@Test func theAgentWaitingForYouIsPulledToTheTopWhenThereAreSeveralWorkspaces() throws {
     let ask = Session(worktreeId: "w3", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?", summary: "Needs permission")
     try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { _, o in
         let r = rows(of: o)
@@ -80,7 +82,7 @@ private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree
     }
 }
 
-@MainActor @Test func theSidebarActuallyDrawsItsRows() throws {
+@Test func theSidebarActuallyDrawsItsRows() throws {
     let agent = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?")
     try withSidebar(repos: [project], worktrees: [desk("w1", "feat/login")], sessions: [agent]) { vc, _ in
         let v = vc.view
@@ -95,4 +97,5 @@ private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree
         }
         #expect(colors.count > 8, "the sidebar rendered as a flat fill: \(colors.count) distinct colors")   // text, icons and the status mark are not one color
     }
+}
 }

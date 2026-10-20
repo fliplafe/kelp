@@ -44,6 +44,7 @@ public struct RemoteHost: Codable, Sendable, Equatable {
 
     /// For a path inside a remote project's folder: the folder, its remote, and the path on the host.
     public static func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path   // "x/../../y" can't reach past the project
         var dir = (path as NSString).deletingLastPathComponent
         while dir.count > 1 {
             if let r = of(dir) { return (dir, r, r.path + String(path.dropFirst(dir.count))) }

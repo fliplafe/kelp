@@ -105,7 +105,7 @@ final class AppModel {
         }
         retryDelay = 1; failing = false
         // Before anything that waits (the version check can show a sheet): a daemon that drops meanwhile is still noticed.
-        c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
+        listen(c)
         c.onClose = { [weak self] in Task { @MainActor in
             guard let self, self.client === c else { return }   // a newer connection took over: nothing to undo
             self.client = nil; self.connected = false; self.reconnectSoon()
@@ -182,6 +182,9 @@ final class AppModel {
         if let w = try? await c.call("worktree.list", as: [Worktree].self), w != worktrees { worktrees = w }
         if let s = try? await c.call("session.list", as: [Session].self), s != sessions { sessions = s }
     }
+
+    /// The daemon's events, handled on the main actor.
+    func listen(_ c: RPCClient) { c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } } }
 
     private func handle(_ method: String, _ p: JSONValue) {
         switch method {
@@ -269,11 +272,17 @@ final class AppModel {
     }
 
     /// Replays history, then streams live output into `sink`.
+    /// The daemon sends the history before any live output, but the two reach the main actor by different hops: live
+    /// output that gets here first waits, so the screen shows the history and then what followed it.
     func attach(session id: String, sink: @escaping (Data) -> Void) async {
-        outputHandlers[id] = sink
+        earlyOutput[id] = []
+        outputHandlers[id] = { [weak self] d in self?.earlyOutput[id]?.append(d) }
         if let r = try? await client?.call("session.attach", .obj(["id": .string(id)])),
            let h = r["history"]?.string, let d = Data(base64Encoded: h) { sink(d) }
+        (earlyOutput.removeValue(forKey: id) ?? []).forEach(sink)
+        if outputHandlers[id] != nil { outputHandlers[id] = sink }   // not if it was detached meanwhile
     }
+    @ObservationIgnored private var earlyOutput: [String: [Data]] = [:]
     func detach(session id: String) { outputHandlers[id] = nil; Task { _ = try? await client?.call("session.detach", .obj(["id": .string(id)])) } }
     func write(session id: String, _ d: Data) { client?.notify("session.write", .obj(["id": .string(id), "base64": .string(d.base64EncodedString())])) }
     /// A notification, sent in call order and applied in that order: the last size is the one the terminal keeps.

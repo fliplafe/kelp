@@ -71,6 +71,7 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let wt = try #require(r["worktree"]).decode(Worktree.self), s = try #require(r["session"]).decode(Session.self)
     #expect(wt.branch.contains("42") && wt.issue == "#42" && wt.note == "#42 Crash on launch")
     #expect(FileManager.default.fileExists(atPath: wt.path) && s.worktreeId == wt.id)
+    #expect(r["setupNeedsTrust"]?.bool == true)   // its untrusted .kelp.yaml setup didn't run, and the caller is told
     // A second task for the same issue gets its own branch rather than failing on the name.
     let again = try await w.c.call("task.fromIssue", .obj(["repoId": .string(w.repo.id), "ref": "#42", "title": "Crash on launch", "agent": "fake"]))
     #expect(try #require(again["worktree"]).decode(Worktree.self).branch != wt.branch)
@@ -706,4 +707,21 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 @Test func issueTemplatesFillEachPlaceholderOnce() {
     let vars = ["title": "Use {body} here", "body": "BODY", "ref": "#7"]
     #expect(Daemon.fill("{ref}: {title}\n{body} {unknown}", vars) == "#7: Use {body} here\nBODY {unknown}")
+}
+
+/// Text sent to a paused agent wakes it and goes in once it is ready, not into a program still starting (which, like
+/// many TUIs, throws away what was typed early).
+@Test func textForAPausedAgentWaitsUntilItIsReady() async throws {
+    let script = "echo booting; sleep 1.5; perl -MPOSIX -e 'tcflush(0, POSIX::TCIFLUSH)'; echo ready; read -r line; echo GOT:$line; sleep 30"
+    let slow = AgentManifest(id: "slow", name: "Slow", command: "/bin/bash", args: ["-c", script, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [slow]); defer { w.d.stop() }
+    let wt = try await desk(w, "paused")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "slow"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))
+    #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
+    _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
 }

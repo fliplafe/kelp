@@ -271,6 +271,7 @@ func plist() -> String {
             }
             let r = try await c.call("task.fromIssue", .object(p))
             print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")")
+            if r["setupNeedsTrust"]?.bool == true { print("Its .kelp.yaml setup didn't run: open the project in Kelp to look at it and trust it.") }
         case ("linear", "tasks"):
             for x in try await c.call("linear.issues").array ?? [] {
                 print("\(x["identifier"]?.string ?? "")  [\(x["state"]?["name"]?.string ?? "")]  \(x["title"]?.string ?? "")")

@@ -470,6 +470,14 @@ final class NoteBox: @unchecked Sendable {
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let status = try await c.call("git.status", .obj(["id": .string(w.id)]), as: [FileChange].self)
     #expect(status.map(\.path) == ["a.txt"])
+    // An untracked file there shows with its text (read on the host, not from the marker folder here).
+    try "brand new\n".write(toFile: there + "/new.txt", atomically: true, encoding: .utf8)
+    let diffs = try await c.call("git.diff", .obj(["id": .string(w.id), "source": "unstaged"]), as: [FileDiff].self)
+    #expect(diffs.first { $0.path == "new.txt" }?.hunks.first?.lines.map(\.text) == ["brand new"])
+    try FileManager.default.removeItem(atPath: there + "/new.txt")
+    // A path that climbs out of the project's folder isn't read on the host.
+    try "outside\n".write(toFile: (there as NSString).deletingLastPathComponent + "/outside.txt", atomically: true, encoding: .utf8)
+    await #expect(throws: (any Error).self) { _ = try await c.call("files.readRemote", .obj(["path": .string(repo.path + "/../outside.txt")])) }
     // gh / glab would run in the local marker folder (and its git walk up to ~): refused, said plainly.
     do { _ = try await c.call("github.prs", .obj(["worktreeId": .string(w.id)])); Issue.record("ran gh for a remote project") }
     catch { #expect("\(error)".contains("remote projects")) }

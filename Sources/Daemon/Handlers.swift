@@ -207,7 +207,12 @@ extension Daemon {
             else { s.pty.write(Data(try p.req("text").utf8)) }
             return .null
         case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
-            try liveSession(p.req("id")).send(p.req("text"), enter: p["enter"]?.bool != false)
+            let id: String = try p.req("id"), text: String = try p.req("text"), enter = p["enter"]?.bool != false
+            let wasRunning = existing(id) != nil
+            let ls = try liveSession(id)
+            // Woken just now: typed once it is ready (drawn, quiet, no question open), as a launch prompt is; typed at once,
+            // it would land in a program still starting.
+            if wasRunning { ls.send(text, enter: enter) } else { ls.queuePrompt(text, draft: !enter) }
             return .null
         case "session.resize":
             let (cols, rows) = Launch.size(p)
@@ -242,7 +247,7 @@ extension Daemon {
             return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
         case "session.markUnread", "session.markRead":
             let ls = existing(try p.req("id"))
-            if let r = method == "session.markRead" ? ls?.markRead() : ls?.markUnread() { try store.save(r); notify("event.session", try .from(r)) }
+            if let r = method == "session.markRead" ? ls?.markRead() : ls?.markUnread() { publish(r) }   // never re-inserts a deleted one
             return .null
         case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
             guard let ls = existing(try p.req("id")) else { return .null }

@@ -36,6 +36,8 @@ extension Daemon {
 
         case "session.handoff":   // a new agent in the same workspace, briefed with this one's transcript
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
+            // The brief is a file on this Mac: an agent on a remote host couldn't read it.
+            if RemoteHost.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
             let transcript = try handoffFile(old, full: p["full"]?.bool == true)
             let task = p["prompt"]?.string ?? "Continue the task where the previous agent left off."
             var o = Launch(p)
