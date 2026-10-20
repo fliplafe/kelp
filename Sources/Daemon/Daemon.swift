@@ -386,14 +386,17 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// KELP_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
     static let debugWake = ProcessInfo.processInfo.environment["KELP_DEBUG_WAKE"] != nil
 
-    /// The agent's "trust this folder?" is answered by Kelp only where the agent already trusts the folder, the project's
-    /// main checkout or a folder above them (a new workspace of a project it knows). A repository it has never seen, or one
-    /// on a remote host (whose config isn't here), asks the user.
+    /// The agent's "trust this folder?" is answered by Kelp only when that question is actually coming and the user already
+    /// settled it: the agent doesn't trust the session's folder yet (else it asks nothing, and an armed answer could only
+    /// ever press a different menu) but does trust the project's main checkout. Anything else, including a repository it
+    /// has never seen or one on a remote host, is the user's to answer.
     func trustAnswered(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
         guard m.autoAnswers.contains(AgentManifest.trust) else { return m }
-        var folders = [cwd]
-        if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId) { folders.append(r.path) }
-        guard RemoteHost.of(cwd) != nil || !AgentTrust.trusts(agent: m.id, folders: folders, env: env) else { return m }
+        var project: String?
+        if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId) { project = r.path }
+        let expectedAndSettled = RemoteHost.of(cwd) == nil && !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
+            && project.map { AgentTrust.trusts(agent: m.id, folders: [$0], env: env) } == true
+        guard !expectedAndSettled else { return m }
         var out = m
         out.autoAnswers.removeAll { $0 == AgentManifest.trust }
         return out

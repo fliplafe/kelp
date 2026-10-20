@@ -214,21 +214,33 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(try await waitFor(5) { live.lastTurn?.files.isEmpty == true }, "turn 2 reported \(live.lastTurn?.files.map(\.path) ?? [])")
 }
 
-/// Kelp answers an agent's "trust this folder?" only for a project the agent already trusts.
-@Test func theTrustQuestionIsAnsweredOnlyForAFolderTheAgentTrusts() async throws {
-    let script = #"stty -icanon -echo; printf 'Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n'; IFS= read -rsn1 -t 4 k && [[ -z "$k" ]] && echo TRUSTED-BY-KELP; sleep 30"#
+/// Kelp answers an agent's "trust this folder?" only when it's coming (the folder isn't trusted yet) and the user settled it
+/// (the project is trusted). A permission menu after the user typed is never pressed, whatever the agent printed before it.
+@Test func theTrustQuestionIsAnsweredOnlyWhenTheProjectIsTrustedAndNothingWasTypedYet() async throws {
+    let trust = #"stty -icanon -echo; printf 'Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n'; IFS= read -rsn1 -t 4 k && [[ -z "$k" ]] && echo TRUSTED-BY-KELP; sleep 30"#
+    // The agent reads a file that happens to contain the question, then asks to run a command.
+    let menu = #"stty -icanon -echo; IFS= read -r line; printf 'README: Do you trust the files in this folder?\nRun rm -rf build?\n\xe2\x9d\xaf 1. Yes\n  2. No\n'; IFS= read -rsn1 -t 4 k && [[ -z "$k" ]] && echo APPROVED-BY-KELP; sleep 30"#
     let config = tmp().path
-    var fake = AgentManifest(id: "claude", name: "Claude Code", command: "/bin/bash", args: ["-c", script], autoAnswers: [AgentManifest.trust], resumeArgs: [])
-    fake.env = ["CLAUDE_CONFIG_DIR": config]   // its own config, not the user's
-    let w = try await world(agents: [fake]); defer { w.d.stop() }
-    func run(_ wt: Worktree) async throws -> String {
-        let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "claude"]), as: Session.self)
-        _ = try await waitFor(8) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("TRUSTED-BY-KELP") == true }
+    func agent(_ id: String, _ script: String) -> AgentManifest {
+        var m = AgentManifest(id: id, name: id, command: "/bin/bash", args: ["-c", script], autoAnswers: [AgentManifest.trust], resumeArgs: [])
+        m.env = ["CLAUDE_CONFIG_DIR": config]
+        return m
+    }
+    let w = try await world(agents: [agent("claude", trust)]); defer { w.d.stop() }
+    let wt = try await desk(w, "d1")
+    let outside = tmp().path   // a session folder outside the project: its own trust question will come
+    func output(_ p: [String: JSONValue], send: String? = nil, until marker: String) async throws -> String {
+        let s: Session = try await w.c.call("session.create", .object(p), as: Session.self)
+        if let send { _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": .string(send)])) }
+        _ = try await waitFor(6) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains(marker) == true }
         return try await w.c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
     }
-    let unknown = try await desk(w, "never-seen")
-    #expect(try await run(unknown).contains("TRUSTED-BY-KELP") == false)   // a project it never trusted: the user is asked
+    let p: [String: JSONValue] = ["worktreeId": .string(wt.id), "agent": "claude", "cwd": .string(outside)]
+    #expect(try await !output(p, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))   // the project isn't trusted: the user is asked
     try #"{"projects":{"\#(w.repo.path)":{"hasTrustDialogAccepted":true}}}"#.write(toFile: config + "/.claude.json", atomically: true, encoding: .utf8)
-    let known = try await desk(w, "new-desk")
-    #expect(try await run(known).contains("TRUSTED-BY-KELP"))              // a new workspace of a project it trusts: answered
+    #expect(try await output(p, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))     // trusted project, new folder: answered
+
+    // A permission menu after the user's prompt, with the question's words in what the agent read.
+    try JSONEncoder().encode(agent("claude", menu)).write(to: w.root.appendingPathComponent("agents/claude.json"))
+    #expect(try await !output(p, send: "go", until: "APPROVED-BY-KELP").contains("APPROVED-BY-KELP"))
 }

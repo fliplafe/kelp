@@ -58,7 +58,12 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
     private var promptIsDraft = false
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
-    private var steering: (choose: NSRegularExpression, since: Date, lastKey: Date)?
+    /// `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the user answers
+    /// from a notification.
+    private var steering: (choose: NSRegularExpression, since: Date, lastKey: Date, screen: NSRegularExpression?)?
+    /// Anything typed into it yet, by the user or by Kelp (a prompt): startup answers are only for what the agent asks
+    /// before that. After it, a matching line is something the agent read or wrote, not its own dialog.
+    private var typedYet = false
     private var inputLine = ""
     private var sawFirstPrompt = false
     /// Agents with hooks report their state themselves; the others may through OSC 7501 (ProgramStatus).
@@ -140,13 +145,13 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + StatusDetector.stripANSI(text)).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
         var answer: String?
-        if !autoAnswers.isEmpty, Date().timeIntervalSince(started) < 90 {
+        if !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 {
             let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
             let r = NSRange(tail.startIndex..., in: tail)
             if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) {
                 let a = autoAnswers[i].1
                 if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
-                    steering = (re, Date(), .distantPast); autoAnswers.remove(at: i)   // closed loop, see steer()
+                    steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
                 } else { answer = a.input; autoAnswers.remove(at: i) }
             }
         }
@@ -264,6 +269,10 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if Date().timeIntervalSince(st.since) > 30 { steering = nil; lock.unlock(); return }
         guard Date().timeIntervalSince(st.lastKey) > 0.7 else { lock.unlock(); return }
         let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
+        // The dialog it was armed for has to be the one on screen, at every key: another menu is never pressed.
+        if let must = st.screen, must.firstMatch(in: screen, range: NSRange(screen.startIndex..., in: screen)) == nil || typedYet {
+            steering = nil; lock.unlock(); return
+        }
         guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { lock.unlock(); return }
         let onTarget = st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil
         let key: String
@@ -282,7 +291,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let lines = screen.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ❯›>")) }
         guard AgentManifest.AutoAnswer.optionAtCursor(screen) != nil, let re = try? NSRegularExpression(pattern: pattern),
               lines.contains(where: { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) else { lock.unlock(); return nil }
-        steering = (re, Date(), .distantPast)
+        steering = (re, Date(), .distantPast, nil)
         detector.input(); record.unread = false
         if hooked { detector.override(.working); interruptArmed = (Date(), "") }   // a "No" ends the turn: the screen says so
         let changed = sync() ?? record
@@ -299,7 +308,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
 
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
     func send(_ text: String, enter: Bool) {
-        lock.withLock { detector.input() }
+        lock.withLock { detector.input(); typedYet = true }
         let body = text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         pty.write(Data(body.utf8))
         if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
@@ -310,6 +319,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         pty.write(d)
         lock.lock()
         guard !TerminalReplies.isReply(d) else { lock.unlock(); return }   // the terminal answering the agent, not the user typing
+        typedYet = true
         detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
         var read: Session?
         if record.unread { record.unread = false; read = record }   // typing into it is having read it
