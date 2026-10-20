@@ -49,6 +49,15 @@ import Core
     #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
 }
 
+@Test func stopWithBackgroundAgentsIsNotDone() {
+    func stop(_ types: [String]) -> JSONValue { .obj(["background_tasks": .array(types.map { .obj(["type": .string($0)]) })]) }
+    #expect(Hooks.hasBackgroundWork(stop(["subagent", "shell"])))
+    #expect(Hooks.hasBackgroundWork(stop(["workflow"])))
+    #expect(!Hooks.hasBackgroundWork(stop(["shell", "monitor"])))
+    #expect(!Hooks.hasBackgroundWork(stop([])))
+    #expect(!Hooks.hasBackgroundWork(.obj([:])))   // older Claude Code: no field
+}
+
 @Test func trustMenuPicksYes() {
     // Claude Code 2026: cursor starts on "No, exit".
     let claude = """

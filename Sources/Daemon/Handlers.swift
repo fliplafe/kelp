@@ -188,7 +188,9 @@ extension Daemon {
             let ls = try liveSession(p.req("id"))
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
             if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
-            ls.hook(try p.req("event"), trigger: p["trigger"]?.string, message: p["notification"]?["message"]?.string); return .null
+            let event: String = try p.req("event")
+            ls.hook(event == "done" && Hooks.hasBackgroundWork(p) ? "working" : event,
+                    trigger: p["trigger"]?.string, message: p["notification"]?["message"]?.string); return .null
         case "session.turn":   // the agent's last turn: files it changed and how long it took (nil before its first turn ends)
             guard let ls = existing(try p.req("id")) else { return .null }
             return .obj(["turn": ls.lastTurn.flatMap { try? JSONValue.from($0) } ?? .null, "hasBase": .bool(ls.turnBase != nil)])
