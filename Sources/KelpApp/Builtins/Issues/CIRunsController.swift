@@ -3,15 +3,25 @@ import Core
 
 /// What the daemon's ci.* methods return (Integrations.CI's shapes; the app only reads them).
 enum CIRuns {
-    struct Step: Codable { var name: String; var status: String; var conclusion: String? }
+    /// Finished without success (failed, timed out, cancelled…).
+    static func failed(_ status: String, _ conclusion: String?) -> Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+    struct Step: Codable {
+        var name: String; var status: String; var conclusion: String?
+        var failed: Bool { CIRuns.failed(status, conclusion) }
+    }
     struct Job: Codable {
         var id: Int, name: String, status: String, conclusion: String?, url: String?
         var steps: [Step]
-        var failed: Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+        var failed: Bool { CIRuns.failed(status, conclusion) }
     }
     struct Run: Codable {
         var id: Int, title: String, workflow: String, status: String, conclusion: String?, event: String, url: String, createdAt: String
-        var failed: Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+        var failed: Bool { CIRuns.failed(status, conclusion) }
+    }
+    /// The newest run of each workflow (runs come newest first): what the branch's CI says now.
+    static func latest(_ runs: [Run]) -> [Run] {
+        var seen = Set<String>()
+        return runs.filter { seen.insert($0.workflow).inserted }
     }
     struct Workflow: Codable {
         struct Input: Codable { var name: String, description: String, defaultValue: String, options: [String], required: Bool }
@@ -134,8 +144,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
                 for job in run.children ?? [] where openJobs.contains(job.id ?? -1) { outline.expandItem(job) }
                 if let job = run.children?.first(where: { $0.id == selected }) { outline.selectRowIndexes([outline.row(forItem: job)], byExtendingSelection: false) }
             }
-            // The latest run failed: open it at the first failed job, with its log (once, so closing it sticks).
-            if let first = runs.first, case .run(let run) = first.kind, run.failed, autoOpened.insert(run.id).inserted { await expand(first, openFailed: true) }
+            // A workflow's latest run failed (what Source Control's CI line shows): open it at the first failed job,
+            // with its log (once, so closing it sticks).
+            let failing = Set(CIRuns.latest(runs.compactMap { if case .run(let r) = $0.kind { r } else { nil } }).filter(\.failed).map(\.id))
+            if let item = runs.first(where: { failing.contains($0.id ?? -1) }), let id = item.id, autoOpened.insert(id).inserted { await expand(item, openFailed: true) }
             pollWhileRunning()
         }
     }
@@ -277,21 +289,21 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             s.textColor = .secondaryLabelColor; s.lineBreakMode = .byTruncatingTail
             let text = NSStackView(views: [t, s]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1
             for x in [t, s, text] { x.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
-            return row([mark(r.status, r.conclusion), text])
+            return row([Self.mark(r.status, r.conclusion), text])
         case .job(let j, _):
             let t = NSTextField(labelWithString: j.name); t.font = .ui(12); t.lineBreakMode = .byTruncatingTail
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            guard j.status != "completed", !j.steps.isEmpty else { return row([mark(j.status, j.conclusion), t]) }
+            guard j.status != "completed", !j.steps.isEmpty else { return row([Self.mark(j.status, j.conclusion), t]) }
             // How far it got: "6/12" steps.
             let n = NSTextField(labelWithString: "\(j.steps.filter { $0.status == "completed" }.count)/\(j.steps.count)")
             n.font = .uiDigits(11, weight: .regular); n.textColor = .tertiaryLabelColor
-            return row([mark(j.status, j.conclusion), t, NSView(), n])
+            return row([Self.mark(j.status, j.conclusion), t, NSView(), n])
         case .step(let s):
             let t = NSTextField(labelWithString: s.name); t.font = .ui(11); t.lineBreakMode = .byTruncatingTail
             // The step running now reads like a title; done ones grey, the ones still to come quieter still.
             t.textColor = s.status == "in_progress" ? .labelColor : s.status == "completed" ? .secondaryLabelColor : .tertiaryLabelColor
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            return row([mark(s.status, s.conclusion), t])
+            return row([Self.mark(s.status, s.conclusion), t])
         }
     }
 
@@ -305,7 +317,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     /// ✓ green, ✕ red, the agents' spinning ring while it runs, an empty circle while it waits its turn,
     /// – grey when skipped or cancelled.
-    private func mark(_ status: String, _ conclusion: String?) -> NSView {
+    static func mark(_ status: String, _ conclusion: String?) -> NSView {
         let words = Self.words(status, conclusion)
         if status == "in_progress" { let m = StatusMark(size: 14); m.status = .working; m.toolTip = words; return m }
         let (symbol, color): (String, NSColor) = switch (status, conclusion) {

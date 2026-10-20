@@ -52,6 +52,13 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var pending: DispatchWorkItem?
     private var busy = false { didSet { updateCommitButton() } }
     private let stats = NSTextField(labelWithString: "")
+    private let ciRow = CIStatusRow()
+    private var ciRuns: [CIRuns.Run] = []
+    /// Where each failed run broke ("job › step"), read once: a finished run doesn't change.
+    private var ciFailures: [Int: String] = [:]
+    private var ciPoll: Task<Void, Never>?
+    /// After a push: the run that was newest then, until a newer one shows up (or the deadline passes).
+    private var ciAwaiting: (old: Int?, until: Date)?
 
     // MARK: view
 
@@ -146,8 +153,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let cb = NSComboButton(title: String(localized: "Commit"), menu: commitMenu, target: self, action: #selector(commitPressed))
         cb.image = .symbol("checkmark", String(localized: "Commit")); cb.style = .split; cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
         commitButton = cb
+        ciRow.onClick = { [weak self] in self?.openCI() }
+        let stack = NSStackView(views: [cb, ciRow]); stack.orientation = .vertical; stack.spacing = 6   // a hidden CI line takes no room
         let box = NSView()
-        for x in [field, s, placeholder, cb] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
+        for x in [field, s, placeholder, stack] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
         let h = s.heightAnchor.constraint(equalToConstant: 30); messageHeight = h
         NSLayoutConstraint.activate([
             field.topAnchor.constraint(equalTo: box.topAnchor), field.leadingAnchor.constraint(equalTo: box.leadingAnchor),
@@ -156,8 +165,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             s.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 2), s.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -2), h,
             placeholder.leadingAnchor.constraint(equalTo: s.leadingAnchor, constant: 9), placeholder.topAnchor.constraint(equalTo: s.topAnchor, constant: 7),
             placeholder.trailingAnchor.constraint(lessThanOrEqualTo: s.trailingAnchor, constant: -8),
-            cb.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8), cb.bottomAnchor.constraint(equalTo: box.bottomAnchor),
-            cb.leadingAnchor.constraint(equalTo: box.leadingAnchor), cb.trailingAnchor.constraint(equalTo: box.trailingAnchor)
+            stack.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8), stack.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor), stack.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            cb.widthAnchor.constraint(equalTo: stack.widthAnchor), ciRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         return box
     }
@@ -203,6 +213,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     func bind(_ wid: String?) {
         guard wid != worktreeId else { return }
         worktreeId = wid; changes = []; info = nil; commits = []; unpushed = []; commitFiles = [:]; openCommits = []; limit = 200
+        ciPoll?.cancel(); ciRuns = []; ciAwaiting = nil; ciRow.show([], failure: nil)
         message.string = ""; messageChanged()
         watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] _ in self?.scheduleReload() } }
         rebuild(); reloadAll()
@@ -224,11 +235,15 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
                     || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
                 let changed = ch != changes || br != info
+                // A push (or a publish) starts CI: wait for its run to show up.
+                if let old = info, br.upstream != nil, br.current == old.current, old.upstream == nil || (br.ahead ?? 0) < (old.ahead ?? 0) {
+                    ciAwaiting = (ciRuns.first?.id, Date().addingTimeInterval(45))
+                }
                 changes = ch; info = br; showError(nil)
                 ChangedFiles.shared.report(wid, ch.count)
                 updateHeader(); updateCommitButton()
                 showStats(ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self))
-                if graphStale || commits.isEmpty { await loadGraph() } else if changed { rebuildChanges() }
+                if graphStale || commits.isEmpty { loadCI(); await loadGraph() } else if changed { rebuildChanges() }
             } catch {
                 changes = []; info = nil; commits = []
                 showError((error as? RPCError)?.message ?? "\(error)")
@@ -257,6 +272,47 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let p = NSMutableParagraphStyle(); p.alignment = .center; p.paragraphSpacing = 4
         s.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: s.length))
         empty.attributedStringValue = s
+    }
+
+    /// Shown again (another panel was on screen): what CI did meanwhile.
+    override func viewDidAppear() { super.viewDidAppear(); if !ciRuns.isEmpty { loadCI() } }
+
+    /// The CI line under Commit. While a run goes on, or a push's run hasn't shown up yet, it looks again
+    /// as long as the panel is on screen. No upstream, no gh / glab, no runs: no line.
+    private func loadCI() {
+        ciPoll?.cancel()
+        guard let wid = worktreeId, info?.upstream != nil else { ciRuns = []; ciRow.show([], failure: nil); return }
+        ciPoll = Task { [weak self] in
+            let r = await AppModel.shared.tryCall("ci.runs", .obj(["worktreeId": .string(wid)]))
+            guard let self, !Task.isCancelled, wid == worktreeId else { return }
+            ciRuns = (try? r.value?["runs"]?.decode([CIRuns.Run].self)) ?? []
+            let latest = CIRuns.latest(ciRuns)
+            ciRow.show(latest, failure: nil)
+            if let failed = latest.first(where: \.failed) {
+                if ciFailures[failed.id] == nil { ciFailures[failed.id] = await failurePlace(wid, run: failed.id) }
+                guard !Task.isCancelled, wid == worktreeId else { return }
+                ciRow.show(latest, failure: ciFailures[failed.id])
+            }
+            let waiting = ciAwaiting.map { self.ciRuns.first?.id == $0.old && Date() < $0.until } ?? false
+            if !waiting { ciAwaiting = nil }
+            guard waiting || latest.contains(where: { $0.status != "completed" }) else { return }
+            try? await Task.sleep(for: .seconds(waiting ? 5 : 10))
+            guard !Task.isCancelled, view.window != nil else { return }
+            loadCI()
+        }
+    }
+
+    /// "test › Run swift test": the first failed job and its failed step.
+    private func failurePlace(_ wid: String, run: Int) async -> String? {
+        let r = await AppModel.shared.tryCall("ci.jobs", .obj(["worktreeId": .string(wid), "run": .int(run)]))
+        guard let job = (try? r.value?.decode([CIRuns.Job].self))?.first(where: \.failed) else { return nil }
+        return ([job.name] + (job.steps.first(where: \.failed).map { [$0.name] } ?? [])).joined(separator: " › ")
+    }
+
+    /// The details live in the CI Runs panel (it opens the failed job's log by itself); without it, the run's page.
+    private func openCI() {
+        if ExtensionRegistry.shared.all.panels.contains(where: { $0.id == "ci" }) { Workbench.window?.showInspector(panel: "ci") }
+        else if let run = CIRuns.latest(ciRuns).first(where: \.failed) ?? ciRuns.first { Workbench.open(run.url) }
     }
 
     private func loadGraph() async {
