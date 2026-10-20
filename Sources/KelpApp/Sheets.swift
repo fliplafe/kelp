@@ -34,7 +34,7 @@ enum AgentActions {
     static func rename(_ sid: String) {
         let cur = AppModel.shared.session(sid)?.title ?? ""
         guard let t = prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."), initial: cur) else { return }
-        Task { await AppModel.shared.call("session.rename", .obj(["id": .string(sid), "title": .string(t)])) }
+        Task { await AppModel.shared.call(SessionRename(id: sid, title: t)) }
     }
 
     /// Same command in the same tab; resumes the conversation when the agent supports it.

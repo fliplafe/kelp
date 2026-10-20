@@ -15,14 +15,14 @@ enum UIState {
         set {
             guard values[key] != newValue else { return }
             values[key] = newValue
-            AppModel.shared.client?.notify("state.set", .obj(["key": .string(key), "value": newValue ?? .null]))
+            AppModel.shared.client?.notify(StateSet(key: key, value: newValue))
         }
     }
     static func strings(_ key: String) -> [String] { values[key]?.array?.compactMap(\.string) ?? [] }
 
     /// A daemon too old for `state.*` leaves it empty.
     static func load(_ c: RPCClient) async {
-        guard case .object(let all)? = try? await c.call("state.get", .obj(["prefix": ""])) else { return }
+        guard case .object(let all)? = try? await c.call(StateGet(prefix: "")) else { return }
         values = all
         await importDefaults(c)
     }
@@ -40,7 +40,7 @@ enum UIState {
             let value = (v as? Data).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
                 ?? (v as? [String]).map { .array($0.map(JSONValue.string)) } ?? (v as? String).map(JSONValue.string)
             if values[key] == nil, let value {
-                guard (try? await c.call("state.set", .obj(["key": .string(key), "value": value]))) != nil else { continue }
+                guard (try? await c.call(StateSet(key: key, value: value))) != nil else { continue }
                 values[key] = value
             }
             d.removeObject(forKey: old)

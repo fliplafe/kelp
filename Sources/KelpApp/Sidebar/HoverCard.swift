@@ -95,7 +95,7 @@ final class CardModel {
                 turn = files.isEmpty ? String(localized: "Last turn changed no files · \(took)")
                     : "Last turn: \(files.count) \(files.count == 1 ? "file" : "files") +\(add) −\(del) · \(took)"
             }
-            if let u = try? await c.call("session.contextWindow", id), let used = u["used"]?.int, let window = u["window"]?.int { context = (used, window) }
+            if let u = try? await c.call(SessionContextWindow(id: a.id)) { context = (u.used, u.window) }
         }
     }
 }

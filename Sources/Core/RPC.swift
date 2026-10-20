@@ -40,6 +40,29 @@ public struct RPCMessage: Codable, Sendable {
     public var error: RPCError?
 }
 
+/// A method declared as a type (Methods.swift), shared by the app, the CLI and the daemon like Zed's proto messages:
+/// a misspelled key or a wrong result shape doesn't compile. Its fields are the request's params, exactly the JSON
+/// the method takes when written by hand, so untyped callers (older apps, scripts) keep working.
+public protocol RPCMethod: Codable, Sendable {
+    associatedtype Result: Codable & Sendable
+    static var name: String { get }
+}
+
+extension RPCMethod {
+    /// The request's params: the fields, or none for a method without any (as hand-written calls send it).
+    public func params() throws -> JSONValue? {
+        let p = try JSONValue.from(self)
+        return p == .object([:]) ? nil : p
+    }
+}
+
+/// The result of a method that answers null.
+public struct Done: Codable, Sendable {
+    public init() {}
+    public init(from decoder: Decoder) {}
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encodeNil() }
+}
+
 public enum Wire {
     public static func line<T: Encodable>(_ v: T) throws -> Data {
         var d = try JSONEncoder().encode(v)

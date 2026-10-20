@@ -41,6 +41,26 @@ import Testing
     #expect(v["params"]?["k"]?.string == "v")
 }
 
+/// Typed methods put the JSON on the wire that the hand-written calls they replaced did, and read today's answers.
+@Test func typedMethodsKeepTheWireFormat() throws {
+    #expect(try DaemonInfo().params() == nil)
+    #expect(try StateGet(prefix: "").params() == .obj(["prefix": ""]))
+    #expect(try StateGet(key: "k").params() == .obj(["key": "k"]))
+    #expect(try StateSet(key: "k", value: .array(["a"])).params() == .obj(["key": "k", "value": .array(["a"])]))
+    #expect(try StateSet(key: "k", value: nil).params() == .obj(["key": "k"]))   // a missing value deletes, as null does
+    #expect(try SessionRename(id: "s", title: "t").params() == .obj(["id": "s", "title": "t"]))
+    #expect(try SessionContextWindow(id: "s").params() == .obj(["id": "s"]))
+    #expect(try WorktreeNote(id: "w", note: "n").params() == .obj(["id": "w", "note": "n"]))
+
+    let info = try JSONValue.obj(["path": "/k/kelpd", "binaryMTime": 1_760_000_000, "pid": 7, "liveSessions": 2]).decode(DaemonInfo.Result.self)
+    #expect(info.path == "/k/kelpd" && info.binaryMTime == 1_760_000_000 && info.liveSessions == 2)   // a whole double arrives as an int
+    #expect(try JSONValue.obj(["path": "/k", "pid": 7, "liveSessions": 0]).decode(DaemonInfo.Result.self).binaryMTime == nil)
+    #expect(try JSONValue.obj(["used": 10, "window": 100]).decode(SessionContextWindow.Result.self) == .init(used: 10, window: 100))
+    #expect(try JSONValue.null.decode(SessionContextWindow.Result.self) == nil)
+    #expect(try JSONValue.from(Done()) == .null)
+    _ = try JSONValue.null.decode(Done.self)
+}
+
 @Test func layoutSplitMoveRemove() {
     var l = LayoutNode.pane("a")
     l = l.inserting("b", beside: "a", vertical: true, before: false)

@@ -177,7 +177,7 @@ func plist() -> String {
         case ("worktree", "list"): show(try await c.call("worktree.list", has("--all") ? .obj(["archived": true]) : nil))
         case ("worktree", "current"): show(try await currentWorktree(c))
         case ("worktree", "note"):
-            show(try await c.call("worktree.note", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "note": .string(args.joined(separator: " "))])))
+            _ = try await c.call(WorktreeNote(id: try await currentWorktree(c)["id"]?.string ?? "", note: args.joined(separator: " ")))
         case ("worktree", "remove"), ("worktree", "archive"):
             let force = has("--force")
             show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")), "force": .bool(force)])))
@@ -220,7 +220,7 @@ func plist() -> String {
         case ("session", "restart"), ("session", "fork"):
             show(try await c.call("session.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("session", "rename"):
-            show(try await c.call("session.rename", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")), "title": .string(args.dropFirst().joined(separator: " "))])))
+            _ = try await c.call(SessionRename(id: try await resolve(c, args.first ?? "", "session.list"), title: args.dropFirst().joined(separator: " ")))
         case ("session", "handoff"):
             var p: [String: JSONValue] = ["id": .string(try await resolve(c, args.first ?? "", "session.list"))]
             if let a = flag("--agent") { p["agent"] = .string(a) }

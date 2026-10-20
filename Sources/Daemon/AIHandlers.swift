@@ -26,12 +26,6 @@ extension Daemon {
             let s = try spawn(cwd: try w.req("path"), manifest: agent, worktreeId: try w.req("id"), o)
             return .obj(["worktree": w, "session": try .from(s)])
 
-        case "session.rename":
-            let t = try p.req("title")
-            if let ls = existing(try p.req("id")) { publish(ls.update { $0.title = t; $0.titleManual = !t.isEmpty }) }
-            else if var s = try store.session(p.req("id")) { s.title = t; s.titleManual = !t.isEmpty; publish(s) }
-            return .null
-
         case "session.annotate":   // summary from the UI (the agent's own last reply), optionally a better status guess
             guard let ls = existing(try p.req("id")) else { return .null }
             if let sum = p["summary"]?.string { publish(ls.update { $0.summary = sum }) }
@@ -180,5 +174,13 @@ extension Daemon {
         } else if !want, sleepAssertion != 0 {
             IOPMAssertionRelease(sleepAssertion); sleepAssertion = 0
         }
+    }
+}
+
+extension SessionRename: Handled {
+    func handle(_ d: Daemon) throws -> Done {
+        if let ls = d.existing(id) { d.publish(ls.update { $0.title = title; $0.titleManual = !title.isEmpty }) }
+        else if var s = try d.store.session(id) { s.title = title; s.titleManual = !title.isEmpty; d.publish(s) }
+        return Done()
     }
 }

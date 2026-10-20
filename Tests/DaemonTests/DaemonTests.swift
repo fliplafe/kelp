@@ -422,6 +422,25 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await ping.value.string == "pong")
 }
 
+/// A typed call and the same request written by hand (the CLI, an older app) get the same answer.
+@Test func typedAndUntypedCallsAgree() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    _ = try await c.call(StateSet(key: "sidebar.order", value: .array(["a"])))
+    #expect(try await c.call(StateGet(key: "sidebar.order")) == .array(["a"]))
+    #expect(try await c.call("state.get", .obj(["key": "sidebar.order"])) == .array(["a"]))
+    _ = try await c.call("state.set", .obj(["key": "layout/w1", "value": 1]))
+    #expect(try await c.call(StateGet(prefix: "")) == .obj(["sidebar.order": .array(["a"]), "layout/w1": 1]))
+    _ = try await c.call(StateSet(key: "sidebar.order", value: nil))
+    #expect(try await c.call("state.get", .obj(["prefix": ""])) == .obj(["layout/w1": 1]))
+
+    let info = try await c.call(DaemonInfo())
+    #expect(info.pid == Int(getpid()) && info.liveSessions == 0 && info.binaryMTime == Daemon.binaryMTime)
+    #expect(try await c.call("daemon.info") == .from(info))
+    #expect(try await c.call(SessionContextWindow(id: "nope")) == nil)
+    await #expect(throws: RPCError.invalidParams("missing title")) { try await c.call("session.rename", .obj(["id": "x"])) }
+}
+
 /// How many of `n` signals came by the deadline. Blocks this thread on purpose: with a broken offload the cooperative
 /// pool is full, and a test that awaited would hang instead of failing.
 private func signals(_ s: DispatchSemaphore, _ n: Int, by deadline: DispatchTime) -> Int {

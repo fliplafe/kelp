@@ -12,13 +12,6 @@ extension Daemon {
             lock.withLock { uiState = state; appConns.insert(conn) }
             return .null
         case "ui.state": return lock.withLock { uiState }
-        case "state.get":   // {key} → its value or null; {prefix} → {key: value} for every key that starts with it
-            if let prefix = p["prefix"]?.string { return .object(try store.uiState(prefix: prefix)) }
-            let key = try p.req("key")
-            return try store.uiState(prefix: key)[key] ?? .null
-        case "state.set":   // {key, value}: a null or missing value deletes the key
-            try store.setUIState(p.req("key"), p["value"].flatMap { $0 == .null ? nil : $0 })
-            return .null
         case "ui.open":
             _ = try p.req("uri")
             if let s = p["split"], s != "right", s != "down" { throw RPCError.invalidParams("split must be \"right\" or \"down\"") }
@@ -38,4 +31,16 @@ extension Daemon {
         notify("event.ui", .object(params), to: apps)
         return .obj(["delivered": .int(apps.count)])
     }
+}
+
+extension StateGet: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        if let prefix { return .object(try d.store.uiState(prefix: prefix)) }
+        guard let key else { throw RPCError.invalidParams("missing key") }
+        return try d.store.uiState(prefix: key)[key] ?? .null
+    }
+}
+
+extension StateSet: Handled {
+    func handle(_ d: Daemon) throws -> Done { try d.store.setUIState(key, value); return Done() }
 }

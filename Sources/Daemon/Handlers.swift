@@ -10,11 +10,31 @@ extension JSONValue {
     }
 }
 
+/// A method declared in Core (`RPCMethod`) that the daemon answers: params decoded, result encoded, run through `offload`.
+protocol Handled: RPCMethod {
+    func handle(_ d: Daemon) throws -> Result
+}
+
+extension Handled {
+    static func run(_ p: JSONValue, _ d: Daemon) throws -> JSONValue {
+        let m: Self
+        do { m = try (p == .null ? .object([:]) : p).decode(Self.self) }
+        catch DecodingError.keyNotFound(let k, _) { throw RPCError.invalidParams("missing \(k.stringValue)") }
+        catch { throw RPCError.invalidParams("\(name): \(error)") }
+        return try .from(m.handle(d))
+    }
+}
+
 extension Daemon {
+    /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
+    static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
+                                                          WorktreeNote.self] as [any Handled.Type]).map { ($0.name, $0) })
+
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
         if let e = extra[method] { return try await e(self, p) }
         do {
+            if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self) } }
             if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
             if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await handleHistory(method, p) { return r }
@@ -41,11 +61,6 @@ extension Daemon {
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
         case "ping": return "pong"
-        case "daemon.info":   // the app compares this with the kelpd it ships to detect updates
-            let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-            let liveCount = lock.withLock { live.values.filter { $0.snapshot.status != .exited }.count }
-            return .obj(["path": .string(exe.resolvingSymlinksInPath().path), "binaryMTime": .double(Self.binaryMTime), "pid": .int(Int(getpid())),
-                         "liveSessions": .int(liveCount)])
         case "daemon.shutdown":
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.stop(); exit(0) }
             return .null
@@ -110,9 +125,6 @@ extension Daemon {
         case "worktree.list":
             try syncMainWorkspaces()
             return try .from(store.worktrees(repo: p["repoId"]?.string).filter { p["archived"]?.bool == true || !$0.archived })
-        case "worktree.note":
-            guard var w = try store.worktree(p.req("id")) else { throw RPCError.invalidParams("no worktree") }
-            w.note = try p.req("note"); try store.save(w); notify("event.changed", "worktree"); return .null
         case "worktree.archive", "worktree.remove":
             guard var w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
             if isMain(w, r) {
@@ -200,9 +212,6 @@ extension Daemon {
         case "session.turn":   // the agent's last turn: files it changed and how long it took (nil before its first turn ends)
             guard let ls = existing(try p.req("id")) else { return .null }
             return .obj(["turn": ls.lastTurn.flatMap { try? JSONValue.from($0) } ?? .null, "hasBase": .bool(ls.turnBase != nil)])
-        case "session.contextWindow":   // how full the conversation is (Claude Code transcripts)
-            guard let t = existing(try p.req("id")).flatMap(transcript(of:)), let c = Self.contextUsage(transcript: t) else { return .null }
-            return .obj(["used": .int(c.used), "window": .int(contextWindow(model: c.model, peak: c.peak))])
         case "session.lastReply":   // the agent's last message, from its transcript (Claude Code), for summaries
             guard let t = existing(try p.req("id")).flatMap(transcript(of:)) else { return .null }
             return Self.lastReply(transcript: t).map { .string($0) } ?? .null
@@ -295,6 +304,28 @@ extension Daemon {
 
         default: throw RPCError.methodNotFound
         }
+    }
+}
+
+extension DaemonInfo: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
+                      liveSessions: d.lock.withLock { d.live.values.filter { $0.snapshot.status != .exited }.count })
+    }
+}
+
+extension WorktreeNote: Handled {
+    func handle(_ d: Daemon) throws -> Done {
+        guard var w = try d.store.worktree(id) else { throw RPCError.invalidParams("no worktree") }
+        w.note = note; try d.store.save(w); d.notify("event.changed", "worktree"); return Done()
+    }
+}
+
+extension SessionContextWindow: Handled {
+    func handle(_ d: Daemon) throws -> Usage? {
+        guard let t = d.existing(id).flatMap(d.transcript(of:)), let c = Daemon.contextUsage(transcript: t) else { return nil }
+        return Usage(used: c.used, window: d.contextWindow(model: c.model, peak: c.peak))
     }
 }
 

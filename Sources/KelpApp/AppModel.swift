@@ -91,16 +91,16 @@ final class AppModel {
     /// otherwise ask, because restarting ends running sessions. Returns true when a restart is in progress.
     private func checkDaemonVersion(_ c: RPCClient) async -> Bool {
         guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return false }
-        var info: JSONValue = .null
-        do { info = try await c.call("daemon.info") } catch let e as RPCError where e.code == RPCError.methodNotFound.code {
-            info = .obj(["liveSessions": .int(((try? await c.call("session.list").array) ?? []).filter { $0["status"]?.string != "exited" }.count)])   // predates daemon.info
+        let info: DaemonInfo.Result
+        do { info = try await c.call(DaemonInfo()) } catch let e as RPCError where e.code == RPCError.methodNotFound.code {
+            let live = ((try? await c.call("session.list").array) ?? []).filter { $0["status"]?.string != "exited" }.count
+            info = .init(path: "", binaryMTime: nil, pid: 0, liveSessions: live)   // predates daemon.info
         } catch { return false }
         // Older daemons don't report binaryMTime (and their "mtime" was read from disk, i.e. already the new file): restart them.
-        let theirs: Double = { if case .double(let d)? = info["binaryMTime"] { return d }; return Double(info["binaryMTime"]?.int ?? 0) }()
-        let samePath = info["path"]?.string == bundledDaemon.resolvingSymlinksInPath().path
-        guard !(samePath && abs(theirs - mine) < 1), !restartAttempted else { return false }
+        let samePath = info.path == bundledDaemon.resolvingSymlinksInPath().path
+        guard !(samePath && abs((info.binaryMTime ?? 0) - mine) < 1), !restartAttempted else { return false }
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
-        if (info["liveSessions"]?.int ?? 0) > 0 {
+        if info.liveSessions > 0 {
             let a = NSAlert(); a.messageText = String(localized: "Kelp was updated")
             a.informativeText = String(localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
             a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
@@ -165,9 +165,11 @@ final class AppModel {
     /// No answer (not Claude Code, ended, just compacted by an older Claude Code) takes the ring away.
     private func readContext(_ id: String) {
         Task {
-            guard let u = try? await client?.call("session.contextWindow", .obj(["id": .string(id)])) else { return }
-            let share = u["used"]?.int.flatMap { used in u["window"]?.int.flatMap { $0 > 0 ? Double(used) / Double($0) : nil } }
-            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
+            guard let c = client else { return }
+            do {
+                let share = try await c.call(SessionContextWindow(id: id)).flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }
+                if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
+            } catch {}   // no reply at all: the ring stays
         }
     }
 
@@ -195,6 +197,11 @@ final class AppModel {
             Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error)
             return nil
         }
+    }
+    @discardableResult
+    func call<M: RPCMethod>(_ m: M) async -> M.Result? {
+        do { return try await client?.call(m) }
+        catch { Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error); return nil }
     }
 
     /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.

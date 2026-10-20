@@ -420,7 +420,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         field.isEditable = false; field.drawsBackground = false
         let name = field.stringValue.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty, name != AppModel.shared.worktree(id)?.displayName {
-            Task { await AppModel.shared.call("worktree.note", .obj(["id": .string(id), "note": .string(name)])) }
+            Task { await AppModel.shared.call(WorktreeNote(id: id, note: name)) }
         } else { refreshCell("w:" + id) }
     }
 
