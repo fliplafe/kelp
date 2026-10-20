@@ -385,12 +385,12 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     func hibernateIdle() {
         let minutes = settings.number("sessions.hibernateMinutes") ?? 0
         guard minutes > 0 else { return }
-        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        let candidates = lock.withLock { Array(live.values) }.filter { ls in
-            let s = ls.snapshot
-            guard [.done, .waiting, .idle].contains(s.status), !ls.isAttached, ls.idleSeconds > minutes * 60 else { return false }
-            return manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
+        let idle = lock.withLock { Array(live.values) }.filter { ls in
+            [.done, .waiting, .idle].contains(ls.snapshot.status) && !ls.isAttached && ls.idleSeconds > minutes * 60
         }
+        guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        let candidates = idle.filter { ls in manifests.first { $0.id == ls.snapshot.agent }?.resumeArgs.isEmpty == false }
         for ls in candidates {
             let s = ls.markHibernated()
             ls.pty.kill()
@@ -442,11 +442,11 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     func resumeArgv(_ rec: Session, _ m: AgentManifest) -> [String] {
         guard rec.agent == "claude", RemoteHost.of(rec.cwd) == nil, let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
         if rec.argv.contains(flag) { return rec.argv }
-        let conversations = ClaudeHistory.sessions(cwd: rec.cwd, root: claudeProjects(rec))
         if let i = rec.argv.firstIndex(of: pin), i + 1 < rec.argv.count {
             // Pinned but nothing typed yet: no conversation to resume, start it under the same id.
-            return conversations.contains { $0.id.lowercased() == rec.argv[i + 1].lowercased() } ? m.resuming(rec.argv) : rec.argv
+            return ClaudeHistory.session(id: rec.argv[i + 1], cwd: rec.cwd, root: claudeProjects(rec)) != nil ? m.resuming(rec.argv) : rec.argv
         }
+        let conversations = ClaudeHistory.sessions(cwd: rec.cwd, root: claudeProjects(rec))
         // From before ids were pinned (or restarted with "latest in this folder", which hands it another agent's
         // conversation): the first conversation that started here between this session and the next one, unless another
         // session has it; none → start fresh. Limit: misses prompts typed out of order across sessions.

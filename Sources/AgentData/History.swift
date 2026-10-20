@@ -41,6 +41,13 @@ public enum ClaudeHistory {
             .filter { $0.pathExtension == "jsonl" && !isScripted($0) }.compactMap(parse)
     }
 
+    /// One conversation of `cwd` by its id (waking a pinned session needn't parse every other one); nil if it has none.
+    public static func session(id: String, cwd: String, root: URL = defaultRoot) -> AgentSessionInfo? {
+        let dir = folder(cwd: cwd, root: root)
+        return Set([id, id.lowercased()]).lazy.map { dir.appendingPathComponent($0 + ".jsonl") }
+            .first { FileManager.default.fileExists(atPath: $0.path) && !isScripted($0) }.flatMap(parse)
+    }
+
     /// The folder of `cwd`'s conversations under `root`.
     public static func folder(cwd: String, root: URL = defaultRoot) -> URL {
         // realpath, not resolvingSymlinksInPath: that one strips "/private", and Claude keeps it (/tmp → /private/tmp).

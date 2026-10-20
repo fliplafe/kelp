@@ -217,6 +217,10 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     try Data((line + "\n").utf8).write(to: dir.appendingPathComponent("abc.jsonl"))
     #expect(ClaudeHistory.sessions(cwd: "/work/my_app", root: root).map(\.id) == ["abc"])
     #expect(ClaudeHistory.sessions(cwd: "/work/other", root: root).isEmpty)
+    // One by id, as waking a pinned session asks: found in any case, not in another folder, not when never written.
+    #expect(ClaudeHistory.session(id: "ABC", cwd: "/work/my_app", root: root)?.id == "abc")
+    #expect(ClaudeHistory.session(id: "abc", cwd: "/work/other", root: root) == nil)
+    #expect(ClaudeHistory.session(id: "nope", cwd: "/work/my_app", root: root) == nil)
 }
 
 @Test func usageIndexReadsOnlyWhatsNew() throws {

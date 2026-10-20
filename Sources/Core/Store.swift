@@ -6,7 +6,9 @@ public final class Store: Sendable {
     public let db: DatabaseQueue
 
     public init(path: String? = nil) throws {
-        if let path { db = try DatabaseQueue(path: path) } else { db = try DatabaseQueue() }
+        // WAL: every status, summary and UI-state change is a write, and the rollback journal fsynced each one twice.
+        var config = Configuration(); config.journalMode = .wal
+        if let path { db = try DatabaseQueue(path: path, configuration: config) } else { db = try DatabaseQueue() }
         var m = DatabaseMigrator()
         m.registerMigration("v1") { db in
             try db.create(table: "repo") { t in
