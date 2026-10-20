@@ -26,8 +26,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private let message = CommitTextView()
     private let placeholder = NSTextField(labelWithString: "")
     private var messageHeight: NSLayoutConstraint?
-    private var commitButton: NSComboButton?
+    private var commitButton: NSButton?
+    /// Beside Commit: its other ways (Commit & Push, Amend), or Push / Pull while it offers to sync.
+    private let commitMore = NSButton()
     private let commitMenu = NSMenu(), syncMenu = NSMenu()
+    private var moreMenu: NSMenu?
     private var pullItem: NSMenuItem?
     private var moreButton: NSButton?
     private var commitArea: NSView?, separator: NSView?
@@ -150,11 +153,19 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         commitMenu.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
         syncMenu.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
         pullItem = syncMenu.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
-        let cb = NSComboButton(title: String(localized: "Commit"), menu: commitMenu, target: self, action: #selector(commitPressed))
-        cb.image = .symbol("checkmark", String(localized: "Commit")); cb.style = .split; cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
+        // The panel's main action: the accent colour while there's something to commit (macOS 26's primary tint).
+        let cb = NSButton(title: String(localized: "Commit"), target: self, action: #selector(commitPressed))
+        cb.image = .symbol("checkmark", String(localized: "Commit")); cb.imagePosition = .imageLeading; cb.imageHugsTitle = true; cb.bezelStyle = .push
+        cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
+        commitMore.image = .symbol("chevron.down", String(localized: "More Commit Actions")); commitMore.bezelStyle = .push
+        commitMore.controlSize = .large; commitMore.toolTip = String(localized: "Commit & Push, Amend…")
+        commitMore.target = self; commitMore.action = #selector(showCommitMenu)
+        commitMore.setContentHuggingPriority(.required, for: .horizontal)
         commitButton = cb
+        let buttons = NSStackView(views: [cb, commitMore]); buttons.spacing = 6; buttons.distribution = .fill
+        cb.setContentHuggingPriority(.defaultLow, for: .horizontal)
         ciRow.onClick = { [weak self] in self?.openCI() }
-        let stack = NSStackView(views: [cb, ciRow]); stack.orientation = .vertical; stack.spacing = 6   // a hidden CI line takes no room
+        let stack = NSStackView(views: [buttons, ciRow]); stack.orientation = .vertical; stack.spacing = 6   // a hidden CI line takes no room
         let box = NSView()
         for x in [field, s, placeholder, stack] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
         let h = s.heightAnchor.constraint(equalToConstant: 30); messageHeight = h
@@ -167,7 +178,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             placeholder.trailingAnchor.constraint(lessThanOrEqualTo: s.trailingAnchor, constant: -8),
             stack.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8), stack.bottomAnchor.constraint(equalTo: box.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: box.leadingAnchor), stack.trailingAnchor.constraint(equalTo: box.trailingAnchor),
-            cb.widthAnchor.constraint(equalTo: stack.widthAnchor), ciRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor), ciRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         return box
     }
@@ -188,14 +199,23 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         placeholder.stringValue = staged || changes.isEmpty ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
         guard let cb = commitButton else { return }
         let next = changes.isEmpty ? nextStep : nil
-        cb.title = syncing?.title ?? next ?? String(localized: "Commit")
+        // What a commit takes: the staged files, or all of them when none are staged.
+        let files = changes.filter { $0.staged && !$0.conflicted }.count
+        let count = files > 0 ? files : changes.count
+        cb.title = syncing?.title ?? next ?? (count == 0 ? String(localized: "Commit") : String(localized: "Commit \(count) Files"))
         let idle = next == nil && syncing == nil
         cb.image = .symbol(idle ? "checkmark" : info?.upstream == nil ? "icloud.and.arrow.up" : "arrow.triangle.2.circlepath", cb.title)
-        cb.menu = next == nil ? commitMenu : syncMenu
+        moreMenu = next == nil ? commitMenu : syncMenu
         pullItem?.isHidden = info?.upstream == nil
         cb.action = next == nil ? #selector(commitPressed) : #selector(sync)
         cb.toolTip = next == nil ? String(localized: "Commit (⌘↩ in the message)") : syncButton.toolTip
         cb.isEnabled = !busy && (!changes.isEmpty || next != nil)   // with no message, Commit opens a page to write one
+        commitMore.isEnabled = cb.isEnabled
+        if #available(macOS 26, *) { cb.tintProminence = idle && !changes.isEmpty ? .primary : .automatic }
+    }
+
+    @objc private func showCommitMenu() {
+        moreMenu?.popUp(positioning: nil, at: NSPoint(x: 0, y: commitMore.bounds.height + 4), in: commitMore)
     }
 
     /// With nothing to commit, the button offers what's left, as in VS Code: sync the commits the remote doesn't
