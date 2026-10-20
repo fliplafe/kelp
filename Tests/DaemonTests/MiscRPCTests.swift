@@ -126,20 +126,6 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(!Daemon.claim(parent + "/file"))    // a file in the way counts too
 }
 
-/// `ssh` that runs the command here (the host is this Mac), shared with remoteProjectOverSSH: RemoteHost reads it once.
-private let localSSH: String = {
-    if let have = ProcessInfo.processInfo.environment["KELP_SSH"] { return have }
-    let shim = tmp().appendingPathComponent("ssh")
-    try? """
-    #!/bin/sh
-    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
-    exec /bin/sh -c "$1"
-    """.write(to: shim, atomically: true, encoding: .utf8)
-    chmod(shim.path, 0o755)
-    setenv("KELP_SSH", shim.path, 1)
-    return shim.path
-}()
-
 @Test func twoRemoteFoldersWithTheSameNameAreTwoProjects() async throws {
     _ = localSSH
     try #require(RemoteHost.ssh == localSSH)

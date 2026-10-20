@@ -27,6 +27,20 @@ let testRoot: String = {
     return r
 }()
 
+/// `ssh` that runs the command here (the host is this Mac). One for the whole test process, made before anything reads
+/// `RemoteHost.ssh` (which reads KELP_SSH once): two tests making their own could overwrite each other's.
+let localSSH: String = {
+    let shim = tmp().appendingPathComponent("ssh")
+    try? """
+    #!/bin/sh
+    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
+    exec /bin/sh -c "$1"
+    """.write(to: shim, atomically: true, encoding: .utf8)
+    chmod(shim.path, 0o755)
+    setenv("KELP_SSH", shim.path, 1)
+    return shim.path
+}()
+
 func tmp() -> URL {
     _ = isolatedKeychain
     let u = URL(fileURLWithPath: testRoot + "/" + UUID().uuidString.prefix(8))
@@ -436,16 +450,8 @@ final class NoteBox: @unchecked Sendable {
 /// A project on another machine: git, the file list, a file and a session all happen "there" (an ssh stand-in that
 /// runs the command locally), while Kelp keeps only a placeholder folder.
 @Test func remoteProjectOverSSH() async throws {
-    let shim = tmp().appendingPathComponent("ssh")
-    try FileManager.default.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try """
-    #!/bin/sh
-    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
-    exec /bin/sh -c "$1"
-    """.write(to: shim, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
-    if getenv("KELP_SSH") == nil { setenv("KELP_SSH", shim.path, 1) }   // RemoteHost reads it once; another test's shim works the same
-    #expect(RemoteHost.ssh == String(cString: getenv("KELP_SSH")))
+    _ = localSSH
+    #expect(RemoteHost.ssh == localSSH)
 
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
