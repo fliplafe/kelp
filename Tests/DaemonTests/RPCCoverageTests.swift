@@ -211,3 +211,22 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     _ = try await r.call("git.push")
     #expect(try Git.run(["rev-parse", "feat/x"], cwd: bare) == (try Git.run(["rev-parse", "HEAD"], cwd: r.wt.path)))
 }
+
+@Test func cloneNamesAndNewFoldersAreChecked() throws {
+    #expect(Daemon.repoName("git@github.com:me/app.git") == "app")
+    #expect(Daemon.repoName("https://gitlab.com/me/app/") == "app")
+    #expect(Daemon.repoName("  https://x.org/me/tool.git \n") == "tool")
+    #expect(Daemon.repoName("") == "")
+    let parent = tmp().path
+    #expect(try Daemon.newFolder("  proj ", in: parent) == parent + "/proj")
+    for bad in ["", "a/b", ".hidden"] { #expect(throws: (any Error).self) { try Daemon.newFolder(bad, in: parent) } }
+    #expect(throws: (any Error).self) { try Daemon.newFolder("x", in: parent + "/missing") }   // the parent must exist
+    try FileManager.default.createDirectory(atPath: parent + "/taken", withIntermediateDirectories: true)
+    #expect(throws: (any Error).self) { try Daemon.newFolder("taken", in: parent) }
+}
+
+@Test func agentVersionsAreTheFirstSemver() throws {
+    #expect(Daemon.semver("claude 2.1.3 (Claude Code)") == "2.1.3")
+    #expect(Daemon.semver("codex-cli v0.4.12-beta") == "0.4.12")
+    #expect(Daemon.semver("version 3.1") == nil && Daemon.semver("") == nil)
+}

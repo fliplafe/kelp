@@ -404,3 +404,35 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     for ok in ["box", "me@box", "10.0.0.2", "box.example.com"] { #expect(RemoteHost.isHost(ok), "\(ok)") }
     for bad in ["", "-oProxyCommand=x", "a b", "a\tb", "a\nb"] { #expect(!RemoteHost.isHost(bad), "\(bad.debugDescription)") }
 }
+
+@Test func remoteAddressesBecomeAHostAndARepoPath() {
+    func r(_ s: String) -> String? { Git.webRepo(s).map { "\($0.0) \($0.1)" } }
+    #expect(r("git@github.com:o/r.git") == "github.com o/r")
+    #expect(r("https://github.com/o/r") == "github.com o/r")
+    #expect(r("https://user@gitlab.com/group/sub/r.git") == "gitlab.com group/sub/r")
+    #expect(r("ssh://git@host.example:22/o/r") == "host.example o/r")   // the port isn't part of the path
+    #expect(r("git@github.com:123/app.git") == "github.com 123/app")    // a number as the owner is an owner, not a port
+    #expect(r("/local/path/repo") == nil && r("nothing") == nil)
+}
+
+@Test func webLinksPointAtTheCommitAndLinesOnEachSite() {
+    func u(_ remote: String, _ lines: ClosedRange<Int>?) -> String? { Git.webURL(remote: remote, sha: "abc", file: "src/my file.swift", lines: lines) }
+    #expect(u("git@github.com:o/r.git", 3...3) == "https://github.com/o/r/blob/abc/src/my%20file.swift#L3")
+    #expect(u("git@github.com:o/r.git", 3...9) == "https://github.com/o/r/blob/abc/src/my%20file.swift#L3-L9")
+    #expect(u("https://gitlab.com/g/r", 3...9) == "https://gitlab.com/g/r/-/blob/abc/src/my%20file.swift#L3-9")
+    #expect(u("https://bitbucket.org/w/r", 3...9) == "https://bitbucket.org/w/r/src/abc/src/my%20file.swift#lines-3:9")
+    #expect(u("https://github.com/o/r", nil) == "https://github.com/o/r/blob/abc/src/my%20file.swift")
+    #expect(u("not a remote", nil) == nil)
+}
+
+@Test func aSnapshotShowsExactlyWhatChangedAndLeavesTheRealIndexAlone() throws {
+    let repo = try tempRepo()
+    let before = try Git.snapshotTree(repo)
+    #expect(try Git.snapshotTree(repo) == before && Git.changesSince(tree: before, cwd: repo).isEmpty)   // nothing changed, same tree
+    try "a\nb\nc\nd\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)       // +1 line in a tracked file
+    try "x\ny\n".write(toFile: repo + "/new.txt", atomically: true, encoding: .utf8)             // a new file counts too
+    let changes = try Git.changesSince(tree: before, cwd: repo).sorted { $0.path < $1.path }
+    #expect(changes.map(\.path) == ["f.txt", "new.txt"] && changes.map(\.added) == [1, 2] && changes.map(\.removed) == [0, 0])
+    #expect(try Git.run(["diff", "--cached", "--name-only"], cwd: repo).isEmpty)   // the real index stayed as it was: nothing got staged
+    #expect(try Git.status(repo).contains { $0.path == "new.txt" && $0.untracked })
+}

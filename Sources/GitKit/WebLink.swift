@@ -32,12 +32,13 @@ extension Git {
     /// `git@github.com:o/r.git`, `ssh://git@host:22/o/r`, `https://user@host/o/r.git` → (host, "o/r").
     static func webRepo(_ remote: String) -> (String, String)? {
         var s = remote
-        if let r = s.range(of: "://") { s = String(s[r.upperBound...]) }
+        var hasScheme = false   // only `ssh://host:22/…` has a port; in `git@host:123/repo` the 123 is the owner
+        if let r = s.range(of: "://") { s = String(s[r.upperBound...]); hasScheme = true }
         if let at = s.firstIndex(of: "@"), s[..<at].contains("/") == false { s = String(s[s.index(after: at)...]) }
         guard let sep = s.firstIndex(where: { $0 == "/" || $0 == ":" }) else { return nil }
         let host = String(s[..<sep])
         var path = String(s[s.index(after: sep)...])
-        if let first = path.split(separator: "/").first, Int(first) != nil { path = path.split(separator: "/").dropFirst().joined(separator: "/") }   // ssh port
+        if hasScheme, s[sep] == ":", let first = path.split(separator: "/").first, Int(first) != nil { path = path.split(separator: "/").dropFirst().joined(separator: "/") }   // ssh port
         if path.hasSuffix(".git") { path.removeLast(4) }
         path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !host.isEmpty, path.contains("/") else { return nil }
