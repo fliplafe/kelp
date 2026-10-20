@@ -28,6 +28,13 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let kind: Kind
         var children: [Item]?
         init(_ k: Kind) { kind = k }
+        var id: Int? {
+            switch kind {
+            case .run(let r): r.id
+            case .job(let j, _): j.id
+            case .step: nil
+            }
+        }
     }
     private let outline = NSOutlineView()
     private let branch = NSTextField(labelWithString: "")
@@ -40,6 +47,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private var worktree: String?
     private var shownLog = "", shownJob: (job: CIRuns.Job, run: Int)?
     private var branchName = ""
+    private var poll: Task<Void, Never>?
+    private var autoOpened = Set<Int>()
 
     override func loadView() {
         branch.font = .ui(12, weight: .semibold); branch.lineBreakMode = .byTruncatingMiddle
@@ -73,6 +82,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
         let split = NSSplitView(); split.isVertical = false; split.dividerStyle = .thin
         split.addArrangedSubview(scroll); split.addArrangedSubview(bottom)
+        split.setHoldingPriority(.init(260), forSubviewAt: 0)   // the runs keep their room; the log takes what's left
         let v = NSView()
         for x in [header, split, note] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
@@ -82,7 +92,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             split.leadingAnchor.constraint(equalTo: v.leadingAnchor), split.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             note.centerXAnchor.constraint(equalTo: v.centerXAnchor), note.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
             note.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40),
-            bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
+            bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
         track { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload() }
@@ -98,21 +108,45 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     // MARK: loading
 
+    /// Shown again (another panel was on screen): what ran meanwhile.
+    override func viewDidAppear() { super.viewDidAppear(); if !runs.isEmpty { reload() } }
+
     private func reload() {
         guard let w = worktree else { return }
+        poll?.cancel()
         Task {
             let r = await AppModel.shared.tryCall("ci.runs", .obj(["worktreeId": .string(w)]))
             guard w == worktree else { return }
             if let e = r.error { branch.stringValue = ""; workflowsButton.isHidden = true; show(note: e.contains("not found") ? String(localized: "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).") : e); return }
             branchName = r.value?["branch"]?.string ?? ""
             branch.stringValue = branchName
+            // What was open stays open across a refresh, its jobs read again.
+            let openRuns = Set(runs.filter { outline.isItemExpanded($0) }.compactMap(\.id))
+            let openJobs = Set(runs.flatMap { $0.children ?? [] }.filter { outline.isItemExpanded($0) }.compactMap(\.id))
+            let selected = (outline.item(atRow: outline.selectedRow) as? Item)?.id
             runs = ((try? r.value?["runs"]?.decode([CIRuns.Run].self)) ?? []).map { Item(.run($0)) }
             workflows = (try? r.value?["workflows"]?.decode([CIRuns.Workflow].self)) ?? []
             workflowsButton.isHidden = workflows.isEmpty
             show(note: runs.isEmpty ? String(localized: "No CI runs on \(branchName) yet.") : nil)
             outline.reloadData()
-            // The latest run failed: open it at the first failed job, with its log.
-            if let first = runs.first, case .run(let run) = first.kind, run.failed { await expand(first, openFailed: true) }
+            for run in runs where openRuns.contains(run.id ?? -1) {
+                await expand(run, openFailed: false)
+                for job in run.children ?? [] where openJobs.contains(job.id ?? -1) { outline.expandItem(job) }
+                if let job = run.children?.first(where: { $0.id == selected }) { outline.selectRowIndexes([outline.row(forItem: job)], byExtendingSelection: false) }
+            }
+            // The latest run failed: open it at the first failed job, with its log (once, so closing it sticks).
+            if let first = runs.first, case .run(let run) = first.kind, run.failed, autoOpened.insert(run.id).inserted { await expand(first, openFailed: true) }
+            pollWhileRunning()
+        }
+    }
+
+    /// Something still running: look again in a while, as long as the panel is on screen.
+    private func pollWhileRunning() {
+        guard runs.contains(where: { if case .run(let r) = $0.kind { r.status != "completed" } else { false } }) else { return }
+        poll = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, self?.view.window != nil else { return }
+            self?.reload()
         }
     }
 
@@ -140,6 +174,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func showLog(_ job: CIRuns.Job, run: Int) {
         guard let w = worktree else { return }
         shownJob = (job, run); logBar.isHidden = false; log.string = ""
+        // gh hands out a job's log only once it's over; the next refresh after that brings it.
+        guard job.status == "completed" else { shownLog = ""; log.string = String(localized: "The log appears when the job finishes."); return }
         let slow = whileSlow { [weak self] in if self?.shownJob?.job.id == job.id { self?.log.string = String(localized: "Loading the log…") } }
         Task {
             defer { slow.cancel() }
@@ -227,6 +263,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     }
     func outlineViewSelectionDidChange(_ n: Notification) {
         guard let i = outline.item(atRow: outline.selectedRow) as? Item, case .job(let j, let run) = i.kind else { return }
+        if let s = shownJob, s.job.id == j.id, s.job.status == j.status { shownJob = (j, run); return }   // a refresh, nothing new to read
         showLog(j, run: run)
     }
 
@@ -235,7 +272,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         switch i.kind {
         case .run(let r):
             let t = NSTextField(labelWithString: r.title); t.font = .ui(12, weight: .medium); t.lineBreakMode = .byTruncatingTail
-            let s = NSTextField(labelWithString: "\(r.workflow) · \(r.event) · \(Self.ago(r.createdAt))"); s.font = .ui(11)
+            let state = r.status == "completed" ? "" : Self.words(r.status, nil) + " · "
+            let s = NSTextField(labelWithString: "\(state)\(r.workflow) · \(r.event) · \(Self.ago(r.createdAt))"); s.font = .ui(11)
             s.textColor = .secondaryLabelColor; s.lineBreakMode = .byTruncatingTail
             let text = NSStackView(views: [t, s]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1
             for x in [t, s, text] { x.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
@@ -243,9 +281,15 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         case .job(let j, _):
             let t = NSTextField(labelWithString: j.name); t.font = .ui(12); t.lineBreakMode = .byTruncatingTail
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            return row([mark(j.status, j.conclusion), t])
+            guard j.status != "completed", !j.steps.isEmpty else { return row([mark(j.status, j.conclusion), t]) }
+            // How far it got: "6/12" steps.
+            let n = NSTextField(labelWithString: "\(j.steps.filter { $0.status == "completed" }.count)/\(j.steps.count)")
+            n.font = .uiDigits(11, weight: .regular); n.textColor = .tertiaryLabelColor
+            return row([mark(j.status, j.conclusion), t, NSView(), n])
         case .step(let s):
-            let t = NSTextField(labelWithString: s.name); t.font = .ui(11); t.textColor = .secondaryLabelColor; t.lineBreakMode = .byTruncatingTail
+            let t = NSTextField(labelWithString: s.name); t.font = .ui(11); t.lineBreakMode = .byTruncatingTail
+            // The step running now reads like a title; done ones grey, the ones still to come quieter still.
+            t.textColor = s.status == "in_progress" ? .labelColor : s.status == "completed" ? .secondaryLabelColor : .tertiaryLabelColor
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             return row([mark(s.status, s.conclusion), t])
         }
@@ -259,17 +303,33 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         return cell
     }
 
-    /// ✓ green, ✕ red, ● orange while it runs, – grey when skipped or cancelled.
-    private func mark(_ status: String, _ conclusion: String?) -> NSImageView {
+    /// ✓ green, ✕ red, the agents' spinning ring while it runs, an empty circle while it waits its turn,
+    /// – grey when skipped or cancelled.
+    private func mark(_ status: String, _ conclusion: String?) -> NSView {
+        let words = Self.words(status, conclusion)
+        if status == "in_progress" { let m = StatusMark(size: 14); m.status = .working; m.toolTip = words; return m }
         let (symbol, color): (String, NSColor) = switch (status, conclusion) {
         case ("completed", "success"?): ("checkmark.circle.fill", .systemGreen)
         case ("completed", "skipped"?), ("completed", "cancelled"?), ("completed", "neutral"?): ("minus.circle", .tertiaryLabelColor)
         case ("completed", _): ("xmark.circle.fill", .systemRed)
-        default: ("circle.dotted", .secondaryLabelColor)   // running: grey like working (orange means a question)
+        default: ("circle", .tertiaryLabelColor)
         }
-        let v = NSImageView(image: .symbol(symbol, conclusion ?? status)); v.contentTintColor = color
+        let v = NSImageView(image: .symbol(symbol, words)); v.contentTintColor = color; v.toolTip = words
         v.symbolConfiguration = .init(pointSize: 12, weight: .regular)
         return v
+    }
+
+    static func words(_ status: String, _ conclusion: String?) -> String {
+        switch (status, conclusion) {
+        case ("completed", "success"?): String(localized: "Succeeded")
+        case ("completed", "skipped"?): String(localized: "Skipped")
+        case ("completed", "cancelled"?): String(localized: "Cancelled")
+        case ("completed", "neutral"?): String(localized: "Neutral")
+        case ("completed", _): String(localized: "Failed")
+        case ("in_progress", _): String(localized: "Running")
+        case ("waiting", _): String(localized: "Waiting for approval")
+        default: String(localized: "Queued")
+        }
     }
 
     static func ago(_ iso: String) -> String {

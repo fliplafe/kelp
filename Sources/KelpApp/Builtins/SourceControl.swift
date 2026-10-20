@@ -27,6 +27,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private let placeholder = NSTextField(labelWithString: "")
     private var messageHeight: NSLayoutConstraint?
     private var commitButton: NSComboButton?
+    private let commitMenu = NSMenu(), syncMenu = NSMenu()
+    private var pullItem: NSMenuItem?
     private var moreButton: NSButton?
     private var commitArea: NSView?, separator: NSView?
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -35,6 +37,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var changes: [FileChange] = []
     private var info: BranchInfo?
     private var commits: [GraphCommit] = []
+    private var unpushed = Set<String>()
+    /// Commits that just reached the remote, and when each one lands: oldest first, as they left.
+    private var landing: [String: Double] = [:]
+    /// While a push, pull or sync runs: what the button says, and whether the ↑ arrows pulse.
+    private var syncing: (title: String, push: Bool)? { didSet { updateCommitButton(); pulseArrows() } }
     private var more = false, limit = 200, loadingMore = false
     private var commitFiles: [String: [FileChange]] = [:]
     private var openCommits = Set<String>()
@@ -132,10 +139,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let s = NSScrollView(); s.documentView = message; s.drawsBackground = false; s.hasVerticalScroller = false
         placeholder.textColor = .placeholderTextColor; placeholder.font = .ui(13); placeholder.lineBreakMode = .byTruncatingTail
         let field = FieldBox(); field.wantsLayer = true
-        let m = NSMenu()
-        m.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
-        m.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
-        let cb = NSComboButton(title: String(localized: "Commit"), menu: m, target: self, action: #selector(commitPressed))
+        commitMenu.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
+        commitMenu.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
+        syncMenu.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
+        pullItem = syncMenu.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
+        let cb = NSComboButton(title: String(localized: "Commit"), menu: commitMenu, target: self, action: #selector(commitPressed))
         cb.image = .symbol("checkmark", String(localized: "Commit")); cb.style = .split; cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
         commitButton = cb
         let box = NSView()
@@ -168,14 +176,33 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let staged = changes.contains { $0.staged && !$0.conflicted }
         let branch = info?.current ?? "HEAD"
         placeholder.stringValue = staged || changes.isEmpty ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
-        commitButton?.isEnabled = !busy && !changes.isEmpty   // with no message, Commit opens a page to write one
+        guard let cb = commitButton else { return }
+        let next = changes.isEmpty ? nextStep : nil
+        cb.title = syncing?.title ?? next ?? String(localized: "Commit")
+        let idle = next == nil && syncing == nil
+        cb.image = .symbol(idle ? "checkmark" : info?.upstream == nil ? "icloud.and.arrow.up" : "arrow.triangle.2.circlepath", cb.title)
+        cb.menu = next == nil ? commitMenu : syncMenu
+        pullItem?.isHidden = info?.upstream == nil
+        cb.action = next == nil ? #selector(commitPressed) : #selector(sync)
+        cb.toolTip = next == nil ? String(localized: "Commit (⌘↩ in the message)") : syncButton.toolTip
+        cb.isEnabled = !busy && (!changes.isEmpty || next != nil)   // with no message, Commit opens a page to write one
+    }
+
+    /// With nothing to commit, the button offers what's left, as in VS Code: sync the commits the remote doesn't
+    /// have yet (or pull the ones it has), or publish a branch with no upstream.
+    private var nextStep: String? {
+        guard let info, info.current != nil else { return nil }
+        guard info.upstream != nil else { return info.remote.isEmpty ? nil : String(localized: "Publish Branch") }
+        let ahead = info.ahead ?? 0, behind = info.behind ?? 0
+        guard ahead + behind > 0 else { return nil }
+        return String(localized: "Sync Changes") + (behind > 0 ? " \(behind)↓" : "") + (ahead > 0 ? " \(ahead)↑" : "")
     }
 
     // MARK: data
 
     func bind(_ wid: String?) {
         guard wid != worktreeId else { return }
-        worktreeId = wid; changes = []; info = nil; commits = []; commitFiles = [:]; openCommits = []; limit = 200
+        worktreeId = wid; changes = []; info = nil; commits = []; unpushed = []; commitFiles = [:]; openCommits = []; limit = 200
         message.string = ""; messageChanged()
         watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] _ in self?.scheduleReload() } }
         rebuild(); reloadAll()
@@ -195,6 +222,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
                 let ch = try await c.call("git.status", id, as: [FileChange].self)
                 let br = try await c.call("git.branches", id, as: BranchInfo.self)
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
+                    || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
                 let changed = ch != changes || br != info
                 changes = ch; info = br; showError(nil)
                 ChangedFiles.shared.report(wid, ch.count)
@@ -236,11 +264,23 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         if let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)])),
            let list = Perf.measure("graph decode", { try? r["commits"]?.decode([GraphCommit].self) }) {
             commits = list; more = r["more"]?.bool == true
+            let before = unpushed
+            unpushed = Git.unpushed(list, remotes: Set(info?.remote ?? []))
+            let landed = list.filter { before.contains($0.hash) && !unpushed.contains($0.hash) }.reversed()
+            landing = Dictionary(uniqueKeysWithValues: landed.enumerated().map { ($1.hash, Double(min($0, 12)) * 0.05) })
             let lanes = list.map { c in ([c.lane] + c.top.flatMap { $0 } + c.bottom.flatMap { $0 }).max() ?? 0 }.max() ?? 0
             graphWidth = GraphView.width(lanes: min(lanes + 1, GraphView.maxLanes))
         }
         loadingMore = false
         Perf.measure("graph rows") { rebuild() }
+        // Landed once: a later rebuild (a commit unfolded) shows them as they are now.
+        if !landing.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.landing = [:] } }
+    }
+
+    private func pulseArrows() {
+        for r in 0..<graphOutline.numberOfRows {
+            (graphOutline.view(atColumn: 0, row: r, makeIfNecessary: false) as? CommitCell)?.pulse(syncing?.push == true)
+        }
     }
 
     /// "+120 −30" for everything not committed yet; hovering splits it into code, tests and generated files.
@@ -349,7 +389,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         case .commit(let i):
             if more, !loadingMore, i >= commits.count - 30 { loadMore() }
             let c = commits[i]
-            return CommitCell(c, graphWidth: graphWidth, isHead: c.hash.hasPrefix(info?.head ?? "\u{0}"))
+            let pushed: Bool? = info?.remote.isEmpty ?? true ? nil : !unpushed.contains(c.hash)
+            let cell = CommitCell(c, graphWidth: graphWidth, isHead: c.hash.hasPrefix(info?.head ?? "\u{0}"), pushed: pushed, landsAfter: landing[c.hash])
+            if syncing?.push == true { cell.pulse(true) }
+            return cell
         case .commitFile(let h, let f):
             let cell = FileCell(f, letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
             // The lanes below the commit run on through its expanded files, as in VS Code.
@@ -405,9 +448,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let wid = worktreeId else { return }
         var p = extra; p["id"] = .string(wid)
         busy = true
+        if method == "git.remote", let op = extra["op"]?.string {
+            syncing = (op == "push" ? String(localized: "Pushing…") : op == "pull" ? String(localized: "Pulling…") : String(localized: "Fetching…"), op == "push")
+        }
         Task {
             let r = await AppModel.shared.tryCall(method, .object(p))
-            busy = false
+            busy = false; syncing = nil
             if let e = r.error {
                 // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
                 if method == "git.remote", extra["op"]?.string == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
@@ -475,9 +521,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             Workbench.open(CommitMessageTab.uri(wid, push: push, amend: amend, message: last)); return
         }
         busy = true
+        if push { syncing = (String(localized: "Pushing…"), true) }
         Task {
             if await GitCommit.run(wid, message: text, push: push, amend: amend) { message.string = ""; messageChanged() }
-            busy = false
+            busy = false; syncing = nil
             reloadAll()
         }
     }
@@ -486,12 +533,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let info else { return }
         if info.upstream == nil { run("git.remote", ["op": "push"], done: "Published \(info.current ?? "branch")"); return }
         guard let wid = worktreeId else { return }
-        busy = true
+        busy = true; syncing = (String(localized: "Syncing…"), (info.ahead ?? 0) > 0)
         Task {
             if await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "pull"])) != nil {
                 if (info.ahead ?? 0) > 0 { _ = await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "push"])) }
             }
-            busy = false; reloadAll()
+            busy = false; syncing = nil; reloadAll()
         }
     }
 
@@ -734,15 +781,27 @@ final class NoteCell: NSTableCellView {
 }
 
 final class CommitCell: NSTableCellView {
-    init(_ c: GraphCommit, graphWidth: CGFloat, isHead: Bool) {
+    private let subject: NSTextField, up = NSImageView()
+
+    /// `pushed` is nil without a remote; pushed commits recede so the local ones above them stand out.
+    /// A commit that just reached the remote (`landsAfter`) starts as it was and lands after that many seconds.
+    init(_ c: GraphCommit, graphWidth: CGFloat, isHead: Bool, pushed: Bool?, landsAfter delay: Double? = nil) {
+        subject = NSTextField(labelWithString: c.subject)
         super.init(frame: .zero)
+        let unpushed = pushed == false
         let g = GraphView(); g.commit = c; g.isHead = isHead
         g.translatesAutoresizingMaskIntoConstraints = false; addSubview(g)
-        let subject = NSTextField(labelWithString: c.subject); subject.font = .ui(12, weight: isHead ? .semibold : .regular)
+        subject.font = .ui(12, weight: isHead ? .semibold : .regular)
+        subject.textColor = pushed == true && delay == nil ? .secondaryLabelColor : .labelColor
         subject.lineBreakMode = .byTruncatingTail; subject.setContentCompressionResistancePriority(.init(200), for: .horizontal)
         let badges = Self.badges(c.refs)
         let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .tertiaryLabelColor
-        let row = NSStackView(views: [subject] + badges + [NSView(), date]); row.spacing = 5; row.alignment = .centerY
+        // Not on the remote yet: an arrow before the time, as in GitHub Desktop.
+        let notPushed = String(localized: "Not pushed yet")
+        up.image = .symbol("arrow.up", notPushed); up.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
+        up.contentTintColor = .secondaryLabelColor; up.toolTip = notPushed; up.isHidden = !unpushed && delay == nil
+        if let delay { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1 + delay) { [weak self] in self?.land() } }
+        let row = NSStackView(views: [subject] + badges + [NSView(), up, date]); row.spacing = 5; row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         NSLayoutConstraint.activate([
             g.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6), g.topAnchor.constraint(equalTo: topAnchor),
@@ -752,8 +811,29 @@ final class CommitCell: NSTableCellView {
         ])
         let when = Date(timeIntervalSince1970: c.date).formatted(date: .abbreviated, time: .shortened)
         toolTip = "\(c.subject)\n\n\(c.author) · \(when)\n\(c.hash.prefix(10))" + (c.refs.isEmpty ? "" : "\n" + c.refs.joined(separator: ", "))
+            + (unpushed ? "\n" + notPushed : "")
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// While the push runs, the arrows of the commits on their way pulse.
+    func pulse(_ on: Bool) {
+        guard !up.isHidden else { return }
+        if on { up.addSymbolEffect(.pulse, options: .repeating) } else { up.removeAllSymbolEffects() }
+    }
+
+    /// Just reached the remote: the arrow hops up and fades, the subject settles into the pushed gray.
+    private func land() {
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if !still { up.addSymbolEffect(.bounce.up) }
+        up.wantsLayer = true; subject.wantsLayer = true
+        let fade = CABasicAnimation(keyPath: "opacity"); fade.fromValue = 1; fade.toValue = 0
+        let settle = CATransition(); settle.type = .fade
+        for a in [fade, settle] as [CAAnimation] {
+            a.beginTime = CACurrentMediaTime() + (still ? 0 : 0.15); a.duration = 0.3; a.fillMode = .backwards
+        }
+        up.layer?.add(fade, forKey: "land"); up.alphaValue = 0
+        subject.layer?.add(settle, forKey: "land"); subject.textColor = .secondaryLabelColor
+    }
 
     /// Local branches and tags (HEAD's branch first); a remote ref shows only when no local branch of that name is here.
     static func badges(_ refs: [String]) -> [NSView] {
@@ -762,7 +842,7 @@ final class CommitCell: NSTableCellView {
             if r.hasPrefix("HEAD -> ") { return String(r.dropFirst(8)) }
             return r.hasPrefix("tag: ") || r.contains("/") || r == "HEAD" ? nil : r
         })
-        for r in refs {
+        for r in refs where !r.hasSuffix("/HEAD") {   // origin/HEAD only repeats origin/main
             if r.hasPrefix("HEAD -> ") { out.insert((String(r.dropFirst(8)), .controlAccentColor, true), at: 0) }
             else if r == "HEAD" { out.insert(("HEAD", .controlAccentColor, true), at: 0) }
             else if r.hasPrefix("tag: ") { out.append((String(r.dropFirst(5)), .systemOrange, false)) }

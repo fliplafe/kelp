@@ -188,6 +188,17 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(CIRuns.parseWorkflow("on: push\n", file: "a.yml") == nil)
 }
 
+@Test func ciLogReadsAsText() {
+    let raw = """
+    Deploy\tSet up job\t\u{FEFF}2026-10-20T07:01:36.8612524Z ##[group]Run ssh-action
+    Deploy\tSet up job\t2026-10-20T07:01:36.86Z ##[endgroup]
+    Deploy\tRun deploy\t2026-10-20T07:03:31.02Z err: ^[[0m^[[4m>>>> compose\u{1B}[0m
+    Deploy\tRun deploy\t2026-10-20T07:03:33.08Z ##[error]Process completed with exit code 2.
+    """
+    #expect(CIRuns.readable(raw) == "▸ Set up job\nRun ssh-action\n\n▸ Run deploy\nerr: >>>> compose\nError: Process completed with exit code 2.")
+    #expect(CIRuns.readable("plain line\n") == "plain line\n")   // GitLab's trace has no columns
+}
+
 /// GitLab's merge request JSON reads as a pull request, its pipeline as checks.
 @Test func gitlabMergeRequestShape() throws {
     let json = #"""

@@ -49,10 +49,28 @@ public enum CIRuns {
 
     /// The failed steps' output of a job (the whole log if nothing failed), its last ~12 KB.
     public static func log(cwd: String, job: Int) throws -> String {
-        if GitLab.isGitLab(cwd: cwd) { return GitHub.tail(String(bytes: try GitLab.api("projects/:id/jobs/\(job)/trace", cwd: cwd), encoding: .utf8) ?? "") }
+        if GitLab.isGitLab(cwd: cwd) { return GitHub.tail(readable(String(bytes: try GitLab.api("projects/:id/jobs/\(job)/trace", cwd: cwd), encoding: .utf8) ?? "")) }
         let failed = (try? GitHub.gh(["run", "view", "--job", String(job), "--log-failed"], cwd: cwd)).flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
-        if !failed.isEmpty { return GitHub.tail(failed) }
-        return GitHub.tail(String(bytes: try GitHub.gh(["run", "view", "--job", String(job), "--log"], cwd: cwd), encoding: .utf8) ?? "")
+        if !failed.isEmpty { return GitHub.tail(readable(failed)) }
+        return GitHub.tail(readable(String(bytes: try GitHub.gh(["run", "view", "--job", String(job), "--log"], cwd: cwd), encoding: .utf8) ?? ""))
+    }
+
+    /// gh writes every log line as "job⇥step⇥timestamp text": keep the text, with a "▸ step" line where each step
+    /// begins, and drop terminal color codes and the runner's ##[group] markers.
+    static func readable(_ log: String) -> String {
+        var out: [String] = [], step: Substring?
+        for line in log.split(separator: "\n", omittingEmptySubsequences: false) {
+            var text = line
+            let f = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            if f.count == 3 {
+                if f[1] != step { step = f[1]; out.append((out.isEmpty ? "" : "\n") + "▸ " + f[1]) }
+                text = f[2].replacing(/^\x{FEFF}?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, with: "")
+            }
+            if text == "##[endgroup]" { continue }
+            out.append(String(text.replacing(/(\x{1B}|\^\[)\[[0-9;]*[A-Za-z]/, with: "").replacing(/^##\[group\]/, with: "")
+                .replacing(/^##\[error\]/, with: "Error: ").replacing(/^##\[warning\]/, with: "Warning: ")))
+        }
+        return out.joined(separator: "\n")
     }
 
     public static func rerunFailed(cwd: String, run: Int) throws {

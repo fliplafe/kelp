@@ -126,6 +126,17 @@ func tempRepo() throws -> String {
     #expect(t[2].bottom == [[1, 1], [0, 0]] && t[3].top == [[0, 0], [1, 0]])
 }
 
+@Test func unpushedIsWhatNoRemoteBranchReaches() {
+    func c(_ h: String, _ p: [String], _ refs: [String] = []) -> GraphCommit {
+        GraphCommit(hash: h, parents: p, author: "", date: 0, subject: "", refs: refs, lane: 0, top: [], bottom: [])
+    }
+    // main is two ahead of origin/main; "side" was never published and forks from a pushed commit.
+    let list = [c("L2", ["L1"], ["HEAD -> main"]), c("S", ["B"], ["side"]), c("L1", ["R"]),
+                c("R", ["B"], ["origin/main", "origin/HEAD"]), c("B", [])]
+    #expect(Git.unpushed(list, remotes: ["origin/main"]) == ["L2", "L1", "S"])
+    #expect(Git.unpushed(list, remotes: []).isEmpty)   // no remote at all: nothing to mark
+}
+
 @Test func graphAndBranchesFromARealRepo() throws {
     let repo = try tempRepo()
     try Git.run(["switch", "-q", "-c", "feature"], cwd: repo)

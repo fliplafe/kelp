@@ -56,6 +56,17 @@ extension Git {
         return out
     }
 
+    /// Commits no remote branch has. Topological order lists a commit before its ancestors, so one pass down from the
+    /// remote branches' tips marks everything they reach; what's left is local only. No remotes: nothing to mark.
+    public static func unpushed(_ commits: [GraphCommit], remotes: Set<String>) -> Set<String> {
+        guard !remotes.isEmpty else { return [] }
+        var pushed = Set<String>(), out = Set<String>()
+        for c in commits {
+            if pushed.contains(c.hash) || c.refs.contains(where: remotes.contains) { pushed.formUnion(c.parents) } else { out.insert(c.hash) }
+        }
+        return out
+    }
+
     /// The first `limit` commits of every branch, tag and remote, newest first, with graph lanes.
     public static func graph(_ path: String, limit: Int) throws -> (commits: [GraphCommit], more: Bool) {
         let fmt = "%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e"
