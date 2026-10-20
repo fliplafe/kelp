@@ -662,7 +662,7 @@ final class SidebarCell: NSTableCellView {
             guard let w = m.worktree(id) else { return }
             let agents = live(id)
             title.stringValue = w.displayName
-            title.font = .ui(13, weight: agents.contains(where: Self.isNews) ? .semibold : .regular)
+            title.font = .ui(13, weight: agents.contains(where: Self.isNews) ? .semibold : .medium)   // a heading for its agents
             let paused = !agents.isEmpty && agents.allSatisfy { $0.status == .hibernated }
             title.textColor = paused ? .secondaryLabelColor : .labelColor
             // Expanded, its agents show their own state; collapsed, the workspace sums them up.

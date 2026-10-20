@@ -48,13 +48,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
         let lights = w.standardWindowButton(.zoomButton).map { $0.convert($0.bounds, to: nil).maxX } ?? 69
-        // The bar starts where the editor area does; with the sidebar away it runs under the traffic lights.
-        let barStart = bar.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor)
+        // The bar lies over the editor area only: the sidebar and the inspector both run the window's full height. With
+        // the sidebar away it runs under the traffic lights; with the inspector away, under its toggle.
         NSLayoutConstraint.activate([
             split.view.topAnchor.constraint(equalTo: root.view.topAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
             split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
             bar.topAnchor.constraint(equalTo: root.view.topAnchor), bar.heightAnchor.constraint(equalToConstant: WindowBar.height),
-            barStart, bar.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+            bar.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: editors.view.trailingAnchor),
             // The bar is as tall as the title bar, so the traffic lights and the toggles share a centre line. The sidebar's
             // toggle is in the sidebar's top right corner, or after the traffic lights while the sidebar is away.
             sidebarToggle.leadingAnchor.constraint(greaterThanOrEqualTo: root.view.leadingAnchor, constant: lights + 12),

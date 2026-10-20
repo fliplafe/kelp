@@ -18,8 +18,7 @@ final class InspectorController: NSViewController {
     /// Settings › Appearance › Inspector icons position: the row level with the tabs, or a bar under the panel.
     private var top: [NSLayoutConstraint] = [], bottom: [NSLayoutConstraint] = []
     private let rowSep = NSBox()   // over the bar at the bottom
-    private let heading = NSTextField(labelWithString: "")   // the panel's name where the icons were, while they're at the bottom
-    /// The panel's name over it while the icons are on top: the icons alone don't say where you are.
+    /// The panel's name in the inspector's top band, level with the traffic lights: the icons alone don't say where you are.
     private let panelTitle = NSTextField(labelWithString: "")
     private let empty = NSTextField(labelWithString: String(localized: "No panels — enable extensions in Settings."))
     private static let orderKey = "workbench.inspector.panelOrder", hiddenKey = "workbench.inspector.hiddenPanels"
@@ -30,14 +29,13 @@ final class InspectorController: NSViewController {
         // A segmented capsule, like the system's scope bars on macOS 26: the shown panel's icon on a soft fill.
         selector.spacing = 2; selector.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
         empty.textColor = .secondaryLabelColor; empty.alignment = .center
-        heading.font = .ui(NSFont.systemFontSize, weight: .semibold); heading.textColor = .secondaryLabelColor
-        heading.lineBreakMode = .byTruncatingTail; heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         panelTitle.font = .ui(13, weight: .semibold); panelTitle.lineBreakMode = .byTruncatingTail
         panelTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         host.clipsToBounds = true
         let sep = NSBox(); sep.boxType = .separator; rowSep.boxType = .separator
-        for x in [selector, sep, rowSep, heading, panelTitle, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        // The window bar lies over the inspector's top (it's the window's full height): its rows start under it.
+        for x in [selector, sep, rowSep, panelTitle, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        // Like the sidebar, the inspector runs the window's full height: the top band (as tall as the title bar) holds the
+        // panel's name and, in the corner, the window's inspector toggle; its rows start under it.
         let under = NSLayoutGuide(); v.addLayoutGuide(under)
         under.topAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height).isActive = true
         align = ["left": selector.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
@@ -46,18 +44,17 @@ final class InspectorController: NSViewController {
         align.values.forEach { $0.priority = .defaultHigh }
         // Level with the tabs, the full height of their strip; or as tall, under the panel.
         top = [selector.centerYAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height / 2), host.bottomAnchor.constraint(equalTo: v.bottomAnchor),
-               panelTitle.centerYAnchor.constraint(equalTo: sep.bottomAnchor, constant: 16), host.topAnchor.constraint(equalTo: sep.bottomAnchor, constant: 30)]
+               host.topAnchor.constraint(equalTo: sep.bottomAnchor)]
         bottom = [selector.centerYAnchor.constraint(equalTo: v.bottomAnchor, constant: -TabStrip.height / 2),
                   rowSep.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -TabStrip.height),
-                  host.bottomAnchor.constraint(equalTo: rowSep.topAnchor), host.topAnchor.constraint(equalTo: sep.bottomAnchor)]
+                  host.bottomAnchor.constraint(equalTo: rowSep.topAnchor), host.topAnchor.constraint(equalTo: under.topAnchor)]
         NSLayoutConstraint.activate([
             selector.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), selector.heightAnchor.constraint(equalToConstant: 28),
-            panelTitle.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), panelTitle.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -12),
+            panelTitle.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14), panelTitle.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -48),
+            panelTitle.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height / 2),
             selector.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -8),
             sep.bottomAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             rowSep.leadingAnchor.constraint(equalTo: v.leadingAnchor), rowSep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            heading.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), heading.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -8),
-            heading.centerYAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height / 2),
             host.leadingAnchor.constraint(equalTo: v.leadingAnchor), host.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             v.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
@@ -74,7 +71,7 @@ final class InspectorController: NSViewController {
         track { SettingsStore.shared.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
             guard let self else { return }
             NSLayoutConstraint.deactivate($0 ? self.top : self.bottom); NSLayoutConstraint.activate($0 ? self.bottom : self.top)
-            self.rowSep.isHidden = !$0; self.heading.isHidden = !$0; self.panelTitle.isHidden = $0
+            self.rowSep.isHidden = !$0; sep.isHidden = $0
         }
         track { Workbench.shared.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
         track { ExtensionRegistry.shared.all.panels.map { $0.badge?() ?? 0 } } changed: { [weak self] _ in self?.showCounts() }
@@ -202,7 +199,7 @@ final class InspectorController: NSViewController {
         let i = panels.firstIndex { $0.id == Workbench.shared.inspectorPanel } ?? 0
         for (j, b) in buttons.enumerated() { b.state = j == i ? .on : .off }
         let p = panels[i]
-        heading.stringValue = loc(p.title); panelTitle.stringValue = loc(p.title)
+        panelTitle.stringValue = loc(p.title)
         let vc = made[p.id] ?? p.make()
         if made[p.id] == nil { made[p.id] = vc; addChild(vc) }
         guard vc.view.superview !== host else { return }
