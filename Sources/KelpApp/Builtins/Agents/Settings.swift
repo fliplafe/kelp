@@ -25,14 +25,13 @@ struct AgentsSettings: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                List(agents, id: \.id, selection: $selection) { a in
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(a.name)
-                            if updates.contains(where: { $0.id == a.id }) { Circle().fill(.orange).frame(width: 6, height: 6).help("Update available") }
-                        }
-                        Text(versions[a.id]?.version ?? (versions.isEmpty ? " " : String(localized: "Not installed"))).font(.caption).foregroundStyle(.secondary)
-                    }.tag(Optional(a.id))
+                // What's on this Mac first; the rest under it, greyed, to install from the right side.
+                List(selection: $selection) {
+                    let installed = agents.filter { versions[$0.id]?.version != nil }
+                    if versions.isEmpty { ForEach(agents, id: \.id) { row($0) } } else {
+                        Section("Installed") { ForEach(installed, id: \.id) { row($0) } }
+                        Section("Not Installed") { ForEach(agents.filter { a in !installed.contains { $0.id == a.id } }, id: \.id) { row($0) } }
+                    }
                 }
                 if !updates.isEmpty {
                     Text(updates.count == 1 ? "1 update available" : String(localized: "\(updates.count) updates available"))
@@ -65,6 +64,21 @@ struct AgentsSettings: View {
         .onChange(of: selection) { _, _ in load() }
         .onAppear { load() }
         .task { await loadVersions() }
+    }
+
+    private func row(_ a: AgentManifest) -> some View {
+        let version = versions[a.id]?.version
+        return HStack(spacing: 8) {
+            Image(nsImage: AgentCatalog.icon(a.id, size: 18) ?? NSImage()).resizable().frame(width: 18, height: 18)
+                .opacity(version == nil && !versions.isEmpty ? 0.5 : 1)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(a.name).foregroundStyle(version == nil && !versions.isEmpty ? .secondary : .primary)
+                    if updates.contains(where: { $0.id == a.id }) { Circle().fill(.orange).frame(width: 6, height: 6).help("Update available") }
+                }
+                Text(version.map { "\($0) · \(a.command)" } ?? (versions.isEmpty ? " " : String(localized: "Not installed"))).font(.caption).foregroundStyle(.secondary)
+            }
+        }.tag(Optional(a.id))
     }
 
     @ViewBuilder private func versionRow(_ m: AgentManifest) -> some View {

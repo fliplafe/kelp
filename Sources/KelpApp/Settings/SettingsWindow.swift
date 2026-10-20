@@ -36,10 +36,10 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section {
-                    ForEach(registry.all.settings) { s in Label(loc(s.title), systemImage: s.icon).tag(s.id) }
+                    ForEach(registry.all.settings) { s in Label { Text(loc(s.title)) } icon: { SettingsIcon(symbol: s.icon, id: s.id) }.tag(s.id) }
                 }
                 Section {
-                    Label("Extensions", systemImage: "puzzlepiece.extension").tag("extensions")
+                    Label { Text("Extensions") } icon: { SettingsIcon(symbol: "puzzlepiece.extension", id: "extensions") }.tag("extensions")
                 }
             }
             .toolbar(removing: .sidebarToggle)   // a settings window keeps its sections in view (HIG › Settings)
@@ -60,6 +60,18 @@ struct SettingsView: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
         .frame(minWidth: 720, minHeight: 480)
     }
+}
+
+/// A section's symbol on a coloured tile, as System Settings shows its panes; sections extensions add are grey.
+private struct SettingsIcon: View {
+    let symbol: String, id: String
+    var body: some View {
+        Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(Self.tint[id, default: .gray].gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+    static let tint: [String: Color] = ["agents": .purple, "terminal": Color(white: 0.3), "appearance": .blue, "keyboard": .gray,
+                                        "editor": .indigo, "git": .orange, "integrations": .green, "extensions": .gray]
 }
 
 private struct SectionForm: View {
