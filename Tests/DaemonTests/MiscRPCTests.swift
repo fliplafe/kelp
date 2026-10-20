@@ -377,3 +377,22 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     }
     #expect(Paths.root.path.hasPrefix(testRoot))
 }
+
+/// Discard and stage act on the hunk as the user saw it, line for line: a line rewritten in place keeps the header.
+@Test func aHunkRewrittenInPlaceIsNeitherDiscardedNorStaged() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "hunks")
+    try "hello\nshown by the reviewer\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    let shown = try #require(try Git.diff(wt.path, source: .unstaged, file: "a.txt").first?.hunks.first)
+    // An agent rewrites the line a moment later: same counts, so the same "@@" header.
+    try "hello\nwritten by the agent\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    #expect(try Git.diff(wt.path, source: .unstaged, file: "a.txt").first?.hunks.first?.header == shown.header)
+    await #expect(throws: (any Error).self) {
+        _ = try await w.c.call(GitDiscardHunk(id: wt.id, file: "a.txt", hunk: 0, header: shown.header, fingerprint: shown.fingerprint))
+    }
+    #expect(try String(contentsOfFile: wt.path + "/a.txt", encoding: .utf8).contains("written by the agent"))   // not thrown away
+    await #expect(throws: (any Error).self) {
+        _ = try await w.c.call("git.hunk", .obj(["id": .string(wt.id), "file": "a.txt", "header": .string(shown.header), "fingerprint": .string(shown.fingerprint)]))
+    }
+    #expect(try Git.run(["diff", "--cached", "--name-only"], cwd: wt.path).isEmpty)   // and not staged
+}

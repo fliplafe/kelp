@@ -16,6 +16,14 @@ public struct Hunk: Codable, Sendable, Equatable {
     public var lines: [DiffLine]
 }
 
+extension Hunk {
+    /// The hunk as shown, header and every line: an edit inside it that keeps the counts (a line rewritten in place) changes
+    /// this, where the "@@" header alone stays the same.
+    public var fingerprint: String {
+        ([header] + lines.map { "\($0.kind.rawValue)|\($0.text)" }).joined(separator: "\n")
+    }
+}
+
 public struct FileDiff: Codable, Sendable, Equatable {
     public var path: String
     /// Raw `diff --git` / `---` / `+++` lines, needed to rebuild patches for hunk staging.

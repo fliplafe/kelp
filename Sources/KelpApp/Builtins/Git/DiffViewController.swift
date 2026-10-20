@@ -372,7 +372,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
         let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
         Task {
-            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header), "reverse": .bool(staged)]))
+            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header), "fingerprint": .string(h.fingerprint), "reverse": .bool(staged)]))
             await load()
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
@@ -380,7 +380,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
     @objc private func discardHunk(_ b: NSButton) {
         guard let wid = worktreeId, let window = view.window, let (path, h, shown) = hunk(b) else { return }
-        let lines = shown.lines, file = (path as NSString).lastPathComponent, header = shown.header
+        let lines = shown.lines, file = (path as NSString).lastPathComponent, header = shown.header, print = shown.fingerprint
         let added = lines.filter { $0.kind == .add }.count, removed = lines.filter { $0.kind == .del }.count
         let a = NSAlert()
         a.messageText = String(localized: "Discard this change?")
@@ -390,7 +390,8 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         a.beginSheetModal(for: window) { [weak self] r in
             guard r == .alertFirstButtonReturn, let self else { return }
             Task {
-                let p: JSONValue = .obj(["id": .string(wid), "file": .string(path), "hunk": .int(h), "header": .string(header)])
+                // The lines shown, not only the header: a line an agent rewrote in place since is never thrown away unseen.
+                let p: JSONValue = .obj(["id": .string(wid), "file": .string(path), "hunk": .int(h), "header": .string(header), "fingerprint": .string(print)])
                 if let e = await AppModel.shared.tryCall(GitDiscardHunk.name, p).error { Banner.show(e, style: .error) }
                 await self.load()
                 NotificationCenter.default.post(name: .kelpGitChanged, object: wid)

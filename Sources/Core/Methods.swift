@@ -91,7 +91,12 @@ public struct GitDiscardHunk: RPCMethod {
     public static let name = "git.discardHunk"
     public typealias Result = Done
     public var id: String, file: String, hunk: Int, header: String
-    public init(id: String, file: String, hunk: Int, header: String) { self.id = id; self.file = file; self.hunk = hunk; self.header = header }
+    /// The hunk's full text as shown (GitKit's `Hunk.fingerprint`): with it, a hunk whose lines changed since is refused
+    /// even when its header didn't. Optional, so older callers keep working.
+    public var fingerprint: String?
+    public init(id: String, file: String, hunk: Int, header: String, fingerprint: String? = nil) {
+        self.id = id; self.file = file; self.hunk = hunk; self.header = header; self.fingerprint = fingerprint
+    }
 }
 
 /// The folders in `path` on `host` (~ is the host's home), over the host's shared SSH connection: the folder's full

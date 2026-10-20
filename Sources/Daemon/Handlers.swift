@@ -271,9 +271,11 @@ extension Daemon {
             return .null
         case "git.hunk":   // stage/unstage one hunk: {id, file, hunk, reverse, header?}; with its "@@" header, that hunk or none
             let w = try cwd(forWorktree: p.req("id")); let file = try p.req("file")
-            let rev = p["reverse"]?.bool == true, header = p["header"]?.string
+            let rev = p["reverse"]?.bool == true, header = p["header"]?.string, print = p["fingerprint"]?.string
             let d = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first
-            let i = header.map { h in d?.hunks.firstIndex { $0.header == h } ?? -1 } ?? p["hunk"]?.int ?? -1
+            // With its fingerprint, the hunk as shown line for line; with its header, that one; else by number.
+            let i = print.map { f in d?.hunks.firstIndex { $0.fingerprint == f } ?? -1 }
+                ?? header.map { h in d?.hunks.firstIndex { $0.header == h } ?? -1 } ?? p["hunk"]?.int ?? -1
             guard let d, d.hunks.indices.contains(i) else {
                 throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
             }
@@ -335,7 +337,7 @@ extension GitDiscardHunk: Handled {
     func handle(_ d: Daemon) throws -> Done {
         let w = try d.cwd(forWorktree: id)
         guard let diff = try Git.diff(w.path, source: .unstaged, file: file).first, diff.hunks.indices.contains(hunk),
-              diff.hunks[hunk].header == header else {
+              diff.hunks[hunk].header == header, fingerprint.map({ $0 == diff.hunks[hunk].fingerprint }) ?? true else {
             throw RPCError.invalidParams("The file changed since it was shown; nothing was discarded.")
         }
         try Git.discardHunk(w.path, diff: diff, hunk: hunk); return Done()
