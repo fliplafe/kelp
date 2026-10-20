@@ -60,7 +60,7 @@ enum Builtins {
                   "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "kelp.agents", specs: [
-                s("terminal.fontFamily", "Font", "font", "", "Empty = the theme's / Ghostty's font."),
+                s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),
                 s("terminal.fontSize", "Font size", "number", 13),
                 s("terminal.cursorStyle", "Cursor", "enum", "block", options: ["block", "bar", "underline"]),
                 s("terminal.optionAsAlt", "Option key sends Alt (Meta)", "boolean", false),

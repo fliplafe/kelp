@@ -138,11 +138,15 @@ struct SettingRow: View {
         case "number":
             // Bordered, with a stepper: borderless in a grouped form, the number read as a label.
             let value = Binding(get: { store.number(spec.key) ?? 0 }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) })
-            LabeledContent(loc(spec.title)) {
+            // Centred on each other: by baseline the stepper, taller than the field, left the title riding high.
+            LabeledContent {
                 HStack(spacing: 4) {
                     TextField("", value: value, format: .number).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 56)
                     Stepper("", value: value).labelsHidden()
                 }
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
+            } label: {
+                Text(loc(spec.title)).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
             }
         case "enum":
             Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {

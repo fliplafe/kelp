@@ -2440,28 +2440,6 @@
         }
       }
     },
-    "Empty = SF Mono.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пусто — SF Mono."
-          }
-        }
-      }
-    },
-    "Empty = the theme's / Ghostty's font.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пусто — шрифт темы или Ghostty."
-          }
-        }
-      }
-    },
     "Ended": {
       "localizations": {
         "ru": {
@@ -9895,6 +9873,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Рабочие области, агенты, вкладки, файлы и команды"
+          }
+        }
+      }
+    },
+    "Default: SF Mono.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По умолчанию: SF Mono."
+          }
+        }
+      }
+    },
+    "Default: the theme's / Ghostty's font.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По умолчанию: шрифт темы или Ghostty."
           }
         }
       }
