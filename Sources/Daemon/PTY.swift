@@ -1,6 +1,13 @@
 import Foundation
 import Core
 
+/// Why a terminal couldn't be started: which step failed and with what errno, so "Input/output error" says where.
+public struct PTYError: Error, LocalizedError, CustomStringConvertible {
+    public var step: String, code: Int32
+    public var description: String { "Couldn't start the terminal (\(step): \(String(cString: strerror(code))), errno \(code))" }
+    public var errorDescription: String? { description }
+}
+
 /// A child process on a pseudo-terminal. The daemon owns this, so the process outlives any UI.
 /// Once the program has exited its fd and pid are gone for good: they may already name another session's terminal or
 /// another process, so nothing is written to the one or signalled at the other after that.
@@ -21,7 +28,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32, trampoline: String? = PTY.trampoline) throws {
         var m: Int32 = 0, s: Int32 = 0
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
-        guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw PTYError(step: "openpty", code: errno) }
         var nameBuf = [CChar](repeating: 0, count: 128)
         ptsname_r(m, &nameBuf, nameBuf.count)
         let secondaryPath = String(cString: nameBuf)
@@ -61,7 +68,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
             rc = posix_spawnp(&pid, argv[0], &fa, &attr, cargv, cenv)
         }
         close(s)
-        guard rc == 0 else { close(m); throw POSIXError(.init(rawValue: rc) ?? .ENOENT) }
+        guard rc == 0 else { close(m); throw PTYError(step: "spawn \(trampoline == nil ? argv[0] : "via trampoline") on \(secondaryPath)", code: rc) }
         self.pid = pid; self.primaryFD = m
     }
 

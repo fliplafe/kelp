@@ -11,7 +11,14 @@ public struct RemoteHost: Codable, Sendable, Equatable {
 
     public static let marker = ".kelp-remote"
     /// Where the shared connections' sockets live; the daemon points it at KELP_HOME/ssh once, at start.
-    nonisolated(unsafe) public static var controlDir = NSTemporaryDirectory()
+    /// Under a lock: every `Daemon` sets it when it starts, and tests start several at once (a String written from two
+    /// threads at the same time corrupts memory).
+    public static var controlDir: String {
+        get { controlLock.withLock { controlPath } }
+        set { controlLock.withLock { controlPath = newValue } }
+    }
+    private static let controlLock = NSLock()
+    nonisolated(unsafe) private static var controlPath = NSTemporaryDirectory()
     /// `ssh` (tests use a stand-in that runs the command locally).
     public static let ssh = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh"
 

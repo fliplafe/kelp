@@ -41,6 +41,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {
+        signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
         self.root = root
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)

@@ -3,7 +3,9 @@ import Security
 
 /// Secrets (API keys) live in the login keychain, never in config files.
 public enum Keychain {
-    static let service = "dev.krill"   // from when the app was called Krill; kept so saved keys stay readable
+    /// "dev.krill" is from when the app was called Krill; kept so saved keys stay readable. `KELP_KEYCHAIN_SERVICE` names
+    /// another, so tests never touch the real keys. Read at each call: nothing caches the first answer.
+    static var service: String { ProcessInfo.processInfo.environment["KELP_KEYCHAIN_SERVICE"] ?? "dev.krill" }
 
     /// Updates in place, so a failure never leaves the account without its old value (delete-then-add would).
     public static func set(_ value: String, account: String) throws {
