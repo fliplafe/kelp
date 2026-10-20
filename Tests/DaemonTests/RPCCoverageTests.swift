@@ -1,0 +1,106 @@
+import Foundation
+import Testing
+import Core
+import GitKit
+@testable import Daemon
+
+/// A daemon with one repo and one desk (workspace) cut from it, set up the way the app does.
+private struct Rig {
+    let d: Daemon, c: RPCClient, repo: Repo, wt: Worktree
+    func call(_ m: String, _ p: [String: JSONValue] = [:]) async throws -> JSONValue {
+        try await c.call(m, .object(p.merging(["id": .string(wt.id)]) { a, _ in a }))
+    }
+}
+private func rig() async throws -> Rig {
+    let root = tmp()
+    let d = try Daemon(root: root)
+    try d.start()
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/x", "setup": false]), as: Worktree.self)
+    return Rig(d: d, c: c, repo: repo, wt: wt)
+}
+private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.write(toFile: r.wt.path + "/" + name, atomically: true, encoding: .utf8) }
+
+@Test func repoListHasTheAddedRepo() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let repos = try await r.c.call("repo.list", as: [Repo].self)
+    #expect(repos.contains { $0.id == r.repo.id })
+}
+
+@Test func branchesSwitchAndLogFollowTheDesk() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let b = try await r.c.call("git.branches", .obj(["id": .string(r.wt.id)]), as: BranchInfo.self)
+    #expect(b.current == "feat/x" && b.local.contains("main"))
+    _ = try await r.call("git.switch", ["branch": "feat/y", "create": true])
+    #expect(try await r.c.call("git.branches", .obj(["id": .string(r.wt.id)]), as: BranchInfo.self).current == "feat/y")
+    let log = try await r.call("git.log", ["all": true]).array ?? []
+    #expect(log.first?["subject"]?.string == "init")
+}
+
+@Test func graphListsCommitsAndSaysWhenThereAreMore() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    try write(r, "b.txt", "b\n")
+    _ = try await r.call("git.stage", ["files": .array([.string("b.txt")])])
+    _ = try await r.call("git.commit", ["message": "second"])
+    let g = try await r.call("git.graph", ["limit": 1])
+    #expect(g["commits"]?.array?.count == 1 && g["more"]?.bool == true)
+    let all = try await r.call("git.graph", ["limit": 10])
+    #expect(all["more"]?.bool == false)
+    let hash = try #require(all["commits"]?.array?.first?["hash"]?.string)
+    let files = try await r.call("git.commitFiles", ["commit": .string(hash)]).array ?? []
+    #expect(files.compactMap { $0["path"]?.string } == ["b.txt"])
+}
+
+@Test func discardBringsBackTheFileAndStashHidesAndRestoresChanges() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    #expect(try await r.call("worktree.dirty").bool == false)
+    try write(r, "a.txt", "changed\n")
+    #expect(try await r.call("worktree.dirty").bool == true)
+    _ = try await r.call("git.stash")
+    #expect(try await r.call("worktree.dirty").bool == false)
+    #expect(try String(contentsOfFile: r.wt.path + "/a.txt", encoding: .utf8) == "hello\n")
+    _ = try await r.call("git.stash", ["pop": true])
+    #expect(try String(contentsOfFile: r.wt.path + "/a.txt", encoding: .utf8) == "changed\n")
+    _ = try await r.call("git.discard", ["files": .array([.string("a.txt")])])
+    #expect(try String(contentsOfFile: r.wt.path + "/a.txt", encoding: .utf8) == "hello\n")
+}
+
+@Test func lineStatsSplitCodeFromTests() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    try write(r, "a.txt", "hello\nmore\n")
+    try FileManager.default.createDirectory(atPath: r.wt.path + "/tests", withIntermediateDirectories: true)
+    try write(r, "tests/t.txt", "1\n2\n3\n")
+    let s = try await r.c.call("git.lineStats", .obj(["id": .string(r.wt.id)]), as: LineStats.self)
+    #expect(s.added[.code] == 1 && s.added[.tests] == 3)
+}
+
+@Test func archivingHidesADeskAndUnarchivingBringsItBack() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    _ = try await r.call("worktree.archive")
+    #expect(!FileManager.default.fileExists(atPath: r.wt.path))   // the folder goes, the record and branch stay
+    let live = try await r.c.call("worktree.list", .obj(["repoId": .string(r.repo.id)]), as: [Worktree].self)
+    #expect(!live.contains { $0.id == r.wt.id })   // not listed unless asked for
+    let all = try await r.c.call("worktree.list", .obj(["repoId": .string(r.repo.id), "archived": true]), as: [Worktree].self)
+    #expect(all.first { $0.id == r.wt.id }?.archived == true)
+    _ = try await r.call("worktree.unarchive")
+    let back = try await r.c.call("worktree.list", .obj(["repoId": .string(r.repo.id)]), as: [Worktree].self)
+    #expect(back.contains { $0.id == r.wt.id })
+}
+
+@Test func commentStatesChangeAndOtherNamesFallBackToOpen() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let c: DiffComment = try await r.c.call("comment.add", .obj(["id": .string(r.wt.id), "file": "a.txt", "start": 1, "text": "fix"]), as: DiffComment.self)
+    _ = try await r.c.call("comment.setState", .obj(["id": .string(c.id), "state": "resolved"]))
+    #expect(try await r.c.call("comment.list", .obj(["id": .string(r.wt.id)]), as: [DiffComment].self).first?.state == .resolved)
+    _ = try await r.c.call("comment.setState", .obj(["id": .string(c.id), "state": "nonsense"]))
+    #expect(try await r.c.call("comment.list", .obj(["id": .string(r.wt.id)]), as: [DiffComment].self).first?.state == .open)
+    await #expect(throws: (any Error).self) { _ = try await r.c.call("comment.setState", .obj(["id": "missing", "state": "open"])) }
+}
+
+@Test func projectSearchFindsTextInTheDesk() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let hits = try await r.call("files.search", ["query": "hello"]).array ?? []
+    #expect(hits.first?["path"]?.string == "a.txt")
+    #expect((try await r.call("files.search", ["query": "HELLO", "case": true]).array ?? []).isEmpty)
+}
