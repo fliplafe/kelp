@@ -11,7 +11,8 @@ enum SettingsWindow {
     private(set) static var window: NSWindow?
     static func show(section: String? = nil) {
         if let s = section { UserDefaults.standard.set(s, forKey: "settings.section") }
-        if window == nil {
+        let fresh = window == nil
+        if fresh {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = String(localized: "Settings"); w.isReleasedWhenClosed = false; w.toolbarStyle = .unified
@@ -24,6 +25,8 @@ enum SettingsWindow {
             window = w
         }
         window?.makeKeyAndOrderFront(nil)
+        // AppKit hands a new window's first text field the focus: Font size opened with its value selected, so typing changed it.
+        if fresh { DispatchQueue.main.async { window?.makeFirstResponder(nil) } }
     }
 }
 
@@ -133,10 +136,13 @@ struct SettingRow: View {
                 }
             }
         case "number":
+            // Bordered, with a stepper: borderless in a grouped form, the number read as a label.
+            let value = Binding(get: { store.number(spec.key) ?? 0 }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) })
             LabeledContent(loc(spec.title)) {
-                TextField("", value: Binding(get: { store.number(spec.key) ?? 0 }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) }),
-                          format: .number)
-                    .multilineTextAlignment(.trailing).frame(width: 90)
+                HStack(spacing: 4) {
+                    TextField("", value: value, format: .number).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 56)
+                    Stepper("", value: value).labelsHidden()
+                }
             }
         case "enum":
             Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
@@ -147,12 +153,10 @@ struct SettingRow: View {
         case "color":
             ColorPicker(loc(spec.title), selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor }, set: { store.set(spec.key, .string($0.hex)) }))
         case "font":
-            LabeledContent(loc(spec.title)) {
-                Picker("", selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
-                    Text("Default").tag("")
-                    ForEach(Self.monospaced, id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden().frame(width: 220)
+            // A plain picker, like the enum rows: in a fixed-width frame it ended short of the other rows' trailing edge.
+            Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
+                Text("Default").tag("")
+                ForEach(Self.monospaced, id: \.self) { Text($0).tag($0) }
             }
         default:
             LabeledContent(loc(spec.title)) { SettingTextField(key: spec.key).frame(width: 220) }

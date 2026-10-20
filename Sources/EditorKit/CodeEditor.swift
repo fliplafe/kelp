@@ -161,6 +161,12 @@ public final class CodeEditor: NSObject {
                            comments: a(p.comment, base.comments))
     }
 
+    /// The theme's token colors, for code drawn outside the editor (diffs), so both read alike.
+    public static var tokenColors: (keyword: NSColor, string: NSColor, number: NSColor, comment: NSColor) {
+        let t = theme
+        return (t.keywords.color, t.strings.color, t.numbers.color, t.comments.color)
+    }
+
     /// Xcode-like default themes; colors must be concrete RGB (the editor reads brightness components).
     static var defaultTheme: EditorTheme {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua

@@ -92,7 +92,7 @@ enum Builtins {
         c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel() }]
         c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus", extensionId: "kelp.files") { _ in UntitledTab.next() }]
         c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", extensionId: "kelp.files", specs: [
-            s("editor.fontFamily", "Font", "font", "", "Empty = SF Mono."),
+            s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),

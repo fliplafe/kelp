@@ -63,7 +63,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         table.dataSource = self; table.delegate = self; table.rowHeight = 18; table.intercellSpacing = .zero
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle; table.style = .plain
         table.allowsMultipleSelection = true; table.headerView = nil; table.usesAlternatingRowBackgroundColors = false
-        table.backgroundColor = .textBackgroundColor
+        table.backgroundColor = .textBackgroundColor; table.floatsGroupRows = false
         table.onKey = { [weak self] e in self?.key(e) ?? false }
         let cm = NSMenu()
         for (t, st) in [(String(localized: "Mark Resolved"), "resolved"), (String(localized: "Reopen"), "open")] { let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st }
@@ -200,7 +200,8 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         let open = comments.filter { $0.state == .open }.count
         status.stringValue = single != nil ? (diffs.isEmpty ? String(localized: "No changes") : RowBadges.changes(added: add, removed: del).string)
-            : String(localized: "\(diffs.count) files") + "  \(RowBadges.changes(added: add, removed: del).string)  ·  " + String(localized: "\(open) open comments")
+            : String(localized: "\(diffs.count) files") + "  \(RowBadges.changes(added: add, removed: del).string)"
+            + (open > 0 ? "  ·  " + String(localized: "\(open) open comments") : "")
     }
 
     private func rebuildRows() {
@@ -218,18 +219,19 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             // The same letters and colours as Source Control and Files; a long path loses its middle, not its counts.
             let (letter, color) = changes.first { $0.path == d.path }?.badge ?? (" ", .labelColor)
             let t = NSMutableAttributedString(string: letter + "  ", attributes: [.font: NSFont.ui(10, weight: .bold), .foregroundColor: color])
-            // The name, its counts, then its folder in grey, which gives way first: names are what you look for.
+            // The name, its counts, then its folder in grey, shown only when all of it fits: a cut folder ("So…") says nothing.
             let dir = (d.path as NSString).deletingLastPathComponent
             t.append(NSAttributedString(string: (d.path as NSString).lastPathComponent + "  ", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
             t.append(RowBadges.changes(added: d.additions, removed: d.deletions))
-            if !dir.isEmpty { t.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])) }
+            let full = NSMutableAttributedString(attributedString: t)
+            if !dir.isEmpty { full.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])) }
             let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingTail
-            t.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: t.length))
-            let v = label("", font: .systemFont(ofSize: 11)); v.attributedStringValue = t
+            for s in [t, full] { s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length)) }
+            let v = FitLabel(labelWithAttributedString: t); v.full = full; v.short = t; v.toolTip = d.path
             return v
         }
         let id = col?.identifier.rawValue ?? ""
-        let first = id == "t" || id == "l"
+        let first = id == "t" || id == "l" || col == nil   // nil: a hunk header, one view across the row
         switch rows[row] {
         case .comment(let c):
             guard first else { return label("", font: font) }
@@ -277,6 +279,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 }
             }
         }
+    }
+
+    /// A hunk's header spans both sides, its buttons at the row's end, rather than ending halfway in an empty strip.
+    func tableView(_ t: NSTableView, isGroupRow row: Int) -> Bool {
+        guard t === table, rows.indices.contains(row), case .diff(.hunk) = rows[row] else { return false }
+        return true
     }
 
     /// Hunk buttons only where the hunks shown are the ones git stages: the unstaged or the staged diff, or the uncommitted
@@ -442,6 +450,16 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
         let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
         return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
+    }
+}
+
+/// A file-list row: its folder only when the whole of it fits (`full`), else the name and counts alone (`short`).
+private final class FitLabel: NSTextField {
+    var full = NSAttributedString(), short = NSAttributedString()
+    override func setFrameSize(_ size: NSSize) {
+        super.setFrameSize(size)
+        let s = full.size().width + 6 <= size.width ? full : short
+        if !attributedStringValue.isEqual(to: s) { attributedStringValue = s }
     }
 }
 

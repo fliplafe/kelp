@@ -1,4 +1,5 @@
 import AppKit
+import EditorKit
 
 /// Small regex highlighter for diffs and previews. The editor uses tree-sitter; this only needs to be cheap.
 enum Highlighter {
@@ -16,7 +17,7 @@ enum Highlighter {
     }()
     static let alias = ["tsx": "ts", "jsx": "js", "mjs": "js", "yml": "yaml", "py": "py"]
 
-    static func attributed(_ s: String, ext: String, font: NSFont) -> NSAttributedString {
+    @MainActor static func attributed(_ s: String, ext: String, font: NSFont) -> NSAttributedString {
         let a = NSMutableAttributedString(string: s, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
         let lang = alias[ext] ?? ext
         guard let kw = keywords[lang] else { return a }
@@ -24,10 +25,12 @@ enum Highlighter {
             guard let re = try? NSRegularExpression(pattern: pattern) else { return }
             for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)) { a.addAttribute(.foregroundColor, value: color, range: m.range) }
         }
-        paint(#"\b(\#(kw.joined(separator: "|")))\b"#, .systemPink)
-        paint(#"\b\d+(\.\d+)?\b"#, .systemOrange)
-        paint(#""(\\.|[^"\\])*"|'(\\.|[^'\\])*'"#, .systemRed)
-        paint(lang == "py" || lang == "yaml" ? #"#.*$"# : #"//.*$"#, .systemGray)
+        // The editor theme's colors, so a diff reads like the file it changes.
+        let c = CodeEditor.tokenColors
+        paint(#"\b(\#(kw.joined(separator: "|")))\b"#, c.keyword)
+        paint(#"\b\d+(\.\d+)?\b"#, c.number)
+        paint(#""(\\.|[^"\\])*"|'(\\.|[^'\\])*'"#, c.string)
+        paint(lang == "py" || lang == "yaml" ? #"#.*$"# : #"//.*$"#, c.comment)
         return a
     }
 }
