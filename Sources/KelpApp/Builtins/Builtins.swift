@@ -143,8 +143,11 @@ enum Builtins {
               "Icons in Files, Source Control and tabs. VS Code icon themes work as they are: Settings › Extensions › Install…"),
             s("workbench.textSize", "Sidebar and inspector text", "enum", "normal", "The terminal and the editor have their own font sizes.",
               options: ["normal", "large", "larger"]),
-            s("workbench.inspectorIcons", "Inspector icons", "enum", "center", "Where the panel icons sit above the inspector.",
+            s("workbench.inspectorIcons", "Inspector icons", "enum", "center", "Where the panel icons sit in their row.",
               options: ["left", "center", "right"]),
+            s("workbench.inspectorIconsPosition", "Inspector icons position", "enum", "top",
+              "Level with the tabs or under the panel. Drag an icon to move it; right-click the icons to hide them.",
+              options: ["top", "bottom"]),
             s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock."),
             s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge.")
         ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", extensionId: "kelp.appearance", specs: [],

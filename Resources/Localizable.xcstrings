@@ -7376,17 +7376,6 @@
         }
       }
     },
-    "Where the panel icons sit above the inspector.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Где стоят значки панелей над инспектором."
-          }
-        }
-      }
-    },
     "While agents work": {
       "localizations": {
         "ru": {
@@ -7959,6 +7948,138 @@
           "stringUnit": {
             "state": "translated",
             "value": "✕ упало: %lld"
+          }
+        }
+      }
+    },
+    "Icons": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значки"
+          }
+        }
+      }
+    },
+    "Position": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Положение"
+          }
+        }
+      }
+    },
+    "Alignment": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выравнивание"
+          }
+        }
+      }
+    },
+    "Top": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сверху"
+          }
+        }
+      }
+    },
+    "Bottom": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Снизу"
+          }
+        }
+      }
+    },
+    "Auto-Hide Inspector": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоскрытие инспектора"
+          }
+        }
+      }
+    },
+    "Inspector icons position": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Положение значков инспектора"
+          }
+        }
+      }
+    },
+    "Where the panel icons sit in their row.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Где стоят значки панелей в их ряду."
+          }
+        }
+      }
+    },
+    "Level with the tabs or under the panel. Drag an icon to move it; right-click the icons to hide them.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На одной линии с вкладками или под панелью. Значок можно перетащить; правый щелчок по значкам скрывает их."
+          }
+        }
+      }
+    },
+    "Open In, Reveal in Finder, Copy Path": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть в…, Показать в Finder, Скопировать путь"
+          }
+        }
+      }
+    },
+    "Files, agents, commands": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы, агенты, команды"
+          }
+        }
+      }
+    },
+    "Open Quickly (⌘P)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Быстрое открытие (⌘P)"
           }
         }
       }
