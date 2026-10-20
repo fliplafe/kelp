@@ -39,7 +39,7 @@ final class TabStrip: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityRole(.tabGroup); setAccessibilityLabel("Tabs")
+        setAccessibilityElement(true); setAccessibilityRole(.tabGroup); setAccessibilityLabel(String(localized: "Tabs"))
         stack.orientation = .horizontal; stack.spacing = 1; stack.distribution = .fill
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
         insertion.wantsLayer = true; insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; insertion.isHidden = true
@@ -203,7 +203,7 @@ private final class TabButton: NSControl, NSDraggingSource {
         // VoiceOver: a tab like NSTabView's (radio button, tab subrole); the close button only exists on hover, so it's an action.
         setAccessibilityElement(true); setAccessibilityRole(.radioButton); setAccessibilitySubrole(.init(rawValue: "AXTabButton"))   // kAXTabButtonSubrole
         title.setAccessibilityElement(false); icon.setAccessibilityElement(false)
-        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Close Tab") { [weak self] in
+        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: String(localized: "Close Tab")) { [weak self] in
             MainActor.assumeIsolated { self?.closeTapped() }; return true
         }])
     }
@@ -214,7 +214,8 @@ private final class TabButton: NSControl, NSDraggingSource {
         title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread
         meter.share = it.meter
         toolTip = it.toolTip ?? it.title
-        setAccessibilityLabel(it.title); setAccessibilityValue(selected)
+        // VoiceOver hears the agent's state too ("Claude Code, Needs your input"): on screen it replaces the icon.
+        setAccessibilityLabel(it.status.map { "\(it.title), \($0.words)" } ?? it.title); setAccessibilityValue(selected)
         updateLook()
     }
 

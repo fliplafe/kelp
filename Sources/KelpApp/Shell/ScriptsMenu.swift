@@ -88,13 +88,13 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         for (sid, r) in runs where r.workspace == wid && r.name == name {
             runs[sid] = nil
             if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
-            if let e = Workbench.editor, let t = e.layout.tab(uri: TabURI.session(sid)) { e.closeTab(t.id) }
+            Workbench.closeTab(uri: TabURI.session(sid))
         }
         guard let s = await AppModel.shared.call(method, .object(params)), let sid = s["id"]?.string else { return }
         runs[sid] = (wid, name)
         await AppModel.shared.refresh()
         // Below what you're doing, like a console; the keys stay where they were.
-        if wid == Workbench.shared.workspaceId { Workbench.editor?.open(TabURI.session(sid), split: .down, focus: false) }
+        if wid == Workbench.shared.workspaceId { Workbench.open(TabURI.session(sid), split: .down, workspace: wid, focus: false) }
         else { Workbench.window?.editors.openInBackground(TabURI.session(sid), workspace: wid) }
     }
 
@@ -123,15 +123,15 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     private func watch() {
         guard !watching else { return }
         watching = true
-        track { AppModel.shared.sessions.filter { $0.status == .exited } } changed: { [weak self] ended in
+        track(owner: self) { AppModel.shared.sessions.filter { $0.status == .exited } } changed: { [weak self] ended in
             guard let self else { return }
             for s in ended {
                 guard let r = runs.removeValue(forKey: s.id) else { continue }
                 let name = "“\(r.name)”"
                 let show = (String(localized: "Show Output"), { Workbench.focus(session: s.id) })
                 if s.summary.hasPrefix("Ended with an error") {
-                    Banner.show("\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))", style: .error, action: show)
-                } else { Banner.show("\(name) finished", action: show) }
+                    Banner.show(String(localized: "\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))"), style: .error, action: show)
+                } else { Banner.show(String(localized: "\(name) finished"), action: show) }
             }
         }
     }

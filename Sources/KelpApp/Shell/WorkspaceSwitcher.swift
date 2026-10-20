@@ -80,7 +80,7 @@ final class WorkspaceSwitcher {
     private func highlight() {
         for (i, r) in rows.enumerated() {
             r.layer?.backgroundColor = i == index ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
-            for case let t as NSTextField in r.subviews.flatMap({ [$0] + $0.subviews }) { t.textColor = i == index ? .white : (t.tag == 1 ? .secondaryLabelColor : .labelColor) }
+            for case let t as NSTextField in r.subviews.flatMap({ [$0] + $0.subviews }) { t.textColor = i == index ? .alternateSelectedControlTextColor : (t.tag == 1 ? .secondaryLabelColor : .labelColor) }
         }
     }
 

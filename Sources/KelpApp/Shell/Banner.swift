@@ -14,7 +14,7 @@ enum Banner {
         let fix = style == .error ? FixRecipes.fix(for: text) : nil
         var text = text, action = action
         if let fix {
-            text += "\nFix: " + fix.command
+            text += "\n" + String(localized: "Fix: ") + fix.command
             if action == nil { action = (String(localized: "Copy Fix"), { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(fix.command, forType: .string) }) }
         }
         current?.removeFromSuperview()
@@ -40,6 +40,9 @@ enum Banner {
             fx.widthAnchor.constraint(lessThanOrEqualToConstant: 520)
         ])
         current = fx
+        // VoiceOver says it too: the banner is out of the keyboard's way, so it would go unheard.
+        NSAccessibility.post(element: content, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: (style == .error ? NSAccessibilityPriorityLevel.high : .medium).rawValue])
         fx.alphaValue = 0
         NSAnimationContext.runAnimationGroup { $0.duration = 0.15; fx.animator().alphaValue = 1 }
         if fix?.blocking == true {   // git can't run at all: stays until it's closed

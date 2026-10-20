@@ -59,23 +59,24 @@ final class InspectorController: NSViewController {
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             v.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
         ])
+        v.onShow = { [weak self] in self?.showSelected() }
         view = v
         // Panels are built with the text size of the moment: rebuilt when it changes (first, while none are built).
-        track { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in
+        track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in
             guard let self else { return }
             for (_, vc) in made { vc.view.removeFromSuperview(); vc.removeFromParent() }
             made = [:]; showSelected()
         }
-        track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.rebuild() }
-        track { [SettingsStore.shared.value(Self.orderKey), SettingsStore.shared.value(Self.hiddenKey)] } changed: { [weak self] _ in self?.rebuild() }
-        track { SettingsStore.shared.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
+        track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.forgetFolderPanels(); self?.rebuild() }
+        track(owner: self) { [SettingsStore.shared.value(Self.orderKey), SettingsStore.shared.value(Self.hiddenKey)] } changed: { [weak self] _ in self?.rebuild() }
+        track(owner: self) { SettingsStore.shared.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
             guard let self else { return }
             NSLayoutConstraint.deactivate($0 ? self.top : self.bottom); NSLayoutConstraint.activate($0 ? self.bottom : self.top)
             self.rowSep.isHidden = !$0; sep.isHidden = $0
         }
-        track { Workbench.shared.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
-        track { ExtensionRegistry.shared.all.panels.map { $0.badge?() ?? 0 } } changed: { [weak self] _ in self?.showCounts() }
-        track { SettingsStore.shared.string("workbench.inspectorIcons") } changed: { [weak self] in
+        track(owner: self) { Workbench.shared.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
+        track(owner: self) { ExtensionRegistry.shared.all.panels.map { $0.badge?() ?? 0 } } changed: { [weak self] _ in self?.showCounts() }
+        track(owner: self) { SettingsStore.shared.string("workbench.inspectorIcons") } changed: { [weak self] in
             guard let self else { return }
             let want = self.align[$0 ?? ""] == nil ? "center" : $0 ?? ""
             for (k, c) in self.align { c.isActive = k == want }
@@ -107,6 +108,13 @@ final class InspectorController: NSViewController {
         }
         selector.isHidden = panels.isEmpty; empty.isHidden = !panels.isEmpty
         showCounts(); showSelected()
+    }
+
+    /// A reload may have changed what a folder extension's panel shows (an agent edits it, then `kelp ext reload`):
+    /// those are made again. Built-in panels stay as they are.
+    private func forgetFolderPanels() {
+        let builtin = Set(ExtensionRegistry.shared.extensions.filter(\.builtin).map(\.id))
+        for p in panels where !builtin.contains(p.extensionId) { made[p.id]?.view.removeFromSuperview(); made[p.id]?.removeFromParent(); made[p.id] = nil }
     }
 
     private func showCounts() {
@@ -200,6 +208,8 @@ final class InspectorController: NSViewController {
         for (j, b) in buttons.enumerated() { b.state = j == i ? .on : .off }
         let p = panels[i]
         panelTitle.stringValue = loc(p.title)
+        // A collapsed inspector builds nothing: the panel is made when it shows (a hidden Source Control runs no git).
+        guard view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return }
         let vc = made[p.id] ?? p.make()
         if made[p.id] == nil { made[p.id] = vc; addChild(vc) }
         guard vc.view.superview !== host else { return }
@@ -217,7 +227,11 @@ final class InspectorController: NSViewController {
 /// The inspector's view: a right-click on the icon row's band opens the row's menu.
 private final class InspectorView: NSView {
     var rowMenu: ((NSEvent) -> NSMenu?)?
+    /// On screen: in a window and not collapsed (a collapsed split view item is hidden).
+    var onShow: (() -> Void)?
     override func menu(for e: NSEvent) -> NSMenu? { rowMenu?(e) }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); onShow?() }
+    override func viewDidUnhide() { super.viewDidUnhide(); onShow?() }
 }
 
 /// The icon row's capsule: a soft fill behind the panel icons.

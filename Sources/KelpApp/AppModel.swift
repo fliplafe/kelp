@@ -62,25 +62,50 @@ final class AppModel {
         c.notify("ui.publish", .obj(["state": state]))
     }
 
+    /// One connection at a time: launch, a dropped connection and Restart Background Service all come through here.
     func connect() async {
+        if client != nil { return }
+        if let c = connecting { return await c.value }
+        let c = Task { await open() }
+        connecting = c
+        await c.value
+        connecting = nil
+    }
+    @ObservationIgnored private var connecting: Task<Void, Never>?
+    @ObservationIgnored private var retryDelay = 1.0
+    @ObservationIgnored private var failing = false
+
+    /// Up to ~5 s for the first connection (and the lists it brings), for things asked for at launch.
+    func waitForConnection() async {
+        for _ in 0..<50 where !connected { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    private func open() async {
         for attempt in 0..<2 {
             if let c = try? RPCClient() { client = c; break }
             if attempt == 0 { launchDaemon() }
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); if let c = try? RPCClient() { client = c; break } }
             if client != nil { break }
         }
-        guard let c = client else { return }
+        guard let c = client else {
+            // Keeps trying (less and less often); every action meanwhile says why it does nothing.
+            if !failing { failing = true; Banner.show(Self.noService, style: .error, action: (String(localized: "Try Again"), { Task { await AppModel.shared.connect() } })) }
+            reconnectSoon(); return
+        }
+        retryDelay = 1; failing = false
         if await checkDaemonVersion(c) { return }
         c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
         c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.connected = false; self?.reconnectSoon() } }
-        connected = true
         await UIState.load(c)
         if UIState.strings("sidebar.order") != order { order = UIState.strings("sidebar.order") }
         await SettingsStore.shared.load()
         await refresh()
+        connected = client === c   // after the lists: what waits for the connection finds the projects in
         publishUIState()
         watchContext()
     }
+
+    static let noService = String(localized: "Kelp's background service isn't running.")
 
     private var restartAttempted = false
     /// Where kelpd and kelp sit next to the app binary.
@@ -109,17 +134,22 @@ final class AppModel {
         _ = try? await c.call("daemon.shutdown")
         c.close(); client = nil
         try? await Task.sleep(for: .milliseconds(600))
-        await connect()
+        await open()
         return true
     }
 
     func restartDaemon() async {
-        _ = try? await client?.call("daemon.shutdown"); client?.close(); client = nil
+        let old = client
+        old?.onClose = nil   // this restart reconnects itself: a second client would hear every event twice
+        client = nil; connected = false
+        _ = try? await old?.call("daemon.shutdown"); old?.close()
         try? await Task.sleep(for: .milliseconds(600)); await connect()
     }
 
     private func reconnectSoon() {
-        Task { try? await Task.sleep(for: .seconds(1)); await connect() }
+        let wait = retryDelay
+        retryDelay = min(retryDelay * 2, 30)
+        Task { try? await Task.sleep(for: .seconds(wait)); await connect() }
     }
 
     private func launchDaemon() {
@@ -149,7 +179,8 @@ final class AppModel {
             if old?.status != s.status, s.agent != "shell" { readContext(s.id) }
         case "event.devserver":
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
-            if let w = p["worktree"]?.string, let u = p["url"]?.string, w == Workbench.shared.workspaceId { Workbench.open(u, split: .right) }
+            // The keys stay where they are: the page comes while you may be typing.
+            if let w = p["worktree"]?.string, let u = p["url"]?.string, w == Workbench.shared.workspaceId { Workbench.open(u, split: .right, workspace: w, focus: false) }
         case "event.changed":
             Task { await refresh() }
         case "event.clone":
@@ -192,7 +223,8 @@ final class AppModel {
     /// Errors show as a banner, never a blocking alert.
     @discardableResult
     func call(_ method: String, _ params: JSONValue? = nil) async -> JSONValue? {
-        do { return try await client?.call(method, params) }
+        guard let c = client else { Banner.show(Self.noService, style: .error); return nil }
+        do { return try await c.call(method, params) }
         catch {
             Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error)
             return nil
@@ -200,13 +232,14 @@ final class AppModel {
     }
     @discardableResult
     func call<M: RPCMethod>(_ m: M) async -> M.Result? {
-        do { return try await client?.call(m) }
+        guard let c = client else { Banner.show(Self.noService, style: .error); return nil }
+        do { return try await c.call(m) }
         catch { Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error); return nil }
     }
 
     /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.
     func tryCall(_ method: String, _ params: JSONValue? = nil) async -> (value: JSONValue?, error: String?) {
-        guard let c = client else { return (nil, "Kelp's background service isn't running.") }
+        guard let c = client else { return (nil, Self.noService) }
         do { return (try await c.call(method, params), nil) }
         catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
     }

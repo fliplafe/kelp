@@ -44,17 +44,21 @@ final class SessionTab: TabContent {
 
     /// Closing the tab ends the session; it asks only when something would stop: a working agent, or a program
     /// running in a terminal (an idle shell or a finished agent just closes).
-    func close() -> Bool {
+    func close() -> Bool { Self.close(session: sessionId) }
+
+    /// Also for a tab that was never built (EditorArea closes those without making them).
+    static func close(session sid: String) -> Bool {
+        let session = AppModel.shared.session(sid)
         if let s = session, s.agent != "shell", s.status == .working {
-            let a = NSAlert(); a.messageText = String(localized: "Stop \(title)?"); a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
+            let a = NSAlert(); a.messageText = String(localized: "Stop \(AgentCatalog.displayName(s))?"); a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
             a.addButton(withTitle: String(localized: "Stop Agent")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
-        } else if session?.agent == "shell", let program = Self.busy(sessionId) {
+        } else if session?.agent == "shell", let program = busy(sid) {
             let a = NSAlert(); a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
-        Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sessionId)])) }
+        Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
         return true
     }
 

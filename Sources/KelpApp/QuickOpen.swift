@@ -36,6 +36,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private var recents: [Item] = []
     private var showingRecents = false
     private var prSearch: Task<Void, Never>?
+    private var filesLoad: Task<Void, Never>?
     private let field = NSSearchField()
     private let table = NSTableView()
     private let keys = NSTextField(labelWithString: "")
@@ -174,6 +175,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             for i in m.items {
                 if let s = i.submenu { walk(s, path: path.isEmpty ? i.title : path + " › " + i.title); continue }
                 guard let a = i.action, !i.isSeparatorItem, !i.isHidden, !i.title.isEmpty else { continue }
+                // Only what the menu would offer now: someone handles it and it's enabled (Run File needs a file…).
+                guard let t = NSApp.target(forAction: a, to: i.target, from: i), (t as? NSMenuItemValidation)?.validateMenuItem(i) ?? true else { continue }
                 let key = i.keyEquivalent.isEmpty ? "" : Self.shortcut(i)
                 items.append(Item(kind: "Command", icon: "command", title: i.title, detail: [path, key].filter { !$0.isEmpty }.joined(separator: "   "), action: {
                     NSApp.sendAction(a, to: i.target, from: i)
@@ -212,10 +215,12 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                                   action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                                   session: s))
             }
+            filesLoad?.cancel()
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
-                Task {
+                filesLoad = Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
-                    guard choosing == nil else { return }   // a setting's choices are on screen; going back lists again
+                    // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
+                    guard !Task.isCancelled, choosing == nil else { return }
                     all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
                                                  action: { Workbench.open(TabURI.file(root + "/" + f)) },
                                                  split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }) }
@@ -239,9 +244,9 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                         action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                         session: s)
         }
-        let shown = Set(Workbench.shared.visits.reversed())
-        for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && shown.contains(id) {
-            guard let w = m.worktree(id), !out.contains(where: { $0.title == w.displayName && $0.kind == "Workspace" }) else { continue }
+        var seen: Set<String> = []   // each workspace once, at its last visit
+        for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && seen.insert(id).inserted {
+            guard let w = m.worktree(id) else { continue }
             out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))
             if out.count >= 10 { break }
         }

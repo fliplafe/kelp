@@ -75,7 +75,7 @@ final class CardModel {
         } else if key.hasPrefix("w:"), let w = m.worktree(String(key.dropFirst(2))) {
             let r = m.repo(w.repoId)
             title = w.displayName
-            subtitle = [r?.name, w.path == r?.path ? nil : "branch \(w.branch)"].compactMap { $0 }.joined(separator: " · ")
+            subtitle = [r?.name, w.path == r?.path ? nil : String(localized: "branch \(w.branch)")].compactMap { $0 }.joined(separator: " · ")
             agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }.map { Agent(id: $0.id, session: $0) }
             workspaceId = w.id; agentOnly = false; repo = nil
         } else { return nil }
@@ -100,7 +100,7 @@ final class CardModel {
                 let secs = Int(t["seconds"].flatMap { if case .double(let d) = $0 { d } else { $0.int.map(Double.init) } } ?? 0)
                 let took = secs < 60 ? "\(secs)s" : "\(secs / 60)m"
                 turn = files.isEmpty ? String(localized: "Last turn changed no files · \(took)")
-                    : "Last turn: \(files.count) \(files.count == 1 ? "file" : "files") +\(add) −\(del) · \(took)"
+                    : String(localized: "Last turn: \(files.count) files +\(add) −\(del) · \(took)")
             }
             if let u = try? await c.call(SessionContextWindow(id: a.id)) { context = (u.used, u.window) }
         }
@@ -138,7 +138,7 @@ struct CardView: View {
                 }
             }
             if !model.ports.isEmpty {
-                Text("Serving " + model.ports.map { "localhost:\($0)" }.joined(separator: ", ")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(String(localized: "Serving \(model.ports.map { "localhost:\($0)" }.joined(separator: ", "))")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             if let t = model.turn { Text(t).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
             if let c = model.context { ContextLine(used: c.used, window: c.window) }

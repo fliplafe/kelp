@@ -8,6 +8,8 @@ import WorkbenchKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var main: MainWindowController!
     let notifier = Notifier()
+    /// Files and links opened while Kelp starts (nil once it has).
+    private var pendingOpens: [URL]? = []
     /// Sparkle needs a real app bundle (feed URL and keys live in Info.plist); dev runs skip it.
     lazy var updater: SPUStandardUpdaterController? = Bundle.main.bundleIdentifier == nil ? nil
         : SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -27,9 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: .kelpRefresh, object: nil, queue: .main) { _ in Task { @MainActor in await AppModel.shared.refresh() } }
         buildMenu()
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }
-        track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }
-        track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
-        track { SettingsStore.shared.value("keys") } changed: { [weak self] _ in self?.buildMenu() }
+        track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }
+        track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
+        track(owner: self) { SettingsStore.shared.value("keys") } changed: { [weak self] _ in self?.buildMenu() }
         ExtensionRegistry.shared.watch()
         // Extension commands and requirement checks need the user's PATH; reading it can take seconds.
         DispatchQueue.global(qos: .utility).async {
@@ -46,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))
             if let w = pick ?? last ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { Workbench.show(workspace: w.id) }
+            let early = pendingOpens ?? []; pendingOpens = nil
+            if !early.isEmpty { application(NSApp, open: early) }
             if ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] == nil { OnboardingSheet.showIfFirstLaunch() }
         }
         NSApp.activate()
@@ -75,7 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ n: Notification) { main?.leaveFocusMode() }
 
     /// Folders dropped on the Dock icon or opened with `open -a Kelp <path>` become projects; files open as tabs.
+    /// What opens Kelp waits for the projects and the last workspace to be on screen.
     func application(_ app: NSApplication, open urls: [URL]) {
+        if pendingOpens != nil { pendingOpens? += urls; return }
         for u in urls {
             if u.scheme == "kelp" { KelpLinks.handle(u); continue }
             var dir: ObjCBool = false
@@ -89,7 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let m = NSMenu()
         for s in AttentionQueue.sessions {
             let place = AppModel.shared.worktree(s.worktreeId)?.displayName ?? ""
-            let i = m.add("\(AgentCatalog.displayName(s)) — \(s.status == .waiting ? "needs you" : "finished") · \(place)") { NSApp.activate(); Workbench.focus(session: s.id) }
+            let state = s.status == .waiting ? String(localized: "needs you") : String(localized: "finished")
+            let i = m.add("\(AgentCatalog.displayName(s)) — \(state) · \(place)") { NSApp.activate(); Workbench.focus(session: s.id) }
             i.image = AgentCatalog.icon(s.agent, size: 16)
         }
         if !m.items.isEmpty { m.addItem(.separator()) }
@@ -291,14 +298,14 @@ final class ArchivedMenu: NSObject, NSMenuDelegate {
     private var archived: [Worktree] = []
     override init() {
         super.init()
-        track { AppModel.shared.worktrees } changed: { [weak self] _ in Task { await self?.reload() } }
+        track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in Task { await self?.reload() } }
     }
     private func reload() async {
         archived = ((try? await AppModel.shared.client?.call("worktree.list", .obj(["archived": true]), as: [Worktree].self)) ?? []).filter(\.archived)
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard !archived.isEmpty else { menu.addItem(withTitle: "None", action: nil, keyEquivalent: "").isEnabled = false; return }
+        guard !archived.isEmpty else { menu.addItem(withTitle: String(localized: "None"), action: nil, keyEquivalent: "").isEnabled = false; return }
         for w in archived.sorted(by: { $0.createdAt > $1.createdAt }) {
             menu.add("\(w.displayName) — \(AppModel.shared.repo(w.repoId)?.name ?? "")") { WorkspaceActions.unarchive(w.id) }
         }

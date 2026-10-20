@@ -67,6 +67,12 @@ final class RowBadges {
         let (mark, mc): (String, NSColor) = failed > 0 ? (" ✕", .systemRed) : pending > 0 ? (" ●", .systemOrange) : passed > 0 ? (" ✓", .systemGreen) : ("", color)
         if !mark.isEmpty { t.append(NSAttributedString(string: mark, attributes: [.font: NSFont.ui(9, weight: .bold), .foregroundColor: mc])) }
         let checks = failed > 0 ? String(localized: "\(failed) checks failing") : pending > 0 ? String(localized: "\(pending) checks running") : passed > 0 ? String(localized: "checks passed") : String(localized: "no checks")
-        return (t, "Pull request #\(n) · \(state.capitalized) · \(checks)\n\(p["title"]?.string ?? "")")
+        let said = switch state {
+        case "DRAFT": String(localized: "draft")
+        case "MERGED": String(localized: "merged")
+        case "CLOSED": String(localized: "closed")
+        default: String(localized: "open")
+        }
+        return (t, String(localized: "Pull request #\(n) · \(said) · \(checks)") + "\n" + (p["title"]?.string ?? ""))
     }
 }

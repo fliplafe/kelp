@@ -91,6 +91,9 @@ final class StatusMark: NSView {
         let s = status == .idle ? nil : status
         isHidden = s == nil
         toolTip = s?.words
+        // VoiceOver reads the state (the spinning ring is only a layer): the same words as the tooltip.
+        setAccessibilityElement(s != nil); setAccessibilityRole(.image)
+        setAccessibilityLabel(compacting && s == .working ? String(localized: "Compacting its conversation") : s?.words)
         // Motion means state: spinning = working, pulsing = compacting, filled = waiting for you. With Reduce Motion a
         // still symbol says "working" instead: a ring that stopped spinning looks stuck.
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion

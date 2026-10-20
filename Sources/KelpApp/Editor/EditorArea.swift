@@ -16,6 +16,8 @@ final class EditorArea: NSViewController {
     private var responderObservation: NSKeyValueObservation?
     private var saveWork: DispatchWorkItem?
     private var reconciledOnce = false
+    /// Sessions whose tab was just closed: until their kill lands, a daemon update mustn't bring the tab back.
+    private var closed: Set<String> = []
     /// The group shown alone (⇧⌘↩), not saved: a relaunch shows every pane.
     private var zoomed: String?
 
@@ -30,11 +32,11 @@ final class EditorArea: NSViewController {
 
     override func loadView() {
         view = NSView()
-        track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
-        track { FileIcon.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
+        track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
+        track(owner: self) { FileIcon.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
         // The empty workspace lists the agents that work, with their icons; rebuild it when either changes.
-        track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
-        track { AgentIcons.shared.images.count } changed: { [weak self] _ in
+        track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
+        track(owner: self) { AgentIcons.shared.images.count } changed: { [weak self] _ in
             self?.rebuildStart()
             for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }   // agent tabs get the real icon
         }
@@ -43,7 +45,8 @@ final class EditorArea: NSViewController {
     /// Turning an extension off takes its open tabs' content with it (they say how to turn it back on); turning it on
     /// brings the content back.
     private func extensionsChanged() {
-        let stale = contents.filter { (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
+        // A reloaded extension may have changed its view: its tabs are built again from the new definition.
+        let stale = contents.filter { $0.value is ExtViewTab || (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
         guard !stale.isEmpty else { return }
         stale.forEach { contents[$0] = nil }
         render()
@@ -226,7 +229,7 @@ final class EditorArea: NSViewController {
         case "http", "https", "about":
             return .init(id: t.id, title: URL(string: t.uri)?.host ?? String(localized: "New Page"), icon: .symbol("safari"), status: nil, toolTip: t.uri)
         case "preview": return .init(id: t.id, title: (body as NSString).lastPathComponent, icon: .symbol("eye"), status: nil, toolTip: body)
-        case "usage": return .init(id: t.id, title: "Usage", icon: .symbol("chart.bar"), status: nil, toolTip: nil)
+        case "usage": return .init(id: t.id, title: String(localized: "Usage"), icon: .symbol("chart.bar"), status: nil, toolTip: nil)
         default:
             let v = DeclarativeExtension.viewInfo(t.uri)
             return .init(id: t.id, title: v?.title ?? body, icon: .symbol(v?.icon ?? "puzzlepiece.extension"), status: nil, toolTip: t.uri)
@@ -279,8 +282,10 @@ final class EditorArea: NSViewController {
         publishFocus()
     }
 
-    /// The focused tab tells the inspector which agent / file the user is looking at.
+    /// The focused tab tells the inspector which agent / file the user is looking at. Only the main window's workspace
+    /// on screen says so: a background workspace or the Scratch panel opening a tab must not redirect "send to agent".
     private func publishFocus() {
+        guard Workbench.window?.editors.current === self else { return }
         let uri = layout.focusedGroup?.selectedTab?.uri ?? ""
         let wb = Workbench.shared
         switch TabURI.scheme(uri) {
@@ -344,7 +349,11 @@ final class EditorArea: NSViewController {
     }
 
     func closeTab(_ id: String) {
-        if let c = contents[id], !c.close() { return }
+        let uri = layout.allTabs.first { $0.id == id }?.uri ?? ""
+        let sid = TabURI.scheme(uri) == "session" ? TabURI.body(uri) : nil
+        // A tab not built yet (in the background since launch) ends its session all the same.
+        if let c = contents[id] { guard c.close() else { return } } else if let sid, !SessionTab.close(session: sid) { return }
+        if let sid { closed.insert(sid) }
         contents[id] = nil
         layout.remove(id)
         if layout.allTabs.isEmpty { layout = WorkspaceLayout() }
@@ -524,7 +533,8 @@ final class EditorArea: NSViewController {
         }
         if layout.allTabs.isEmpty, layout.root != nil { layout = WorkspaceLayout(); changed = true }
         let shown = Set(layout.allTabs.filter { TabURI.scheme($0.uri) == "session" }.map { TabURI.body($0.uri) })
-        for s in mine where s.status != .exited && !shown.contains(s.id) {
+        closed = closed.filter { AppModel.shared.session($0).map { $0.status != .exited } ?? false }
+        for s in mine where s.status != .exited && !shown.contains(s.id) && !closed.contains(s.id) {
             layout.add(TabURI.session(s.id)); changed = true
         }
         reconciledOnce = true

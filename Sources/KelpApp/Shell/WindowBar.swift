@@ -43,13 +43,13 @@ final class WindowBar: NSView {
             search.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
             search.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
-        track { Workbench.shared.workspaceId } changed: { [weak self] _ in
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }
             self.info = nil; self.reload()
             if let f = self.badgeFolder { RowBadges.shared.refresh(f.id) }
         }
-        track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.update() }
-        track { RowBadges.shared.prs } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.update() }
         // Source Control saw a change, or Kelp comes back (a branch may have been switched in a terminal meanwhile).
         NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
             MainActor.assumeIsolated { if let self, n.object as? String == self.worktree?.id { self.reload() } }

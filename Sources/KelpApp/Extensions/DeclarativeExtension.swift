@@ -57,8 +57,11 @@ struct VSCodePackage: Decodable {
 
 @MainActor
 enum DeclarativeExtension {
-    /// View definitions by "extension/view", for `ext:` tabs.
+    /// View definitions by "extension/view", for `ext:` tabs: only enabled extensions' (see `forget`).
     private static var views: [String: (ExtManifest, ExtManifest.ViewDef, URL)] = [:]
+
+    /// A reload starts over (nil: every extension; uninstalled ones go); an extension turned off takes its views along.
+    static func forget(_ id: String? = nil) { views = id.map { id in views.filter { $0.value.0.id != id } } ?? [:] }
 
     static func load(_ folder: URL, builtin: Bool = false, checkRequirements: Bool = true) -> (info: ExtensionInfo, contributions: Contributions) {
         let fallbackId = folder.lastPathComponent
@@ -206,7 +209,7 @@ enum ExtActions {
             let cmd = expand(r, item: item, quote: true)
             Task {
                 let res = await Shell.run(cmd, cwd: IDEContext.current.workspace?.path ?? folder.path)
-                if res.code != 0 { Banner.show("\(a.title) failed: " + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error) }
+                if res.code != 0 { Banner.show(String(localized: "\(a.title) failed: ") + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error) }
                 after?()
             }
             return
@@ -215,37 +218,52 @@ enum ExtActions {
     }
 }
 
-/// Runs a command the way the user's terminal would (login-shell PATH), off the main thread; `input` goes to its stdin.
+/// Runs a command the way the user's terminal would (login-shell PATH); `input` goes to its stdin. Nothing blocks a
+/// thread of the cooperative pool: the pipes are read as data arrives and the exit comes from `terminationHandler`.
 enum Shell {
     struct Result: Sendable { var code: Int32; var stdout: String; var stderr: String }
     static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60) async -> Result {
-        await Task.detached {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/zsh"); p.arguments = ["-lc", command]
-            p.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory())
-            var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
-            p.environment = env
-            let out = Pipe(), err = Pipe()
-            let stdin = input.map { _ in Pipe() }
-            p.standardOutput = out; p.standardError = err; p.standardInput = stdin ?? FileHandle.nullDevice
-            do { try p.run() } catch { return Result(code: -1, stdout: "", stderr: error.localizedDescription) }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh"); p.arguments = ["-lc", command]
+        p.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory())
+        var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
+        p.environment = env
+        let out = PipeText(), err = PipeText()
+        let stdin = input.map { _ in Pipe() }
+        p.standardOutput = out.pipe; p.standardError = err.pipe; p.standardInput = stdin ?? FileHandle.nullDevice
+        var failed: String?
+        let code: Int32 = await withCheckedContinuation { c in
+            p.terminationHandler = { c.resume(returning: $0.terminationStatus) }
+            do { try p.run() } catch { failed = error.localizedDescription; c.resume(returning: -1); return }
             if let stdin, let input {   // written alongside the reads, so a big text can't block on a full pipe
                 let h = stdin.fileHandleForWriting
                 _ = fcntl(h.fileDescriptor, F_SETNOSIGPIPE, 1)   // a command that exits unread fails the write, not the app
-                Task.detached { try? h.write(contentsOf: Data(input.utf8)); try? h.close() }
+                DispatchQueue.global().async { try? h.write(contentsOf: Data(input.utf8)); try? h.close() }
             }
-            // Read while it runs: a full pipe would block the process.
-            async let o = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }.value
-            async let e = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }.value
-            let deadline = Date().addingTimeInterval(timeout)
-            while p.isRunning, Date() < deadline { try? await Task.sleep(for: .milliseconds(30)) }
-            if p.isRunning { p.terminate() }
-            let (od, ed) = await (o, e)
-            // Lossy on purpose: a tool's output with a stray byte should still show.
-            // swiftlint:disable:next optional_data_string_conversion
-            return Result(code: p.terminationStatus, stdout: String(decoding: od, as: UTF8.self), stderr: String(decoding: ed, as: UTF8.self))
-        }.value
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { if p.isRunning { p.terminate() } }
+        }
+        if let failed { return Result(code: -1, stdout: "", stderr: failed) }
+        // The output still on its way; a background child that keeps the pipes open isn't waited for.
+        for _ in 0..<20 where !(out.ended && err.ended) { try? await Task.sleep(for: .milliseconds(25)) }
+        return Result(code: code, stdout: out.text, stderr: err.text)
     }
+}
+
+/// A pipe's output, collected as it arrives (on the file handle's own queue).
+private final class PipeText: @unchecked Sendable {
+    let pipe = Pipe()
+    private let lock = NSLock()
+    private var data = Data(), eof = false
+    init() {
+        pipe.fileHandleForReading.readabilityHandler = { [self] h in
+            let d = h.availableData
+            lock.withLock { if d.isEmpty { eof = true; h.readabilityHandler = nil } else { data.append(d) } }
+        }
+    }
+    var ended: Bool { lock.withLock { eof } }
+    // Lossy on purpose: a tool's output with a stray byte should still show.
+    // swiftlint:disable:next optional_data_string_conversion
+    var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
 }
 
 // MARK: list views
@@ -374,8 +392,8 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
         web.setValue(false, forKey: "drawsBackground")
         view = web
         web.loadFileURL(page, allowingReadAccessTo: folder)
-        track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.push() }
-        track { SettingsStore.shared.values } changed: { [weak self] _ in self?.push() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.push() }
+        track(owner: self) { SettingsStore.shared.values } changed: { [weak self] _ in self?.push() }
     }
 
     private func push() {

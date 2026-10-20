@@ -108,14 +108,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         ])
         buildEmpty()
         view = v
-        track { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
-        track { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
-        track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
-        track { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
-        track { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
-        track { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
+        track(owner: self) { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
+        track(owner: self) { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
+        track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
+        track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
         // "now" becomes "1m": the times on the right move on their own.
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.updateVisibleCells() } }
     }

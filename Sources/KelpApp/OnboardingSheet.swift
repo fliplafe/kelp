@@ -54,7 +54,7 @@ final class OnboardingSheet: NSWindowController {
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 22, bottom: 20, right: 22)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         window?.contentView = stack
-        track { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.fillAgents() }
+        track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.fillAgents() }
     }
 
     private func section(_ t: String) -> NSTextField {

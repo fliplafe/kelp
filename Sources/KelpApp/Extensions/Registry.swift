@@ -129,10 +129,11 @@ final class ExtensionRegistry {
         var merged = Contributions()
         let off = disabled
         disabledLoaded = off
+        DeclarativeExtension.forget()
         func take(_ info: ExtensionInfo, _ c: Contributions) {
             var info = info; info.enabled = info.essential || !off.contains(info.id)
             infos.append(info)
-            guard info.enabled else { return }
+            guard info.enabled else { DeclarativeExtension.forget(info.id); return }
             merged.panels += c.panels; merged.editors += c.editors; merged.commands += c.commands
             merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
             merged.languages += c.languages
@@ -183,7 +184,10 @@ final class ExtensionRegistry {
             if src.pathExtension.lowercased() == "vsix" {
                 let unzip = Process()
                 unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); unzip.arguments = ["-x", "-k", src.path, tmp.path]
-                try unzip.run(); unzip.waitUntilExit()
+                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in   // no thread waits on it
+                    unzip.terminationHandler = { _ in c.resume() }
+                    do { try unzip.run() } catch { c.resume(throwing: error) }
+                }
                 folder = tmp.appendingPathComponent("extension")
                 guard unzip.terminationStatus == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
                     throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
@@ -212,6 +216,7 @@ final class ExtensionRegistry {
 
     func tabProvider(for uri: String) -> TabProvider? {
         let scheme = TabURI.scheme(uri)
+        if scheme == "ext", DeclarativeExtension.viewInfo(uri) == nil { return nil }   // its extension is off or gone
         return all.tabs.first { $0.schemes.contains(scheme) }
     }
 

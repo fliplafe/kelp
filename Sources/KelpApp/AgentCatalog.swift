@@ -84,7 +84,7 @@ final class AgentAvailability {
         let commands = AgentCatalog.all.filter { $0.id != "custom" }.map { ($0.id, $0.command) }
         Task.detached(priority: .utility) {
             let ok = await withTaskGroup(of: String?.self) { g in
-                for (id, command) in commands { g.addTask { Self.runs(command) ? id : nil } }
+                for (id, command) in commands { g.addTask { await Self.runs(command) ? id : nil } }
                 var s = Set<String>()
                 for await id in g { if let id { s.insert(id) } }
                 return s
@@ -97,16 +97,16 @@ final class AgentAvailability {
         }
     }
 
-    /// `<command> --version` exits 0 within a few seconds.
-    nonisolated static func runs(_ command: String) -> Bool {
+    /// `<command> --version` exits 0 within a few seconds. Waits without holding a thread (a dozen agents are asked at once).
+    nonisolated static func runs(_ command: String) async -> Bool {
         guard let path = try? LoginPath.resolve(command) else { return false }
         let p = Process(); p.executableURL = URL(fileURLWithPath: path); p.arguments = ["--version"]
         var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value; p.environment = env
         p.standardInput = FileHandle.nullDevice; p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        let done = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in done.signal() }
-        guard (try? p.run()) != nil else { return false }
-        if done.wait(timeout: .now() + 8) == .timedOut { p.terminate(); return false }
-        return p.terminationStatus == 0
+        return await withCheckedContinuation { c in
+            p.terminationHandler = { c.resume(returning: $0.terminationReason == .exit && $0.terminationStatus == 0) }
+            do { try p.run() } catch { c.resume(returning: false); return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 8) { if p.isRunning { p.terminate() } }   // hung: counts as missing
+        }
     }
 }

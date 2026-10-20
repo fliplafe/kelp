@@ -50,7 +50,7 @@ enum AgentActions {
     static func stop(_ ids: [String]) {
         let one = ids.count == 1
         let a = NSAlert(); a.messageText = one ? String(localized: "Stop this agent?") : String(localized: "Stop \(ids.count) agents?")
-        a.informativeText = (one ? String(localized: "Its session ends") : String(localized: "Their sessions end")) + ". Conversations can be resumed from Session History."
+        a.informativeText = (one ? String(localized: "Its session ends") : String(localized: "Their sessions end")) + ". " + String(localized: "Conversations can be resumed from Session History.")
         // The button says what it stops (destructive: red).
         a.addButton(withTitle: one ? String(localized: "Stop Agent") : String(localized: "Stop \(ids.count) Agents")).hasDestructiveAction = true; a.addButton(withTitle: String(localized: "Cancel"))
         Task {
@@ -95,7 +95,7 @@ enum AgentActions {
 func prompt(_ title: String, _ info: String, initial: String = "") -> String? {
     let a = NSAlert(); a.messageText = title; a.informativeText = info
     let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); f.stringValue = initial
-    a.accessoryView = f; a.addButton(withTitle: "OK"); a.addButton(withTitle: String(localized: "Cancel"))
+    a.accessoryView = f; a.addButton(withTitle: String(localized: "OK")); a.addButton(withTitle: String(localized: "Cancel"))
     a.window.initialFirstResponder = f
     return runAsSheet(a) == .alertFirstButtonReturn ? f.stringValue : nil
 }

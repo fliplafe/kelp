@@ -6,13 +6,15 @@ import WorkbenchKit
 @MainActor
 extension Workbench {
     static var window: MainWindowController? { (NSApp.delegate as? AppDelegate)?.main }
-    /// The editor area of the workspace on screen.
-    static var editor: EditorArea? { window?.editors.current }
+    /// The editor area with the keyboard: the Scratch panel's while it's key, else the workspace on screen's.
+    static var editor: EditorArea? { keyArea ?? window?.editors.current }
+    /// An editor area that is a window's whole content (the Scratch panel) and has the keys.
+    private static var keyArea: EditorArea? { NSApp.keyWindow?.contentViewController as? EditorArea }
 
     static func show(workspace id: String) { show(workspace: id, remember: true) }
 
     private static func show(workspace id: String, remember: Bool) {
-        guard shared.workspaceId != id || editor == nil else { return }
+        guard shared.workspaceId != id || window?.editors.current == nil else { return }
         shared.workspaceId = id
         if remember {
             shared.visits = Array(shared.visits.prefix(shared.visitAt + 1).suffix(49)) + [id]
@@ -31,15 +33,18 @@ extension Workbench {
     }
 
     static func open(_ uri: String, split: SplitDirection? = nil, workspace: String? = nil, focus: Bool = true) {
+        if let k = keyArea, workspace == nil || workspace == k.workspaceId { k.open(uri, split: split, focus: focus); return }
         if let workspace, workspace != shared.workspaceId { show(workspace: workspace) }
         if shared.workspaceId == nil, let first = AppModel.shared.worktrees.first { show(workspace: first.id) }
-        editor?.open(uri, split: split, focus: focus)
+        window?.editors.current?.open(uri, split: split, focus: focus)
     }
 
     static func focus(session id: String) {
         guard let s = AppModel.shared.session(id) else { return }
-        if let w = s.worktreeId, w != shared.workspaceId { show(workspace: w) }
-        editor?.focus(session: id)
+        if let k = keyArea, s.worktreeId == k.workspaceId { k.focus(session: id) } else {
+            if let w = s.worktreeId, w != shared.workspaceId { show(workspace: w) }
+            window?.editors.current?.focus(session: id)
+        }
         // Opening a finished agent is reading it; a question stays marked until it's answered (typing clears it).
         if s.unread, s.status == .done { Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(id)])) } }
     }
@@ -68,13 +73,14 @@ extension Workbench {
     }
 
     static func closeTab(uri: String) {
-        guard let e = editor, let t = e.layout.tab(uri: uri) else { return }
+        guard let e = [keyArea, window?.editors.current].compactMap({ $0 }).first(where: { $0.layout.tab(uri: uri) != nil }),
+              let t = e.layout.tab(uri: uri) else { return }
         e.closeTab(t.id)
     }
 
     static func addProject() {
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
-        p.message = String(localized: "Choose a git repository"); p.prompt = "Add Project"
+        p.message = String(localized: "Choose a git repository"); p.prompt = String(localized: "Add Project")
         // The other ways in: clone one, or start an empty one.
         let other = { (k: NewProjectSheet.Kind) in { p.cancel(nil); DispatchQueue.main.async { NewProjectSheet.show(k) } } }
         let row = NSStackView(views: [ClosureButton(title: String(localized: "Clone Repository…"), action: other(.clone)), ClosureButton(title: String(localized: "New Project…"), action: other(.create)),
@@ -94,7 +100,7 @@ extension Workbench {
     static func addProject(path: String) {
         Task {
             let m = AppModel.shared
-            for _ in 0..<50 where !m.connected { try? await Task.sleep(for: .milliseconds(100)) }   // opened at launch
+            await m.waitForConnection()   // opened at launch
             guard let r = await m.call("repo.add", .obj(["path": .string(path)])), let rid = r["id"]?.string else { return }
             await m.refresh()
             let ws = m.repo(rid).map(m.workspaces(of:)) ?? []
@@ -107,8 +113,7 @@ extension Workbench {
         Task {
             // Right after launch the project list may not be in yet: ⌘N must not turn into "Add Project".
             let m = AppModel.shared
-            for _ in 0..<50 where !m.connected { try? await Task.sleep(for: .milliseconds(100)) }
-            if m.repos.isEmpty { await m.refresh() }
+            await m.waitForConnection()
             guard let rid = repo ?? m.worktree(shared.workspaceId)?.repoId ?? m.repos.first?.id else { addProject(); return }
             guard let w = await AppModel.shared.call("workspace.create", .obj(["repoId": .string(rid)])), let id = w["id"]?.string else { return }
             await AppModel.shared.refresh()
@@ -284,7 +289,7 @@ enum WorkspaceActions {
     /// The project's folder was moved or renamed: pick it again; its workspaces follow.
     static func relocate(_ r: Repo) {
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
-        p.message = String(localized: "Where is “\(r.name)” now?"); p.prompt = "Choose"
+        p.message = String(localized: "Where is “\(r.name)” now?"); p.prompt = String(localized: "Choose")
         p.directoryURL = URL(fileURLWithPath: (r.path as NSString).deletingLastPathComponent)
         let chosen = { (resp: NSApplication.ModalResponse) in
             guard resp == .OK, let u = p.url else { return }
@@ -306,7 +311,7 @@ enum WorkspaceActions {
         let running = m.sessions.filter { s in closing.contains { $0.id == s.worktreeId } && s.status != .exited && s.status != .hibernated }
         let a = NSAlert(); a.messageText = closing.count == 1 ? String(localized: "Close 1 workspace?") : String(localized: "Close \(closing.count) workspaces?")
         a.informativeText = (running.isEmpty ? "" : running.count == 1 ? String(localized: "1 running session stops. ") : String(localized: "\(running.count) running sessions stop. "))
-            + "Files in the projects are not touched." + (closing.count < ws.count ? " Each project keeps one workspace." : "")
+            + String(localized: "Files in the projects are not touched.") + (closing.count < ws.count ? " " + String(localized: "Each project keeps one workspace.") : "")
         let close = a.addButton(withTitle: running.isEmpty ? String(localized: "Close")
             : running.count == 1 ? String(localized: "Stop 1 Session and Close") : String(localized: "Stop \(running.count) Sessions and Close"))
         close.hasDestructiveAction = !running.isEmpty; a.addButton(withTitle: String(localized: "Cancel"))

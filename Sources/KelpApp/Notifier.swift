@@ -18,7 +18,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationAction(identifier: "deny", title: String(localized: "Deny"), options: [.destructive])
         ], intentIdentifiers: [])])
         center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in Task { @MainActor in self.checkAllowed() } }
-        track { AppModel.shared.sessions } changed: { [weak self] _ in self?.updateBadge() }
+        track(owner: self) { AppModel.shared.sessions } changed: { [weak self] _ in self?.updateBadge() }
     }
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.
@@ -117,7 +117,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if NSApp.isActive, (NSApp.delegate as? AppDelegate)?.isViewing(session: s.id) == true { return }
         let wt = AppModel.shared.worktree(s.worktreeId)
         let c = UNMutableNotificationContent()
-        c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you") : s.status == .error ? String(localized: " ran into an error") : " finished")
+        c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you") : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
         c.subtitle = wt?.branch ?? ""
         c.body = s.summary.isEmpty ? (s.status == .waiting ? String(localized: "Waiting for your answer") : String(localized: "Ready for review")) : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]

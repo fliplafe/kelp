@@ -22,13 +22,16 @@ final class StartView: NSView, NSTextFieldDelegate {
         icon.contentTintColor = .secondaryLabelColor
         let title = NSTextField(labelWithString: w.displayName)
         title.font = .systemFont(ofSize: 20, weight: .semibold); title.lineBreakMode = .byTruncatingTail; title.alignment = .center
-        let folder = NSTextField(labelWithString: RemoteHost.of(w.path).map { "\($0.host):\($0.path)" } ?? (w.path as NSString).abbreviatingWithTildeInPath)
+        // The window bar shows the folder; a remote project's host and path are said here, the bar has the local stand-in.
+        let folder = NSTextField(labelWithString: RemoteHost.of(w.path).map { "\($0.host):\($0.path)" } ?? "")
         folder.font = .systemFont(ofSize: 13); folder.textColor = .secondaryLabelColor; folder.lineBreakMode = .byTruncatingMiddle
+        folder.isHidden = folder.stringValue.isEmpty
 
         // The default agent first, then the others (two columns when there are many: people often have a dozen).
         let agents = AgentCatalog.installed(AgentCatalog.all).sorted { ($0.id == def ? 0 : 1, $0.name) < ($1.id == def ? 0 : 1, $1.name) }
+        // In two columns there's no room for "Default" beside the name (first place and ⌥⌘T say it); the name always fits.
         let tiles = agents.map { a in
-            StartRow(image: AgentCatalog.icon(a.id, size: 20), title: a.name, detail: a.id == def ? String(localized: "Default") : nil,
+            StartRow(image: AgentCatalog.icon(a.id, size: 20), title: a.name, detail: a.id == def && agents.count <= 5 ? String(localized: "Default") : nil,
                      shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
         var rows: [NSView] = []
@@ -63,7 +66,8 @@ final class StartView: NSView, NSTextFieldDelegate {
         if let field { views.append(field) }
         views += [open, card, hint]
         let stack = NSStackView(views: views); stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 4
-        stack.setCustomSpacing(14, after: icon); stack.setCustomSpacing(24, after: folder)
+        stack.detachesHiddenViews = true
+        stack.setCustomSpacing(14, after: icon); stack.setCustomSpacing(24, after: folder.isHidden ? title : folder)
         if let field { stack.setCustomSpacing(22, after: field) }
         stack.setCustomSpacing(6, after: open); stack.setCustomSpacing(14, after: card)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
@@ -176,6 +180,7 @@ private final class StartRow: NSView {
         let label = NSTextField(labelWithString: title); label.font = .systemFont(ofSize: 13); label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let more = NSTextField(labelWithString: detail ?? ""); more.textColor = .secondaryLabelColor; more.font = .systemFont(ofSize: 12)
+        more.lineBreakMode = .byTruncatingTail; more.setContentCompressionResistancePriority(.init(240), for: .horizontal)   // the name wins
         let key = NSTextField(labelWithString: shortcut ?? ""); key.textColor = .secondaryLabelColor; key.font = .systemFont(ofSize: 12)
         let row = NSStackView(views: [icon, label, NSView(), more, key]); row.spacing = 10; row.detachesHiddenViews = true
         more.isHidden = detail == nil; key.isHidden = shortcut == nil
