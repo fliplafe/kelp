@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: menu
-    /// A menu item (or the sidebar's Add Project button) runs the command its identifier names.
+    /// A menu item (the menu bar's or the sidebar's Add Project menu) runs the command its identifier names.
     @objc func runCommand(_ sender: Any?) {
         guard let id = (sender as? NSUserInterfaceItemIdentification)?.identifier?.rawValue else { return }
         Self.run(id)
@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let archivedMenu = ArchivedMenu()
 
     /// The command's menu item: its identifier is the command id (Settings › Keyboard, `validateMenuItem`).
-    private func item(_ c: CommandSpec) -> NSMenuItem {
+    func item(_ c: CommandSpec) -> NSMenuItem {
         let i = NSMenuItem(title: c.title, action: #selector(runCommand(_:)), keyEquivalent: "")
         i.target = self; i.identifier = NSUserInterfaceItemIdentifier(c.id)
         if let k = c.key.flatMap(KeySpec.init) { i.keyEquivalent = k.key; i.keyEquivalentModifierMask = k.mods.flags }
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             with.add(e.title, symbol: e.icon) { e.open(IDEContext.current) }
         }
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
-        add(file, "workspace.addProject", "-", "workspace.revealInFinder")
+        add(file, "workspace.addProject", "workspace.cloneRepository", "workspace.addRemote", "-", "workspace.revealInFinder")
         let openIn = NSMenu()
         WorkspaceActions.addOpenIn(to: openIn, path: { AppModel.shared.worktree(Workbench.shared.workspaceId)?.path }, prefix: "")
         if !openIn.items.isEmpty { file.setSubmenu(openIn, for: file.addItem(withTitle: "Open Workspace In", action: nil, keyEquivalent: "")) }

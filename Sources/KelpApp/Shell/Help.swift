@@ -57,6 +57,7 @@ enum Help {
 
     ## Adding projects
     File › Add Project… (⌘O), or drop a folder on the sidebar or on Kelp's Dock icon, or run `open -a Kelp .` in a folder.
+    A new empty folder becomes a new project (`git init`). File › Clone Repository… and Open over SSH… are the other ways in.
 
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·

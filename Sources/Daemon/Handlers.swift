@@ -70,8 +70,13 @@ extension Daemon {
         // MARK: repos
         case "repo.add":
             // A remote project's own folder: it is the project (git there would answer with the host's path).
-            if let r = try store.repos().first(where: { $0.path == (try? p.req("path")) && RemoteHost.of($0.path) != nil }) { return try .from(r) }
-            let root = try Git.root(of: p.req("path"))
+            let path: String = try p.req("path")
+            if let r = try store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return try .from(r) }
+            // An empty folder outside any repository (New Folder in Add Project's panel) is a new project, as repo.create makes.
+            if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true, (try? Git.root(of: path)) == nil {
+                try Git.run(["init", "-q"], cwd: path)
+            }
+            let root = try Git.root(of: path)
             if let r = try store.repos().first(where: { $0.path == root }) { return try .from(r) }
             let r = Repo(name: p["name"]?.string ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
             try store.save(r); try syncMainWorkspaces(); notify("event.changed", "repo")

@@ -87,8 +87,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
         setFilterMenu()
         // Beside the search, over the projects it adds to, where people look for it.
-        let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project folder (⌘O)"))
-        add.identifier = .init("workspace.addProject"); add.target = NSApp.delegate; add.action = #selector(AppDelegate.runCommand(_:))
+        let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project: a folder, a clone or one over SSH"))
+        add.target = self; add.action = #selector(addMenu(_:))
         for x in [add, search, summary, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
             // Under the traffic lights, in the window's second row: level with the tab strips and the inspector's panel icons.
@@ -227,6 +227,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             return p.children.isEmpty && narrowed ? nil : p
         }
         return out
+    }
+
+    /// The ways in, as File shows them: a folder (new or existing), a clone, a project over SSH.
+    @objc private func addMenu(_ b: NSButton) {
+        guard let d = NSApp.delegate as? AppDelegate else { return }
+        let m = NSMenu()
+        for id in ["workspace.addProject", "workspace.cloneRepository", "workspace.addRemote"] { if let c = ExtensionRegistry.shared.command(id) { m.addItem(d.item(c)) } }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: b.bounds.height + 4), in: b)
     }
 
     @objc private func searchChanged() { query = search.stringValue.trimmingCharacters(in: .whitespaces); refresh() }

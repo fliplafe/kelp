@@ -43,11 +43,11 @@ extension AppDelegate {
                 main.window?.setContentSize(NSSize(width: s[0], height: s[1]))
             }
             if let u = env["KELP_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
-            // KELP_SNAPSHOT_SHEET=clone|create[=text]: Add Project's sheets (the open panel itself is another process),
+            // KELP_SNAPSHOT_SHEET=clone|remote[=text]: the clone and SSH sheets (the open panel itself is another process),
             // with text: filled in and started.
             if env["KELP_SNAPSHOT_SHEET"] == "onboarding" { OnboardingSheet.show() } else if let s = env["KELP_SNAPSHOT_SHEET"] {
                 let p = s.split(separator: "=", maxSplits: 1).map(String.init)
-                NewProjectSheet.show(p[0] == "create" ? .create : p[0] == "remote" ? .remote : .clone, start: p.count > 1 ? p[1] : nil)
+                NewProjectSheet.show(p[0] == "remote" ? .remote : .clone, start: p.count > 1 ? p[1] : nil)
             }
             if let keys = env["KELP_TYPE"] { typeKeys(keys) }
             // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.

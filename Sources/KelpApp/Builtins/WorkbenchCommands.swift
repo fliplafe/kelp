@@ -42,6 +42,8 @@ extension Builtins {
             },
             cmd(ext, "workspace.new", "New Workspace", "cmd+n") { Workbench.newWorkspace() },
             cmd(ext, "workspace.addProject", "Add Project…", "cmd+o") { Workbench.addProject() },
+            cmd(ext, "workspace.cloneRepository", "Clone Repository…") { NewProjectSheet.show(.clone) },
+            cmd(ext, "workspace.addRemote", "Open over SSH…") { NewProjectSheet.show(.remote) },
             cmd(ext, "workspace.revealInFinder", "Reveal in Finder", "opt+cmd+r") { WorkspaceActions.revealCurrent() },
             cmd(ext, "workspace.close", "Close Workspace", "shift+cmd+w") { if let w = editor?.worktree { WorkspaceActions.close(w) } },
             // ⌃Tab walks the workspaces used last (⌃⇧Tab: `{"by": -1}`).

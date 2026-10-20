@@ -79,14 +79,9 @@ extension Workbench {
     }
 
     static func addProject() {
-        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
-        p.message = String(localized: "Choose a git repository"); p.prompt = String(localized: "Add Project")
-        // The other ways in: clone one, or start an empty one.
-        let other = { (k: NewProjectSheet.Kind) in { p.cancel(nil); DispatchQueue.main.async { NewProjectSheet.show(k) } } }
-        let row = NSStackView(views: [ClosureButton(title: String(localized: "Clone Repository…"), action: other(.clone)), ClosureButton(title: String(localized: "New Project…"), action: other(.create)),
-                                      ClosureButton(title: String(localized: "Remote (SSH)…"), action: other(.remote))])
-        row.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        p.accessoryView = row; p.isAccessoryViewDisclosed = true
+        // A new folder made here is a new project (repo.add runs `git init` in an empty one). Clone and SSH are their own commands.
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
+        p.message = String(localized: "Choose a project folder, or make a new one"); p.prompt = String(localized: "Add Project")
         let chosen = { (r: NSApplication.ModalResponse) in
             guard r == .OK, let u = p.url else { return }
             addProject(path: u.path)

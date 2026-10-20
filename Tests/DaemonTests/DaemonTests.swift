@@ -369,6 +369,13 @@ final class NoteBox: @unchecked Sendable {
     #expect(!FileManager.default.fileExists(atPath: parent + "/" + name + "-missing"))
     let n = try await c.call("repo.create", .obj(["parent": .string(parent), "name": "fresh"]))
     #expect(n["name"]?.string == "fresh" && FileManager.default.fileExists(atPath: parent + "/fresh/.git"))
+    // Add Project's New Folder: an empty folder becomes a project; one with files and no git stays an error.
+    try FileManager.default.createDirectory(atPath: parent + "/empty", withIntermediateDirectories: false)
+    let e = try await c.call("repo.add", .obj(["path": .string(parent + "/empty")]))
+    #expect(e["name"]?.string == "empty" && FileManager.default.fileExists(atPath: parent + "/empty/.git"))
+    try FileManager.default.createDirectory(atPath: parent + "/loose", withIntermediateDirectories: false)
+    FileManager.default.createFile(atPath: parent + "/loose/a.txt", contents: Data())
+    await #expect(throws: (any Error).self) { try await c.call("repo.add", .obj(["path": .string(parent + "/loose")])) }
 }
 
 /// A busy session's CPU and memory come back as its own, summed over what runs under it.

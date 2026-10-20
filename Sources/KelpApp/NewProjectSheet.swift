@@ -1,11 +1,11 @@
 import AppKit
 import Core
 
-/// Add Project's other two choices, each a sheet that does the work in place: clone by URL (git's progress, its error
-/// in the sheet, Cancel stops it and removes the half-made folder) or a new empty project (a folder with `git init`).
+/// The ways in besides a folder, each a sheet that does the work in place: clone by URL (git's progress, its error
+/// in the sheet, Cancel stops it and removes the half-made folder) or a project on another machine over SSH.
 @MainActor
 final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
-    enum Kind { case clone, create, remote }
+    enum Kind { case clone, remote }
     private let kind: Kind
     private let field = NSTextField()
     /// Remote: the host, as after `ssh` (the hosts in ~/.ssh/config to pick from).
@@ -38,7 +38,7 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Where new projects go: the last place used, else next to the newest project, else ~/Developer or home.
+    /// Where clones go: the last place used, else next to the newest project, else ~/Developer or home.
     private static var parent: URL {
         if let s = UserDefaults.standard.string(forKey: "newProject.parent"), FileManager.default.fileExists(atPath: s) { return URL(fileURLWithPath: s) }
         if let r = AppModel.shared.repos.last(where: { !$0.path.hasPrefix(Paths.root.path) }) { return URL(fileURLWithPath: r.path).deletingLastPathComponent() }
@@ -47,23 +47,23 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     }
 
     private func build() {
-        let clone = kind == .clone, remote = kind == .remote
-        let title = NSTextField(labelWithString: remote ? String(localized: "Open a Project over SSH") : clone ? String(localized: "Clone a Repository") : String(localized: "New Project"))
+        let remote = kind == .remote
+        let title = NSTextField(labelWithString: remote ? String(localized: "Open a Project over SSH") : String(localized: "Clone a Repository"))
         title.font = .boldSystemFont(ofSize: 13)
-        field.placeholderString = remote ? "~/code/app" : clone ? "https://github.com/owner/repo or git@…" : "my-app"
+        field.placeholderString = remote ? "~/code/app" : "https://github.com/owner/repo or git@…"
         field.widthAnchor.constraint(equalToConstant: 340).isActive = true
         place.pathStyle = .popUp; place.url = Self.parent; place.delegate = self; place.allowedTypes = ["public.folder"]
         host.addItems(withObjectValues: Self.sshHosts()); host.placeholderString = String(localized: "user@server or a Host from ~/.ssh/config")
         host.completes = true
         let grid = remote
             ? NSGridView(views: [[NSTextField(labelWithString: String(localized: "Host:")), host], [NSTextField(labelWithString: String(localized: "Folder there:")), field]])
-            : NSGridView(views: [[NSTextField(labelWithString: clone ? String(localized: "URL:") : String(localized: "Name:")), field],
-                                 [NSTextField(labelWithString: clone ? String(localized: "Clone into:") : String(localized: "Create in:")), place]])
+            : NSGridView(views: [[NSTextField(labelWithString: String(localized: "URL:")), field],
+                                 [NSTextField(labelWithString: String(localized: "Clone into:")), place]])
         grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 8
         bar.style = .bar; bar.isIndeterminate = true; bar.isHidden = true; bar.minValue = 0; bar.maxValue = 100
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11); status.isHidden = true
         status.preferredMaxLayoutWidth = 430
-        go.title = remote ? String(localized: "Open") : clone ? String(localized: "Clone") : String(localized: "Create"); go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(start)
+        go.title = remote ? String(localized: "Open") : String(localized: "Clone"); go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(start)
         cancel.title = String(localized: "Cancel"); cancel.bezelStyle = .push; cancel.keyEquivalent = "\u{1b}"; cancel.target = self; cancel.action = #selector(stop)
         let buttons = NSStackView(views: [NSView(), cancel, go]); buttons.spacing = 8
         let stack = NSStackView(views: [title, grid, bar, status, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
@@ -116,7 +116,7 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
         let id = UUID().uuidString
         running = id; busy(true)
         status.isHidden = false; status.textColor = .secondaryLabelColor
-        status.stringValue = kind == .create ? String(localized: "Creating…") : String(localized: "Connecting…")
+        status.stringValue = String(localized: "Connecting…")
         Task {
             if kind == .remote {
                 let r = await AppModel.shared.tryCall("repo.addRemote", .obj(["host": .string(host.stringValue), "path": .string(text)]))
@@ -129,9 +129,7 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
                 }
                 return
             }
-            let r = kind == .clone
-                ? await AppModel.shared.tryCall("repo.clone", .obj(["url": .string(text), "parent": .string(parent), "id": .string(id)]))
-                : await AppModel.shared.tryCall("repo.create", .obj(["name": .string(text), "parent": .string(parent)]))
+            let r = await AppModel.shared.tryCall("repo.clone", .obj(["url": .string(text), "parent": .string(parent), "id": .string(id)]))
             running = nil; busy(false)
             if let e = r.error {
                 if e == "Clone cancelled." { close(); return }
