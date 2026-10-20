@@ -92,8 +92,8 @@ public final class GhosttyRuntime {
         keybind = super+end=scroll_to_bottom
         confirm-close-surface = false
         clipboard-paste-protection = false
-        window-padding-x = 6
-        window-padding-y = 4
+        window-padding-x = 12
+        window-padding-y = 8
         """
 
     private func setUp(_ cfg: ghostty_config_t?) {
