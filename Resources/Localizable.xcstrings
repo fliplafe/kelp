@@ -4776,6 +4776,17 @@
         }
       }
     },
+    "Panes, tabs, workspaces, the sidebar and inspector: the commands of the window.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панели, вкладки, рабочие области, боковая панель и инспектор: команды окна."
+          }
+        }
+      }
+    },
     "Paste": {
       "localizations": {
         "ru": {
@@ -7393,6 +7404,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Окно"
+          }
+        }
+      }
+    },
+    "Window & Workbench": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Окно и рабочая область"
           }
         }
       }

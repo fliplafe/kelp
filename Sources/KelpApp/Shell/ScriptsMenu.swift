@@ -5,7 +5,7 @@ import Core
 /// opened behind what you're doing; when it ends, a banner says how, with the way to its output. A project's
 /// commands run only after you trust its file (and again when the file changes).
 @MainActor
-final class ScriptsMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
+final class ScriptsMenu: NSObject, NSMenuDelegate {
     static let shared = ScriptsMenu()
     private struct Script: Decodable { var name: String; var command: String }
     private var cached: [String: [Script]] = [:]   // workspace → its commands, for the menu
@@ -13,19 +13,9 @@ final class ScriptsMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var runs: [String: (workspace: String, name: String)] = [:]   // session → what it runs
     private var watching = false
 
-    /// The Run menu's fixed items; the project's other commands fill in when it opens.
-    func fill(_ m: NSMenu, item: (NSMenu, String, Selector, String, NSEvent.ModifierFlags) -> NSMenuItem) {
-        m.delegate = self
-        item(m, "Run", #selector(runRun), "r", .command).target = self
-        item(m, "Test", #selector(runTest), "u", .command).target = self
-        item(m, "Stop", #selector(stop), ".", .command).target = self
-        m.addItem(.separator())
-        m.addItem(.separator())
-        item(m, "Edit Commands…", #selector(edit), "", []).target = self
-    }
-
     // MARK: menu
 
+    /// The Run menu's fixed items are commands (scripts.run, .test, .stop, .edit); the project's other commands fill in when it opens.
     func menuNeedsUpdate(_ m: NSMenu) {
         let wid = Workbench.shared.workspaceId
         // Between the two separators: setup and the commands other than run/test.
@@ -48,14 +38,12 @@ final class ScriptsMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
         return r
     }
 
-    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+    /// Something the Run menu started in this workspace is still running (Run › Stop).
+    var canStop: Bool {
         guard let wid = Workbench.shared.workspaceId else { return false }
-        if item.action == #selector(stop) { return runs.contains { $0.value.workspace == wid && AppModel.shared.session($0.key)?.status != .exited } }
-        return true
+        return runs.contains { $0.value.workspace == wid && AppModel.shared.session($0.key)?.status != .exited }
     }
 
-    @objc private func runRun() { run("run") }
-    @objc private func runTest() { run("test") }
     @objc private func runNamed(_ i: NSMenuItem) { (i.representedObject as? String).map(run) }
 
     // MARK: running
@@ -90,7 +78,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
         }
     }
 
-    @objc private func stop() {
+    func stop() {
         guard let wid = Workbench.shared.workspaceId else { return }
         for (sid, r) in runs where r.workspace == wid && AppModel.shared.session(sid)?.status != .exited {
             Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
@@ -127,7 +115,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
 
     /// The project's .kelp.yaml in a tab (started with the keys it knows, if there isn't one).
-    @objc func edit() {
+    func edit() {
         guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { NSSound.beep(); return }
         let path = (AppModel.shared.repo(w.repoId)?.path ?? w.path) + "/.kelp.yaml"
         if !FileManager.default.fileExists(atPath: path) {

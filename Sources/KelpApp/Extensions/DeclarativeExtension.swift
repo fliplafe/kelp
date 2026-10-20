@@ -27,6 +27,8 @@ struct ExtManifest: Decodable {
         var id: String?
         var title: String
         var icon: String?, key: String?, confirm: String?
+        /// Commands only: the menu bar menu it's listed in (Tools when left out).
+        var menu: String?
         var terminal: String?, run: String?, open: String?, agent: String?
     }
     var id: String
@@ -92,7 +94,7 @@ enum DeclarativeExtension {
                                         uri: { _ in "ext:\(m.id)/\(v.id)" }))
         }
         for a in x?.commands ?? [] {
-            c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, extensionId: m.id, key: a.key) { _ in
+            c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, extensionId: m.id, key: a.key, menu: a.menu) { _ in
                 ExtActions.perform(a, item: nil, folder: folder)
             })
         }

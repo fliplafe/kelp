@@ -96,9 +96,11 @@ public enum ExtensionGuide {
 
     ## commands
     ```json
-    { "id": "docker.prune", "title": "Docker: Prune Unused Data", "terminal": "docker system prune", "key": "cmd+shift+k" }
+    { "id": "docker.prune", "title": "Docker: Prune Unused Data", "terminal": "docker system prune", "key": "cmd+shift+k", "menu": "Tools" }
     ```
-    Shown in the command palette (⇧⌘P); `key` binds a shortcut.
+    Shown in the command palette (⇧⌘P) and the menu bar: `menu` is File, Edit, View, Run, Window or Help (Tools when
+    left out). `key` binds a shortcut; Settings › Keyboard can change it. `kelp run <id>` runs a command, and
+    `kelp ui state` lists every command id, Kelp's own too.
 
     ## settings
     ```json

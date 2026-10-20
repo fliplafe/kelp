@@ -83,7 +83,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         setFilterMenu()
         // Beside the search, over the projects it adds to, where people look for it.
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project folder (⌘O)"))
-        add.target = NSApp.delegate; add.action = #selector(AppDelegate.addProject)
+        add.identifier = .init("workspace.addProject"); add.target = NSApp.delegate; add.action = #selector(AppDelegate.runCommand(_:))
         for x in [add, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
             // The window's second row: level with the tab strips and the inspector's panel icons.

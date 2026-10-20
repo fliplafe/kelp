@@ -7,8 +7,8 @@ func loc(_ english: String) -> String { Bundle.main.localizedString(forKey: engl
 
 @MainActor
 enum Localize {
-    /// The menu bar is built in English; each item keeps its English title as its identifier (what Settings ›
-    /// Keyboard and settings.json call it) and shows the translation.
+    /// The menu bar is built in English and shows the translation; a submenu keeps its English title as its
+    /// identifier (Settings › Keyboard names items by command id or English path).
     static func menu(_ m: NSMenu) {
         for i in m.items where !i.isSeparatorItem {
             if i.identifier == nil { i.identifier = NSUserInterfaceItemIdentifier(i.title) }

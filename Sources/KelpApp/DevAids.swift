@@ -83,7 +83,7 @@ extension AppDelegate {
                 }
             }
             switch env["KELP_SNAPSHOT_WINDOW"] {
-            case "history": showHistory()
+            case "history": HistoryWindow.shared.show()
             case "settings": SettingsWindow.show(section: env["KELP_SNAPSHOT_SECTION"])
             default: break
             }

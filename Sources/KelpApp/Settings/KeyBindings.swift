@@ -3,7 +3,8 @@ import SwiftUI
 import Core
 
 /// Settings › Keyboard: any menu command's shortcut, set by pressing it. The menu is built with Kelp's defaults and
-/// then the overrides in settings.json are laid over it: `"keys": {"File › Save All": "opt+cmd+s"}` ("" = none).
+/// then the overrides in settings.json are laid over it: `"keys": {"editor.saveAll": "opt+cmd+s"}` ("" = none).
+/// Kelp's commands go by their id; the menu's other items (Copy, Minimize, the agents in New Tab) by their English path.
 @MainActor
 enum KeyBindings {
     struct Key: Equatable { var key: String; var mods: NSEvent.ModifierFlags }
@@ -18,14 +19,19 @@ enum KeyBindings {
         return o.compactMapValues(\.string)
     }
 
-    /// Names every command ("Edit › Copy Path and Line") and applies the overrides.
+    /// Names every item and applies the overrides. Runs while the titles are English.
     static func apply(to menu: NSMenu) {
-        let over = overrides
+        var over = overrides, moved = false
         func walk(_ m: NSMenu, _ path: [String]) {
             for i in m.items where !i.isSeparatorItem {
-                if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s, path + [i.identifier?.rawValue ?? i.title]) }; continue }
-                guard i.action != nil else { continue }
-                let id = (path + [i.identifier?.rawValue ?? i.title]).joined(separator: " › ")   // English: the same in every language
+                if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s, path + [i.title]) }; continue }
+                guard let action = i.action else { continue }
+                // A command's item goes by the command id, the others by their English path ("Edit › Copy").
+                let command = action == #selector(AppDelegate.runCommand(_:)), name = i.identifier?.rawValue ?? i.title
+                let id = command ? name : (path + [i.title]).joined(separator: " › ")   // English: the same in every language
+                // Overrides saved before used AppKit's names for the items, their selectors ("Edit › copy:"): moved once.
+                let old = (path + [command ? legacy[id] ?? i.title : name]).joined(separator: " › ")
+                if id != old, let v = over.removeValue(forKey: old) { over[id] = over[id] ?? v; moved = true }
                 i.identifier = NSUserInterfaceItemIdentifier(id)
                 defaults[id] = i.keyEquivalent.isEmpty ? Key?.none : Key(key: i.keyEquivalent, mods: i.keyEquivalentModifierMask.intersection(mask))
                 guard let spec = over[id] else { continue }
@@ -34,7 +40,27 @@ enum KeyBindings {
             }
         }
         walk(menu, [])
+        if moved { SettingsStore.shared.set("keys", .object(over.mapValues { .string($0) })) }
     }
+
+    /// Before commands had ids, AppKit named Kelp's menu items after their selectors, so overrides were saved as
+    /// "File › saveAll". Items that shared a selector (Tab 1–9, panels, Tools) shared one name and don't move.
+    private static let legacy = [
+        "workbench.openSettings": "openSettings", "workbench.openExtensions": "openExtensions", "workbench.restartService": "restartService",
+        "workspace.new": "newWorkspace", "agents.new": "newAgent", "terminal.new": "newTerminal", "workspace.addProject": "addProject",
+        "workspace.revealInFinder": "revealInFinder", "editor.save": "saveFile", "editor.saveAll": "saveAll", "editor.closeTab": "closeTab",
+        "workspace.close": "closeWorkspace", "files.findInWorkspace": "findInWorkspace", "editor.goToLine": "goToLine",
+        "editor.jumpToDefinition": "jumpToDefinition", "editor.sendToAgent": "sendSelection", "editor.copyReference": "copyReference",
+        "editor.copyWebLink": "copyWebLink", "workbench.toggleSidebar": "toggleSidebar", "workbench.toggleInspector": "toggleInspector",
+        "workbench.toggleFocusMode": "toggleFocusMode", "view.biggerText": "biggerText", "view.smallerText": "smallerText",
+        "view.defaultTextSize": "defaultText", "terminal.splitRight": "splitRight", "terminal.splitDown": "splitDown",
+        "view.maximizePane": "toggleZoom", "view.equalizePanes": "equalizePanes", "view.nextPane": "nextGroup", "view.previousPane": "prevGroup",
+        "editor.nextTab": "nextTab", "editor.previousTab": "prevTab", "workbench.commandPalette": "commandPalette", "files.quickOpen": "quickOpen",
+        "agents.history": "showHistory", "scripts.run": "runRun", "scripts.test": "runTest", "scripts.stop": "stop", "scripts.edit": "edit",
+        "agents.nextNeedingYou": "nextNeedingAttention", "agents.usage": "showUsage", "workbench.scratch": "showScratch",
+        "workspace.switch": "switchWorkspace", "workspace.next": "nextWorkspace", "workspace.previous": "prevWorkspace",
+        "workspace.back": "workspaceBack", "workspace.forward": "workspaceForward", "help.guide": "openHelp", "help.extensionGuide": "openExtensionGuide"
+    ]
 
     /// macOS's own app-menu commands (About, Hide, Hide Others, Show All, Quit): System Settings › Keyboard rebinds those.
     private static let systemActions: Set<Selector> = [#selector(NSApplication.orderFrontStandardAboutPanel(_:)), #selector(NSApplication.hide(_:)),
@@ -58,7 +84,7 @@ enum KeyBindings {
 
     static func matches(_ e: Entry, _ query: String) -> Bool {
         let q = query.lowercased()
-        return q.isEmpty || e.id.lowercased().contains(q) || (e.key.map(display) ?? "").lowercased().contains(q)
+        return q.isEmpty || [e.id, e.menu, e.title, e.key.map(display) ?? ""].contains { $0.lowercased().contains(q) }
     }
 
     /// nil: back to Kelp's default; a key with no key text: no shortcut.
@@ -77,7 +103,7 @@ enum KeyBindings {
         if k.mods.contains(.shift) { parts.append("shift") }
         if k.mods.contains(.command) { parts.append("cmd") }
         let named: [String: String] = ["\u{F700}": "up", "\u{F701}": "down", "\u{F702}": "left", "\u{F703}": "right", "\r": "return", "\t": "tab",
-                                       " ": "space", "\u{1b}": "esc", "\u{8}": "delete", "\u{7f}": "delete"]
+                                       " ": "space", "\u{1b}": "esc", "\u{8}": "delete", "\u{7f}": "delete", "+": "plus"]
         return (parts + [named[k.key] ?? k.key.lowercased()]).joined(separator: "+")
     }
 
@@ -97,7 +123,8 @@ enum KeyBindings {
     static func conflict(_ k: Key, keyCode: UInt16?, except id: String) -> String? {
         let norm = Key(key: k.key.lowercased(), mods: k.mods)
         if let other = entries().first(where: { $0.id != id && $0.key.map { Key(key: $0.key.lowercased(), mods: $0.mods) } == norm }) {
-            return String(localized: "Also the shortcut for \(other.id).")
+            let name = "\(other.menu) › \(other.title)"
+            return String(localized: "Also the shortcut for \(name).")
         }
         if let code = keyCode, let name = system[SystemKey(code: code, mods: k.mods.rawValue & mask.rawValue)] {
             return String(localized: "macOS uses this for \(name), so Kelp won't see it (System Settings › Keyboard › Keyboard Shortcuts).")

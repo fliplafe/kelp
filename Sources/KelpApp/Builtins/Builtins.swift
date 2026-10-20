@@ -17,7 +17,23 @@ struct Builtin {
 
 @MainActor
 enum Builtins {
-    static let all: [Builtin] = [agents, appearance, files, git, browser, issues, activity]
+    static let all: [Builtin] = [workbench, agents, appearance, files, git, browser, issues, activity]
+
+    /// A command that takes no arguments.
+    static func cmd(_ ext: String, _ id: String, _ title: String, _ key: String? = nil, _ run: @escaping @MainActor () -> Void) -> CommandSpec {
+        CommandSpec(id: id, title: title, extensionId: ext, key: key) { _ in run() }
+    }
+    /// The editor area on screen; a beep when there is none.
+    static var editor: EditorArea? {
+        if Workbench.editor == nil { NSSound.beep() }
+        return Workbench.editor
+    }
+    /// The file in the focused tab; a beep when it's something else.
+    static var fileTab: FileTab? {
+        let f = Workbench.editor?.focusedContent as? FileTab
+        if f == nil { NSSound.beep() }
+        return f
+    }
 
     private static func s(_ key: String, _ title: String, _ type: String, _ def: JSONValue?, _ desc: String? = nil, options: [String]? = nil) -> SettingSpec {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
@@ -51,10 +67,13 @@ enum Builtins {
             ])
         ]
         c.commands = [
-            CommandSpec(id: "agents.new", title: "New Agent", extensionId: "kelp.agents", key: "opt+cmd+t") { args in Workbench.editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string) },
-            CommandSpec(id: "terminal.new", title: "New Terminal", extensionId: "kelp.agents", key: "cmd+t") { _ in Workbench.editor?.newTerminal() },
-            CommandSpec(id: "terminal.splitRight", title: "Split Right", extensionId: "kelp.agents", key: "cmd+d") { _ in Workbench.editor?.splitFocused(.right) },
-            CommandSpec(id: "terminal.splitDown", title: "Split Down", extensionId: "kelp.agents", key: "shift+cmd+d") { _ in Workbench.editor?.splitFocused(.down) }
+            CommandSpec(id: "agents.new", title: "New Agent", extensionId: "kelp.agents", key: "opt+cmd+t") { args in editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string) },
+            cmd("kelp.agents", "terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
+            cmd("kelp.agents", "terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
+            cmd("kelp.agents", "terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
+            cmd("kelp.agents", "agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
+            cmd("kelp.agents", "agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
+            cmd("kelp.agents", "agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() }
         ]
         return c
     }
@@ -72,12 +91,31 @@ enum Builtins {
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
             s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
         ])]
-        c.commands = [CommandSpec(id: "files.quickOpen", title: "Open File…", extensionId: "kelp.files", key: "cmd+p") { _ in QuickOpen.shared.show(commandsOnly: false) },
-                      CommandSpec(id: "files.new", title: "New File", extensionId: "kelp.files", key: "opt+cmd+n") { _ in Workbench.open(UntitledTab.next()) },
-                      CommandSpec(id: "markdown.cycleView", title: "Markdown: Source, Split, Preview", extensionId: "kelp.files", key: "shift+cmd+v") { _ in
+        let f = "kelp.files"
+        c.commands = [cmd(f, "files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
+                      cmd(f, "files.new", "New File", "opt+cmd+n") { Workbench.open(UntitledTab.next()) },
+                      cmd(f, "markdown.cycleView", "Markdown: Source, Split, Preview", "shift+cmd+v") {
                           guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
                           md.cycleMode()
-                      }]
+                      },
+                      cmd(f, "editor.save", "Save", "cmd+s") { if let t = Workbench.editor?.focusedContent as? SavableTab { t.save() } else { NSSound.beep() } },
+                      cmd(f, "editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
+                      cmd(f, "files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
+                          Workbench.window?.showInspector(panel: "files")
+                          DispatchQueue.main.async { NotificationCenter.default.post(name: .kelpFindInFiles, object: nil) }   // after the panel is built
+                      },
+                      cmd(f, "editor.goToLine", "Go to Line…", "cmd+l") {
+                          if let t = fileTab, let s = prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) }
+                      },
+                      cmd(f, "editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab?.jumpToDefinition() },
+                      // ⌥⌘↩: "path:12-30" into the agent's prompt (it reads the file itself), without pressing Return.
+                      cmd(f, "editor.sendToAgent", "Send to Agent", "opt+cmd+return") {
+                          if let t = fileTab { FileActions.sendToAgent(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
+                      },
+                      cmd(f, "editor.copyReference", "Copy Path and Line", "opt+shift+cmd+c") {
+                          if let t = fileTab { FileActions.copyReference(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
+                      },
+                      cmd(f, "editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } }]
         return c
     }
 

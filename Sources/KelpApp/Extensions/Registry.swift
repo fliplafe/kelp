@@ -37,10 +37,13 @@ struct EditorSpec: Identifiable {
     }
 }
 
-/// Command palette entry.
+/// An action with a stable id, the one thing the menu bar, key bindings (settings.json `keys`), the command palette
+/// and agents (`kelp run <id>`) call.
 struct CommandSpec: Identifiable {
     let id: String, title: String, extensionId: String
     var key: String?
+    /// The menu bar menu it goes in when Kelp's own layout (`AppDelegate.buildMenu`) doesn't place it; nil: Tools.
+    var menu: String?
     let run: @MainActor ([String: JSONValue]) -> Void
 }
 

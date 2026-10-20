@@ -32,10 +32,14 @@ contributions, the command palette and settings.
 | --- | --- |
 | panels | right inspector (selector icons) |
 | editors | center tab types, listed in each pane's "+" menu and the empty workspace |
-| commands | command palette (⇧⌘P), menus, key bindings |
+| commands | command palette (⇧⌘P), menus, key bindings, `kelp run <id>` |
 | settings | Settings window (generated forms) and `~/.kelp/settings.json` |
 | themes | Appearance settings; drive terminal + editor colors |
 | agents | agent CLIs offered in the "+" menu and the empty workspace |
+
+Every action of the app is a command with an id (`workbench.toggleSidebar`, `editor.saveAll`, `agents.new`…), as in
+VS Code and Zed: the menu bar is laid out by id (`AppDelegate.buildMenu`), settings.json `keys` rebinds by id, and agents
+run the same ids with `kelp run`.
 
 Built-ins (Git, Files, Issues, Browser) can be turned off like any other extension. Kelp ships no example
 extensions: user extensions live in `~/.kelp/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
