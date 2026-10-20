@@ -60,7 +60,7 @@ let package = Package(
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
-        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
 
