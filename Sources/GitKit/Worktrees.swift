@@ -41,9 +41,12 @@ extension Git {
 
     /// The repo's other checkouts, wherever `git worktree add` put them (an agent's `.claude/worktrees/…`, Kelp's own):
     /// `git worktree list` without its first entry, the main checkout.
-    public static func linkedWorktrees(_ repo: String) throws -> [String] {
+    public static func linkedWorktrees(_ repo: String) throws -> [(path: String, branch: String?, locked: Bool)] {
         try run(["worktree", "list", "--porcelain"], cwd: repo).components(separatedBy: "\n\n").dropFirst().compactMap { b in
-            b.split(separator: "\n").first { $0.hasPrefix("worktree ") }.map { String($0.dropFirst(9)) }
+            let lines = b.split(separator: "\n")
+            guard let p = lines.first(where: { $0.hasPrefix("worktree ") }) else { return nil }
+            let branch = lines.first { $0.hasPrefix("branch refs/heads/") }.map { String($0.dropFirst(18)) }
+            return (String(p.dropFirst(9)), branch, lines.contains { $0 == "locked" || $0.hasPrefix("locked ") })
         }
     }
 

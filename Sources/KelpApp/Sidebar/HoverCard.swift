@@ -185,7 +185,7 @@ struct WorktreeSizes: View {
                 }.font(.callout)
                 ForEach(items.prefix(8), id: \.path) { w in
                     HStack(spacing: 6) {
-                        Text(name(w.path)).lineLimit(1).truncationMode(.middle)
+                        Text(Self.name(w.path, root: root)).lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 8)
                         Text(Self.size(w.bytes)).monospacedDigit()
                     }.font(.caption).foregroundStyle(.secondary)
@@ -196,7 +196,9 @@ struct WorktreeSizes: View {
             (items == nil ? Text("Measuring worktrees…") : Text("No other git worktrees")).font(.caption).foregroundStyle(.secondary)
         }
     }
-    private func name(_ p: String) -> String { p.hasPrefix(root + "/") ? String(p.dropFirst(root.count + 1)) : (p as NSString).abbreviatingWithTildeInPath }
+    static func name(_ p: String, root: String) -> String {
+        p.hasPrefix(root + "/") ? String(p.dropFirst(root.count + 1)) : (p as NSString).abbreviatingWithTildeInPath
+    }
     static func size(_ b: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .file) }
 }
 

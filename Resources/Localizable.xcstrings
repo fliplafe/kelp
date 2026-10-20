@@ -2306,6 +2306,16 @@
         }
       }
     },
+    "Each of its %lld worktrees has uncommitted changes, is locked or is a Kelp workspace.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В каждом из его worktree (%lld) есть незакоммиченные изменения, или он заблокирован, или это workspace Kelp."
+          }
+        }
+      }
+    },
     "Edit": {
       "localizations": {
         "ru": {
@@ -4299,6 +4309,16 @@
         }
       }
     },
+    "No clean worktrees in “%@”": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В «%@» нет чистых worktree"
+          }
+        }
+      }
+    },
     "No conversations match “%@”": {
       "localizations": {
         "ru": {
@@ -4546,6 +4566,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Здесь ничего не открыто."
+          }
+        }
+      }
+    },
+    "Nothing uncommitted is lost: git removes only clean worktrees. A branch goes too if its commits are on another branch. Ignored files (builds, copied .env) go with the folder.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Незакоммиченное не пропадёт: git удаляет только чистые worktree. Ветка удаляется, если её коммиты есть в другой ветке. Игнорируемые файлы (сборки, скопированные .env) удаляются вместе с папкой."
           }
         }
       }
@@ -5425,12 +5455,52 @@
         }
       }
     },
+    "Remove %lld Worktrees": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить worktree (%lld)"
+          }
+        }
+      }
+    },
+    "Remove %lld clean worktrees (%@)?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить чистые worktree (%lld, %@)?"
+          }
+        }
+      }
+    },
+    "Remove Clean Worktrees…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить чистые worktree…"
+          }
+        }
+      }
+    },
     "Remove Project…": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Убрать проект…"
+          }
+        }
+      }
+    },
+    "Remove Worktree": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить worktree"
           }
         }
       }
@@ -5445,12 +5515,42 @@
         }
       }
     },
+    "Remove the clean worktree “%@” (%@)?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить чистый worktree «%@» (%@)?"
+          }
+        }
+      }
+    },
     "Remove “%@” from Kelp?": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Убрать «%@» из Kelp?"
+          }
+        }
+      }
+    },
+    "Removed %lld worktrees, %@ freed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалено worktree: %lld, освобождено %@"
+          }
+        }
+      }
+    },
+    "Removed %lld, kept %lld: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалено: %lld, оставлено: %lld — %@"
           }
         }
       }
@@ -7017,6 +7117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Расширение, которое показывает «%@», выключено или удалено."
+          }
+        }
+      }
+    },
+    "The project has no other git worktrees.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У проекта нет других git worktree."
           }
         }
       }

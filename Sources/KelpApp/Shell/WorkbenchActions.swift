@@ -230,6 +230,35 @@ enum WorkspaceActions {
         }
     }
 
+    /// The project's other git worktrees with nothing uncommitted (agents leave them in `.claude/worktrees`), after one
+    /// question; git itself keeps any that changed meanwhile. Kelp's own workspaces aren't among them.
+    static func removeCleanWorktrees(_ r: Repo) {
+        Task {
+            guard let all = await AppModel.shared.call(RepoWorktreeSizes(id: r.id)) else { return }
+            let clean = all.filter(\.removable), a = NSAlert()
+            guard !clean.isEmpty else {
+                a.messageText = String(localized: "No clean worktrees in “\(r.name)”")
+                a.informativeText = all.isEmpty ? String(localized: "The project has no other git worktrees.")
+                    : String(localized: "Each of its \(all.count) worktrees has uncommitted changes, is locked or is a Kelp workspace.")
+                _ = await runSheet(a); return
+            }
+            let size = WorktreeSizes.size(clean.reduce(0) { $0 + $1.bytes })
+            a.messageText = clean.count == 1 ? String(localized: "Remove the clean worktree “\(WorktreeSizes.name(clean[0].path, root: r.path))” (\(size))?")
+                : String(localized: "Remove \(clean.count) clean worktrees (\(size))?")
+            let names = clean.prefix(10).map { "\(WorktreeSizes.name($0.path, root: r.path))  \(WorktreeSizes.size($0.bytes))" }
+            a.informativeText = (clean.count > 1 ? names.joined(separator: "\n") + (clean.count > 10 ? "\n…" : "") + "\n\n" : "")
+                + String(localized: "Nothing uncommitted is lost: git removes only clean worktrees. A branch goes too if its commits are on another branch. Ignored files (builds, copied .env) go with the folder.")
+            a.addButton(withTitle: clean.count == 1 ? String(localized: "Remove Worktree") : String(localized: "Remove \(clean.count) Worktrees")).hasDestructiveAction = true
+            a.addButton(withTitle: String(localized: "Cancel"))
+            guard await runSheet(a) == .alertFirstButtonReturn,
+                  let res = await AppModel.shared.call(RepoRemoveWorktrees(id: r.id, paths: clean.map(\.path))) else { return }
+            let freed = WorktreeSizes.size(clean.filter { res.removed.contains($0.path) }.reduce(0) { $0 + $1.bytes })
+            if let why = res.kept.values.first {
+                Banner.show(String(localized: "Removed \(res.removed.count), kept \(res.kept.count): \(why)"), style: .error)
+            } else { Banner.show(String(localized: "Removed \(res.removed.count) worktrees, \(freed) freed")) }
+        }
+    }
+
     /// A desk: its agents end, the folder stays. Asks only when agents are running there.
     static func close(_ w: Worktree) {
         // The project's last workspace stays (removing the project is a separate, deliberate action).

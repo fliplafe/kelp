@@ -211,6 +211,27 @@ final class NoteBox: @unchecked Sendable {
 }
 
 /// Summaries start from the agent's own last reply, not the terminal around it.
+@Test func removeCleanWorktrees() async throws {
+    let root = tmp()
+    let d = try Daemon(root: root)
+    try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let repoPath = try makeRepo()
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(repoPath)]), as: Repo.self)
+    // An agent's leftovers: one where main is, one with a commit of its own, one with a file git doesn't track yet.
+    for n in ["same", "ahead", "untracked"] { try Git.run(["worktree", "add", "-q", "-b", "agent-" + n, ".claude/worktrees/" + n], cwd: repoPath) }
+    let wt = repoPath + "/.claude/worktrees/"
+    try Git.run(["commit", "-q", "--allow-empty", "-m", "own"], cwd: wt + "ahead")
+    try "x".write(toFile: wt + "untracked/new.txt", atomically: true, encoding: .utf8)
+
+    let sizes = try await c.call(RepoWorktreeSizes(id: repo.id))
+    #expect(Set(sizes.filter(\.removable).map { ($0.path as NSString).lastPathComponent }) == ["same", "ahead"])
+    let res = try await c.call(RepoRemoveWorktrees(id: repo.id, paths: sizes.map(\.path) + [repoPath]))
+    #expect(res.removed.count == 2 && res.kept.count == 2)   // the untracked file and the main checkout stay
+    #expect(FileManager.default.fileExists(atPath: wt + "untracked/new.txt") && !FileManager.default.fileExists(atPath: wt + "same"))
+    #expect(!Git.branchExists(repoPath, "agent-same") && Git.branchExists(repoPath, "agent-ahead"))   // its commit lives on
+}
+
 @Test func lastReplyFromTranscript() throws {
     let f = tmp().appendingPathComponent("t.jsonl")
     let lines = [

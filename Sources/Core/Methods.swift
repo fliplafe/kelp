@@ -56,11 +56,25 @@ public struct RepoWorktreeSizes: RPCMethod {
     public static let name = "repo.worktreeSizes"
     public struct Item: Codable, Sendable, Equatable {
         public var path: String, bytes: Int
-        public init(path: String, bytes: Int) { self.path = path; self.bytes = bytes }
+        /// Nothing uncommitted or untracked, not locked, not one of Kelp's workspaces (those go with Delete Workspace).
+        public var removable: Bool
+        public init(path: String, bytes: Int, removable: Bool) { self.path = path; self.bytes = bytes; self.removable = removable }
     }
     public typealias Result = [Item]
     public var id: String
     public init(id: String) { self.id = id }
+}
+
+/// Removes those of `paths` that are still clean, as `git worktree remove` without --force does (one with changes,
+/// untracked files or a lock stays), each with its branch when that branch's commits are on another one too.
+public struct RepoRemoveWorktrees: RPCMethod {
+    public static let name = "repo.removeWorktrees"
+    public struct Result: Codable, Sendable {
+        public var removed: [String], kept: [String: String]   // kept: path → why
+        public init(removed: [String], kept: [String: String]) { self.removed = removed; self.kept = kept }
+    }
+    public var id: String, paths: [String]
+    public init(id: String, paths: [String]) { self.id = id; self.paths = paths }
 }
 
 /// The workspace's name.

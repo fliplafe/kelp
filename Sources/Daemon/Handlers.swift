@@ -28,7 +28,7 @@ extension Handled {
 extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
-                                                          WorktreeNote.self, RepoWorktreeSizes.self] as [any Handled.Type]).map { ($0.name, $0) })
+                                                          WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self] as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
@@ -327,14 +327,40 @@ extension RepoWorktreeSizes: Handled {
     func handle(_ d: Daemon) throws -> [Item] {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         guard RemoteHost.of(r.path) == nil else { return [] }   // their disk is on the host
-        return try Git.linkedWorktrees(r.path).filter { FileManager.default.fileExists(atPath: $0) }
-            .map { Item(path: $0, bytes: Self.du($0)) }.sorted { $0.bytes > $1.bytes }
+        let workspaces = try Self.workspaces(d, r)
+        return try Git.linkedWorktrees(r.path).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
+            Item(path: w.path, bytes: Self.du(w.path),
+                 removable: !w.locked && !workspaces.contains(Self.real(w.path)) && (try? Git.isDirty(w.path)) == false)
+        }.sorted { $0.bytes > $1.bytes }
     }
+
+    /// Kelp's own worktree workspaces (from older versions): git prints real paths, the store keeps them as created.
+    static func workspaces(_ d: Daemon, _ r: Repo) throws -> Set<String> { Set(try d.store.worktrees(repo: r.id).map { real($0.path) }) }
+    static func real(_ p: String) -> String { URL(fileURLWithPath: p).resolvingSymlinksInPath().path }
 
     /// Blocks on disk as `du` counts them (16 GB of build products: about a second); unreadable files leave out only themselves.
     static func du(_ path: String) -> Int {
         let out = (try? Git.run(["-sk", path], cwd: path, executable: "/usr/bin/du", ok: [0, 1])) ?? ""
         return (Int(out.prefix { $0.isNumber }) ?? 0) * 1024
+    }
+}
+
+extension RepoRemoveWorktrees: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
+        let linked = try Git.linkedWorktrees(r.path), workspaces = try RepoWorktreeSizes.workspaces(d, r)
+        var out = Result(removed: [], kept: [:])
+        for p in paths {
+            guard let w = linked.first(where: { $0.path == p }), !workspaces.contains(RepoWorktreeSizes.real(p)) else {
+                out.kept[p] = "Not one of the project's other worktrees."; continue
+            }
+            do {
+                try Git.run(["worktree", "remove", p], cwd: r.path)   // no --force: git keeps one with changes, untracked files or a lock
+                if let b = w.branch { _ = try? Git.run(["branch", "-d", b], cwd: r.path) }   // -d: only if its commits are on another branch
+                out.removed.append(p)
+            } catch let e as GitError { out.kept[p] = e.message }
+        }
+        return out
     }
 }
 

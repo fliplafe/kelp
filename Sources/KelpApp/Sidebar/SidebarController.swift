@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Core
+import GitKit
 
 /// Projects → workspaces → agents in a source-list outline (like Finder and Xcode).
 /// Status changes update the visible cells in place; the outline reloads only when the tree's shape changes.
@@ -444,6 +445,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             menu.add(String(localized: "New Workspace")) { [weak self] in self?.newWorkspace(id) }
             menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: r.path)]) }
             menu.addItem(.separator())
+            if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions.removeCleanWorktrees(r) } }
             menu.add(String(localized: "Remove Project…")) { WorkspaceActions.removeProject(r) }
         case .section: return
         case .needs(let sid):
