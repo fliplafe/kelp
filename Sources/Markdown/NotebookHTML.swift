@@ -12,7 +12,7 @@ public enum NotebookHTML {
 
     public static func render(_ data: Data) -> String? {
         guard let nb = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let cells = nb["cells"] as? [[String: Any]] else { return nil }
-        let lang = escape(language(nb).filter { $0.isLetter || $0.isNumber || "+#._-".contains($0) })   // a class name
+        let lang = MarkdownHTML.esc(language(nb).filter { $0.isLetter || $0.isNumber || "+#._-".contains($0) })   // a class name
         var html = ""
         for (i, c) in cells.enumerated() {
             let src = text(c["source"])
@@ -22,11 +22,11 @@ public enum NotebookHTML {
             case "code":
                 let n = (c["execution_count"] as? Int).map(String.init) ?? " "
                 html += "<div class=\"nb-cell\" data-cell=\"\(i)\"><div class=\"nb-in\">In [\(n)]:</div>"
-                html += "<pre><code class=\"language-\(lang)\">\(escape(src))</code></pre>"
+                html += "<pre><code class=\"language-\(lang)\">\(MarkdownHTML.esc(src))</code></pre>"
                 for o in c["outputs"] as? [[String: Any]] ?? [] { html += output(o) }
                 html += "</div>\n"
             default:
-                html += "<pre>\(escape(src))</pre>\n"
+                html += "<pre>\(MarkdownHTML.esc(src))</pre>\n"
             }
         }
         return html + style
@@ -35,10 +35,10 @@ public enum NotebookHTML {
     static func output(_ o: [String: Any]) -> String {
         switch o["output_type"] as? String {
         case "stream":
-            return "<pre class=\"nb-out\(o["name"] as? String == "stderr" ? " nb-err" : "")\">\(escape(text(o["text"])))</pre>"
+            return "<pre class=\"nb-out\(o["name"] as? String == "stderr" ? " nb-err" : "")\">\(MarkdownHTML.esc(text(o["text"])))</pre>"
         case "error":
             let tb = (o["traceback"] as? [String] ?? []).joined(separator: "\n")
-            return "<pre class=\"nb-out nb-err\">\(escape(stripANSI(tb.isEmpty ? "\(o["ename"] ?? ""): \(o["evalue"] ?? "")" : tb)))</pre>"
+            return "<pre class=\"nb-out nb-err\">\(MarkdownHTML.esc(stripANSI(tb.isEmpty ? "\(o["ename"] ?? ""): \(o["evalue"] ?? "")" : tb)))</pre>"
         case "execute_result", "display_data":
             let d = o["data"] as? [String: Any] ?? [:]
             for (mime, tag) in [("image/png", "png"), ("image/jpeg", "jpeg")] {
@@ -50,7 +50,7 @@ public enum NotebookHTML {
                 return "<img class=\"nb-img\" src=\"data:image/svg+xml;base64,\(b64)\">"
             }
             if let md = d["text/markdown"] { return "<div class=\"nb-md\">\(MarkdownHTML.render(text(md)))</div>" }
-            if let t = d["text/plain"] { return "<pre class=\"nb-out\">\(escape(text(t)))</pre>" }
+            if let t = d["text/plain"] { return "<pre class=\"nb-out\">\(MarkdownHTML.esc(text(t)))</pre>" }
             return ""
         default: return ""
         }
@@ -68,11 +68,6 @@ public enum NotebookHTML {
         return ""
     }
 
-    /// Safe in text and in quoted attributes.
-    static func escape(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;")
-    }
     static func stripANSI(_ s: String) -> String { s.replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression) }
 
     static let style = """

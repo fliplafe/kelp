@@ -1,6 +1,6 @@
 import Foundation
 
-/// The IDE verbs `kelp` and its MCP server share: how agents drive the app (through the daemon's `ui.*` / `settings.*`).
+/// The IDE verbs of `kelp`: how agents drive the app (through the daemon's `ui.*` / `settings.*`).
 public enum IDE {
     /// A daemon RPC: method, params → result.
     public typealias Call = @Sendable (String, JSONValue) async throws -> JSONValue

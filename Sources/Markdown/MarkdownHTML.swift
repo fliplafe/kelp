@@ -86,6 +86,7 @@ public enum MarkdownHTML {
     img{max-width:100%}
     """
 
+    /// Safe in text and in double-quoted attributes (the only kind Kelp's pages write).
     static func esc(_ s: String) -> String {
         var o = ""
         for c in s {

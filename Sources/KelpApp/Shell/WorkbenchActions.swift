@@ -149,7 +149,7 @@ enum KelpLinks {
     }
 }
 
-/// IDE actions agents ask for through the daemon (`kelp open`, MCP tools). They never pull Kelp to the front or
+/// IDE actions agents ask for through the daemon (`kelp open`, `kelp ui`). They never pull Kelp to the front or
 /// switch the workspace on screen unless asked (`--focus`): a tab for another workspace waits there.
 @MainActor
 enum UIRequests {

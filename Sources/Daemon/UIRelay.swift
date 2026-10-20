@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-/// Agents → app: `kelp open`, the MCP tools etc. call `ui.*`; the daemon relays them to the app as `event.ui`.
+/// Agents → app: `kelp open`, `kelp ui` etc. call `ui.*`; the daemon relays them to the app as `event.ui`.
 /// The app publishes what it shows (`ui.publish`) so agents can read it back (`ui.state`), and keeps what it restores
 /// (each workspace's layout, the sidebar's order…) in the database with `state.*`, so every KELP_HOME has its own.
 extension Daemon {

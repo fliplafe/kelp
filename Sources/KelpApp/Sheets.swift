@@ -9,12 +9,18 @@ func runSheet(_ a: NSAlert) async -> NSApplication.ModalResponse {
     return await withCheckedContinuation { c in a.beginSheetModal(for: w) { c.resume(returning: $0) } }
 }
 
+/// The window a synchronous sheet goes on: key / main are nil while Kelp isn't the active app, the sheet still belongs
+/// on its window; one that already shows a sheet can't take another.
+@MainActor
+private func sheetWindow() -> NSWindow? {
+    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }), w.attachedSheet == nil else { return nil }
+    return w
+}
+
 /// An alert as a sheet on the front window, answered synchronously (for code that needs the answer right away).
 @MainActor
 func runAsSheet(_ a: NSAlert) -> NSApplication.ModalResponse {
-    // Key / main are nil while Kelp isn't the active app; the sheet still belongs on its window.
-    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
-          w.attachedSheet == nil else { return a.runModal() }
+    guard let w = sheetWindow() else { return a.runModal() }
     a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
     return NSApp.runModal(for: a.window)
 }
@@ -22,8 +28,7 @@ func runAsSheet(_ a: NSAlert) -> NSApplication.ModalResponse {
 /// A save panel as a sheet on the front window, answered synchronously (closing a tab or quitting needs the answer).
 @MainActor
 func runAsSheet(_ p: NSSavePanel) -> NSApplication.ModalResponse {
-    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
-          w.attachedSheet == nil else { return p.runModal() }
+    guard let w = sheetWindow() else { return p.runModal() }
     p.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
     return NSApp.runModal(for: p)
 }
