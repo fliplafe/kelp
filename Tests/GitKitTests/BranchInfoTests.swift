@@ -57,3 +57,15 @@ import Testing
     #expect(try Set(Git.status(repo).map(\.path)) == [".env", "new.txt", "f.txt"])
     #expect(try Git.diff(repo, source: .unstaged, file: "new.txt").map(\.path) == ["new.txt"])
 }
+
+@Test func aFileDeletedFromTheFolderLeavesTheList() throws {
+    let repo = try tempRepo()
+    defer { try? FileManager.default.removeItem(atPath: repo) }
+    try FileManager.default.createDirectory(atPath: repo + "/d", withIntermediateDirectories: true)
+    try "x\n".write(toFile: repo + "/d/kept.txt", atomically: true, encoding: .utf8)
+    try "y\n".write(toFile: repo + "/gone.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "files"], cwd: repo)
+    try FileManager.default.removeItem(atPath: repo + "/gone.txt")
+    try "n\n".write(toFile: repo + "/new.txt", atomically: true, encoding: .utf8)
+    #expect(try Set(ProjectFiles.list(repo)) == ["f.txt", ".env", "d/kept.txt", "new.txt"])
+}

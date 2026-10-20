@@ -6,11 +6,13 @@ public struct SearchMatch: Codable, Sendable, Equatable {
 
 /// Project files and search. Uses git so .gitignore is honoured exactly like in a terminal.
 public enum ProjectFiles {
-    /// Tracked + untracked-but-not-ignored files, relative paths.
+    /// Tracked + untracked-but-not-ignored files, relative paths. A tracked file deleted from the folder is left out: git
+    /// tags it "R" (one git process instead of a stat per file, and it works on a remote host too).
     public static func list(_ root: String) throws -> [String] {
-        let remote = RemoteHost.of(root) != nil   // its files are on the host: nothing to check here
-        return try Git.run(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd: root)
-            .split(separator: "\0").map(String.init).filter { remote || FileManager.default.fileExists(atPath: root + "/" + $0) }
+        let lines: [Substring] = try Git.run(["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"], cwd: root)
+            .split(separator: "\0").filter { $0.count > 2 }
+        let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
+        return lines.filter { !$0.hasPrefix("R ") && !gone.contains($0.dropFirst(2)) }.map { String($0.dropFirst(2)) }
     }
 
     /// Bundled or system ripgrep, else `git grep`.
