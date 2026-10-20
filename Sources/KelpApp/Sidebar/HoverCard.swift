@@ -138,6 +138,7 @@ struct CardView: View {
                     if !a.session.summary.isEmpty {
                         Text(a.session.summary).font(.caption).foregroundStyle(.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     }
+                    if let w = a.session.workingElsewhere { Text(w).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                 }
             }
             if !model.ports.isEmpty {

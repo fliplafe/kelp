@@ -63,6 +63,9 @@ public final class Store: Sendable {
             // A workspace's layout goes with it, however it's removed (its project's removal cascades here too).
             try db.execute(sql: "CREATE TRIGGER uiStateLayout AFTER DELETE ON worktree BEGIN DELETE FROM uiState WHERE key = 'layout/' || OLD.id; END")
         }
+        m.registerMigration("v7") { db in
+            try db.alter(table: "session") { t in t.add(column: "workDir", .text) }
+        }
         try m.migrate(db)
     }
 

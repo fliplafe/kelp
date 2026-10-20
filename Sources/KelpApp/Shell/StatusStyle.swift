@@ -141,6 +141,12 @@ struct StatusIcon: View {
 extension Session {
     /// Ended on its own with a non-zero exit code (the daemon says so in the summary): shown red, not grey.
     var endedWithError: Bool { status == .exited && summary.hasPrefix("Ended with an error") }
+    /// "Works in .claude/worktrees/fix-login" when the agent went out of the folder it started in.
+    var workingElsewhere: String? {
+        guard let d = workDir else { return nil }
+        let inside = d.hasPrefix(cwd + "/") ? String(d.dropFirst(cwd.count + 1)) : (d as NSString).abbreviatingWithTildeInPath
+        return String(localized: "Works in \(inside)")
+    }
 }
 
 /// Agents waiting for the user, in the order to visit them: questions and failures before finished work, oldest first.

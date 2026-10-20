@@ -39,7 +39,9 @@ final class SessionTab: TabContent {
     }
     var unread: Bool { session?.unread ?? false }
     var meter: Double? { AppModel.shared.contextShare[sessionId] }
-    var toolTip: String? { session.map { "\(title) — \($0.status.words)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") } }
+    var toolTip: String? {
+        session.map { "\(title) — \($0.status.words)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") + ($0.workingElsewhere.map { "\n\($0)" } ?? "") }
+    }
     func focus() { pane.focus() }
 
     /// Closing the tab ends the session; it asks only when something would stop: a working agent, or a program

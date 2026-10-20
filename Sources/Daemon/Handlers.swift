@@ -215,6 +215,7 @@ extension Daemon {
         case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
             guard let ls = existing(try p.req("id")) else { return .null }
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
+            if let dir = p["cwd"]?.string, let s = ls.workIn(dir) { publish(s) }
             if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
             let event: String = try p.req("event")
             ls.hook(event == "done" && Hooks.hasBackgroundWork(p) ? "working" : event,
@@ -231,10 +232,11 @@ extension Daemon {
         case "git.diff":
             let w = try cwd(forWorktree: p.req("id"))
             let src: DiffSource
+            var dir = w.path
             switch p["source"]?.string ?? "all" {
-            case "turn":   // since the agent's last turn started
-                guard let base = existing(try p.req("session"))?.turnBase else { throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.") }
-                src = .since(tree: base)
+            case "turn":   // since the agent's last turn started, where it worked then (its own worktree, maybe)
+                guard let ls = existing(try p.req("session")), let base = ls.turnBase else { throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.") }
+                src = .since(tree: base); dir = ls.turnDir ?? dir
             case "unstaged": src = .unstaged
             case "staged": src = .staged
             case "branch":
@@ -243,7 +245,7 @@ extension Daemon {
             case "commit": src = .commit(try p.req("commit"))
             default: src = .allUncommitted
             }
-            return try .from(Git.diff(w.path, source: src, file: p["file"]?.string))
+            return try .from(Git.diff(dir, source: src, file: p["file"]?.string))
         case "git.log":
             let w = try cwd(forWorktree: p.req("id"))
             let base = try store.repo(w.repoId)?.baseBranch

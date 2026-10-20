@@ -75,6 +75,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         var files: [File]; var seconds: Double
     }
     private(set) var turnBase: String?
+    /// Where the agent worked when its last turn started: `turnBase` is a snapshot of that folder.
+    private(set) var turnDir: String?
     private var turnStart: Date?
     private(set) var lastTurn: Turn?
     private var inTurn = false
@@ -197,11 +199,11 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Called with every status change: a snapshot when work starts, the changes when it stops (git work off the lock).
     func noteTurn(_ s: AgentStatus) {
         lock.lock()
-        let cwd = record.cwd, shell = record.agent == "shell"
+        let shell = record.agent == "shell"
         let starting = s == .working && !inTurn, ending = inTurn && s != .working
-        if starting { inTurn = true; turnStart = Date() }
+        if starting { inTurn = true; turnStart = Date(); turnDir = record.currentDir }
         if ending { inTurn = false }
-        let base = turnBase, start = turnStart
+        let base = turnBase, start = turnStart, cwd = turnDir ?? record.cwd
         lock.unlock()
         guard !shell, starting || ending else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -350,6 +352,15 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         let c = sync(); lock.unlock()
         if let c { onStatus?(c) }
+    }
+
+    /// A hook's `cwd`: where the agent works now. The record when that changed.
+    func workIn(_ dir: String) -> Session? {
+        func real(_ p: String) -> String { URL(fileURLWithPath: p).resolvingSymlinksInPath().standardizedFileURL.path }
+        lock.lock(); defer { lock.unlock() }
+        let w = real(dir) == real(record.cwd) ? nil : dir
+        guard w != record.workDir else { return nil }
+        record.workDir = w; return record
     }
 
     func markRead() -> Session? {

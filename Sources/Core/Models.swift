@@ -78,6 +78,9 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var summary: String
     /// Launch options, kept so "Restart" reproduces the session.
     public var argv: [String]
+    /// Where the agent works when it left `cwd` (Claude Code going into its `.claude/worktrees/…`), from its hooks; nil
+    /// while it works in `cwd`. Paths it prints and its last turn's changes are read there; a restart still starts in `cwd`.
+    public var workDir: String?
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent
@@ -85,6 +88,8 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
         self.title = title; self.titleManual = titleManual; self.summary = summary; self.argv = argv
     }
     public var displayTitle: String { title.isEmpty ? (agent ?? "shell") : title }
+    /// The folder the agent works in now.
+    public var currentDir: String { workDir ?? cwd }
     public static let databaseTableName = "session"
 }
 

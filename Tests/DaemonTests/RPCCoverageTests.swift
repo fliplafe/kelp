@@ -132,6 +132,16 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     await #expect(throws: (any Error).self) { _ = try await r.c.call("session.write", .obj(["id": "gone", "text": "x"])) }
 }
 
+@Test func aHookFromAnotherFolderIsWhereTheAgentWorksAndItsOwnFolderClearsIt() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "cat")
+    let elsewhere = r.wt.path + "/.claude/worktrees/fix"
+    _ = try await r.c.call("session.hook", .obj(["id": .string(s.id), "event": "working", "cwd": .string(elsewhere)]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.currentDir == elsewhere)
+    _ = try await r.c.call("session.hook", .obj(["id": .string(s.id), "event": "done", "cwd": .string(s.cwd + "/")]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.workDir == nil)
+}
+
 @Test func aSessionWithNoTurnYetHasNoTurnAndNoReply() async throws {
     let r = try await rig(); defer { r.d.stop() }
     let s = try await session(r, "cat")

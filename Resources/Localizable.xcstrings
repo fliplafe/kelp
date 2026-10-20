@@ -9826,6 +9826,16 @@
           }
         }
       }
+    },
+    "Works in %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работает в %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

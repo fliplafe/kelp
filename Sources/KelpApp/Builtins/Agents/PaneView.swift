@@ -84,11 +84,12 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
                 if local != NSEvent.modifierFlags.contains(.option) { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
                 else { NSWorkspace.shared.open(url) }
             }
-            let cwd = s.cwd, wid = s.worktreeId
-            g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd, flags: flags) }
+            // Paths the agent prints are its folder's: its own worktree once it went into one.
+            let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
+            g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
             g.onHoverWord = { [weak self, weak g] token, rect in
                 guard let self, let g else { return }
-                self.preview.show(token, rect: rect, in: g, cwd: cwd, worktree: wid)
+                self.preview.show(token, rect: rect, in: g, cwd: cwd(), worktree: wid)
             }
             ghostty = g; termView = g
             return
