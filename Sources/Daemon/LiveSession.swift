@@ -69,7 +69,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// before that. After it, a matching line is something the agent read or wrote, not its own dialog.
     private var typedYet = false
     /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
-    private var pasteMode = false
+    private var pasteMode = false, pasteCarry = ""
     private var inputLine = ""
     private var sawFirstPrompt = false
     /// Agents with hooks report their state themselves; the others may through OSC 7501 (ProgramStatus).
@@ -118,7 +118,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     func start() { pty.start() }
 
     /// The session is being deleted: it stops, and neither its exit nor anything else saves its record again.
-    func discard() { lock.withLock { discarded = true }; pty.terminate() }
+    @discardableResult
+    func discard() -> [pid_t] { lock.withLock { discarded = true }; return pty.terminate() }
 
     /// The log becomes `tail`. Caller holds the lock (or is the initializer).
     /// Keeps the log's own last `ringLimit` bytes, read from the file: after a wake the ring holds only what was printed
@@ -162,7 +163,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
         if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
-        if let on = text.range(of: "\u{1B}[?2004", options: .backwards), let mode = text[on.upperBound...].first { pasteMode = mode == "h" }
+        let scan = pasteCarry + text   // the sequence can be split across two reads
+        if let on = scan.range(of: "\u{1B}[?2004", options: .backwards), let mode = scan[on.upperBound...].first { pasteMode = mode == "h" }
+        pasteCarry = String(text.suffix(7))
         var answer: String?
         if !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 {
             let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))

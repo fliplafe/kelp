@@ -292,7 +292,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
             // Without a word of context, "add a panel" reads as a request for the agent's own UI.
             if let ctx = manifest.contextFlag, let text = Self.kelpContext(Paths.agentSkills) { argv += [ctx, text] }
         }
-        if local, o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
+        // Its own id, unless it resumes one (a restart's argv carries none: see session.restart).
+        if local, let flag = manifest.sessionIdFlag, !argv.contains(flag), !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
         rec.argv = argv
         rec.profile = o.profile
         let env = launchEnv(manifest, rec)
@@ -354,8 +355,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     func discard(_ s: Session) {
         wakeLock.withLock {
             let ls = lock.withLock { live.removeValue(forKey: s.id) }
-            ls?.discard()
-            if let ls { Self.waitGone([ls.pty.pid]) }   // gone before its project or folder goes (SIGKILL after 2 s)
+            if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
             try? store.delete(s)
             try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
         }

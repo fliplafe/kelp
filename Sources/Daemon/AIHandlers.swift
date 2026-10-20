@@ -15,15 +15,15 @@ extension Daemon {
             if let st = p["status"]?.string.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
             return .null
 
-        case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
+        case "session.restart":   // (withoutSessionId: the new session pins an id of its own, never the old one's)    // same command, same directory; resumes the conversation when the agent supports it
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
             // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
             // If the new one can't start, this one still ends as Ended.
-            if let ls = existing(old.id) { ls.pty.terminate(); Self.waitGone([ls.pty.pid]) }
+            if let ls = existing(old.id) { Self.waitGone(ls.pty.terminate()) }
             let m = try manifest(old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
-            o.argv = p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv
+            o.argv = Self.withoutSessionId(p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
             let s = try spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
             discard(old)   // its exit, still to come, doesn't save it again
             return try .from(s)
@@ -165,8 +165,19 @@ extension Daemon {
 
 extension SessionRename: Handled {
     func handle(_ d: Daemon) throws -> Done {
-        if let ls = d.existing(id) { d.publish(ls.update { $0.title = title; $0.titleManual = !title.isEmpty }) }
-        else if var s = try d.store.session(id) { s.title = title; s.titleManual = !title.isEmpty; d.publish(s) }
+        // Under wakeLock: a paused record read here and saved back must not land over a wake that started meanwhile.
+        try d.wakeLock.withLock {
+            if let ls = d.existing(id) { d.publish(ls.update { $0.title = title; $0.titleManual = !title.isEmpty }) }
+            else if var s = try d.store.session(id) { s.title = title; s.titleManual = !title.isEmpty; d.publish(s) }
+        }
         return Done()
+    }
+}
+
+extension Daemon {
+    /// argv without `--session-id <id>`: two sessions can't share an id (Claude Code refuses one already used).
+    static func withoutSessionId(_ argv: [String], flag: String?) -> [String] {
+        guard let flag, let i = argv.firstIndex(of: flag) else { return argv }
+        var a = argv; a.removeSubrange(i...min(i + 1, a.count - 1)); return a
     }
 }

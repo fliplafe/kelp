@@ -81,6 +81,7 @@ public struct WorkspaceLayout: Codable, Equatable {
             g.tabs.insert(t, at: min(at, g.tabs.count)); g.selected = t.id
             groups[from] = g; focused = from; return
         }
+        guard groups[target] != nil else { return }   // a stale drop target: the tab stays where it was
         remove(tab)
         guard var g = groups[target] else { return }
         g.tabs.insert(t, at: min(index ?? g.tabs.count, g.tabs.count)); g.selected = t.id

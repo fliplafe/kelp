@@ -16,7 +16,9 @@ public enum TestIsolation {
         let vars = ["KELP_HOME": r + "/home", "CLAUDE_CONFIG_DIR": r + "/claude", "CODEX_HOME": r + "/codex",
                     "KELP_LOGIN_PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
                     "KELP_KEYCHAIN_SERVICE": "dev.kelp.tests.\(UUID().uuidString)",
-                    "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "KELP_TEST_ISOLATED": "1"]
+                    "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "KELP_TEST_ISOLATED": "1",
+                    // In-process daemons take this test process for Kelp's window (set once, before any daemon reads it).
+                    "KELP_APP_EXECUTABLE": (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath().path]
         for (k, v) in vars { setenv(k, v, 1) }
         atexit { try? FileManager.default.removeItem(atPath: TestIsolation.root) }
         return r

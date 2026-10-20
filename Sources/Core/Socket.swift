@@ -77,7 +77,13 @@ public enum Unix {
             var off = 0
             while off < p.count {
                 let n = Darwin.write(fd, base + off, p.count - off)
-                if n < 0 { if errno == EINTR || errno == EAGAIN { continue }; return false }
+                if n < 0, errno == EINTR { continue }
+                if n < 0, errno == EAGAIN {   // full: wait until it can take more, rather than spin
+                    var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                    if poll(&pfd, 1, 5000) <= 0 { return false }   // nobody reading for 5 s: gone
+                    continue
+                }
+                if n < 0 { return false }
                 off += n
             }
             return true

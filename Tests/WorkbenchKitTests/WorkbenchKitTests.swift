@@ -42,6 +42,14 @@ import WorkbenchKit
     #expect(l.root == .split(vertical: false, children: [.split(vertical: true, children: [.pane(g), .pane(h)]), .pane(k)]))
 }
 
+@Test func movingToAGroupThatIsGoneKeepsTheTab() throws {
+    var l = WorkspaceLayout()
+    let a = l.add("a")
+    let g = try #require(l.focused)
+    l.move(a.id, to: "no-such-group")   // a drop target from a layout that has changed since
+    #expect(l.groups[g]?.tabs == [a])
+}
+
 @Test func movingTheLastTabOutRemovesItsGroup() throws {
     var l = WorkspaceLayout()
     let a = l.add("a"), b = l.add("b")

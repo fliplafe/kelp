@@ -212,12 +212,30 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     }
     public func kill() { signal { Darwin.kill(-$0, SIGHUP); Darwin.kill($0, SIGTERM) } }
 
-    /// kill(), then SIGKILL the group if it's still there after `grace` seconds (some TUIs ignore SIGTERM).
-    public func terminate(grace: TimeInterval = 2) {
+    /// The program and everything it started, read now: a shell runs each job in a process group of its own, and once
+    /// the shell is gone its jobs belong to launchd and can't be found from here any more.
+    public func tree() -> [pid_t] { life.withLock { reaped ? [] : [pid] + Self.descendants(of: pid) } }
+
+    static func descendants(of p: pid_t) -> [pid_t] {
+        var kids = [pid_t](repeating: 0, count: 256)
+        let n = Int(proc_listchildpids(p, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
+        return kids.prefix(max(0, n)).filter { $0 > 0 }.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    /// Hangup and SIGTERM to the program and everything it started (a server in a shell's job too), then SIGKILL to
+    /// whatever is still there after `grace` seconds (some TUIs ignore SIGTERM, servers treat SIGHUP as "reload").
+    /// Returns them all, for `Daemon.waitGone`.
+    /// Limit: a descendant's pid could be reused within `grace`; checking start times would rule that out.
+    @discardableResult
+    public func terminate(grace: TimeInterval = 2) -> [pid_t] {
+        let all = tree()
         kill()
+        for p in all.dropFirst() { Darwin.kill(p, SIGHUP); Darwin.kill(p, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + grace) { [self] in   // keeps the PTY, and so `reaped`, until then
             signal { if Darwin.kill($0, 0) == 0 { Darwin.kill(-$0, SIGKILL); Darwin.kill($0, SIGKILL) } }
+            for p in all.dropFirst() where Darwin.kill(p, 0) == 0 { Darwin.kill(p, SIGKILL) }
         }
+        return all
     }
 
     /// `f(pid)` while the pid is still this program's.

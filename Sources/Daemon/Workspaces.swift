@@ -15,8 +15,11 @@ extension Daemon {
     func syncMainWorkspaces() throws {
         let all = try store.worktrees(repo: nil)
         for r in try store.repos() {
-            let branch = (try? Git.currentBranch(r.path)) ?? r.baseBranch
             let desks = all.filter { isMain($0, r) }
+            // A remote project's branch is read over ssh: not on every list (an unreachable host would stall each one for
+            // its connect timeout). Its desks keep the branch they have; git.status and the like read it when asked.
+            if RemoteHost.of(r.path) != nil, !desks.isEmpty { continue }
+            let branch = RemoteHost.of(r.path) != nil ? r.baseBranch : (try? Git.currentBranch(r.path)) ?? r.baseBranch
             if desks.isEmpty { try store.save(Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace 1", base: branch)) }
             for w in desks where w.branch != branch || w.note.isEmpty {
                 try store.updateWorktree(w.id) {
@@ -52,13 +55,12 @@ extension Daemon {
         try wakeLock.withLock {
             for s in try store.sessions() where s.worktreeId == wid {
                 guard let ls = lock.withLock({ () -> LiveSession? in let l = live[s.id]; live[s.id] = nil; return l }) else { continue }
-                pids.append(ls.pty.pid)
                 if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
                     publish(ls.markHibernated())
                 } else {
                     ls.overrideStatus(.exited)   // said here: once out of `live`, nothing records its exit
                 }
-                ls.pty.terminate()   // SIGKILL after 2 s for one that ignores the hangup, so it's gone within waitGone's 3
+                pids += ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
             }
             Self.waitGone(pids)
         }
