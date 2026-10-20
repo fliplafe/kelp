@@ -78,7 +78,7 @@ private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.w
 @Test func archivingHidesADeskAndUnarchivingBringsItBack() async throws {
     let r = try await rig(); defer { r.d.stop() }
     _ = try await r.call("worktree.archive")
-    #expect(!FileManager.default.fileExists(atPath: r.wt.path))   // the folder goes, the record and branch stay
+    #expect(FileManager.default.fileExists(atPath: r.wt.path))   // the folder stays: unarchiving finds it as it was
     let live = try await r.c.call("worktree.list", .obj(["repoId": .string(r.repo.id)]), as: [Worktree].self)
     #expect(!live.contains { $0.id == r.wt.id })   // not listed unless asked for
     let all = try await r.c.call("worktree.list", .obj(["repoId": .string(r.repo.id), "archived": true]), as: [Worktree].self)

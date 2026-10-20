@@ -57,21 +57,32 @@ extension Daemon {
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         let candidates = idle.filter { ls in manifests.first { $0.id == ls.snapshot.agent }?.resumeArgs.isEmpty == false }
-        // Under wakeLock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
-        // log. Taken out of `live` only if nobody attached since the check above.
-        for ls in candidates {
-            wakeLock.withLock {
-                let id = ls.snapshot.id
-                let taken = lock.withLock { () -> Bool in
-                    guard live[id] === ls, !ls.isAttached else { return false }
-                    live[id] = nil; return true
-                }
-                guard taken else { return }
-                let s = ls.markHibernated(), pid = ls.pty.pid
-                ls.pty.terminate()   // SIGKILL after 2 s for one that ignores the hangup: a wake must not start a second copy
-                Self.waitGone([pid])
-                publish(s)
+        // Off the ticker: waiting for programs to exit (up to 3 s each) must not hold up status for everyone else.
+        let start = pausingIdle.withLock { busy -> Bool in
+            guard !busy, !candidates.isEmpty else { return false }
+            busy = true; return true
+        }
+        guard start else { return }
+        Thread.detachNewThread { [self] in
+            for ls in candidates { pauseIdle(ls) }
+            pausingIdle.withLock { $0 = false }
+        }
+    }
+
+    /// Under wakeLock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
+    /// log. Taken out of `live` only if nobody attached since the check.
+    private func pauseIdle(_ ls: LiveSession) {
+        wakeLock.withLock {
+            let id = ls.snapshot.id
+            let taken = lock.withLock { () -> Bool in
+                guard live[id] === ls, !ls.isAttached else { return false }
+                live[id] = nil; return true
             }
+            guard taken else { return }
+            let s = ls.markHibernated(), pid = ls.pty.pid
+            ls.pty.terminate()   // SIGKILL after 2 s for one that ignores the hangup: a wake must not start a second copy
+            Self.waitGone([pid])
+            publish(s)
         }
     }
 
@@ -155,7 +166,7 @@ extension Daemon {
     }
 
     func publish(_ s: Session) {
-        try? store.save(s)
+        do { try store.update(s) } catch { return }   // deleted meanwhile (closed, its project removed): not brought back
         if let v = try? JSONValue.from(s) { notify("event.session", v) }
         if s.status == .done || s.status == .waiting, let a = s.agent { planUsed(a) }
     }

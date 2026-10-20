@@ -563,3 +563,75 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     await #expect(throws: (any Error).self) { _ = try await w.c.call("git.commitFiles", .obj(["id": .string(wt.id), "commit": .string("--output=" + file)])) }
     #expect(!FileManager.default.fileExists(atPath: file))
 }
+
+/// Archiving a workspace in a git worktree of its own keeps its folder, ignored files included; unarchived, it is all there.
+@Test func archivingAWorktreeKeepsItsFolder() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt: Worktree = try await w.c.call("worktree.create", .obj(["repoId": .string(w.repo.id), "branch": "feat/keep", "setup": false]), as: Worktree.self)
+    #expect(wt.path != w.repo.path)
+    try "secret\n".write(toFile: wt.path + "/SETUP_RAN", atomically: true, encoding: .utf8)   // ignored (.gitignore), like .env
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    #expect(FileManager.default.fileExists(atPath: wt.path + "/SETUP_RAN"))
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    #expect(try String(contentsOfFile: wt.path + "/SETUP_RAN", encoding: .utf8) == "secret\n")
+}
+
+private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; done"
+
+/// Restart resumes the same conversation: the old program is gone first, even one that ignores the hangup.
+@Test func restartStartsTheNewCopyOnlyOnceTheOldIsGone() async throws {
+    let stubborn = AgentManifest(id: "stubborn", name: "Stubborn", command: "/bin/bash", args: ["-c", stubbornScript, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [stubborn]); defer { w.d.stop() }
+    let wt = try await desk(w, "restart")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "stubborn"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
+    let r: Session = try await w.c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
+    #expect(kill(s.pid, 0) != 0)   // gone by the time the new one runs
+    _ = try await w.c.call("session.kill", .obj(["id": .string(r.id)]))
+}
+
+/// Removing a project ends its programs, a stubborn one too: nothing keeps running out of sight.
+@Test func removingAProjectEndsItsPrograms() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "gone")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string(stubbornScript)]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
+    _ = try await w.c.call("repo.remove", .obj(["id": .string(w.repo.id)]))
+    #expect(kill(s.pid, 0) != 0)
+}
+
+/// A record published after its session was deleted stays deleted.
+@Test func aDeletedSessionIsNotBroughtBack() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "deleted")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "sleep 30"]), as: Session.self)
+    let last = try #require(w.d.existing(s.id)?.snapshot)
+    w.d.discard(s)
+    w.d.publish(last)   // late: a title or status change that looked the session up before it went
+    #expect(try w.d.store.session(s.id) == nil)
+}
+
+/// Any numbered menu at startup (an MCP server question, say) holds the launch prompt, as the trust question does.
+@Test func theLaunchPromptWaitsForAStartupMenu() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "menu")
+    let fake = #"printf 'New MCP server found in .mcp.json: tools\n\xe2\x9d\xaf 1. Use this and all future MCP servers\n  2. Continue without\n'; "#
+        + #"if IFS= read -rsn1 -t 6 k; then echo ANSWERED-BY-PROMPT; else echo NOT-ANSWERED; fi; printf '\xe2\x9d\xaf \n'; exec cat -v"#
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string("/bin/bash -c " + IDE.shellWord(fake)),
+                                                                 "prompt": "Fix the bug"]), as: Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    #expect(try await waitFor(15) { try await screen().contains("NOT-ANSWERED") })
+    #expect(!(try await screen()).contains("ANSWERED-BY-PROMPT"))
+    #expect(try await waitFor(10) { try await screen().contains("Fix the bug") })   // the menu gone, the input box shown: it goes in
+}
+
+/// Several lines to a program that never turned on bracketed paste arrive as plain lines, not wrapped in ESC[200~.
+@Test func multiLineTextToAPlainReaderIsPlain() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "plain-lines")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "stty -echo; echo ready; exec cat -v"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "one\ntwo"]))
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("two") == true })
+    #expect(!((try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "").contains("[200~"))
+}

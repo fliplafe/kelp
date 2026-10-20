@@ -64,6 +64,9 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                 return
             }
             if info["trusted"]?.bool != true {
+                // A snapshot run takes clicks and keys from its environment (DevAids): anyone could start one that presses
+                // Trust, so that window never trusts anything.
+                guard ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] == nil else { return }
                 guard await askTrust(info, file: info["file"]?.string ?? ".kelp.yaml") else { return }
                 // The digest of the text shown: a file changed since (an agent, a pull) isn't trusted unseen.
                 guard await AppModel.shared.call("scripts.trust", .obj(["worktreeId": .string(wid), "digest": info["digest"] ?? .null])) != nil else { return }

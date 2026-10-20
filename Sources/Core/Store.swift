@@ -102,6 +102,8 @@ public final class Store: Sendable {
             try change(&w); try w.save(d); return w
         }
     }
+    /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).
+    public func update<R: PersistableRecord>(_ r: R) throws { try db.write { try r.update($0) } }
     public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) } }
     public func comments(worktree: String) throws -> [DiffComment] {
         try db.read { try DiffComment.filter(Column("worktreeId") == worktree).fetchAll($0) }

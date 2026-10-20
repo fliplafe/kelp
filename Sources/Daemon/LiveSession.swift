@@ -118,7 +118,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     func start() { pty.start() }
 
     /// The session is being deleted: it stops, and neither its exit nor anything else saves its record again.
-    func discard() { lock.withLock { discarded = true }; pty.kill() }
+    func discard() { lock.withLock { discarded = true }; pty.terminate() }
 
     /// The log becomes `tail`. Caller holds the lock (or is the initializer).
     /// Keeps the log's own last `ringLimit` bytes, read from the file: after a wake the ring holds only what was printed
@@ -271,9 +271,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let c = sync()
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
         var prompt: String?
-        // Never while a trust question is open: its Enter would be the prompt's, and "Yes" is the default. Kelp leaves that
-        // question to the user on purpose (an untrusted project, a branch that changes agent config); the prompt waits.
-        if let p = pendingPrompt, steering == nil, !trustQuestionOpen() {
+        // Never while a question is open: its Enter would be the prompt's, and the default option is usually "Yes". Kelp
+        // leaves those to the user on purpose (trusting a project, its new MCP servers); the prompt waits.
+        if let p = pendingPrompt, steering == nil, !trustQuestionOpen(), !menuOpen() {
             let quiet = lastOutputAt.map { Date().timeIntervalSince($0) > 1.5 } ?? false
             if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompt = nil }
         }
@@ -289,6 +289,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         return Self.trustQuestion?.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
     }
     private static let trustQuestion = try? NSRegularExpression(pattern: AgentManifest.trust.pattern)
+
+    /// A numbered menu with its cursor on screen ("❯ 1. Use this and all future MCP servers"). The input box's own "❯"
+    /// is followed by text, not "1.", and once a menu is answered the newer cursor is the input box's. Caller holds the lock.
+    private func menuOpen() -> Bool {
+        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
+        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { return false }
+        return option.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil
+    }
 
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
     private func steer() {
@@ -342,7 +350,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let pasteMode = lock.withLock { detector.input(); typedYet = true; return pasteMode }
         let text = Self.typeable(text)
         // A program that never asked for pastes (a plain line reader) has no modes to trip: it gets the text as is.
-        let body = (paste && pasteMode) || text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
+        let body = (paste || text.contains("\n")) && pasteMode ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         // One after another, Enter included: two quick sends must arrive as text, Enter, text, Enter, not text, text, Enter, Enter.
         sends.async { [weak self] in
             self?.pty.write(Data(body.utf8))

@@ -143,22 +143,28 @@ extension Daemon {
             try syncMainWorkspaces()
             return try .from(store.worktrees(repo: p["repoId"]?.string).filter { p["archived"]?.bool == true || !$0.archived })
         case "worktree.archive", "worktree.remove":
-            guard var w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
+            guard let w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
             if isMain(w, r) {
                 if method == "worktree.archive" { try archiveDesk(w, r) } else { try removeDesk(w, r) }
                 return .null
             }
-            let remove = method == "worktree.remove", force = p["force"]?.bool == true, drop = p["dropCommits"]?.bool == true
-            let branch = remove ? w.branch : nil
-            if FileManager.default.fileExists(atPath: w.path) {
-                // Refuse before anything stops; then stop its agents (paused when archiving, so they resume) and only then
-                // remove, checking again: an agent still writing can't have its work deleted under it.
-                try Git.checkRemovable(repo: r.path, path: w.path, branch: branch, force: force, dropCommits: drop)
+            guard method == "worktree.remove" else {
+                // Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and
+                // unarchiving finds everything where it was.
                 try pauseSessions(of: w.id)
-                try Git.removeWorktree(repo: r.path, path: w.path, branch: branch, force: force, dropCommits: drop)
+                try store.updateWorktree(w.id) { $0.archived = true }
+                notify("event.changed", "worktree"); return .null
+            }
+            let force = p["force"]?.bool == true, drop = p["dropCommits"]?.bool == true
+            if FileManager.default.fileExists(atPath: w.path) {
+                // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
+                // writing can't have its work deleted under it.
+                try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
+                try pauseSessions(of: w.id)
+                try Git.removeWorktree(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
             } else { try pauseSessions(of: w.id) }
-            if remove { for s in (try store.sessions()) where s.worktreeId == w.id { discard(s) } }
-            if remove { try store.delete(w) } else { try store.updateWorktree(w.id) { $0.archived = true } }
+            for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
+            try store.delete(w)
             notify("event.changed", "worktree"); return .null
         case "worktree.unarchive":
             guard try store.updateWorktree(p.req("id"), { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }

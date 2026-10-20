@@ -17,7 +17,9 @@ extension Daemon {
 
         case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
-            existing(old.id)?.pty.kill()   // if the new one can't start, this one still ends as Ended
+            // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
+            // If the new one can't start, this one still ends as Ended.
+            if let ls = existing(old.id) { ls.pty.terminate(); Self.waitGone([ls.pty.pid]) }
             let m = try manifest(old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise

@@ -37,6 +37,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// From the agents' own /usage screens, by agent id (UsageProbe).
     var plans: [String: PlanState] = [:]
     func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
+    let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
     let wakeLock = NSLock()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()  // trusted-configs.json: read-modify-write under it
 
@@ -354,6 +355,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         wakeLock.withLock {
             let ls = lock.withLock { live.removeValue(forKey: s.id) }
             ls?.discard()
+            if let ls { Self.waitGone([ls.pty.pid]) }   // gone before its project or folder goes (SIGKILL after 2 s)
             try? store.delete(s)
             try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
         }
