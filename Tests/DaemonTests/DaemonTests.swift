@@ -422,6 +422,23 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await ping.value.string == "pong")
 }
 
+/// History and usage answer from the agents' folders (empty, then one conversation), now off the cooperative pool.
+@Test func historyAndUsageFromAgentFolders() async throws {
+    let d = try Daemon(root: tmp()), home = tmp()
+    d.agentHomes = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions"))
+    #expect(try await d.handle("history.list", .null, conn: 0) == .array([]))
+    let dir = home.appendingPathComponent("projects/-work-app"), now = ISO8601DateFormatter().string(from: Date())
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try [#"{"type":"user","sessionId":"s1","cwd":"/work/app","timestamp":"\#(now)","message":{"role":"user","content":"Fix the parser"}}"#,
+         #"{"type":"assistant","cwd":"/work/app","timestamp":"\#(now)","message":{"model":"m","usage":{"input_tokens":3,"output_tokens":5}}}"#]
+        .joined(separator: "\n").appending("\n").write(to: dir.appendingPathComponent("s1.jsonl"), atomically: true, encoding: .utf8)
+    let list = try await d.handle("history.list", .obj(["cwd": "/work/app"]), conn: 0)
+    #expect(list.array?.map { $0["title"]?.string } == ["Fix the parser"])
+    let report = try await d.handle("usage.report", .obj(["days": 1]), conn: 0)
+    #expect(report["models"]?.array?.first?["tokens"]?.int == 8)
+    await #expect(throws: RPCError.invalidParams("session required")) { try await d.handle("history.resume", .null, conn: 0) }
+}
+
 /// A typed call and the same request written by hand (the CLI, an older app) get the same answer.
 @Test func typedAndUntypedCallsAgree() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }

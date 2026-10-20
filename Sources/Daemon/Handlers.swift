@@ -41,6 +41,7 @@ extension Daemon {
             if ["github.", "linear.", "jira.", "bitbucket.", "ci."].contains(where: method.hasPrefix) || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
             return try await offload { [self] in
+                if let r = try handleAgents(method, p, conn: conn) { return r }
                 if method.hasPrefix("scripts."), let r = try handleScripts(method, p, conn: conn) { return r }
                 if method == "repo.addRemote" || method == "files.readRemote", let r = try handleRemote(method, p, conn: conn) { return r }
                 return try handleSync(method, p, conn: conn)
@@ -56,7 +57,7 @@ extension Daemon {
         try await withCheckedThrowingContinuation { c in DispatchQueue.global().async { c.resume(with: Result(catching: work)) } }
     }
 
-    private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
+    func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         if method.hasPrefix("git."), let r = try handleGit(method, p) { return r }
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {

@@ -107,25 +107,29 @@ extension Daemon {
         }
     }
 
+    /// What also waits on a web API; its gh / git calls still go through `offload`, one by one.
     private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
         switch method {
         case "github.prs":
             let (_, path) = try repoPath(p)
-            if let slug = BitbucketClient.slug(cwd: path) {
+            if let slug = try await offload({ BitbucketClient.slug(cwd: path) }) {
                 guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
             }
-            if GitLab.isGitLab(cwd: path) { return try .from(GitLab.mergeRequests(cwd: path, mine: p["filter"]?.string == "mine")) }
-            let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
-            return try .from(GitHub.pullRequests(cwd: path, filter: f))
+            return try await offload { () throws -> JSONValue in
+                if GitLab.isGitLab(cwd: path) { return try .from(GitLab.mergeRequests(cwd: path, mine: p["filter"]?.string == "mine")) }
+                let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
+                return try .from(GitHub.pullRequests(cwd: path, filter: f))
+            }
         case "github.pr-create":   // push, title/body from the commits if not given, open the PR, link it
             guard var w = try store.worktree(p.req("worktreeId")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-            try Git.remote(w.path, .push)   // the branch checked out now
+            let path = w.path
+            try await offload { try Git.remote(path, .push) }   // the branch checked out now
             var title = p["title"]?.string ?? "", body = p["body"]?.string ?? ""
             let link = w.issue.isEmpty ? nil : (w.issue.hasPrefix("#") ? "Fixes \(w.issue)" : "Refs \(w.issue)")
             if title.isEmpty || body.isEmpty {
                 let cmpBase = w.base.isEmpty ? r.baseBranch : w.base
-                let commits = try Git.log(w.path, base: cmpBase).map(\.subject)
+                let commits = try await offload { try Git.log(path, base: cmpBase).map(\.subject) }
                 if title.isEmpty { title = commits.last ?? w.branch }
                 if body.isEmpty { body = commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "") }
             } else if let link, !body.contains(w.issue) { body += "\n\n\(link)" }
@@ -133,11 +137,11 @@ extension Daemon {
             let prBase = w.base.isEmpty ? r.baseBranch : w.base
             if prBase != r.baseBranch, !body.contains("Stacked on") { body = "Stacked on `\(prBase)`.\n\n" + body }
             let url: String
-            if let slug = BitbucketClient.slug(cwd: w.path) {
+            if let slug = try await offload({ BitbucketClient.slug(cwd: path) }) {
                 guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: w.branch, destination: prBase)
             } else {
-                url = try GitHub.createPR(cwd: w.path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true)
+                url = try await offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true) }
             }
             w.prURL = url; w.prNumber = Int(url.split(separator: "/").last ?? "")
             try store.save(w); notify("event.changed", "worktree")
@@ -147,11 +151,11 @@ extension Daemon {
 
         case "github.pr-merge":
             guard let w = try store.worktree(p.req("worktreeId")), let n = p["pr"]?.int ?? w.prNumber else { throw RPCError.invalidParams("no PR linked") }
-            if let slug = BitbucketClient.slug(cwd: w.path), let bb = bitbucket {
+            if let slug = try await offload({ BitbucketClient.slug(cwd: w.path) }), let bb = bitbucket {
                 try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
             } else {
                 let m = GitHub.MergeMethod(rawValue: p["method"]?.string ?? "squash") ?? .squash
-                try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false)
+                try await offload { try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false) }
             }
             await moveLinear(w, to: .done)
             await moveJira(w, toName: "done", category: "done")
@@ -211,8 +215,11 @@ extension Daemon {
             let ref = try p.req("ref"), title = try p.req("title"), body = p["body"]?.string ?? "", url = p["url"]?.string ?? ""
             var branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? IssueRef.branchName(ref.hasPrefix("#") ? String(ref.dropFirst()) : ref.lowercased(), title: title)
             if let prefix = p["branchPrefix"]?.string, !prefix.isEmpty, !branch.hasPrefix(prefix) { branch = prefix + branch }
-            var unique = branch, n = 2
-            while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
+            let unique = try await offload { [branch] in
+                var unique = branch, n = 2
+                while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
+                return unique
+            }
             let wv = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: conn)
             guard var w = try store.worktree(try wv.req("id")) else { throw RPCError.internalError("worktree vanished") }
             w.issue = ref; w.issueURL = url; w.linearIssueId = p["linearId"]?.string ?? ""

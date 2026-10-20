@@ -24,7 +24,7 @@ extension Daemon {
         case "repo.create":   // {parent, name} → the added repo
             let dest = try Self.newFolder(p.req("name"), in: p.req("parent"))
             try FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: false)
-            try Git.run(["init", "-q"], cwd: dest)
+            _ = try await offload { try Git.run(["init", "-q"], cwd: dest) }
             return try await handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
         default: return nil
         }

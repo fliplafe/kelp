@@ -4,9 +4,10 @@ import Core
 import GitKit
 import Agents
 
-/// Async RPCs: things that chain several steps or wait on other processes.
+/// RPCs that chain several steps or wait on other processes.
 extension Daemon {
-    func handleAsync(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+    /// git, transcripts and the worktree they make all block: run through `offload` (see `handle`).
+    func handleAgents(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
         switch method {
         case "task.create":   // workspace: branch (named from the task or name) + worktree + agent that receives the task
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
@@ -20,8 +21,8 @@ extension Daemon {
             var unique = branch, n = 2
             while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
             let title = name.isEmpty ? (prompt.isEmpty ? "" : Naming.title(prompt)) : name
-            let w = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "base": p["base"] ?? .null,
-                                                              "note": .string(title), "tabs": false]), conn: conn)
+            let w = try handleSync("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "base": p["base"] ?? .null,
+                                                            "note": .string(title), "tabs": false]), conn: conn)
             var o = Launch(p); o.prompt = prompt.isEmpty ? nil : prompt; o.title = title.isEmpty ? nil : title
             let s = try spawn(cwd: try w.req("path"), manifest: agent, worktreeId: try w.req("id"), o)
             return .obj(["worktree": w, "session": try .from(s)])
@@ -57,7 +58,7 @@ extension Daemon {
                 var b = w.branch + "-fork", n = 2
                 guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
                 while Git.branchExists(r.path, b) { b = "\(w.branch)-fork-\(n)"; n += 1 }
-                let nw = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(b), "base": .string(w.branch), "note": .string("fork of \(w.branch)"), "tabs": false]), conn: conn)
+                let nw = try handleSync("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(b), "base": .string(w.branch), "note": .string("fork of \(w.branch)"), "tabs": false]), conn: conn)
                 cwdPath = try nw.req("path"); wid = try nw.req("id")
             }
             let task = p["prompt"]?.string ?? "Continue the task where the previous agent left off."
@@ -68,25 +69,6 @@ extension Daemon {
             let s = try spawn(cwd: cwdPath, manifest: manifest(p["agent"]?.string ?? old.agent, command: nil), worktreeId: wid, o)
             return try .from(s)
 
-        case "agents.versions":   // [{id, version?, latest?}] for the agents on this Mac; latest from npm where they publish there
-            let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-            let path = childPath
-            let rows: [JSONValue] = await withTaskGroup(of: JSONValue?.self) { g in
-                for m in manifests {
-                    g.addTask {
-                        guard let exe = try? LoginPath.resolve(m.command) else { return nil }
-                        let v = Self.run([exe, "--version"], path: path, timeout: 4).flatMap(Self.semver)
-                        let npm = try? LoginPath.resolve("npm")
-                        let latest = m.npm.flatMap { pkg in npm.flatMap { Self.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }.flatMap(Self.semver)
-                        return .obj(["id": .string(m.id), "version": v.map { .string($0) } ?? .null, "latest": latest.map { .string($0) } ?? .null])
-                    }
-                }
-                var out: [JSONValue] = []
-                for await r in g { if let r { out.append(r) } }
-                return out
-            }
-            return .array(rows)
-
         case "recipe.render":   // agent prompt for an action, with the repo's override if any
             let w = try cwd(forWorktree: p.req("id"))
             let cfg = RepoConfig.load(repoPath: try store.repo(w.repoId)?.path ?? w.path)
@@ -95,6 +77,33 @@ extension Daemon {
             if vars["stagedPatch"] == nil { vars["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path)) ?? "").prefix(4000)) }
             return .string(Recipes.render(try p.req("name"), config: cfg, vars: vars))
 
+        default: return nil
+        }
+    }
+
+    /// Waits on several processes side by side, each through `offload`.
+    func handleAsync(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+        switch method {
+        case "agents.versions":   // [{id, version?, latest?}] for the agents on this Mac; latest from npm where they publish there
+            let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+            let rows: [JSONValue] = await withTaskGroup(of: JSONValue?.self) { g in
+                for m in manifests {
+                    g.addTask { [self] in
+                        try? await offload { [self] () -> JSONValue? in
+                            let path = childPath   // the login shell's PATH: the first read waits for the shell
+                            guard let exe = try? LoginPath.resolve(m.command) else { return nil }
+                            let v = Self.run([exe, "--version"], path: path, timeout: 4).flatMap(Self.semver)
+                            let npm = try? LoginPath.resolve("npm")
+                            let latest = m.npm.flatMap { pkg in npm.flatMap { Self.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }.flatMap(Self.semver)
+                            return .obj(["id": .string(m.id), "version": v.map { .string($0) } ?? .null, "latest": latest.map { .string($0) } ?? .null])
+                        }
+                    }
+                }
+                var out: [JSONValue] = []
+                for await r in g { if let r { out.append(r) } }
+                return out
+            }
+            return .array(rows)
         default: return nil
         }
     }

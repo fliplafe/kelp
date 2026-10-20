@@ -26,6 +26,8 @@ public final class Daemon: @unchecked Sendable {
     var longContextModels: Set<String>?
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
     let usageIndex: UsageIndex
+    /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
+    var agentHomes = (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot)
     var rawConns = Set<Int>()
     var lastMethod = ""
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.

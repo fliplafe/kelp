@@ -7,7 +7,7 @@ import AgentData
 extension Daemon {
     /// Default roots plus each account profile's config dir.
     func agentRoots() -> (claude: [URL], codex: [URL]) {
-        var c = [ClaudeHistory.defaultRoot], x = [CodexHistory.defaultRoot]
+        var c = [agentHomes.claude], x = [agentHomes.codex]
         for p in settings["accounts.profiles"]?.array ?? [] {
             guard let d = p["dir"]?.string else { continue }
             if p["agent"]?.string == "claude" { c.append(URL(fileURLWithPath: d).appendingPathComponent("projects")) }
