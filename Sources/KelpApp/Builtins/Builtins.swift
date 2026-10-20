@@ -144,7 +144,9 @@ enum Builtins {
             s("workbench.textSize", "Sidebar and inspector text", "enum", "normal", "The terminal and the editor have their own font sizes.",
               options: ["normal", "large", "larger"]),
             s("workbench.inspectorIcons", "Inspector icons", "enum", "center", "Where the panel icons sit above the inspector.",
-              options: ["left", "center", "right"])
+              options: ["left", "center", "right"]),
+            s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock."),
+            s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge.")
         ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", extensionId: "kelp.appearance", specs: [],
                             custom: { AnyView(KeyboardSettings()) })]
         return c

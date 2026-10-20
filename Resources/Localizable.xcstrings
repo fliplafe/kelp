@@ -6151,6 +6151,50 @@
         }
       }
     },
+    "Auto-hide sidebar": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоскрытие боковой панели"
+          }
+        }
+      }
+    },
+    "Auto-hide inspector": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоскрытие инспектора"
+          }
+        }
+      }
+    },
+    "Comes in while the pointer is at the window's left edge, like the Dock.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выезжает, когда указатель у левого края окна, как Dock."
+          }
+        }
+      }
+    },
+    "Comes in while the pointer is at the window's right edge.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выезжает, когда указатель у правого края окна."
+          }
+        }
+      }
+    },
     "Sidebar and inspector text": {
       "extractionState": "manual",
       "localizations": {

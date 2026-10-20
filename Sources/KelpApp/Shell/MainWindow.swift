@@ -14,6 +14,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Focus mode (⌃⌘Z): both panels away; they slide in while the pointer is at the window's edge.
     /// Holds the panels' state from before, to put back on leaving.
     private var focusMode: (sidebar: Bool, inspector: Bool)?
+    /// Settings › Appearance › Auto-hide: that panel stays away the same way, for good.
+    private var autoHide = (sidebar: false, inspector: false)
     private let leftEdge = EdgeTrigger(), rightEdge = EdgeTrigger()
     /// Fixed in the window's top corners, whichever panels are open.
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
@@ -61,6 +63,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         w.title = String(localized: "Kelp"); w.setFrameAutosaveName("main"); w.delegate = self
         if w.frame.origin == .zero { w.center() }
         track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
+        track { SettingsStore.shared.bool("workbench.sidebar.autoHide") == true } changed: { [weak self] in self?.setAutoHide(sidebar: true, $0) }
+        track { SettingsStore.shared.bool("workbench.inspector.autoHide") == true } changed: { [weak self] in self?.setAutoHide(sidebar: false, $0) }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -83,6 +87,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func toggleInspectorPanel() {
+        if hides(inspectorItem) { return togglePeek(inspectorItem) }
         inspectorItem.animator().isCollapsed.toggle()
         UserDefaults.standard.set(inspectorItem.isCollapsed, forKey: "inspector.collapsed")
     }
@@ -90,16 +95,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if inspectorItem.isCollapsed { toggleInspectorPanel() }
         inspector.show(panel: panel)
     }
-    @objc func toggleSidebarPanel() { split.toggleSidebar(nil) }
+    @objc func toggleSidebarPanel() { if hides(sidebarItem) { togglePeek(sidebarItem) } else { split.toggleSidebar(nil) } }
     var sidebarShown: Bool { !sidebarItem.isCollapsed }
     var inspectorShown: Bool { !inspectorItem.isCollapsed }
 
-    /// Quitting in focus mode: the panels come back first, or the split's autosave would start the next launch without them.
+    /// Quitting: a peeking panel goes and focus mode's panels come back first, or the split's autosave would start the next launch wrong.
     func leaveFocusMode() {
+        peeking?.isCollapsed = true; peeking = nil
         guard let was = focusMode else { return }
-        focusMode = nil; peeking = nil
+        focusMode = nil
         sidebarItem.isCollapsed = was.sidebar; inspectorItem.isCollapsed = was.inspector
-        leftEdge.isHidden = true; rightEdge.isHidden = true; sidebarToggle.isHidden = false; inspectorToggle.isHidden = false
+        updateEdges(); sidebarToggle.isHidden = false; inspectorToggle.isHidden = false
     }
 
     @objc func toggleFocusMode() {
@@ -107,27 +113,43 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             focusMode = nil; peeking = nil
             sidebarItem.animator().isCollapsed = was.sidebar; inspectorItem.animator().isCollapsed = was.inspector
         } else {
-            focusMode = (sidebarItem.isCollapsed, inspectorItem.isCollapsed)
+            peeking = nil
+            focusMode = (sidebarItem.isCollapsed || autoHide.sidebar, inspectorItem.isCollapsed || autoHide.inspector)
             sidebarItem.animator().isCollapsed = true; inspectorItem.animator().isCollapsed = true
         }
         let on = focusMode != nil
-        leftEdge.isHidden = !on; rightEdge.isHidden = !on
+        updateEdges()
         sidebarToggle.isHidden = on; inspectorToggle.isHidden = on
     }
     var inFocusMode: Bool { focusMode != nil }
 
-    /// Focus mode: the pointer at an edge brings that panel in; back over the editor, it goes again.
+    private func setAutoHide(sidebar: Bool, _ on: Bool) {
+        guard on != (sidebar ? autoHide.sidebar : autoHide.inspector) else { return }   // the first, unloaded read keeps the saved layout
+        if sidebar { autoHide.sidebar = on; focusMode?.sidebar = on } else { autoHide.inspector = on; focusMode?.inspector = on }
+        let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
+        if peeking === item { peeking = nil }
+        if focusMode == nil {
+            item.animator().isCollapsed = on
+            if !sidebar { UserDefaults.standard.set(on, forKey: "inspector.collapsed") }
+        }
+        updateEdges()
+    }
+    private func hides(_ item: NSSplitViewItem) -> Bool { focusMode != nil || (item === sidebarItem ? autoHide.sidebar : autoHide.inspector) }
+    private func updateEdges() { leftEdge.isHidden = !hides(sidebarItem); rightEdge.isHidden = !hides(inspectorItem) }
+
+    /// Focus mode and auto-hide: the pointer at an edge brings that panel in; back over the editor, it goes again.
+    /// ⌘0 / ⌥⌘0 bring it in the same way.
     private var peeking: NSSplitViewItem?
     private func peek(sidebar: Bool) {
-        guard focusMode != nil else { return }
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
-        guard item.isCollapsed else { return }
+        guard hides(item), item.isCollapsed else { return }
         endPeek(); peeking = item; item.animator().isCollapsed = false
     }
     private func endPeek() {
-        guard focusMode != nil, let p = peeking else { return }
+        guard let p = peeking else { return }
         peeking = nil; p.animator().isCollapsed = true
     }
+    private func togglePeek(_ item: NSSplitViewItem) { if peeking === item { endPeek() } else { peek(sidebar: item === sidebarItem) } }
 
     /// Closing the window quits (the daemon keeps agents running) — through the unsaved-files question; Cancel keeps it.
     func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
