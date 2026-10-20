@@ -727,4 +727,3 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 }
 
 // MARK: - cells
-
