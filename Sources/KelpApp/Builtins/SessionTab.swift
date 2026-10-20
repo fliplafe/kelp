@@ -8,7 +8,6 @@ final class SessionTab: TabContent {
     let sessionId: String
     let pane: PaneView
     var onChange: (() -> Void)?
-    private var observer: NSObjectProtocol?
     var uri: String { TabURI.session(sessionId) }
     var view: NSView { pane }
 
@@ -19,14 +18,11 @@ final class SessionTab: TabContent {
         pane = PaneView(session: s)
         pane.onRestart = { p in AgentActions.restart(p.sessionId) }
         pane.onClose = { p in Workbench.closeTab(uri: TabURI.session(p.sessionId)) }
-        observer = NotificationCenter.default.addObserver(forName: .kelpSession, object: sid, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let s = AppModel.shared.session(self.sessionId) else { return }
-                self.pane.update(s); self.onChange?()
-            }
+        track(owner: self) { AppModel.shared.session(sid) } changed: { [weak self] s in
+            guard let self, let s else { return }
+            pane.update(s); onChange?()
         }
     }
-    isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
     private var session: Session? { AppModel.shared.session(sessionId) }
     var title: String {
@@ -73,5 +69,3 @@ final class SessionTab: TabContent {
         return name
     }
 }
-
-extension Notification.Name { static let kelpSession = Notification.Name("kelp.session") }

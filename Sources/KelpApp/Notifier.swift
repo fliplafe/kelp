@@ -18,8 +18,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationAction(identifier: "deny", title: String(localized: "Deny"), options: [.destructive])
         ], intentIdentifiers: [])])
         center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in Task { @MainActor in self.checkAllowed() } }
-        AppModel.shared.onSessionStatus.append { [weak self] new, old in self?.statusChanged(new, old) }
-        AppModel.shared.onChange.append { [weak self] in self?.updateBadge() }
+        track { AppModel.shared.sessions } changed: { [weak self] _ in self?.updateBadge() }
     }
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.
@@ -76,7 +75,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         stale.keys.forEach { posted[$0] = nil }
     }
 
-    private func statusChanged(_ s: Session, _ old: Session?) {
+    /// Each `event.session`, as it comes: a status that changes back within a moment still gets its banner.
+    func statusChanged(_ s: Session, _ old: Session?) {
         guard old?.status != s.status, [.done, .waiting, .error].contains(s.status), s.agent != "shell" else { return }
         // What the agent itself said with this change (a permission request, an error) beats its last reply.
         if s.status != .done, !s.summary.isEmpty, s.summary != old?.summary { post(s); return }

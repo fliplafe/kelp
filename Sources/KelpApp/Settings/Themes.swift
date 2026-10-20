@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import Core
 import TerminalKit
 import EditorKit
@@ -24,10 +25,14 @@ struct Theme: Codable, Identifiable, Equatable {
 
 /// Applies the chosen theme and fonts to the window, terminals and editors whenever settings change.
 @MainActor
+@Observable
 final class ThemeManager {
     static let shared = ThemeManager()
-    private var lastTerminal: TerminalAppearance?
-    private var appearanceObserver: NSKeyValueObservation?
+    @ObservationIgnored private var lastTerminal: TerminalAppearance?
+    @ObservationIgnored private var appearanceObserver: NSKeyValueObservation?
+    /// Editors' colors and font live in CodeEditor's statics, which Observation can't see: this counts their changes,
+    /// and open editors follow it.
+    private(set) var editorRevision = 0
 
     static let builtin: [Theme] = [
         Theme(id: "kelp.light", name: "Kelp Light", appearance: "light",
@@ -112,9 +117,7 @@ final class ThemeManager {
         TextSize.apply(s.string("workbench.textSize"))
         if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap {
             CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font; CodeEditor.showMinimap = minimap
-            NotificationCenter.default.post(name: .kelpAppearance, object: nil)
+            editorRevision += 1
         }
     }
 }
-
-extension Notification.Name { static let kelpAppearance = Notification.Name("kelp.appearance") }

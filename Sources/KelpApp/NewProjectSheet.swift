@@ -15,7 +15,6 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     private let bar = NSProgressIndicator()
     private let go = NSButton(), cancel = NSButton()
     private var running: String?
-    private var observer: Any?
     private static var shown: NewProjectSheet?
 
     /// `start`: filled in and begun at once (the snapshot dev aid; a background app's sheet gets no keys).
@@ -79,10 +78,6 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
             note.textColor = .secondaryLabelColor; note.font = .systemFont(ofSize: 11); note.preferredMaxLayoutWidth = 430
             (window?.contentView as? NSStackView)?.insertArrangedSubview(note, at: 2)
         }
-        observer = NotificationCenter.default.addObserver(forName: .kelpClone, object: nil, queue: .main) { [weak self] n in
-            let id = n.userInfo?["id"] as? String, line = n.userInfo?["line"] as? String
-            MainActor.assumeIsolated { if let self, id == self.running, let line { self.progress(line) } }
-        }
     }
 
     /// The `Host` names in ~/.ssh/config (patterns left out).
@@ -97,6 +92,11 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
 
     func pathControl(_ c: NSPathControl, willDisplay panel: NSOpenPanel) {
         panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+    }
+
+    /// A line git printed while cloning (`event.clone`): shown if it's this sheet's clone.
+    static func cloneProgress(id: String?, line: String?) {
+        if let s = shown, let id, id == s.running, let line { s.progress(line) }
     }
 
     /// "Receiving objects:  45% (450/1000)" fills the bar; the line itself says what's happening.
@@ -149,10 +149,6 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     }
 
     override func close() {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-        observer = nil
         if let w = window { w.sheetParent?.endSheet(w) }
     }
 }
-
-extension Notification.Name { static let kelpClone = Notification.Name("kelp.clone") }

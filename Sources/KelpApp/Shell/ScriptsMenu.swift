@@ -104,14 +104,16 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     private func watch() {
         guard !watching else { return }
         watching = true
-        AppModel.shared.onSessionStatus.append { [weak self] s, old in
-            guard let self, let r = runs[s.id], s.status == .exited, old?.status != .exited else { return }
-            runs[s.id] = nil
-            let name = "“\(r.name)”"
-            let show = (String(localized: "Show Output"), { Workbench.focus(session: s.id) })
-            if s.summary.hasPrefix("Ended with an error") {
-                Banner.show("\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))", style: .error, action: show)
-            } else { Banner.show("\(name) finished", action: show) }
+        track { AppModel.shared.sessions.filter { $0.status == .exited } } changed: { [weak self] ended in
+            guard let self else { return }
+            for s in ended {
+                guard let r = runs.removeValue(forKey: s.id) else { continue }
+                let name = "“\(r.name)”"
+                let show = (String(localized: "Show Output"), { Workbench.focus(session: s.id) })
+                if s.summary.hasPrefix("Ended with an error") {
+                    Banner.show("\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))", style: .error, action: show)
+                } else { Banner.show("\(name) finished", action: show) }
+            }
         }
     }
 

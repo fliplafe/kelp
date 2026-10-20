@@ -76,14 +76,6 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let rc = NSTableColumn(identifier: .init("r")); results.addTableColumn(rc); results.headerView = nil; results.style = .sourceList
         results.dataSource = self; results.delegate = self; results.rowHeight = TextSize.of(34); results.target = self; results.action = #selector(openResult)
         search.delegate = self
-        // ⇧⌘F (Find in Workspace): straight into this field; pressed again there, back to what you were doing.
-        NotificationCenter.default.addObserver(forName: .kelpFindInFiles, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let w = self.view.window else { return }
-                if w.firstResponder === self.search.currentEditor() { Workbench.editor?.focusSelected(); return }
-                w.makeFirstResponder(self.search); self.search.currentEditor()?.selectAll(nil)
-            }
-        }
         resultsScroll.documentView = results; resultsScroll.hasVerticalScroller = true; resultsScroll.isHidden = true; resultsScroll.drawsBackground = false
         // One field, like Finder's: empty shows the tree, a search (↩) shows matches in their place, clearing it goes back.
         search.placeholderString = String(localized: "Search in Files"); search.target = self; search.action = #selector(runSearch); search.sendsSearchStringImmediately = false
@@ -111,6 +103,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         view = v
         track { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
         track { FileIcon.revision } changed: { [weak self] _ in self?.reloadIcons() }
+    }
+
+    /// ⇧⌘F (Find in Workspace): straight into this field; pressed again there, back to what you were doing.
+    func findInFiles() {
+        guard let w = view.window else { return }
+        if w.firstResponder === search.currentEditor() { Workbench.editor?.focusSelected(); return }
+        w.makeFirstResponder(search); search.currentEditor()?.selectAll(nil)
     }
 
     private func reloadIcons() { outline.reloadData(forRowIndexes: IndexSet(0..<outline.numberOfRows), columnIndexes: [0]) }
@@ -465,8 +464,6 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         if matches.indices.contains(r) { let m = matches[r]; openFile(m.path, line: m.line) }
     }
 }
-
-extension Notification.Name { static let kelpFindInFiles = Notification.Name("kelp.find.files") }
 
 /// Finder's keys in the tree: Space previews, ↩ renames, ⌘⌫ moves to the Trash.
 final class FilesOutline: NSOutlineView {

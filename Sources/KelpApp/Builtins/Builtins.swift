@@ -102,7 +102,7 @@ enum Builtins {
                       cmd(f, "editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
                       cmd(f, "files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
                           Workbench.window?.showInspector(panel: "files")
-                          DispatchQueue.main.async { NotificationCenter.default.post(name: .kelpFindInFiles, object: nil) }   // after the panel is built
+                          DispatchQueue.main.async { (Workbench.window?.inspector.built("files") as? FilesPanel)?.findInFiles() }   // after the panel is built
                       },
                       cmd(f, "editor.goToLine", "Go to Line…", "cmd+l") {
                           if let t = fileTab, let s = prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) }

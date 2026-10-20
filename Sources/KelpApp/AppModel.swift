@@ -18,8 +18,6 @@ final class AppModel {
     var contextShare: [String: Double] = [:]
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
-    @ObservationIgnored var onChange: [() -> Void] = []
-    @ObservationIgnored var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
     @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
 
     /// Workspaces of a project in the order they were opened: Workspace 1, 2, 3… (older ones on their own branch
@@ -137,7 +135,6 @@ final class AppModel {
         if let r = try? await c.call("repo.list", as: [Repo].self), r != repos { repos = r }
         if let w = try? await c.call("worktree.list", as: [Worktree].self), w != worktrees { worktrees = w }
         if let s = try? await c.call("session.list", as: [Session].self), s != sessions { sessions = s }
-        onChange.forEach { $0() }
     }
 
     private func handle(_ method: String, _ p: JSONValue) {
@@ -147,19 +144,16 @@ final class AppModel {
         case "event.session":
             guard let s = try? p.decode(Session.self) else { return }
             let old = sessions.first { $0.id == s.id }
-            if old != s { upsert(s) }
-            NotificationCenter.default.post(name: .kelpSession, object: s.id)
-            onSessionStatus.forEach { $0(s, old) }
-            onChange.forEach { $0() }
+            if old != s { upsert(s) }   // views follow `sessions`
+            (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
             if old?.status != s.status, s.agent != "shell" { readContext(s.id) }
         case "event.devserver":
-            if let w = p["worktree"]?.string, let u = p["url"]?.string {
-                NotificationCenter.default.post(name: .kelpDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])
-            }
+            // A dev server in the workspace on screen printed its URL: the page opens beside it.
+            if let w = p["worktree"]?.string, let u = p["url"]?.string, w == Workbench.shared.workspaceId { Workbench.open(u, split: .right) }
         case "event.changed":
             Task { await refresh() }
         case "event.clone":
-            NotificationCenter.default.post(name: .kelpClone, object: nil, userInfo: ["id": p["id"]?.string ?? "", "line": p["line"]?.string ?? ""])
+            NewProjectSheet.cloneProgress(id: p["id"]?.string, line: p["line"]?.string)
         case "event.settings":
             if case .object(let o)? = p["settings"] { SettingsStore.shared.apply(o) }
         case "event.ui":
@@ -173,7 +167,7 @@ final class AppModel {
         Task {
             guard let u = try? await client?.call("session.contextWindow", .obj(["id": .string(id)])) else { return }
             let share = u["used"]?.int.flatMap { used in u["window"]?.int.flatMap { $0 > 0 ? Double(used) / Double($0) : nil } }
-            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share; onChange.forEach { $0() } }
+            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
         }
     }
 

@@ -74,3 +74,10 @@ What it restores that names the daemon's records — each workspace's layout (`l
 and folds, the last workspace — is in the daemon's database (`state.get` / `state.set`, the app's `UIState`), like Zed's
 workspace DB: each `KELP_HOME` has its own, and removing a workspace removes its layout. Per-Mac view preferences
 (panel sizes, inline diffs…) stay in UserDefaults.
+
+Inside the app there is one way to learn that something changed, like Zed's observed entities: state — anything with
+a current value (sessions, settings, text size, the editor theme, the tab on screen) — is `@Observable`, and AppKit code
+follows the parts it reads with `track { value } changed: { … }` (once now, then after each change, on the next
+run-loop turn; `owner:` ends it with a tab). Events that carry data and have no value to re-read (a clone's progress
+line, a dev server's URL, an agent's status change as it happens) are direct calls when their one receiver is reachable,
+else a `NotificationCenter` name (`kelpGitChanged`: after a git action the window bar, diff tabs and sidebar badges re-read git).

@@ -195,7 +195,14 @@ final class EditorHost: NSViewController {
     private var welcome: NSView?
     private static let keep = 4
 
-    override func loadView() { view = NSView(); showWelcome() }
+    override func loadView() {
+        view = NSView(); showWelcome()
+        // Daemon state: workspaces that are gone leave; sessions' tabs come and show their status and context ring.
+        track { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
+        track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
+        track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
+        track { AppModel.shared.contextShare } changed: { [weak self] _ in self?.refresh() }
+    }
 
     func show(_ id: String?) {
         if let c = current, c.workspaceId == id { return }
@@ -226,8 +233,7 @@ final class EditorHost: NSViewController {
         if l.tab(uri: uri) == nil { _ = l.add(uri, to: l.focusedGroup?.id); l.save(id) }
     }
 
-    /// Daemon state changed.
-    func refresh() {
+    private func refresh() {
         for (id, a) in areas where AppModel.shared.worktree(id) == nil { a.view.removeFromSuperview(); a.removeFromParent(); areas[id] = nil; recent.removeAll { $0 == id } }
         if let c = current, areas[c.workspaceId] == nil { current = nil; showWelcome() }
         current?.reconcile()

@@ -9,7 +9,6 @@ final class UntitledTab: SavableTab {
     let uri: String
     private let editor = CodeEditor(text: "", url: URL(fileURLWithPath: "/Untitled.txt"))
     private var wasEdited = false
-    private var observer: NSObjectProtocol?
     var onChange: (() -> Void)?
     var view: NSView { editor.view }
     let title: String
@@ -24,11 +23,8 @@ final class UntitledTab: SavableTab {
             guard let self, isEdited != wasEdited else { return }
             wasEdited = isEdited; onChange?()
         }
-        observer = NotificationCenter.default.addObserver(forName: .kelpAppearance, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.editor.refreshAppearance() }
-        }
+        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor.refreshAppearance() }
     }
-    isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
     /// The next free number in this workspace: Untitled-1, Untitled-2…
     static func next() -> String {

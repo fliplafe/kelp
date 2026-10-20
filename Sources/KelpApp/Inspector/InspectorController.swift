@@ -52,6 +52,12 @@ final class InspectorController: NSViewController {
             v.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
         ])
         view = v
+        // Panels are built with the text size of the moment: rebuilt when it changes (first, while none are built).
+        track { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in
+            guard let self else { return }
+            for (_, vc) in made { vc.view.removeFromSuperview(); vc.removeFromParent() }
+            made = [:]; showSelected()
+        }
         track { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.rebuild() }
         track { [SettingsStore.shared.value(Self.orderKey), SettingsStore.shared.value(Self.hiddenKey)] } changed: { [weak self] _ in self?.rebuild() }
         track { SettingsStore.shared.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
@@ -65,14 +71,6 @@ final class InspectorController: NSViewController {
             guard let self else { return }
             let want = self.align[$0 ?? ""] == nil ? "center" : $0 ?? ""
             for (k, c) in self.align { c.isActive = k == want }
-        }
-        // Panels are built with the text size of the moment: rebuilt when it changes.
-        NotificationCenter.default.addObserver(forName: .kelpTextSize, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                for (_, vc) in self.made { vc.view.removeFromSuperview(); vc.removeFromParent() }
-                self.made = [:]; self.showSelected()
-            }
         }
     }
 
@@ -184,6 +182,8 @@ final class InspectorController: NSViewController {
 
     /// Shows a panel by id (menus and commands use this too).
     func show(panel id: String) { Workbench.shared.inspectorPanel = id }
+    /// A panel already built (they're built when first shown).
+    func built(_ id: String) -> NSViewController? { made[id] }
 
     private func showSelected() {
         guard !panels.isEmpty else { host.subviews.forEach { $0.removeFromSuperview() }; return }

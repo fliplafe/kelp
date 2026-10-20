@@ -23,7 +23,6 @@ final class FileTab: SavableTab {
     private var saveTask: Task<Void, Never>?
     private var lspTask: Task<Void, Never>?
     private var watcher: FileWatcher?
-    private var observer: NSObjectProtocol?
     private let root: String
     private var pendingLine: Int?
 
@@ -78,12 +77,9 @@ final class FileTab: SavableTab {
             guard let self, paths.contains(where: { URL(fileURLWithPath: $0).resolvingSymlinksInPath() == self.url.resolvingSymlinksInPath() }) else { return }
             self.diskChanged()
         }
-        observer = NotificationCenter.default.addObserver(forName: .kelpAppearance, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.editor?.refreshAppearance() }
-        }
+        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
     }
     isolated deinit {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
         if Self.autosave { flush() }
         let path = path, root = root
         Task { await LSPManager.shared.client(root: root, path: path)?.close(path) }

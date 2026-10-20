@@ -248,5 +248,3 @@ final class WeakHandler: NSObject, WKScriptMessageHandler {
     init(_ t: WKScriptMessageHandler) { target = t }
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) { target?.userContentController(c, didReceive: m) }
 }
-
-extension Notification.Name { static let kelpDevServerURL = Notification.Name("kelp.devserver.url") }
