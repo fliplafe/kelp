@@ -213,15 +213,14 @@ extension Daemon {
             kill(pid, SIGTERM); return .null
         case "session.busy":   // a shell running something in the foreground: closing it would stop that program
             return existing(try p.req("id"))?.pty.foregroundProgram.map { .string($0) } ?? .null
-        case "session.read":
-            let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 8192)
+        case "session.read", "session.context":   // context: the bounded transcript for "Copy Context"
+            let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? (method == "session.context" ? 24_000 : 8192))
+            // Lossy on purpose: a byte window can cut a UTF-8 sequence, and the rest of the text still matters.
             // swiftlint:disable:next optional_data_string_conversion
-            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))   // lossy on purpose: windows cut UTF-8
-        case "session.markUnread":
-            if let r = existing(try p.req("id"))?.markUnread() { try store.save(r); notify("event.session", try .from(r)) }
-            return .null
-        case "session.markRead":
-            if let r = existing(try p.req("id"))?.markRead() { try store.save(r); notify("event.session", try .from(r)) }
+            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
+        case "session.markUnread", "session.markRead":
+            let ls = existing(try p.req("id"))
+            if let r = method == "session.markRead" ? ls?.markRead() : ls?.markUnread() { try store.save(r); notify("event.session", try .from(r)) }
             return .null
         case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
             guard let ls = existing(try p.req("id")) else { return .null }

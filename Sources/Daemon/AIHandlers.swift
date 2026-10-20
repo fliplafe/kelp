@@ -15,16 +15,10 @@ extension Daemon {
             if let st = p["status"]?.string.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
             return .null
 
-        case "session.context":    // bounded transcript for "Copy Context"
-            let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? 24_000)
-            // Lossy on purpose: a byte window can cut a UTF-8 sequence, and the rest of the text still matters.
-            // swiftlint:disable:next optional_data_string_conversion
-            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
-
         case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
             existing(old.id)?.pty.kill()   // if the new one can't start, this one still ends as Ended
-            let m = try manifest(old.agent == "custom" || old.agent == "shell" ? old.agent : old.agent, command: nil, fallbackArgv: old.argv)
+            let m = try manifest(old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
             o.argv = p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv
