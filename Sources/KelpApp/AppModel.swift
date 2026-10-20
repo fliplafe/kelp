@@ -22,10 +22,24 @@ final class AppModel {
     @ObservationIgnored var onSessionStatus: [(Session, Session?) -> Void] = []     // new, old
     @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
 
-    /// Workspaces of a project: the main one (the repo itself) first, then newest first.
-    /// In the order they were opened: Workspace 1, 2, 3… (older ones on their own branch included).
+    /// Workspaces of a project in the order they were opened: Workspace 1, 2, 3… (older ones on their own branch
+    /// included), unless dragged into another in the sidebar.
     func workspaces(of r: Repo) -> [Worktree] {
-        worktrees.filter { $0.repoId == r.id && !$0.archived }.sorted { $0.createdAt < $1.createdAt }
+        ordered(worktrees.filter { $0.repoId == r.id && !$0.archived }.sorted { $0.createdAt < $1.createdAt })
+    }
+
+    /// Projects as the sidebar lists them: by name, unless dragged into another order.
+    var projects: [Repo] { ordered(repos.filter { !ScratchWindow.isScratch($0) }) }
+
+    /// Project and workspace ids in the order they were dragged into in the sidebar; ones never moved follow them.
+    var order = UserDefaults.standard.stringArray(forKey: "sidebar.order") ?? [] {
+        didSet { UserDefaults.standard.set(order, forKey: "sidebar.order") }
+    }
+    /// Puts these (siblings) in this order.
+    func reorder(_ ids: [String]) { order = ids + order.filter { !ids.contains($0) } }
+    private func ordered<T: Identifiable>(_ xs: [T]) -> [T] where T.ID == String {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: min)
+        return xs.enumerated().sorted { (rank[$0.1.id] ?? .max, $0.0) < (rank[$1.1.id] ?? .max, $1.0) }.map(\.1)
     }
 
     func upsert(_ s: Session) {

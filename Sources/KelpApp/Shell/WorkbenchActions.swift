@@ -44,7 +44,7 @@ extension Workbench {
     }
 
     /// Workspaces in sidebar order (⌃1–9, ⌃⌘↑ / ↓).
-    static var workspacesInOrder: [Worktree] { AppModel.shared.repos.filter { !ScratchWindow.isScratch($0) }.flatMap { AppModel.shared.workspaces(of: $0) } }
+    static var workspacesInOrder: [Worktree] { AppModel.shared.projects.flatMap { AppModel.shared.workspaces(of: $0) } }
 
     static func showWorkspace(offset: Int) {
         let all = workspacesInOrder
