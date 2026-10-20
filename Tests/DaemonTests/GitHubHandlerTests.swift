@@ -133,3 +133,40 @@ private func wtOf(_ r: (d: Daemon, c: RPCClient, repo: Repo), branch: String = "
     #expect(calls().contains { $0.hasPrefix("project item-list 3 --owner acme") })
     await #expect(throws: (any Error).self) { _ = try await r.c.call("github.projectItems", .obj([:])) }   // the owner is required
 }
+
+/// A stand-in for `glab`: logs its arguments, answers the merge-request API.
+private let fakeGlab: String = {
+    let dir = tmp(), log = dir.appendingPathComponent("glab.log").path, script = dir.appendingPathComponent("glab").path
+    try? """
+    #!/bin/sh
+    echo "$@" >> '\(log)'
+    case "$*" in
+      *"-X POST projects/:id/merge_requests"*) echo '{"iid":12,"title":"t","web_url":"https://gitlab.example.com/g/r/-/merge_requests/12","author":{"username":"ada"},"source_branch":"feat/mr","state":"opened"}';;
+      *"-X PUT projects/:id/merge_requests/12/merge"*) echo '{"state":"merged"}';;
+      *) echo "unexpected: $*" >&2; exit 1;;
+    esac
+    """.write(toFile: script, atomically: true, encoding: .utf8)
+    chmod(script, 0o755)
+    if getenv("KELP_GLAB") == nil { setenv("KELP_GLAB", script, 1) }
+    return log
+}()
+
+@Test func onGitLabAPullRequestIsAMergeRequestNotAGhCall() async throws {
+    let log = fakeGlab
+    let r = try await rig(); defer { r.d.stop() }
+    let wt = try await wtOf(r, branch: "feat/mr")
+    // origin looks like GitLab; pushes go to a bare repository here.
+    let bare = tmp().path
+    try Git.run(["init", "-q", "--bare", bare], cwd: bare)
+    try Git.run(["remote", "add", "origin", "git@gitlab.example.com:g/r.git"], cwd: wt.path)
+    try Git.run(["config", "url.\(bare).pushInsteadOf", "git@gitlab.example.com:g/r.git"], cwd: wt.path)
+    try "x\n".write(toFile: wt.path + "/x.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "x.txt"], cwd: wt.path); try Git.run(["commit", "-qm", "Add x"], cwd: wt.path)
+    let made = try await r.c.call("github.pr-create", .obj(["worktreeId": .string(wt.id), "title": "Add x", "body": "Why", "draft": true]))
+    #expect(made["url"]?.string == "https://gitlab.example.com/g/r/-/merge_requests/12")
+    let sent = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
+    #expect(sent.contains("source_branch=feat/mr") && sent.contains("title=Draft: Add x") && sent.contains("target_branch=main"))
+    _ = try await r.c.call("github.pr-merge", .obj(["worktreeId": .string(wt.id)]))
+    #expect(((try? String(contentsOfFile: log, encoding: .utf8)) ?? "").contains("merge_requests/12/merge --raw-field squash=true"))
+    #expect(!calls().contains { $0.hasPrefix("pr create") || $0.hasPrefix("pr merge") })   // gh, which can't talk to GitLab, was never asked
+}

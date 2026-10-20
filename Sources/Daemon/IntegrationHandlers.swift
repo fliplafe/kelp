@@ -144,6 +144,8 @@ extension Daemon {
             if let slug = try await offload({ BitbucketClient.slug(cwd: path) }) {
                 guard let bb = await bitbucketClient() else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: w.branch, destination: prBase)
+            } else if try await offload({ GitLab.isGitLab(cwd: path) }) {
+                url = try await offload { [title, body] in try GitLab.createMR(cwd: path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true) }
             } else {
                 url = try await offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true) }
             }
@@ -157,6 +159,9 @@ extension Daemon {
             guard let w = try store.worktree(p.req("worktreeId")), let n = p["pr"]?.int ?? w.prNumber else { throw RPCError.invalidParams("no PR linked") }
             if let slug = try await offload({ BitbucketClient.slug(cwd: w.path) }), let bb = await bitbucketClient() {
                 try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
+            } else if try await offload({ GitLab.isGitLab(cwd: w.path) }) {
+                let squash = (p["method"]?.string ?? "squash") == "squash"
+                try await offload { try GitLab.mergeMR(cwd: w.path, number: n, squash: squash) }
             } else {
                 let m = GitHub.MergeMethod(rawValue: p["method"]?.string ?? "squash") ?? .squash
                 try await offload { try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false) }

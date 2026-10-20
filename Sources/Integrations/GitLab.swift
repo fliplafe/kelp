@@ -5,7 +5,8 @@ import GitKit
 /// GitLab through the `glab` CLI and its login (`glab auth login`), the way GitHub goes through `gh`: merge requests,
 /// issues and pipelines in GitHub's shapes, so the panels show either. Self-managed hosts work as glab knows them.
 public enum GitLab {
-    static let glabPath = try? LoginPath.resolve("glab")
+    /// `KELP_GLAB` names another program (tests use a stand-in), like `KELP_GH` for gh.
+    static let glabPath = ProcessInfo.processInfo.environment["KELP_GLAB"] ?? (try? LoginPath.resolve("glab"))
 
     /// The checkout's origin is a GitLab (gitlab.com or a host with "gitlab" in its name).
     public static func isGitLab(cwd: String) -> Bool {
@@ -19,9 +20,10 @@ public enum GitLab {
     }
 
     /// `glab api` with `:id` standing for this project (glab fills it in from the remote).
-    static func api(_ path: String, cwd: String, method: String = "GET") throws -> Data {
+    static func api(_ path: String, cwd: String, method: String = "GET", fields: [(String, String)] = []) throws -> Data {
         guard let exe = glabPath else { throw GitHubError(args: ["glab"], status: -1, stderr: "glab CLI not found (brew install glab)") }
-        do { return Data(try Git.run(["api", "-X", method, path], cwd: cwd, executable: exe).utf8) }
+        let f = fields.flatMap { ["--raw-field", "\($0.0)=\($0.1)"] }   // raw: a title is text, never read as a number or a file
+        do { return Data(try Git.run(["api", "-X", method, path] + f, cwd: cwd, executable: exe).utf8) }
         catch let e as GitError { throw GitHubError(args: e.args, status: e.status, stderr: e.stderr) }
     }
 
@@ -55,6 +57,20 @@ public enum GitLab {
         guard let m = try JSONDecoder().decode([RawMR].self, from: api("projects/:id/merge_requests?source_branch=\(b)&state=all&per_page=1&order_by=updated_at", cwd: cwd)).first
         else { return nil }
         return pr((try? JSONDecoder().decode(RawMR.self, from: api("projects/:id/merge_requests/\(m.iid)", cwd: cwd))) ?? m)
+    }
+
+    /// Opens a merge request from the branch checked out now (pushed already) into `base`; returns its page's URL.
+    public static func createMR(cwd: String, title: String, body: String, base: String, draft: Bool) throws -> String {
+        let branch = try Git.currentBranch(cwd)
+        let m = try JSONDecoder().decode(RawMR.self, from: api("projects/:id/merge_requests", cwd: cwd, method: "POST", fields: [
+            ("source_branch", branch), ("target_branch", base), ("title", draft ? "Draft: " + title : title), ("description", body)
+        ]))
+        return m.web_url
+    }
+
+    /// Merges it now, squashed unless asked otherwise.
+    public static func mergeMR(cwd: String, number: Int, squash: Bool) throws {
+        _ = try api("projects/:id/merge_requests/\(number)/merge", cwd: cwd, method: "PUT", fields: [("squash", squash ? "true" : "false")])
     }
 
     struct RawIssue: Decodable {
