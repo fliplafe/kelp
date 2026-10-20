@@ -429,6 +429,10 @@ final class NoteBox: @unchecked Sendable {
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let there = try makeRepo()
     try "changed\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
+    // The folder browser: the repository is listed and marked; a missing folder says so.
+    let listed = try await c.call(RemoteListFolders(host: "box", path: (there as NSString).deletingLastPathComponent))
+    #expect(listed.folders.contains(.init(name: (there as NSString).lastPathComponent, git: true)))
+    await #expect(throws: (any Error).self) { try await c.call(RemoteListFolders(host: "box", path: "/nope/nothing")) }
     let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
     #expect(repo.path.hasPrefix(root.path + "/remote/box/") && !FileManager.default.fileExists(atPath: repo.path + "/a.txt"))
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })

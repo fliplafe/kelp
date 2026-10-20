@@ -34,3 +34,24 @@ extension Daemon {
         }
     }
 }
+
+extension RemoteListFolders: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
+        guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
+        // In sh whatever the host's login shell is: the folder's path, then "g name" for a repository, "d name" for the rest.
+        let script = "cd \(RemoteHost.cdArg(path.isEmpty ? "~" : path)) || exit 1; pwd; "
+            + #"for f in *; do [ -d "$f" ] || continue; if [ -e "$f/.git" ]; then echo "g $f"; else echo "d $f"; fi; done"#
+        let out: String
+        do {
+            out = try Git.run(["-o", "ConnectTimeout=10"] + RemoteHost(host: host, path: "~").sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)],
+                              cwd: NSHomeDirectory(), executable: RemoteHost.ssh)
+        } catch let e as GitError {
+            let why = e.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw RPCError.invalidParams(why.isEmpty ? "Couldn't connect to \(host)." : why)
+        }
+        let lines = out.split(separator: "\n").map(String.init)
+        guard let top = lines.first else { throw RPCError.invalidParams("Couldn't list \(path) on \(host).") }
+        return Result(path: top, folders: lines.dropFirst().filter { $0.count > 2 }.map { Folder(name: String($0.dropFirst(2)), git: $0.hasPrefix("g ")) })
+    }
+}

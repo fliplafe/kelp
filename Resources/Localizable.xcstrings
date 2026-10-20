@@ -9732,6 +9732,46 @@
           }
         }
       }
+    },
+    "Open over SSH…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть по SSH…"
+          }
+        }
+      }
+    },
+    "Folder:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка:"
+          }
+        }
+      }
+    },
+    "Enclosing Folder": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Папка выше"
+          }
+        }
+      }
+    },
+    "Opening…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открытие…"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

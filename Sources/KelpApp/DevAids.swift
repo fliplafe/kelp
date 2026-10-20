@@ -47,7 +47,7 @@ extension AppDelegate {
             // with text: filled in and started.
             if env["KELP_SNAPSHOT_SHEET"] == "onboarding" { OnboardingSheet.show() } else if let s = env["KELP_SNAPSHOT_SHEET"] {
                 let p = s.split(separator: "=", maxSplits: 1).map(String.init)
-                NewProjectSheet.show(p[0] == "remote" ? .remote : .clone, start: p.count > 1 ? p[1] : nil)
+                if p[0] == "remote" { RemoteSheet.show(start: p.count > 1 ? p[1] : nil) } else { CloneSheet.show(start: p.count > 1 ? p[1] : nil) }
             }
             if let keys = env["KELP_TYPE"] { typeKeys(keys) }
             // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.

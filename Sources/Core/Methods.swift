@@ -93,3 +93,20 @@ public struct GitDiscardHunk: RPCMethod {
     public var id: String, file: String, hunk: Int, header: String
     public init(id: String, file: String, hunk: Int, header: String) { self.id = id; self.file = file; self.hunk = hunk; self.header = header }
 }
+
+/// The folders in `path` on `host` (~ is the host's home), over the host's shared SSH connection: the folder's full
+/// path there and its subfolders, hidden ones left out, each marked when it's a git repository. A host Kelp can't
+/// reach fails here, with ssh's reason.
+public struct RemoteListFolders: RPCMethod {
+    public static let name = "remote.listFolders"
+    public struct Folder: Codable, Sendable, Equatable {
+        public var name: String, git: Bool
+        public init(name: String, git: Bool) { self.name = name; self.git = git }
+    }
+    public struct Result: Codable, Sendable {
+        public var path: String, folders: [Folder]
+        public init(path: String, folders: [Folder]) { self.path = path; self.folders = folders }
+    }
+    public var host: String, path: String
+    public init(host: String, path: String) { self.host = host; self.path = path }
+}

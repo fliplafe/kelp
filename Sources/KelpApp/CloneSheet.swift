@@ -1,38 +1,29 @@
 import AppKit
 import Core
 
-/// The ways in besides a folder, each a sheet that does the work in place: clone by URL (git's progress, its error
-/// in the sheet, Cancel stops it and removes the half-made folder) or a project on another machine over SSH.
+/// Clone a repository by URL, in a sheet that does the work in place: git's progress, its error in the sheet, and
+/// Cancel stops it and removes the half-made folder.
 @MainActor
-final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
-    enum Kind { case clone, remote }
-    private let kind: Kind
+final class CloneSheet: NSWindowController, NSPathControlDelegate {
     private let field = NSTextField()
-    /// Remote: the host, as after `ssh` (the hosts in ~/.ssh/config to pick from).
-    private let host = NSComboBox()
     private let place = NSPathControl()
     private let status = NSTextField(wrappingLabelWithString: "")
     private let bar = NSProgressIndicator()
     private let go = NSButton(), cancel = NSButton()
     private var running: String?
-    private static var shown: NewProjectSheet?
+    private static var shown: CloneSheet?
 
     /// `start`: filled in and begun at once (the snapshot dev aid; a background app's sheet gets no keys).
-    static func show(_ kind: Kind, start text: String? = nil) {
+    static func show(start text: String? = nil) {
         guard let w = Workbench.window?.window ?? NSApp.mainWindow else { return }
-        let s = NewProjectSheet(kind)
+        let s = CloneSheet()
         guard let sheet = s.window else { return }
         shown = s
         w.beginSheet(sheet) { _ in shown = nil }
-        if let text {   // remote: "host:/path"
-            let hp = text.split(separator: ":", maxSplits: 1).map(String.init)
-            if kind == .remote, hp.count == 2 { s.host.stringValue = hp[0]; s.field.stringValue = hp[1] } else { s.field.stringValue = text }
-            s.start()
-        }
+        if let text { s.field.stringValue = text; s.start() }
     }
 
-    private init(_ kind: Kind) {
-        self.kind = kind
+    private init() {
         super.init(window: NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 10), styleMask: [.titled], backing: .buffered, defer: true))
         build()
     }
@@ -47,23 +38,18 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     }
 
     private func build() {
-        let remote = kind == .remote
-        let title = NSTextField(labelWithString: remote ? String(localized: "Open a Project over SSH") : String(localized: "Clone a Repository"))
+        let title = NSTextField(labelWithString: String(localized: "Clone a Repository"))
         title.font = .boldSystemFont(ofSize: 13)
-        field.placeholderString = remote ? "~/code/app" : "https://github.com/owner/repo or git@…"
+        field.placeholderString = "https://github.com/owner/repo or git@…"
         field.widthAnchor.constraint(equalToConstant: 340).isActive = true
         place.pathStyle = .popUp; place.url = Self.parent; place.delegate = self; place.allowedTypes = ["public.folder"]
-        host.addItems(withObjectValues: Self.sshHosts()); host.placeholderString = String(localized: "user@server or a Host from ~/.ssh/config")
-        host.completes = true
-        let grid = remote
-            ? NSGridView(views: [[NSTextField(labelWithString: String(localized: "Host:")), host], [NSTextField(labelWithString: String(localized: "Folder there:")), field]])
-            : NSGridView(views: [[NSTextField(labelWithString: String(localized: "URL:")), field],
-                                 [NSTextField(labelWithString: String(localized: "Clone into:")), place]])
+        let grid = NSGridView(views: [[NSTextField(labelWithString: String(localized: "URL:")), field],
+                                      [NSTextField(labelWithString: String(localized: "Clone into:")), place]])
         grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 8
         bar.style = .bar; bar.isIndeterminate = true; bar.isHidden = true; bar.minValue = 0; bar.maxValue = 100
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11); status.isHidden = true
         status.preferredMaxLayoutWidth = 430
-        go.title = remote ? String(localized: "Open") : String(localized: "Clone"); go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(start)
+        go.title = String(localized: "Clone"); go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(start)
         cancel.title = String(localized: "Cancel"); cancel.bezelStyle = .push; cancel.keyEquivalent = "\u{1b}"; cancel.target = self; cancel.action = #selector(stop)
         let buttons = NSStackView(views: [NSView(), cancel, go]); buttons.spacing = 8
         let stack = NSStackView(views: [title, grid, bar, status, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
@@ -71,23 +57,7 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         for v in [bar, buttons] { v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true }
         window?.contentView = stack
-        window?.initialFirstResponder = remote ? host : field
-        if remote {
-            let note = NSTextField(wrappingLabelWithString: String(localized: "Agents and terminals run there, and git too, over one SSH connection. ")
-                                   + String(localized: "The agents you use must be installed on that machine. Files open read-only."))
-            note.textColor = .secondaryLabelColor; note.font = .systemFont(ofSize: 11); note.preferredMaxLayoutWidth = 430
-            (window?.contentView as? NSStackView)?.insertArrangedSubview(note, at: 2)
-        }
-    }
-
-    /// The `Host` names in ~/.ssh/config (patterns left out).
-    static func sshHosts() -> [String] {
-        let text = (try? String(contentsOfFile: NSHomeDirectory() + "/.ssh/config", encoding: .utf8)) ?? ""
-        return text.split(whereSeparator: \.isNewline).flatMap { line -> [String] in
-            let w = line.split(whereSeparator: \.isWhitespace).map(String.init)
-            guard w.first?.lowercased() == "host" else { return [] }
-            return w.dropFirst().filter { !$0.contains("*") && !$0.contains("?") && !$0.hasPrefix("!") }
-        }
+        window?.initialFirstResponder = field
     }
 
     func pathControl(_ c: NSPathControl, willDisplay panel: NSOpenPanel) {
@@ -106,7 +76,7 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
     }
 
     private func busy(_ on: Bool) {
-        field.isEnabled = !on; place.isEnabled = !on; host.isEnabled = !on; go.isEnabled = !on
+        field.isEnabled = !on; place.isEnabled = !on; go.isEnabled = !on
         bar.isHidden = !on; if on { bar.isIndeterminate = true; bar.startAnimation(nil) } else { bar.stopAnimation(nil) }
     }
 
@@ -118,17 +88,6 @@ final class NewProjectSheet: NSWindowController, NSPathControlDelegate {
         status.isHidden = false; status.textColor = .secondaryLabelColor
         status.stringValue = String(localized: "Connecting…")
         Task {
-            if kind == .remote {
-                let r = await AppModel.shared.tryCall("repo.addRemote", .obj(["host": .string(host.stringValue), "path": .string(text)]))
-                running = nil; busy(false)
-                if let e = r.error { status.textColor = .systemRed; status.stringValue = e; return }
-                close()
-                await AppModel.shared.refresh()
-                if let rid = r.value?["id"]?.string, let repo = AppModel.shared.repo(rid), let w = AppModel.shared.workspaces(of: repo).first {
-                    Workbench.show(workspace: w.id)
-                }
-                return
-            }
             let r = await AppModel.shared.tryCall("repo.clone", .obj(["url": .string(text), "parent": .string(parent), "id": .string(id)]))
             running = nil; busy(false)
             if let e = r.error {

@@ -184,7 +184,7 @@ final class AppModel {
         case "event.changed":
             Task { await refresh() }
         case "event.clone":
-            NewProjectSheet.cloneProgress(id: p["id"]?.string, line: p["line"]?.string)
+            CloneSheet.cloneProgress(id: p["id"]?.string, line: p["line"]?.string)
         case "event.settings":
             if case .object(let o)? = p["settings"] { SettingsStore.shared.apply(o) }
         case "event.ui":
@@ -241,6 +241,11 @@ final class AppModel {
     func tryCall(_ method: String, _ params: JSONValue? = nil) async -> (value: JSONValue?, error: String?) {
         guard let c = client else { return (nil, Self.noService) }
         do { return (try await c.call(method, params), nil) }
+        catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
+    }
+    func tryCall<M: RPCMethod>(_ m: M) async -> (value: M.Result?, error: String?) {
+        guard let c = client else { return (nil, Self.noService) }
+        do { return (try await c.call(m), nil) }
         catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
     }
 
