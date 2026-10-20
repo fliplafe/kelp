@@ -139,10 +139,10 @@ final class WindowBar: NSView {
         return mode == "agents" && working ? "working" : mode
     }
 
-    /// The cup right of the search, only while it's doing something: steaming while agents keep the Mac awake, orange while
-    /// it's on for good. A click is Keep Mac Awake (also in the Tools menu); a right-click picks the mode.
+    /// The cup right of the search, always there so the switch can be found: empty while the Mac may sleep, steaming while
+    /// agents keep it awake, orange while it's on for good. A click is Keep Mac Awake (also in the Tools menu); a right-click
+    /// picks the mode.
     private func showAwake(_ mode: String) {
-        awake.isHidden = mode != "working" && mode != "always"
         let (symbol, tip) = switch mode {
         case "always": ("cup.and.heat.waves.fill", String(localized: "The Mac stays awake until you click here"))
         case "working": ("cup.and.heat.waves", String(localized: "The Mac stays awake while agents work. Click to keep it awake always"))
