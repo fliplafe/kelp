@@ -47,7 +47,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
-        editors.onPointerEntered = { [weak self] in self?.endPeek() }
         let lights = w.standardWindowButton(.zoomButton).map { $0.convert($0.bounds, to: nil).maxX } ?? 69
         // The bar starts where the editor area does; with the sidebar away it runs under the traffic lights.
         let barStart = bar.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor)
@@ -142,15 +141,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func hides(_ item: NSSplitViewItem) -> Bool { focusMode != nil || (item === sidebarItem ? autoHide.sidebar : autoHide.inspector) }
     private func updateEdges() { leftEdge.isHidden = !hides(sidebarItem); rightEdge.isHidden = !hides(inspectorItem) }
 
-    /// Focus mode and auto-hide: the pointer at an edge brings that panel in; back over the editor, it goes again.
-    /// ⌘0 / ⌥⌘0 bring it in the same way.
+    /// Focus mode and auto-hide: the pointer at an edge brings that panel in; once it leaves the panel for the rest
+    /// of the window, the panel goes again. ⌘0 / ⌥⌘0 bring it in the same way.
+    /// (A tracking area on the editor used to end it: while the inspector slid in the editor was still under the
+    /// pointer for a frame, so it went straight back out.)
     private var peeking: NSSplitViewItem?
+    private var peekMoves: Any?, peekedAt = Date.distantPast
+    /// The pointer has been over the panel since it came in (from the edge at once; after ⌘0, once it gets there).
+    private var peekReached = false
     private func peek(sidebar: Bool) {
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
         guard hides(item), item.isCollapsed else { return }
-        endPeek(); peeking = item; item.animator().isCollapsed = false
+        endPeek(); peeking = item; peekedAt = Date(); peekReached = false; item.animator().isCollapsed = false
+        window?.acceptsMouseMovedEvents = true
+        peekMoves = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] e in self?.pointerMoved(e); return e }
+    }
+    private func pointerMoved(_ e: NSEvent) {
+        guard let item = peeking, e.window === window, let root = window?.contentView else { return }
+        let p = root.convert(e.locationInWindow, from: nil), panel = item.viewController.view
+        let edge = item === sidebarItem ? leftEdge : rightEdge
+        if panel.convert(panel.bounds, to: root).contains(p) || edge.frame.contains(p) { peekReached = true; return }
+        // Not while it slides in: the panel isn't where the pointer is headed yet.
+        if peekReached, Date().timeIntervalSince(peekedAt) > 0.4 { endPeek() }
     }
     private func endPeek() {
+        if let m = peekMoves { NSEvent.removeMonitor(m); peekMoves = nil }
         guard let p = peeking else { return }
         peeking = nil; p.animator().isCollapsed = true
     }
@@ -186,13 +201,6 @@ final class EdgeTrigger: NSView {
 /// Holds one editor area per recently used workspace, so switching back is instant (terminals stay attached).
 @MainActor
 final class EditorHost: NSViewController {
-    var onPointerEntered: (() -> Void)?
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        view.trackingAreas.forEach(view.removeTrackingArea)
-        view.addTrackingArea(NSTrackingArea(rect: view.bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self))
-    }
-    override func mouseEntered(with e: NSEvent) { onPointerEntered?() }
     private var areas: [String: EditorArea] = [:]
     private var recent: [String] = []
     private(set) var current: EditorArea?
