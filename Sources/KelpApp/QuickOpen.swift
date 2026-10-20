@@ -23,6 +23,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         var choice: JSONValue?
         var checked = false
         var image: NSImage?
+        /// A file's path, ready for fuzzy matching.
+        var fuzzy: ProjectFiles.FuzzyPath?
         /// A command's shortcut, at the end of its title's line as in a menu.
         var key = ""
     }
@@ -194,11 +196,12 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 filesLoad = Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
+                    let fuzzy = await Task.detached { files.map(ProjectFiles.FuzzyPath.init) }.value
                     // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
                     guard !Task.isCancelled, choosing == nil else { return }
-                    all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
-                                                 action: { Workbench.open(TabURI.file(root + "/" + f)) },
-                                                 split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }) }
+                    all += zip(files, fuzzy).map { f, z in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
+                                                               action: { Workbench.open(TabURI.file(root + "/" + f)) },
+                                                               split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }, fuzzy: z) }
                     filter()
                 }
             }
@@ -312,9 +315,10 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                     grouped: !showingRecents && !commandsOnly && choosing == nil)
         } else {
             showingRecents = false
+            let fq = ProjectFiles.fuzzyQuery(q)
             setRows(pool.compactMap { it -> (Item, Int)? in
                 // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
-                if it.kind == "File" { return ProjectFiles.fuzzyScore(it.detail, q).map { (it, $0) } }
+                if let f = it.fuzzy { return ProjectFiles.fuzzyScore(f, fq).map { (it, $0) } }
                 return Self.wordScore(it.title, q).map { (it, $0 + (it.kind == "Command" ? 2 : 0)) }
             }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0), grouped: !commandsOnly && choosing == nil)
         }

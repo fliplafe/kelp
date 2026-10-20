@@ -25,7 +25,7 @@ public enum ProjectFiles {
         if let rg = ripgrep, RemoteHost.of(root) == nil {   // remote: git grep runs on the host
             var a = ["--line-number", "--no-heading", "--color=never", "--max-columns=300", "--max-count=200"]
             if !regex { a.append("--fixed-strings") }
-            if !caseSensitive { a.append("--smart-case") }
+            if !caseSensitive { a.append("--ignore-case") }   // like git grep -i below (smart-case would honour capitals)
             out = try Git.run(a + ["--", query, "."], cwd: root, executable: rg, ok: [0, 1])   // 1 = no matches
         } else {
             var a = ["grep", "-n", "--untracked", "-I"]
@@ -49,23 +49,36 @@ public enum ProjectFiles {
         return r
     }
 
+    /// A path made ready for fuzzyScore once: Quick Open scores every file of the project on each keystroke.
+    public struct FuzzyPath: Sendable {
+        let bytes: [UInt8], name: Int, length: Int   // lowercased UTF-8, where the file name starts, length in characters
+        public init(_ path: String) {
+            bytes = Array(path.lowercased().utf8)
+            name = bytes.lastIndex(of: UInt8(ascii: "/")).map { $0 + 1 } ?? 0
+            length = path.count
+        }
+    }
+    /// The query as fuzzyScore wants it.
+    public static func fuzzyQuery(_ q: String) -> [UInt8] { Array(q.lowercased().utf8) }
+
     /// Fuzzy subsequence score for quick open (higher is better, nil = no match). Matches inside the file name win.
-    public static func fuzzyScore(_ candidate: String, _ query: String) -> Int? {
-        if query.isEmpty { return 0 }
-        let full = subsequenceScore(Array(candidate.lowercased()), Array(query.lowercased()))
-        let name = (candidate as NSString).lastPathComponent
-        let inName = subsequenceScore(Array(name.lowercased()), Array(query.lowercased())).map { $0 + 100 }
+    public static func fuzzyScore(_ candidate: String, _ query: String) -> Int? { fuzzyScore(FuzzyPath(candidate), fuzzyQuery(query)) }
+
+    public static func fuzzyScore(_ c: FuzzyPath, _ q: [UInt8]) -> Int? {
+        if q.isEmpty { return 0 }
+        let full = subsequenceScore(c.bytes[...], q), inName = subsequenceScore(c.bytes[c.name...], q).map { $0 + 100 }
         guard let best = [full, inName].compactMap({ $0 }).max() else { return nil }
-        return best - candidate.count / 4
+        return best - c.length / 4
     }
 
-    static func subsequenceScore(_ c: [Character], _ q: [Character]) -> Int? {
-        var ci = 0, score = 0, streak = 0, last = -2
+    private static let wordStarts = Set("/._- ".utf8)
+    static func subsequenceScore(_ c: ArraySlice<UInt8>, _ q: [UInt8]) -> Int? {
+        var ci = c.startIndex, score = 0, streak = 0, last = -2
         for ch in q {
-            guard ci < c.count, let i = c[ci...].firstIndex(of: ch) else { return nil }
+            guard ci < c.endIndex, let i = c[ci...].firstIndex(of: ch) else { return nil }
             streak = (i == last + 1) ? streak + 1 : 0
             score += 10 + streak * 5
-            if i == 0 || "/._- ".contains(c[i - 1]) { score += 15 }   // word start
+            if i == c.startIndex || wordStarts.contains(c[i - 1]) { score += 15 }   // word start
             last = i; ci = i + 1
         }
         return score
