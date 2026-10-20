@@ -26,6 +26,7 @@ extension Daemon {
             existing(old.id)?.pty.kill()   // if the new one can't start, this one still ends as Ended
             let m = try manifest(old.agent == "custom" || old.agent == "shell" ? old.agent : old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
+            if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
             o.argv = p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv
             let s = try spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
             discard(old)   // its exit, still to come, doesn't save it again

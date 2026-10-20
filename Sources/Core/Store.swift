@@ -72,6 +72,9 @@ public final class Store: Sendable {
         m.registerMigration("v9") { db in
             try db.alter(table: "session") { t in t.add(column: "exitCode", .integer) }
         }
+        m.registerMigration("v10") { db in
+            try db.alter(table: "session") { t in t.add(column: "profile", .text) }
+        }
         try m.migrate(db)
     }
 

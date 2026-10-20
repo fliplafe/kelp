@@ -85,6 +85,9 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var progress: Int?
     /// How its program ended: the exit code, or 128 + the signal that stopped it; nil while it runs.
     public var exitCode: Int?
+    /// The account profile it started with (Settings › Accounts); nil: the agent's own default login. Kept so a woken or
+    /// restarted session comes back on the same account.
+    public var profile: String?
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent

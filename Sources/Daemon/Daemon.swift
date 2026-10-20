@@ -277,10 +277,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         }
         if local, o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
         rec.argv = argv
-        var env = manifest.resolvedEnv
-        if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
-        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
-        env["PATH"] = childPath
+        rec.profile = o.profile
+        let env = launchEnv(manifest, rec)
         let ls = try LiveSession(record: rec, manifest: trustAnswered(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
                                  argv: try launchArgv(argv, cwd: cwd, manifest: manifest), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
@@ -354,6 +352,22 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []).contains(where: \.hasDirectoryPath)
     }
 
+    /// One place for a session's environment, used to start it and to wake it: the account profile it was started with
+    /// comes back with it (it used to be dropped on wake and restart, so the session returned on the default login).
+    func launchEnv(_ m: AgentManifest, _ rec: Session) -> [String: String] {
+        var env = m.resolvedEnv
+        if let name = rec.profile, let prof = profile(name, agent: m.id) { env[prof.key] = prof.dir }
+        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
+        env["PATH"] = childPath
+        return env
+    }
+
+    /// Where a session's Claude conversations are: under its profile's config dir when it has one.
+    func claudeProjects(_ rec: Session) -> URL {
+        rec.profile.flatMap { profile($0, agent: "claude") }.map { URL(fileURLWithPath: $0.dir).appendingPathComponent("projects") }
+            ?? agentHomes.claude
+    }
+
     /// Account profiles keep each agent login in its own config dir: switching needs no re-login.
     static let configDirEnv = ["claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME"]
     func profile(_ name: String, agent: String) -> (key: String, dir: String)? {
@@ -408,9 +422,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         let argv = resumeArgv(rec, m)
         rec.argv = argv   // the conversation it found is this session's from now on
-        var env = m.resolvedEnv
-        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
-        env["PATH"] = childPath
+        let env = launchEnv(m, rec)
         rec.status = .idle
         let ls = try LiveSession(record: rec, manifest: trustAnswered(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
@@ -427,7 +439,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     func resumeArgv(_ rec: Session, _ m: AgentManifest) -> [String] {
         guard rec.agent == "claude", RemoteHost.of(rec.cwd) == nil, let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
         if rec.argv.contains(flag) { return rec.argv }
-        let conversations = ClaudeHistory.sessions(cwd: rec.cwd)
+        let conversations = ClaudeHistory.sessions(cwd: rec.cwd, root: claudeProjects(rec))
         if let i = rec.argv.firstIndex(of: pin), i + 1 < rec.argv.count {
             // Pinned but nothing typed yet: no conversation to resume, start it under the same id.
             return conversations.contains { $0.id.lowercased() == rec.argv[i + 1].lowercased() } ? m.resuming(rec.argv) : rec.argv

@@ -258,3 +258,27 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(try await w.c.call("git.merge", .obj(["id": .string(wt.id)]))["merged"]?.bool == true)
     #expect(FileManager.default.fileExists(atPath: w.repo.path + "/m.txt"))
 }
+
+/// A session started on an account profile comes back on it after a restart and after a pause.
+@Test func theAccountProfileSurvivesRestartAndWake() async throws {
+    let fake = AgentManifest(id: "claude", name: "Claude", command: "/bin/zsh", args: ["-c", #"echo "ACCOUNT=$CLAUDE_CONFIG_DIR"; sleep 30"#, "x"],
+                             autoAnswers: [], resumeArgs: ["--continue"])   // resumable, so it can be paused
+    let w = try await world(agents: [fake]); defer { w.d.stop() }
+    let dir = tmp().path + "/work-account"
+    _ = try await w.c.call("settings.set", .obj(["key": "accounts.profiles", "value": .array([.obj(["name": "work", "agent": "claude", "dir": .string(dir)])])]))
+    let wt = try await desk(w, "acct")
+    func shows(_ id: String) async throws -> Bool {
+        try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(id)]))).string?.contains("ACCOUNT=\(dir)") == true }
+    }
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "claude", "profile": "work"]), as: Session.self)
+    #expect(try await shows(s.id))
+    let r: Session = try await w.c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
+    #expect(try await shows(r.id))                                            // restart: same account
+    _ = try await w.c.call("session.hook", .obj(["id": .string(r.id), "event": "done"]))   // finished: it may be paused
+    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))
+    #expect(try await waitFor(15) { try await w.c.call("session.list", as: [Session].self).first { $0.id == r.id }?.status == .hibernated })
+    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": 0]))
+    _ = try await w.c.call("session.attach", .obj(["id": .string(r.id)]))     // wake: same account
+    let log = w.root.appendingPathComponent("history/\(r.id).log")   // both runs of this session: before the pause and after
+    #expect(try await waitFor(10) { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").components(separatedBy: "ACCOUNT=\(dir)").count >= 3 })
+}
