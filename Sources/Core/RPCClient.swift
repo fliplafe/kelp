@@ -50,12 +50,19 @@ public final class RPCClient: @unchecked Sendable {
         Unix.writeAll(fd, d)
     }
 
-    public func call(_ method: String, _ params: JSONValue? = nil) async throws -> JSONValue {
+    /// `timeout`: throw if no reply came by then — for polls, where one reply that never arrives would stop the loop for good.
+    public func call(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> JSONValue {
         try await withCheckedThrowingContinuation { c in
             lock.lock()
             if closed { lock.unlock(); c.resume(throwing: RPCError.internalError("connection closed")); return }
             let id = nextID; nextID += 1; pending[id] = c
             lock.unlock()
+            if let timeout {
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [self] in
+                    lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
+                    c?.resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
+                }
+            }
             do { Unix.writeAll(fd, try Wire.line(RPCRequest(id: id, method: method, params: params))) }
             catch { lock.lock(); pending[id] = nil; lock.unlock(); c.resume(throwing: error) }
         }

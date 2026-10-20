@@ -114,7 +114,8 @@ struct UsageView: View {
     static func tint(_ u: Double, quiet: Color = .secondary) -> Color { u >= 0.9 ? .red : u >= 0.7 ? .orange : quiet }
 
     private func load() async {
-        guard let c = AppModel.shared.client, let u = try? await c.call("usage.get") else { return }
+        // The poll awaits each answer: without a timeout one lost reply froze the limits for good ("Read 36m ago; not since").
+        guard let c = AppModel.shared.client, let u = try? await c.call("usage.get", timeout: 60) else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = Self.num(u["plansReadAt"]?[a.id]).map { Date(timeIntervalSince1970: $0) }

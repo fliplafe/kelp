@@ -21,6 +21,20 @@ import Testing
     #expect(lines.count == 2)
 }
 
+@Test func callTimesOutWhenNoReplyComes() async throws {
+    let path = NSTemporaryDirectory() + "kelp-timeout-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try RPCClient(socket: path)
+    let peer = accept(server, nil, nil)
+    defer { close(peer) }
+    await #expect(throws: RPCError.self) { try await client.call("usage.get", timeout: 0.2) }
+    // The late reply finds nobody waiting (no second resume), and the next call still gets its own.
+    let late = try Wire.line(RPCResponse(id: 1, result: .null)), next = try Wire.line(RPCResponse(id: 2, result: "ok"))
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { Unix.writeAll(peer, late + next) }
+    #expect(try await client.call("ping", timeout: 5).string == "ok")
+}
+
 @Test func jsonValueRoundTrip() throws {
     let v = try JSONValue.from(RPCRequest(id: 1, method: "x", params: .object(["k": .string("v")])))
     #expect(v["method"]?.string == "x")
