@@ -131,7 +131,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         worktree = next
         matches = []; results.reloadData()
         watcher = worktree.flatMap { w in
-            let real = URL(fileURLWithPath: w.path).resolvingSymlinksInPath().path + "/"
+            let real = FileWatcher.real(w.path) + "/"
             return FileWatcher(root: w.path) { [weak self] paths in
                 if paths.contains(where: { Self.affectsTree(String($0.dropFirst($0.hasPrefix(real) ? real.count : 0))) }) { self?.scheduleReload() }
             }
@@ -139,13 +139,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         reloadTree()
     }
 
-    /// Whether a change at `rel` (relative to the workspace) can change the tree or its git badges. Git's own churn and
-    /// build output (ignored, so never in the tree) would reload it several times a second during a build.
-    /// Limit: a fixed list of usual build folders; a tracked folder named like one updates on the next other change.
+    /// Whether a change at `rel` (relative to the workspace) can change the tree or its git badges: git's own churn
+    /// would reload it several times a second (build output never gets here, FileWatcher drops it).
     nonisolated static func affectsTree(_ rel: String) -> Bool {
-        let parts = rel.split(separator: "/")
-        if parts.first == ".git" { return rel == ".git/index" || rel == ".git/HEAD" }   // staging, commits, branch switches
-        return !parts.contains { ["node_modules", ".build", "DerivedData", ".next", "__pycache__", ".gradle", ".swiftpm", ".venv", "target"].contains($0) }
+        guard rel.split(separator: "/").first == ".git" else { return true }
+        return rel == ".git/index" || rel == ".git/HEAD"   // staging, commits, branch switches
     }
 
     private func scheduleReload() {

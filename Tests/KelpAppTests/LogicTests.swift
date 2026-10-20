@@ -64,3 +64,20 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(Notifier.firstSentence("Is v1.2 ready? Yes.") == "Is v1.2 ready?")
     #expect(Notifier.firstSentence("Fixed it.") == "Fixed it")
 }
+
+/// Build output never reaches a watcher's handler (it's dropped off the main thread); other changes arrive on main.
+@MainActor @Test func fileEventsSkipBuildOutput() async throws {
+    #expect(FileWatcher.isBuildOutput("/r/node_modules/a/b.js", under: ["/r/"]))
+    #expect(!FileWatcher.isBuildOutput("/work/target/r/src/a.rs", under: ["/work/target/r/"]))   // the root's own folders don't count
+    #expect(!FileWatcher.isBuildOutput("/elsewhere/.build/x", under: ["/r/"]))
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-fw-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir.appendingPathComponent("node_modules/x"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    var seen: [String] = []
+    let w = FileWatcher(root: dir.path, latency: 0.05) { paths in MainActor.assumeIsolated { seen += paths } }
+    try Data("a".utf8).write(to: dir.appendingPathComponent("node_modules/x/a.js"))
+    try Data("b".utf8).write(to: dir.appendingPathComponent("b.swift"))
+    for _ in 0..<60 where !seen.contains(where: { $0.hasSuffix("/b.swift") }) { try await Task.sleep(for: .milliseconds(50)) }
+    #expect(w != nil && seen.contains { $0.hasSuffix("/b.swift") })
+    #expect(!seen.contains { $0.contains("/node_modules/") })
+}
