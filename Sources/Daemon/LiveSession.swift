@@ -4,8 +4,11 @@ import Agents
 import GitKit
 
 /// A running PTY plus its history ring buffer, disk log and status detector.
+/// The `on…` callbacks are set before `start()` and not changed after.
 final class LiveSession: @unchecked Sendable {
     static let ringLimit = 1 << 20
+    /// Past this the log keeps only what the ring holds: a chatty dev server must not fill the disk.
+    static let logLimit = 8 << 20
 
     private let lock = NSLock()
     private(set) var record: Session
@@ -13,7 +16,11 @@ final class LiveSession: @unchecked Sendable {
     private var ring = Data()
     private var detector: StatusDetector
     private let log: FileHandle?
+    private var logSize = 0
     private(set) var attached = Set<Int>()   // connection ids receiving raw output
+    /// Being deleted: nothing it does may save its record again.
+    private var discarded = false
+    var isDiscarded: Bool { lock.withLock { discarded } }
 
     var onOutput: (@Sendable (String, Data, Set<Int>) -> Void)?
     var onStatus: (@Sendable (Session) -> Void)?
@@ -35,8 +42,12 @@ final class LiveSession: @unchecked Sendable {
     static let urlRegex = try! NSRegularExpression(pattern: #"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(:\d+)?[^\s\x1b'"]*"#)
 
     private let started = Date()
+    private var transcript: String?
     /// Claude Code transcript (from hook payloads): where its subagents' transcripts live.
-    var transcriptPath: String?
+    var transcriptPath: String? {
+        get { lock.withLock { transcript } }
+        set { lock.withLock { transcript = newValue } }
+    }
     var idleSeconds: TimeInterval { lock.withLock { Date().timeIntervalSince(lastOutputAt ?? started) } }
     var isAttached: Bool { lock.withLock { !attached.isEmpty } }
     private var lastOutputAt: Date?
@@ -76,21 +87,36 @@ final class LiveSession: @unchecked Sendable {
         selfNames = [manifest.id, manifest.name, (record.cwd as NSString).lastPathComponent]
         autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
         try Paths.ensure(historyDir)
+        // A woken session goes on in the same log: what it showed before the pause stays readable.
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
         log = try? FileHandle(forWritingTo: logURL)
+        logSize = Int((try? log?.seekToEnd()) ?? 0)
         pty = try PTY(argv: argv, cwd: record.cwd, env: env, cols: cols, rows: rows)
         rec.pid = pty.pid
         self.record = rec
+        if logSize > Self.logLimit, let h = try? FileHandle(forReadingFrom: logURL) {
+            try? h.seek(toOffset: UInt64(logSize - Self.ringLimit)); trimLog((try? h.readToEnd()) ?? Data()); try? h.close()
+        }
         pty.onOutput = { [weak self] d in self?.handleOutput(d) }
         pty.onExit = { [weak self] code in self?.handleExit(code) }
     }
+
+    /// After the callbacks are set: output and status start flowing.
+    func start() { pty.start() }
+
+    /// The session is being deleted: it stops, and neither its exit nor anything else saves its record again.
+    func discard() { lock.withLock { discarded = true }; pty.kill() }
+
+    /// The log becomes `tail`. Caller holds the lock (or is the initializer).
+    private func trimLog(_ tail: Data) { try? log?.truncate(atOffset: 0); try? log?.write(contentsOf: tail); logSize = tail.count }
 
     private func handleOutput(_ d: Data) {
         lock.lock()
         ring.append(d)
         if ring.count > Self.ringLimit { ring.removeFirst(ring.count - Self.ringLimit) }
-        try? log?.write(contentsOf: d)
+        try? log?.write(contentsOf: d); logSize += d.count
+        if logSize > Self.logLimit { trimLog(ring) }
         let text = String(decoding: d, as: UTF8.self)
         var probe = false
         if !hooked, text.contains(ProgramStatus.prefix) || !oscCarry.isEmpty {
@@ -159,9 +185,10 @@ final class LiveSession: @unchecked Sendable {
     }
 
     /// Copy detector status into the record. Caller holds the lock. Returns the record if it changed.
+    /// Ended is final: a hook or a keystroke that arrives after the exit doesn't bring the session back.
     private func sync() -> Session? {
         let s = detector.status
-        guard s != record.status else { return nil }
+        guard s != record.status, record.status != .exited else { return nil }
         record.status = s
         if s == .done || s == .waiting || s == .exited || s == .error { record.unread = true }
         return record
@@ -169,14 +196,14 @@ final class LiveSession: @unchecked Sendable {
 
     /// Called with every status change: a snapshot when work starts, the changes when it stops (git work off the lock).
     func noteTurn(_ s: AgentStatus) {
-        let cwd = record.cwd
         lock.lock()
+        let cwd = record.cwd, shell = record.agent == "shell"
         let starting = s == .working && !inTurn, ending = inTurn && s != .working
         if starting { inTurn = true; turnStart = Date() }
         if ending { inTurn = false }
         let base = turnBase, start = turnStart
         lock.unlock()
-        guard record.agent != "shell", starting || ending else { return }
+        guard !shell, starting || ending else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             if starting {
                 let tree = try? Git.snapshotTree(cwd)
@@ -337,8 +364,15 @@ final class LiveSession: @unchecked Sendable {
         record.unread = true; return record
     }
 
-    func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(n) }
-    func attach(_ conn: Int) -> Data { lock.lock(); defer { lock.unlock() }; attached.insert(conn); return TerminalReplies.withoutQueries(ring) }
+    func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(max(0, n)) }
+    /// The history, `conn` gets the output from here on. `send` runs under the lock with that history, so it goes out
+    /// before any of the live output that follows.
+    @discardableResult
+    func attach(_ conn: Int, send: (Data) -> Void = { _ in }) -> Data {
+        lock.lock(); defer { lock.unlock() }
+        attached.insert(conn)
+        let history = TerminalReplies.withoutQueries(ring); send(history); return history
+    }
     func detach(_ conn: Int) { lock.lock(); attached.remove(conn); lock.unlock() }
     var snapshot: Session { lock.lock(); defer { lock.unlock() }; return record }
 }

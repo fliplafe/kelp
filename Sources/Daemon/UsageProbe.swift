@@ -94,6 +94,7 @@ extension Daemon {
         let screen = ScreenBuffer()
         guard let pty = try? PTY(argv: argv, cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 80) else { return ([], "") }
         pty.onOutput = { screen.append($0) }
+        pty.start()
         defer { pty.terminate() }
         // Ready: the prompt is drawn and output went quiet (or it failed and said so).
         guard screen.wait(20, until: { (p.ready($0) && screen.quietFor > 1) || $0.contains("Error:") }),

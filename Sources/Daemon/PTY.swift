@@ -2,12 +2,17 @@ import Foundation
 import Core
 
 /// A child process on a pseudo-terminal. The daemon owns this, so the process outlives any UI.
+/// Once the program has exited its fd and pid are gone for good: they may already name another session's terminal or
+/// another process, so nothing is written to the one or signalled at the other after that.
 public final class PTY: @unchecked Sendable {
     public let pid: pid_t
     private let master: Int32
     private var source: DispatchSourceRead?
     private let q = DispatchQueue(label: "kelp.pty")
     private var exited = false
+    private let io = NSLock()     // `closed`: the master is closed under it, so no write lands in a reused fd
+    private let life = NSLock()   // `reaped`: set before the pid is reaped, so no signal reaches a recycled one
+    private var closed = false, reaped = false, started = false
 
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onExit: (@Sendable (Int32) -> Void)?
@@ -58,16 +63,31 @@ public final class PTY: @unchecked Sendable {
         close(s)
         guard rc == 0 else { close(m); throw POSIXError(.init(rawValue: rc) ?? .ENOENT) }
         self.pid = pid; self.master = m
+    }
 
-        let src = DispatchSource.makeReadSource(fileDescriptor: m, queue: q)
+    /// Starts reading the output and waiting for the exit. Set `onOutput` / `onExit` first: a program that prints (or
+    /// fails) at once would otherwise lose that.
+    public func start() {
+        let first = io.withLock { () -> Bool in
+            guard !started, !closed else { return false }
+            started = true; return true
+        }
+        guard first else { return }
+        let src = DispatchSource.makeReadSource(fileDescriptor: master, queue: q)
         src.setEventHandler { [weak self] in self?.drain() }
+        q.sync { source = src }
         src.resume()
-        source = src
-        let wq = DispatchQueue(label: "kelp.pty.wait")
-        wq.async { [weak self] in
+        let pid = pid
+        DispatchQueue(label: "kelp.pty.wait").async { [weak self] in
+            // Wait without reaping: while it's a zombie its pid can't be anyone else's, so `reaped` goes up first.
+            var info = siginfo_t()
+            while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) < 0 && errno == EINTR {}
+            self?.life.withLock { self?.reaped = true }
             var st: Int32 = 0
-            waitpid(pid, &st, 0)
-            self?.q.async { self?.finish(st) }
+            while waitpid(pid, &st, 0) < 0 && errno == EINTR {}
+            guard let pty = self else { return }
+            let status = st
+            pty.q.async { pty.finish(status) }
         }
     }
 
@@ -89,10 +109,11 @@ public final class PTY: @unchecked Sendable {
         onExit?(status)
     }
 
-    private var closed = false
     private func hangUp() {
-        guard !closed else { return }
-        closed = true; source?.cancel(); source = nil; close(master)
+        io.withLock {
+            guard !closed else { return }
+            closed = true; source?.cancel(); source = nil; close(master)
+        }
     }
 
     /// Dropped while its program runs (the limits probe quits that way): hang up the terminal. A controlling process
@@ -108,27 +129,30 @@ public final class PTY: @unchecked Sendable {
 
     static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KELP_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
-    public func write(_ d: Data) { Unix.writeAll(master, d) }
+    /// Typing into the program; dropped once it has exited (the fd may be another terminal's by then).
+    public func write(_ d: Data) { io.withLock { if !closed { Unix.writeAll(master, d) } } }
 
     /// The program in the foreground when it isn't the one the PTY started (a shell running `npm run dev`, vim…).
     public var foregroundProgram: String? {
-        let pg = tcgetpgrp(master)
+        let pg = io.withLock { closed ? -1 : tcgetpgrp(master) }
         guard pg > 0, pg != pid else { return nil }
         var name = [CChar](repeating: 0, count: 256)
         return proc_name(pg, &name, UInt32(name.count)) > 0 ? String(cString: name) : "a program"
     }
     public func resize(cols: UInt16, rows: UInt16) {
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
-        _ = ioctl(master, TIOCSWINSZ, &ws)
+        io.withLock { if !closed { _ = ioctl(master, TIOCSWINSZ, &ws) } }
     }
-    public func kill() { Darwin.kill(-pid, SIGHUP); Darwin.kill(pid, SIGTERM) }
+    public func kill() { signal { Darwin.kill(-$0, SIGHUP); Darwin.kill($0, SIGTERM) } }
 
     /// kill(), then SIGKILL the group if it's still there after `grace` seconds (some TUIs ignore SIGTERM).
     public func terminate(grace: TimeInterval = 2) {
         kill()
-        let pid = pid
-        DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
-            if Darwin.kill(pid, 0) == 0 { Darwin.kill(-pid, SIGKILL); Darwin.kill(pid, SIGKILL) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace) { [self] in   // keeps the PTY, and so `reaped`, until then
+            signal { if Darwin.kill($0, 0) == 0 { Darwin.kill(-$0, SIGKILL); Darwin.kill($0, SIGKILL) } }
         }
     }
+
+    /// `f(pid)` while the pid is still this program's.
+    private func signal(_ f: (pid_t) -> Void) { life.withLock { if !reaped { f(pid) } } }
 }

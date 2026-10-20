@@ -30,16 +30,25 @@ public enum IDE {
         var p: [String: JSONValue] = ["uri": .string(uri(for: target, cwd: cwd))]
         if let split { p["split"] = .string(split) }
         if focus { p["focus"] = true }
-        let worktrees = (try? await call("worktree.list", .null))?.array ?? []
-        if let w = worktrees.first(where: { $0["path"]?.string.map { inside(cwd, $0) } ?? false }) { p["worktreeId"] = w["id"] }
+        if let w = try? await workspace(cwd: cwd, call: call) { p["worktreeId"] = w["id"] }
         return try await call("ui.open", .object(p))
+    }
+
+    /// The workspace a command run in `cwd` means. Workspaces of a project share its folder, so the folder alone can't
+    /// tell them apart: an agent's own (KELP_SESSION) wins when it holds `cwd`, else the first one that does.
+    public static func workspace(cwd: String, session: String? = ProcessInfo.processInfo.environment["KELP_SESSION"], call: Call) async throws -> JSONValue? {
+        let here = (try await call("worktree.list", .null).array ?? []).filter { $0["path"]?.string.map { inside(cwd, $0) } ?? false }
+        if let session, here.count > 1,
+           let wid = (try? await call("session.list", .null))?.array?.first(where: { $0["id"]?.string == session })?["worktreeId"],
+           let own = here.first(where: { $0["id"] == wid }) { return own }
+        return here.first
     }
 
     static func absolute(_ path: String, cwd: String) -> String {
         URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: cwd, isDirectory: true)).standardizedFileURL.path
     }
 
-    static func inside(_ dir: String, _ root: String) -> Bool {
+    public static func inside(_ dir: String, _ root: String) -> Bool {
         let (d, r) = (URL(fileURLWithPath: dir).resolvingSymlinksInPath().path, URL(fileURLWithPath: root).resolvingSymlinksInPath().path)
         return d == r || d.hasPrefix(r + "/")
     }

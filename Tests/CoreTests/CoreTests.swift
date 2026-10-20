@@ -35,6 +35,16 @@ import Testing
     #expect(try await client.call("ping", timeout: 5).string == "ok")
 }
 
+/// A socket someone still answers on isn't taken over; a stale one (its owner gone) is.
+@Test func listenLeavesALiveSocketAlone() throws {
+    let path = NSTemporaryDirectory() + "kelp-live-\(getpid()).sock"
+    let first = try Unix.listen(path)
+    #expect(throws: (any Error).self) { try Unix.listen(path) }
+    close(first)
+    let again = try Unix.listen(path)   // the file is still there, nobody behind it
+    close(again); unlink(path)
+}
+
 @Test func jsonValueRoundTrip() throws {
     let v = try JSONValue.from(RPCRequest(id: 1, method: "x", params: .object(["k": .string("v")])))
     #expect(v["method"]?.string == "x")

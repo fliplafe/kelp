@@ -8,6 +8,7 @@ import Testing
     let p = try PTY(argv: ["/bin/zsh", "-lc", "echo ready; cat"], cwd: "/tmp", env: [:])
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
     p.onExit = { box.exit($0) }
+    p.start()
     try await Task.sleep(for: .milliseconds(500))
     #expect(box.text.contains("ready"))
     p.kill()
@@ -30,6 +31,7 @@ final class Box: @unchecked Sendable {
     let box = Box()
     let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: kelp)
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
+    p.start()
     // Wait for the child rather than a fixed time: a busy machine (parallel builds) starts it late.
     for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
     #expect(box.text.contains("ready"))
@@ -60,10 +62,34 @@ final class Box: @unchecked Sendable {
         let p = try PTY(argv: ["/bin/sh", "-c", "trap 'echo bye; exit 0' TERM HUP; echo ready; while :; do sleep 0.1; done"],
                         cwd: "/tmp", env: [:], trampoline: kelp)
         p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
+        p.start()
         for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
         pid = p.pid
         p.terminate()
     }
     for _ in 0..<50 where kill(pid, 0) == 0 { try await Task.sleep(for: .milliseconds(100)) }
     #expect(kill(pid, 0) != 0, "still there: stuck exiting on a terminal nobody reads")
+}
+
+/// Once its program has exited a PTY's fd (and pid) may be someone else's: typing into it reaches nobody.
+@Test func endedPTYWritesNowhere() async throws {
+    let box = Box()
+    let p = try PTY(argv: ["/bin/sh", "-c", "exit 0"], cwd: "/tmp", env: [:])
+    p.onExit = { box.exit($0) }
+    p.start()
+    for _ in 0..<50 where box.code == nil { try await Task.sleep(for: .milliseconds(100)) }
+    #expect(box.code != nil)
+    // The freed fd number goes to whatever opens next: socket pairs, so anything written to one end shows at the other.
+    var pairs: [[Int32]] = []
+    for _ in 0..<16 { var sv: [Int32] = [0, 0]; _ = socketpair(AF_UNIX, SOCK_STREAM, 0, &sv); pairs.append(sv) }
+    defer { pairs.joined().forEach { close($0) } }
+    p.write(Data("typed-after-exit".utf8)); p.resize(cols: 10, rows: 10); p.kill()
+    #expect(p.foregroundProgram == nil)
+    var got = 0
+    for fd in pairs.joined() {
+        var b = [UInt8](repeating: 0, count: 64)
+        _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+        if read(fd, &b, b.count) > 0 { got += 1 }
+    }
+    #expect(got == 0)
 }

@@ -44,3 +44,19 @@ import Testing
     #expect(IDE.escapedPath(#"/a\b"#) == #"/a\\b"#)
     #expect(IDE.escapedPath("/plain/path.txt") == "/plain/path.txt")
 }
+
+/// Workspaces of a project share its folder: `kelp open` from an agent means that agent's own workspace.
+@Test func workspaceOfTheCallingAgent() async throws {
+    let dir = FileManager.default.temporaryDirectory.path
+    let call: IDE.Call = { method, _ in
+        switch method {
+        case "worktree.list": JSONValue.array([.obj(["id": "w1", "path": .string(dir)]), .obj(["id": "w2", "path": .string(dir)]), .obj(["id": "w3", "path": "/nowhere"])])
+        case "session.list": JSONValue.array([.obj(["id": "s2", "worktreeId": "w2"]), .obj(["id": "s3", "worktreeId": "w3"])])
+        default: JSONValue.null
+        }
+    }
+    #expect(try await IDE.workspace(cwd: dir, session: "s2", call: call)?["id"] == "w2")
+    #expect(try await IDE.workspace(cwd: dir, session: nil, call: call)?["id"] == "w1")
+    #expect(try await IDE.workspace(cwd: dir, session: "s3", call: call)?["id"] == "w1")   // its workspace isn't here
+    #expect(try await IDE.workspace(cwd: "/elsewhere", session: "s2", call: call) == nil)
+}

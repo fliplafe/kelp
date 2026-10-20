@@ -9,24 +9,6 @@ extension Daemon {
     /// git, transcripts and the worktree they make all block: run through `offload` (see `handle`).
     func handleAgents(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
         switch method {
-        case "task.create":   // workspace: branch (named from the task or name) + worktree + agent that receives the task
-            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let agent = try manifest(p["agent"]?.string ?? "claude", command: nil)
-            _ = try LoginPath.resolve(agent.command)   // fail before making a branch and checkout for nothing
-            let prompt = (p["prompt"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let name = (p["name"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            var branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? (name.isEmpty ? Naming.slug(prompt) : Naming.slug(name, words: 8))
-            if branch.isEmpty { branch = "workspace-\(Int(Date().timeIntervalSince1970) % 100000)" }
-            if let prefix = p["branchPrefix"]?.string, !prefix.isEmpty, !branch.hasPrefix(prefix) { branch = prefix + branch }
-            var unique = branch, n = 2
-            while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
-            let title = name.isEmpty ? (prompt.isEmpty ? "" : Naming.title(prompt)) : name
-            let w = try handleSync("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "base": p["base"] ?? .null,
-                                                            "note": .string(title), "tabs": false]), conn: conn)
-            var o = Launch(p); o.prompt = prompt.isEmpty ? nil : prompt; o.title = title.isEmpty ? nil : title
-            let s = try spawn(cwd: try w.req("path"), manifest: agent, worktreeId: try w.req("id"), o)
-            return .obj(["worktree": w, "session": try .from(s)])
-
         case "session.annotate":   // summary from the UI (the agent's own last reply), optionally a better status guess
             guard let ls = existing(try p.req("id")) else { return .null }
             if let sum = p["summary"]?.string { publish(ls.update { $0.summary = sum }) }
@@ -41,32 +23,23 @@ extension Daemon {
 
         case "session.restart":    // same command, same directory; resumes the conversation when the agent supports it
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
-            existing(old.id)?.pty.kill()
+            existing(old.id)?.pty.kill()   // if the new one can't start, this one still ends as Ended
             let m = try manifest(old.agent == "custom" || old.agent == "shell" ? old.agent : old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             o.argv = p["resume"]?.bool != false ? resumeArgv(old, m) : old.argv
             let s = try spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
-            try store.delete(old)
+            discard(old)   // its exit, still to come, doesn't save it again
             return try .from(s)
 
-        case "session.fork", "session.handoff":
-            // fork: new worktree from this branch; handoff: same worktree. Both seed a new agent with the transcript.
+        case "session.handoff":   // a new agent in the same workspace, briefed with this one's transcript
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
             let transcript = try handoffFile(old, full: p["full"]?.bool == true)
-            var cwdPath = old.cwd, wid = old.worktreeId
-            if method == "session.fork", let w = try store.worktree(old.worktreeId ?? "") {
-                var b = w.branch + "-fork", n = 2
-                guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
-                while Git.branchExists(r.path, b) { b = "\(w.branch)-fork-\(n)"; n += 1 }
-                let nw = try handleSync("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(b), "base": .string(w.branch), "note": .string("fork of \(w.branch)"), "tabs": false]), conn: conn)
-                cwdPath = try nw.req("path"); wid = try nw.req("id")
-            }
             let task = p["prompt"]?.string ?? "Continue the task where the previous agent left off."
             var o = Launch(p)
             o.prompt = "Read \(transcript.path) — the transcript of the previous agent session in this project. \(task)"
             o.draft = p["draft"]?.bool == true
-            o.title = (old.title.isEmpty ? (old.agent ?? "agent") : old.title) + (method == "session.fork" ? " (fork)" : " (handoff)")
-            let s = try spawn(cwd: cwdPath, manifest: manifest(p["agent"]?.string ?? old.agent, command: nil), worktreeId: wid, o)
+            o.title = (old.title.isEmpty ? (old.agent ?? "agent") : old.title) + " (handoff)"
+            let s = try spawn(cwd: old.cwd, manifest: manifest(p["agent"]?.string ?? old.agent, command: nil), worktreeId: old.worktreeId, o)
             return try .from(s)
 
         case "recipe.render":   // agent prompt for an action, with the repo's override if any
@@ -109,22 +82,28 @@ extension Daemon {
     }
 
     /// What a short command prints (stdout and stderr), or nil if it fails or takes longer than `timeout`.
+    /// The pipe is read while the command runs (`ps` on a busy Mac prints more than a pipe holds), and the exit is watched
+    /// from before it starts (one that exits at once isn't missed).
     static func run(_ argv: [String], path: String, timeout: Double) -> String? {
         let p = Process(); p.executableURL = URL(fileURLWithPath: argv[0]); p.arguments = Array(argv.dropFirst())
         var env = ProcessInfo.processInfo.environment; env["PATH"] = path; env["NO_COLOR"] = "1"; p.environment = env
         let out = Pipe(); p.standardOutput = out; p.standardError = out; p.standardInput = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0), read = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
         guard (try? p.run()) != nil else { return nil }
-        let done = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in done.signal() }
-        if done.wait(timeout: .now() + timeout) == .timedOut { p.terminate(); return nil }
-        let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return p.terminationStatus == 0 ? text : nil
+        nonisolated(unsafe) var data = Data()
+        Thread.detachNewThread { data = out.fileHandleForReading.readDataToEndOfFile(); read.signal() }
+        // A child that keeps the pipe open past the exit (a daemon it started) doesn't hold this up either.
+        guard exited.wait(timeout: .now() + timeout) == .success, read.wait(timeout: .now() + 1) == .success else { p.terminate(); return nil }
+        return p.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
     }
 
     /// "claude 2.1.3 (Claude Code)" → "2.1.3".
     static func semver(_ s: String) -> String? { s.firstMatch(of: /\d+\.\d+\.\d+/).map { String($0.output) } }
 
+    /// The last `bytes` (0 to 16 MB) it printed.
     func liveSessionOrLog(_ id: String, bytes: Int) throws -> Data {
+        let bytes = max(0, min(bytes, 16 << 20))
         if let ls = existing(id) { return ls.tail(bytes) }
         let u = root.appendingPathComponent("history/\(id).log")
         guard let h = try? FileHandle(forReadingFrom: u) else { throw RPCError.invalidParams("no history for \(id)") }
@@ -177,6 +156,7 @@ extension Daemon {
         let mode = settings["power.keepAwake"]?.string ?? "agents"
         lock.lock(); let working = live.values.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }; lock.unlock()
         let want = mode == "always" || (mode == "agents" && working)
+        keepAwakeLock.lock(); defer { keepAwakeLock.unlock() }   // the ticker and a settings change at once: one assertion
         if want, sleepAssertion == 0 {
             var id: IOPMAssertionID = 0
             if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { sleepAssertion = id }

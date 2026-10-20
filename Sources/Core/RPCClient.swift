@@ -4,6 +4,8 @@ import Foundation
 public final class RPCClient: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()
+    /// One line on the wire at a time: a long request written in pieces must not get another one in between.
+    private let writeLock = NSLock()
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var closed = false
@@ -19,7 +21,7 @@ public final class RPCClient: @unchecked Sendable {
 
     public func close() {
         lock.lock(); let was = closed; closed = true; lock.unlock()
-        if !was { shutdown(fd, SHUT_RDWR); Darwin.close(fd) }
+        if !was { shutdown(fd, SHUT_RDWR); writeLock.withLock { _ = Darwin.close(fd) } }
     }
 
     private func readLoop() {
@@ -45,10 +47,12 @@ public final class RPCClient: @unchecked Sendable {
 
     /// Fire-and-forget, written in call order (keystrokes must not overtake each other).
     public func notify(_ method: String, _ params: JSONValue? = nil) {
-        lock.lock(); defer { lock.unlock() }
-        guard !closed, let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
-        Unix.writeAll(fd, d)
+        guard !lock.withLock({ closed }), let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
+        write(d)
     }
+
+    /// Nothing is written once closed: the fd number may be someone else's by then.
+    private func write(_ d: Data) { writeLock.withLock { if !lock.withLock({ closed }) { Unix.writeAll(fd, d) } } }
 
     /// `timeout`: throw if no reply came by then — for polls, where one reply that never arrives would stop the loop for good.
     public func call(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> JSONValue {
@@ -63,7 +67,7 @@ public final class RPCClient: @unchecked Sendable {
                     c?.resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
                 }
             }
-            do { Unix.writeAll(fd, try Wire.line(RPCRequest(id: id, method: method, params: params))) }
+            do { write(try Wire.line(RPCRequest(id: id, method: method, params: params))) }
             catch { lock.lock(); pending[id] = nil; lock.unlock(); c.resume(throwing: error) }
         }
     }

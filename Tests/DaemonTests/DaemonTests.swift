@@ -125,18 +125,6 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     #expect(try String(contentsOfFile: wt.path + "/a.txt", encoding: .utf8) == "hello\n")
 }
 
-@Test func fanoutStart() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
-    // fake agents: custom commands can't be passed as agent ids, so create worktrees via fan-out with the shell agent
-    let r = try await c.call("fanout.start", .obj(["repoId": .string(repo.id), "prompt": "true", "agents": .array(["shell", "shell"]), "delay": 1]))
-    #expect(r.array?.count == 2)
-    let ids = Set(r.array!.compactMap { $0["worktree"]?.string })
-    let listed = try await c.call("worktree.list", .obj(["repoId": .string(repo.id)])).array ?? []
-    #expect(listed.filter { ids.contains($0["id"]?.string ?? "") }.allSatisfy { FileManager.default.fileExists(atPath: $0["path"]?.string ?? "") })
-}
-
 final class NoteBox: @unchecked Sendable {
     private let l = NSLock(); private var out: [String: String] = [:]
     func add(_ m: String, _ p: JSONValue) {
@@ -165,9 +153,9 @@ final class NoteBox: @unchecked Sendable {
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(repoPath)]), as: Repo.self)
-    let r = try await c.call("task.create", .obj(["repoId": .string(repo.id), "prompt": "Add a dark mode toggle to settings", "agent": "fake"]))
-    let wt = try r["worktree"]!.decode(Worktree.self), s = try r["session"]!.decode(Session.self)
-    #expect(wt.branch.contains("dark") || wt.branch.contains("mode") || wt.branch.contains("toggle"))
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "dark-mode", "setup": false]), as: Worktree.self)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "fake", "prompt": "Add a dark mode toggle to settings"]),
+                                      as: Session.self)
     #expect(FileManager.default.fileExists(atPath: wt.path + "/.env.secret"))              // .worktreeinclude
     #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: wt.path + "/node_modules")) != nil)   // shared
     _ = try await c.call("session.attach", .obj(["id": .string(s.id)]))
@@ -202,12 +190,18 @@ final class NoteBox: @unchecked Sendable {
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
     _ = try await c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))   // ~2 s
     #expect(try await waitFor(15) { try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated })
+    // A hook that comes after the pause (the agent was on its way out) doesn't wake it.
+    _ = try await c.call("session.hook", .obj(["id": .string(s.id), "event": "done"]))
+    #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
     // Opening it again resumes the same session id with the resume flag.
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
     _ = try await c.call("config.set", .obj(["hibernateMinutes": 0]))
     _ = try await c.call("session.attach", .obj(["id": .string(s.id)]))
     #expect(try await waitFor(10) { box.output(s.id).contains("STARTED") && box.output(s.id).contains("--resume") })
     #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status != .hibernated)
+    // Its log goes on from before the pause: both runs are there.
+    let log = try String(contentsOf: root.appendingPathComponent("history/\(s.id).log"), encoding: .utf8)
+    #expect(log.components(separatedBy: "STARTED").count == 3)
 }
 
 /// Every project has a main workspace on the repo itself; "+" makes "Workspace N" instantly; the main one can't be deleted.
@@ -424,7 +418,7 @@ final class NoteBox: @unchecked Sendable {
     try FileManager.default.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
     try """
     #!/bin/sh
-    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt) shift;; *) shift; break;; esac; done
+    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
     exec /bin/sh -c "$1"
     """.write(to: shim, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)

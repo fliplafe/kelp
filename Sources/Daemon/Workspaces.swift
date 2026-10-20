@@ -60,7 +60,7 @@ extension Daemon {
         guard try store.worktrees(repo: r.id).filter({ isMain($0, r) }).count > 1 else {
             throw RPCError.invalidParams("A project keeps at least one workspace; remove the project instead.")
         }
-        for s in try store.sessions() where s.worktreeId == w.id { existing(s.id)?.pty.kill(); try? store.delete(s) }
+        for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
         try store.delete(w)
         notify("event.changed", "worktree")
     }

@@ -27,16 +27,20 @@ extension Daemon {
               let u = v["user"], let t = v["token"] else { return nil }
         return BitbucketClient(user: u, token: t)
     }
+    /// The keychain can keep a caller waiting (a locked login keychain): these read it off the cooperative pool.
+    func linearClient() async -> LinearClient? { try? await offload { [self] in linear } }
+    func jiraClient() async -> JiraClient? { try? await offload { [self] in jira } }
+    func bitbucketClient() async -> BitbucketClient? { try? await offload { [self] in bitbucket } }
 
     /// Jira issues linked to a worktree ("ENG-12") move along with the PR, like Linear.
     func moveJira(_ w: Worktree, toName hint: String, category: String) async {
-        guard let j = jira, w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil, w.linearIssueId.isEmpty else { return }
+        guard let j = await jiraClient(), w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil, w.linearIssueId.isEmpty else { return }
         try? await j.move(key: w.issue, toName: hint, category: category)
     }
 
     /// Move a linked Linear issue to a workflow state kind; quiet no-op without a key or link.
     func moveLinear(_ w: Worktree, to kind: LinearClient.StateKind) async {
-        guard !w.linearIssueId.isEmpty, let l = linear,
+        guard !w.linearIssueId.isEmpty, let l = await linearClient(),
               // Limit: finds the team via my issues; query the issue by id if tasks assigned to others need moving
               let issue = try? await l.myIssues().first(where: { $0.id == w.linearIssueId }) ?? nil,
               let states = try? await l.workflowStates(teamId: issue.team.id),
@@ -113,7 +117,7 @@ extension Daemon {
         case "github.prs":
             let (_, path) = try repoPath(p)
             if let slug = try await offload({ BitbucketClient.slug(cwd: path) }) {
-                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
+                guard let bb = await bitbucketClient() else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
             }
             return try await offload { () throws -> JSONValue in
@@ -138,7 +142,7 @@ extension Daemon {
             if prBase != r.baseBranch, !body.contains("Stacked on") { body = "Stacked on `\(prBase)`.\n\n" + body }
             let url: String
             if let slug = try await offload({ BitbucketClient.slug(cwd: path) }) {
-                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
+                guard let bb = await bitbucketClient() else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
                 url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: w.branch, destination: prBase)
             } else {
                 url = try await offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: p["draft"]?.bool == true) }
@@ -151,7 +155,7 @@ extension Daemon {
 
         case "github.pr-merge":
             guard let w = try store.worktree(p.req("worktreeId")), let n = p["pr"]?.int ?? w.prNumber else { throw RPCError.invalidParams("no PR linked") }
-            if let slug = try await offload({ BitbucketClient.slug(cwd: w.path) }), let bb = bitbucket {
+            if let slug = try await offload({ BitbucketClient.slug(cwd: w.path) }), let bb = await bitbucketClient() {
                 try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
             } else {
                 let m = GitHub.MergeMethod(rawValue: p["method"]?.string ?? "squash") ?? .squash
@@ -169,19 +173,19 @@ extension Daemon {
             try Keychain.set(key, account: Self.linearKeyAccount)
             return try .from(me)
         case "linear.status":
-            guard let l = linear else { return .obj(["connected": false]) }
+            guard let l = await linearClient() else { return .obj(["connected": false]) }
             let me = try? await l.viewer()
             return .obj(["connected": .bool(me != nil), "name": .string(me?.name ?? "")])
         case "linear.issues":
-            guard let l = linear else { throw RPCError.invalidParams("Linear is not connected (Settings › Integrations)") }
+            guard let l = await linearClient() else { throw RPCError.invalidParams("Linear is not connected (Settings › Integrations)") }
             if let t = p["teamId"]?.string { return try .from(await l.teamIssues(teamId: t)) }
             return try .from(await l.myIssues())
         case "linear.teams":
-            guard let l = linear else { return .array([]) }; return try .from(await l.teams())
+            guard let l = await linearClient() else { return .array([]) }; return try .from(await l.teams())
         case "linear.states":
-            guard let l = linear else { return .array([]) }; return try .from(await l.workflowStates(teamId: p.req("teamId")))
+            guard let l = await linearClient() else { return .array([]) }; return try .from(await l.workflowStates(teamId: p.req("teamId")))
         case "linear.setState":
-            guard let l = linear else { throw RPCError.invalidParams("Linear is not connected") }
+            guard let l = await linearClient() else { throw RPCError.invalidParams("Linear is not connected") }
             try await l.setState(issueId: p.req("issueId"), stateId: p.req("stateId")); return .null
 
         case "jira.setCredentials":
@@ -191,24 +195,24 @@ extension Daemon {
             try Keychain.set(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Self.jiraAccount)
             return .obj(["name": .string(name)])
         case "jira.status":
-            guard let j = jira else { return .obj(["connected": false]) }
+            guard let j = await jiraClient() else { return .obj(["connected": false]) }
             let n = try? await j.myself()
             return .obj(["connected": .bool(n != nil), "name": .string(n ?? ""), "site": .string(j.site)])
         case "jira.issues":
-            guard let j = jira else { throw RPCError.invalidParams("Jira is not connected (Settings › Integrations)") }
+            guard let j = await jiraClient() else { throw RPCError.invalidParams("Jira is not connected (Settings › Integrations)") }
             return try .from(await j.search(jql: p["jql"]?.string ?? JiraClient.myOpenJQL))
         case "jira.transitions":
-            guard let j = jira else { return .array([]) }
+            guard let j = await jiraClient() else { return .array([]) }
             return try .from(await j.transitions(key: p.req("key")))
         case "jira.transition":
-            guard let j = jira else { throw RPCError.invalidParams("Jira is not connected") }
+            guard let j = await jiraClient() else { throw RPCError.invalidParams("Jira is not connected") }
             try await j.transition(key: p.req("key"), id: p.req("id")); return .null
         case "bitbucket.setCredentials":
             let u = try p.req("user"), t = try p.req("token")
             if t.isEmpty { Keychain.delete(Self.bitbucketAccount); return .null }
             try Keychain.set(String(decoding: try JSONEncoder().encode(["user": u, "token": t]), as: UTF8.self), account: Self.bitbucketAccount)
             return .null
-        case "bitbucket.status": return .obj(["connected": .bool(bitbucket != nil)])
+        case "bitbucket.status": return .obj(["connected": .bool(await bitbucketClient() != nil)])
 
         case "task.fromIssue":   // issue / Linear task -> branch with its number, worktree, agent briefed with the description
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
@@ -221,16 +225,19 @@ extension Daemon {
                 return unique
             }
             let wv = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: conn)
-            guard var w = try store.worktree(try wv.req("id")) else { throw RPCError.internalError("worktree vanished") }
-            w.issue = ref; w.issueURL = url; w.linearIssueId = p["linearId"]?.string ?? ""
-            try store.save(w)
-            let cfg = RepoConfig.load(repoPath: r.path)
-            let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
-            var prompt = cfg.issueCommand.map { t in vars.reduce(t) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) } }
-                ?? Recipes.render("issue", config: cfg, vars: vars)
-            if let extra = p["prompt"]?.string, !extra.isEmpty { prompt += "\n\n" + extra }
-            var o = Launch(p); o.prompt = prompt; o.title = "\(ref) \(title)".prefix(48).description
-            let s = try spawn(cwd: w.path, manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: w.id, o)
+            // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
+            let (w, s) = try await offload { [self] () throws -> (Worktree, Session) in
+                guard var w = try store.worktree(try wv.req("id")) else { throw RPCError.internalError("worktree vanished") }
+                w.issue = ref; w.issueURL = url; w.linearIssueId = p["linearId"]?.string ?? ""
+                try store.save(w)
+                let cfg = RepoConfig.load(repoPath: r.path)
+                let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
+                var prompt = cfg.issueCommand.map { t in vars.reduce(t) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) } }
+                    ?? Recipes.render("issue", config: cfg, vars: vars)
+                if let extra = p["prompt"]?.string, !extra.isEmpty { prompt += "\n\n" + extra }
+                var o = Launch(p); o.prompt = prompt; o.title = "\(ref) \(title)".prefix(48).description
+                return (w, try spawn(cwd: w.path, manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: w.id, o))
+            }
             await moveLinear(w, to: .inProgress)
             await moveJira(w, toName: "progress", category: "indeterminate")
             notify("event.changed", "worktree")

@@ -109,7 +109,7 @@ extension Daemon {
                 all = p["fullText"]?.bool == true ? History.fullTextSearch(query: q, in: all, limit: 100) : History.search(all, query: q)
             }
             if let cwd = p["cwd"]?.string { all = all.filter { $0.cwd == cwd } }
-            return try .from(Array(all.prefix(p["limit"]?.int ?? 400)))
+            return try .from(Array(all.prefix(max(0, p["limit"]?.int ?? 400))))
 
         case "history.resume":   // reopen a past conversation as a live session
             guard let s = try p["session"]?.decode(AgentSessionInfo.self) else { throw RPCError.invalidParams("session required") }

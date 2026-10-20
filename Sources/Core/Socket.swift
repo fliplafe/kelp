@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SocketError: Error { case path, socket(Int32), connect(Int32), bind(Int32) }
+public enum SocketError: Error { case path, socket(Int32), connect(Int32), bind(Int32), inUse }
 
 public enum Unix {
     static func addr(_ path: String) throws -> sockaddr_un {
@@ -22,7 +22,9 @@ public enum Unix {
         return fd
     }
 
+    /// A socket file someone still answers on is theirs: only a stale one (its owner gone) is replaced.
     public static func listen(_ path: String) throws -> Int32 {
+        if let other = try? connect(path) { close(other); throw SocketError.inUse }
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SocketError.socket(errno) }
@@ -37,9 +39,10 @@ public enum Unix {
     @discardableResult
     public static func writeAll(_ fd: Int32, _ data: Data) -> Bool {
         data.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
+            guard let base = p.baseAddress else { return true }   // nothing to write
             var off = 0
             while off < p.count {
-                let n = Darwin.write(fd, p.baseAddress! + off, p.count - off)
+                let n = Darwin.write(fd, base + off, p.count - off)
                 if n < 0 { if errno == EINTR || errno == EAGAIN { continue }; return false }
                 off += n
             }

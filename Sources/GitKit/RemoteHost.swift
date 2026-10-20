@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// A project on another machine, over SSH. Kelp keeps a local folder for it that holds only `.kelp-remote`
 /// (`{"host", "path"}`); git in that folder runs on the host instead (so the git and file panels work as they are),
@@ -14,11 +15,24 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     /// `ssh` (tests use a stand-in that runs the command locally).
     public static let ssh = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh"
 
+    /// Where Kelp keeps remote projects' folders (`<KELP_HOME>/remote`). A `.kelp-remote` anywhere else — say, committed
+    /// to a repository someone clones — is just a file: it must not send that project's git, agents and terminals to
+    /// a host it names.
+    nonisolated(unsafe) private static var trusted: Set<String> = []
+    private static let trustedLock = NSLock()
+    public static func trust(_ dir: URL) { trustedLock.withLock { _ = trusted.insert(dir.standardizedFileURL.path) } }
+
     /// The remote a project folder stands for (its own folder only: a workspace is that folder).
     public static func of(_ dir: String) -> RemoteHost? {
-        guard let d = FileManager.default.contents(atPath: dir + "/" + marker) else { return nil }
-        return try? JSONDecoder().decode(RemoteHost.self, from: d)
+        let path = URL(fileURLWithPath: dir).standardizedFileURL.path
+        let roots = trustedLock.withLock { trusted }.union([Paths.root.appendingPathComponent("remote").standardizedFileURL.path])
+        guard roots.contains(where: { path.hasPrefix($0 + "/") }), let d = FileManager.default.contents(atPath: path + "/" + marker),
+              let r = try? JSONDecoder().decode(RemoteHost.self, from: d), Self.isHost(r.host) else { return nil }
+        return r
     }
+
+    /// What may follow `ssh`: not an option, nothing a shell would split.
+    public static func isHost(_ h: String) -> Bool { !h.isEmpty && !h.hasPrefix("-") && !h.contains(where: \.isWhitespace) }
 
     /// For a path inside a remote project's folder: the folder, its remote, and the path on the host.
     public static func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? {
@@ -33,7 +47,7 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     /// ssh's options for this host: the shared connection; no password prompts where nobody can answer them.
     public func sshArgs(tty: Bool) -> [String] {
         (tty ? ["-tt"] : ["-T", "-o", "BatchMode=yes"])
-            + ["-o", "ControlMaster=auto", "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", host]
+            + ["-o", "ControlMaster=auto", "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
     }
 
     /// What the host's shell runs: `argv` in the project's folder, through a login shell so the host's PATH applies;

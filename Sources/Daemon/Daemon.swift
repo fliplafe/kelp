@@ -11,15 +11,17 @@ public final class Daemon: @unchecked Sendable {
     let root: URL
     let lock = NSLock()
     var live: [String: LiveSession] = [:]
-    private var conns: [Int: Int32] = [:]       // connection id -> fd
+    private var conns: [Int: Connection] = [:]
     private var nextConn = 1
     private var listenFD: Int32 = -1
+    private var instanceLock: Int32 = -1   // flock on kelpd.lock: one daemon per KELP_HOME
     private var ticker: DispatchSourceTimer?
     let extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue]
     let settings: SettingsStore
     var appConns = Set<Int>()               // connections that called ui.publish: they get event.ui
     var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     var sleepAssertion: UInt32 = 0
+    let keepAwakeLock = NSLock()            // guards sleepAssertion: the ticker and settings changes both apply it
     var usageCache: (at: Date, value: JSONValue)?
     var prCache: [String: (at: Date, value: JSONValue)] = [:]   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.
@@ -48,12 +50,7 @@ public final class Daemon: @unchecked Sendable {
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh"); try? Paths.ensure(ssh); RemoteHost.controlDir = ssh.path
-        // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
-        for var s in (try? self.store.sessions()) ?? [] where s.status != .exited {
-            let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
-            s.status = (m?.resumeArgs.isEmpty == false) ? .hibernated : .exited
-            try? self.store.save(s)
-        }
+        RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
     }
 
     /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
@@ -68,6 +65,20 @@ public final class Daemon: @unchecked Sendable {
     }()
 
     public func start() throws {
+        // One daemon per KELP_HOME: a second one (launchd's KeepAlive, a CLI that couldn't connect) would take the socket
+        // over and mark the first one's running agents paused.
+        let lockFD = open(root.appendingPathComponent("kelpd.lock").path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+        guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
+            if lockFD >= 0 { close(lockFD) }
+            throw RPCError.internalError("another kelpd is already running for \(root.path)")
+        }
+        instanceLock = lockFD
+        // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
+        for var s in (try? store.sessions()) ?? [] where s.status != .exited {
+            let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
+            s.status = (m?.resumeArgs.isEmpty == false) ? .hibernated : .exited
+            try? store.save(s)
+        }
         _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one
         DispatchQueue.global().async { _ = LoginPath.value }   // warm up so the first agent doesn't wait for the shell
         // The usage index reads gigabytes the first time: do it in the background now, not when Usage is opened.
@@ -94,14 +105,31 @@ public final class Daemon: @unchecked Sendable {
         acceptSource?.cancel(); ticker?.cancel()
         lock.lock(); let all = Array(live.values); let cs = Array(conns.values); lock.unlock()
         all.forEach { $0.pty.kill() }
-        cs.forEach { shutdown($0, SHUT_RDWR) }
+        cs.forEach { $0.hangUp() }
         close(listenFD); unlink(socketPath)
+        if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }
     }
 
     // MARK: connections
 
+    /// A request as it comes: JSON-RPC lets the id be a string too, and the reply carries it back as it came.
+    struct Request: Decodable {
+        let id: JSONValue?
+        let method: String
+        let params: JSONValue?
+        var isNotification: Bool { id == nil || id == .null }
+    }
+    struct Reply: Encodable {
+        var jsonrpc = "2.0"
+        let id: JSONValue
+        let result: JSONValue?
+        let error: RPCError?
+    }
+
     private func serve(_ fd: Int32) {
-        lock.lock(); let id = nextConn; nextConn += 1; conns[id] = fd; lock.unlock()
+        let c = lock.withLock { () -> Connection in
+            let c = Connection(id: nextConn, fd: fd); nextConn += 1; conns[c.id] = c; return c
+        }
         Thread.detachNewThread { [self] in
             var lb = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
@@ -109,69 +137,76 @@ public final class Daemon: @unchecked Sendable {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
                 for line in lb.append(Data(buf[0..<n])) {
-                    guard let req = try? JSONDecoder().decode(RPCRequest.self, from: line) else { continue }
-                    if req.id == nil, req.method == "session.write" {   // keystrokes: in order, on this thread
+                    guard let req = try? JSONDecoder().decode(Request.self, from: line) else {
+                        // Not a request: say so to whoever sent an id, rather than leave it waiting.
+                        if let id = (try? JSONDecoder().decode(JSONValue.self, from: line))?["id"], id != .null, let d = try? Wire.line(
+                            Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) { c.send(d) }
+                        continue
+                    }
+                    if req.isNotification, req.method == "session.write" {   // keystrokes: in order, on this thread
                         if let sid = req.params?["id"]?.string, let b = req.params?["base64"]?.string, let d = Data(base64Encoded: b) { existing(sid)?.userInput(d) }
                         continue
                     }
                     if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)
-                        stream(fd: fd, conn: id, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
+                        stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
                         break reading
                     }
-                    Task { await self.respond(req, conn: id, fd: fd) }
+                    Task { await self.respond(req, conn: c) }
                 }
             }
-            lock.lock(); conns[id] = nil; let all = Array(live.values)
-            if appConns.remove(id) != nil, appConns.isEmpty { uiState = .object([:]) }
+            lock.lock(); conns[c.id] = nil; let all = Array(live.values)
+            if appConns.remove(c.id) != nil, appConns.isEmpty { uiState = .object([:]) }
             lock.unlock()
-            all.forEach { $0.detach(id) }
-            close(fd)
+            all.forEach { $0.detach(c.id) }
+            c.close()
         }
     }
 
     /// Raw attach (`kelp attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
     /// writes is the user's typing. Terminal replies (DA, kitty keyboard) flow back the same way, so the agent sees a real terminal.
     /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
-    private func stream(fd: Int32, conn: Int, session: String, size: JSONValue?, leftover: Data) {
-        lock.withLock { _ = rawConns.insert(conn) }   // before waking: its status events must not land in the byte stream
-        let cols = UInt16(clamping: size?["cols"]?.int ?? 120), rows = UInt16(clamping: size?["rows"]?.int ?? 32)
-        guard let ls = try? liveSession(session, cols: cols > 0 ? cols : 120, rows: rows > 0 ? rows : 32) else {
-            _ = Unix.writeAll(fd, Data("kelp: no such session\r\n".utf8)); lock.withLock { _ = rawConns.remove(conn) }; return
+    /// An ended session shows what it last printed (from its log), then the attach ends.
+    private func stream(_ c: Connection, session: String, size: JSONValue?, leftover: Data) {
+        lock.withLock { _ = rawConns.insert(c.id) }   // before waking: its status events must not land in the byte stream
+        defer { lock.withLock { _ = rawConns.remove(c.id) } }
+        if existing(session) == nil, (try? store.session(session))?.status == .exited {
+            c.send(TerminalReplies.withoutQueries((try? liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
-        let history = ls.attach(conn)
-        Unix.writeAll(fd, history)
+        let (cols, rows) = Launch.size(size)
+        guard let ls = try? liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
+        ls.attach(c.id) { c.send($0) }   // queued under the session's lock: no live output gets ahead of it
         if !leftover.isEmpty { ls.userInput(leftover) }
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
-            let n = read(fd, &buf, buf.count)
+            let n = read(c.fd, &buf, buf.count)
             if n <= 0 { break }
             ls.userInput(Data(buf[0..<n]))
         }
-        ls.detach(conn)
-        lock.withLock { _ = rawConns.remove(conn) }
+        ls.detach(c.id)
     }
 
     /// Output to attached connections: raw ones get bytes, the rest a JSON event.
     func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
-        let (raw, json): ([Int32], Set<Int>) = lock.withLock {
+        let (raw, json): ([Connection], Set<Int>) = lock.withLock {
             (subs.filter { rawConns.contains($0) }.compactMap { conns[$0] }, subs.subtracting(rawConns))
         }
-        raw.forEach { Unix.writeAll($0, data) }
+        raw.forEach { $0.send(data) }
         if !json.isEmpty { notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: json) }
     }
 
-    private func respond(_ req: RPCRequest, conn: Int, fd: Int32) async {
-        let resp: RPCResponse
-        do { resp = RPCResponse(id: req.id, result: try await handle(req.method, req.params ?? .null, conn: conn)) }
-        catch let e as RPCError { resp = RPCResponse(id: req.id, error: e) }
-        catch { resp = RPCResponse(id: req.id, error: .internalError("\(error)")) }
-        if req.id != nil, let d = try? Wire.line(resp) { Unix.writeAll(fd, d) }
+    private func respond(_ req: Request, conn c: Connection) async {
+        let reply: Reply
+        let id = req.id ?? .null
+        do { reply = Reply(id: id, result: try await handle(req.method, req.params ?? .null, conn: c.id), error: nil) }
+        catch let e as RPCError { reply = Reply(id: id, result: nil, error: e) }
+        catch { reply = Reply(id: id, result: nil, error: .internalError("\(error)")) }
+        if !req.isNotification, let d = try? Wire.line(reply) { c.send(d) }
     }
 
     func notify(_ method: String, _ params: JSONValue, to only: Set<Int>? = nil) {
         guard let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
         lock.lock(); let targets = conns.filter { !rawConns.contains($0.key) && only?.contains($0.key) != false }.map(\.value); lock.unlock()
-        targets.forEach { Unix.writeAll($0, d) }
+        targets.forEach { $0.send(d) }
     }
 
     // MARK: sessions
@@ -188,70 +223,109 @@ public final class Daemon: @unchecked Sendable {
     }
 
     struct Launch {
-        var yolo = false, model: String?, effort: String?, resume = false
+        var model: String?, effort: String?, resume = false
         var prompt: String?, title: String?
         var draft = false   // type the prompt, don't send it
         var profile: String?
+        var openURLs = false   // the first local URL it prints opens in the workspace's browser (event.devserver)
         var cols: UInt16 = 120, rows: UInt16 = 32
         var argv: [String]?   // restart: reuse exactly
 
         init() {}
         init(_ p: JSONValue) {
-            yolo = p["mode"]?.string == "yolo" || p["yolo"]?.bool == true
             model = p["model"]?.string; effort = p["effort"]?.string; resume = p["resume"]?.bool == true
             prompt = p["prompt"]?.string; title = p["title"]?.string; profile = p["profile"]?.string; draft = p["draft"]?.bool == true
-            cols = UInt16(p["cols"]?.int ?? 120); rows = UInt16(p["rows"]?.int ?? 32)
+            openURLs = p["openURLs"]?.bool == true
+            (cols, rows) = Self.size(p)
+        }
+
+        /// A terminal size from `{cols, rows}`: anything out of range is clamped, nothing (or 0) is 120 × 32.
+        static func size(_ p: JSONValue?) -> (cols: UInt16, rows: UInt16) {
+            let c = UInt16(clamping: p?["cols"]?.int ?? 0), r = UInt16(clamping: p?["rows"]?.int ?? 0)
+            return (c > 0 ? c : 120, r > 0 ? r : 32)
         }
     }
 
     @discardableResult
     func spawn(cwd: String, manifest: AgentManifest, worktreeId: String?, _ o: Launch = Launch()) throws -> Session {
-        var argv = o.argv ?? manifest.argv(yolo: o.yolo, model: o.model, effort: o.effort, resume: o.resume)
+        var argv = o.argv ?? manifest.argv(model: o.model, effort: o.effort, resume: o.resume)
         var rec = Session(worktreeId: worktreeId, cwd: cwd, command: argv.joined(separator: " "), agent: manifest.id,
                           title: o.title ?? "", titleManual: o.title != nil, argv: argv)
-        // A remote project's sessions run on its host. Kelp's hooks and skills are files on this Mac, so they stay
-        // out: status comes from what the screen shows.
-        if let remote = RemoteHost.of(cwd) {
-            argv = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : argv)]
-            rec.argv = argv
-        } else if o.argv == nil, let flag = manifest.hooksSettingsFlag {
+        // A remote project's sessions run on its host (see `launchArgv`). Kelp's hooks and skills are files on this Mac,
+        // so they stay out: status comes from what the screen shows.
+        let local = RemoteHost.of(cwd) == nil
+        if local, o.argv == nil, let flag = manifest.hooksSettingsFlag {
             let f = root.appendingPathComponent("hooks-\(manifest.id).json")
             try Hooks.writeSettings(to: f)
             argv += [flag, f.path]
-            rec.argv = argv
         }
         // Kelp's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
-        if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
+        if local, o.argv == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
             argv += [flag, Paths.agentSkills.path]
             // Without a word of context, "add a panel" reads as a request for the agent's own UI.
             if let ctx = manifest.contextFlag, let text = Self.kelpContext(Paths.agentSkills) { argv += [ctx, text] }
-            rec.argv = argv
         }
-        if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
-            argv += [flag, rec.id.lowercased()]
-            rec.argv = argv
-        }
+        if local, o.argv == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
+        rec.argv = argv
         var env = manifest.resolvedEnv
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
-        let ls = try LiveSession(record: rec, manifest: manifest, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env,
+        let ls = try LiveSession(record: rec, manifest: manifest, argv: try launchArgv(argv, cwd: cwd, manifest: manifest), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
         rec = ls.snapshot
-        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        ls.onStatus = { [weak self, weak ls] s in self?.publish(s); ls?.noteTurn(s.status) }
-        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         let sid = rec.id
-        ls.onFirstPrompt = { [weak self] text in Task { await self?.autoTitle(session: sid, prompt: text) } }
-        if !["shell", "custom"].contains(manifest.id) { ls.onTopic = { [weak self] t in Task { await self?.retitle(session: sid, topic: t) } } }
+        wire(ls)
+        ls.onFirstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
+        if !["shell", "custom"].contains(manifest.id) {
+            ls.onTopic = { [weak self] t in
+                guard let self else { return }
+                DispatchQueue.global(qos: .utility).async { self.retitle(session: sid, topic: t) }
+            }
+        }
+        if o.openURLs, let wid = worktreeId {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
+            ls.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(sid)])) }
+        }
         lock.lock(); live[rec.id] = ls; lock.unlock()
+        defer { ls.start() }   // after the record is saved (its first status must not be overwritten), and in any case
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
-            if o.title == nil { Task { await autoTitle(session: sid, prompt: p) } }
+            if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
         }
         try store.save(rec)
         notify("event.session", try .from(rec))
         return rec
+    }
+
+    /// What runs: `argv` itself, or for a remote project ssh running it in the project's folder on the host. Records
+    /// keep the plain argv, so a restart or a wake wraps it once (older records kept the ssh line: that runs as it is).
+    func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest) throws -> [String] {
+        var run = argv
+        if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
+            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : argv)]
+        }
+        guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
+        return [try LoginPath.resolve(exe)] + run.dropFirst()
+    }
+
+    /// Output, status and limits go out from the first byte (`start()` comes after). An ended session leaves `live`:
+    /// its fd and pid belong to nobody now, and its log still shows what it printed.
+    private func wire(_ ls: LiveSession) {
+        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
+        ls.onStatus = { [weak self, weak ls] s in
+            guard let self, let ls, !ls.isDiscarded else { return }
+            publish(s); ls.noteTurn(s.status)
+            if s.status == .exited { lock.withLock { if live[s.id] === ls { live[s.id] = nil } } }
+        }
+        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
+    }
+
+    /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.
+    func discard(_ s: Session) {
+        let ls = lock.withLock { live.removeValue(forKey: s.id) }
+        ls?.discard()
+        try? store.delete(s)
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
     }
 
     /// One sentence naming the skills that are turned on (their folders exist).
@@ -309,18 +383,19 @@ public final class Daemon: @unchecked Sendable {
         env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
-        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        ls.onStatus = { [weak self, weak ls] s in self?.publish(s); ls?.noteTurn(s.status) }
-        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
+        let ls = try LiveSession(record: rec, manifest: m, argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
+                                 historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
+        wire(ls)
         lock.withLock { live[rec.id] = ls }
         publish(ls.snapshot)
+        ls.start()
         return ls
     }
 
-    /// argv that brings back this session's own conversation.
+    /// argv that brings back this session's own conversation. A remote one's conversations are on its host: the agent's
+    /// own "latest in this folder" finds it there.
     func resumeArgv(_ rec: Session, _ m: AgentManifest) -> [String] {
-        guard rec.agent == "claude", let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
+        guard rec.agent == "claude", RemoteHost.of(rec.cwd) == nil, let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
         if rec.argv.contains(flag) { return rec.argv }
         let conversations = ClaudeHistory.sessions(cwd: rec.cwd)
         if let i = rec.argv.firstIndex(of: pin), i + 1 < rec.argv.count {
@@ -349,7 +424,8 @@ public final class Daemon: @unchecked Sendable {
     }
 
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.
-    func autoTitle(session id: String, prompt: String) async {
+    /// Runs git: call it off the cooperative pool (it's called on GCD).
+    func autoTitle(session id: String, prompt: String) {
         guard let ls = existing(id), !ls.snapshot.titleManual, ls.topic == nil else { return }   // the agent's own topic is better
         let title = Naming.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }
@@ -372,7 +448,7 @@ public final class Daemon: @unchecked Sendable {
 
     /// The agent's own short topic (Claude Code's terminal title) names the session instead of its prompt, and its
     /// workspace while that still has the name the session gave it (or a placeholder). A title set by hand stays.
-    func retitle(session id: String, topic: String) async {
+    func retitle(session id: String, topic: String) {
         guard let ls = existing(id), !ls.snapshot.titleManual, ls.snapshot.title != topic else { return }
         let old = ls.snapshot.title
         let s = ls.update { if !$0.titleManual { $0.title = topic } }

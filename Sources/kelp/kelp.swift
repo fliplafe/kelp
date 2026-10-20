@@ -12,10 +12,8 @@ usage: kelp <command>
   terminal list | read <session> [bytes] | send <session> <text> [--no-enter]
   diff [--source unstaged|staged|all|branch] | commit <msg> | merge | push
   comment add <file> <line[-line]> <text> | send <session>
-  task <prompt> [--agent id] [--model m] [--yolo]   new branch (named from the prompt) + worktree + agent
-  session restart|rename <id> [title]|handoff <id> [--agent a]|fork <id>
+  session restart|rename <id> [title]|handoff <id> [--agent a]
   terminal context <session>          bounded transcript (for pasting elsewhere)
-  fanout <prompt> --agents claude,codex [--repo id]
   attach <session>                     make this terminal the session's terminal (detach: close it)
   hook <working|waiting|done>          (called by agent hooks inside a session)
   install | uninstall                  launchd agent for the daemon
@@ -71,24 +69,18 @@ func show(_ v: JSONValue) {
 /// A CLI value: JSON when it parses (3, true, [1], "x"), else the text itself.
 func jsonOrText(_ s: String) -> JSONValue { (try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))) ?? .string(s) }
 
-func inside(_ cwd: String, _ path: String) -> Bool {
-    let r = { (p: String) in URL(fileURLWithPath: p).resolvingSymlinksInPath().path }
-    let (c, p) = (r(cwd), r(path))
-    return c == p || c.hasPrefix(p + "/")
-}
-
-/// Worktree whose path contains the current directory.
+/// The workspace the current directory is in; an agent's own one (KELP_SESSION) when several share the folder.
 func currentWorktree(_ c: RPCClient) async throws -> JSONValue {
-    let cwd = FileManager.default.currentDirectoryPath
-    let all = try await c.call("worktree.list").array ?? []
-    guard let w = all.first(where: { w in w["path"]?.string.map { inside(cwd, $0) } ?? false }) else { throw RPCError.invalidParams("not inside a kelp worktree") }   // throws: callers use try? to fall back
+    guard let w = try await IDE.workspace(cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }) else {
+        throw RPCError.invalidParams("not inside a kelp worktree")   // throws: callers use try? to fall back
+    }
     return w
 }
 func currentRepoID(_ c: RPCClient) async throws -> String {
     if let r = flag("--repo") { return r }
     let cwd = FileManager.default.currentDirectoryPath
     let repos = try await c.call("repo.list").array ?? []
-    if let id = repos.first(where: { r in r["path"]?.string.map { inside(cwd, $0) } ?? false })?["id"]?.string { return id }
+    if let id = repos.first(where: { r in r["path"]?.string.map { IDE.inside(cwd, $0) } ?? false })?["id"]?.string { return id }
     if let id = (try? await currentWorktree(c))?["repoId"]?.string { return id }
     fail("no repo here; pass --repo <id> or run `kelp repo add`")
 }
@@ -185,8 +177,10 @@ func plist() -> String {
             var p: [String: JSONValue] = [:]
             if let a = flag("--agent") { p["agent"] = .string(a) }
             if let m = flag("--cmd") { p["command"] = .string(m) }
+            // A session outside every workspace would run where no tab or sidebar row shows it.
             if let w = flag("--worktree") { p["worktreeId"] = .string(try await resolve(c, w, "worktree.list")) }
-            else if p["cwd"] == nil { if let w = try? await currentWorktree(c) { p["worktreeId"] = w["id"] } else { p["cwd"] = .string(FileManager.default.currentDirectoryPath) } }
+            else if let w = try? await currentWorktree(c) { p["worktreeId"] = w["id"] }
+            else { fail("not inside a Kelp project: run it in a project's folder or pass --worktree <id> (see `kelp status`)") }
             show(try await c.call("session.create", .object(p)))
         case ("session", "list"), ("terminal", "list"): show(try await c.call("session.list"))
         case ("terminal", "read"):
@@ -209,16 +203,8 @@ func plist() -> String {
             show(try await c.call("comment.add", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(args.dropFirst(2).joined(separator: " "))])))
         case ("comment", "send"):
             show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
-        case ("task", _):
-            var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
-            if let a = flag("--agent") { p["agent"] = .string(a) }
-            if let m = flag("--model") { p["model"] = .string(m) }
-            if has("--yolo") { p["mode"] = "yolo" }
-            p["prompt"] = .string(([sub].compactMap { $0 } + args).joined(separator: " "))
-            let r = try await c.call("task.create", .object(p))
-            print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")  session \(r["session"]?["id"]?.string?.prefix(8) ?? "")")
-        case ("session", "restart"), ("session", "fork"):
-            show(try await c.call("session.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+        case ("session", "restart"):
+            show(try await c.call("session.restart", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("session", "rename"):
             _ = try await c.call(SessionRename(id: try await resolve(c, args.first ?? "", "session.list"), title: args.dropFirst().joined(separator: " ")))
         case ("session", "handoff"):
@@ -227,10 +213,6 @@ func plist() -> String {
             show(try await c.call("session.handoff", .object(p)))
         case ("terminal", "context"):
             show(try await c.call("session.context", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
-        case ("fanout", _):
-            let agents = (flag("--agents") ?? "claude").split(separator: ",").map { JSONValue.string(String($0)) }
-            let repo = try await currentRepoID(c)
-            show(try await c.call("fanout.start", .obj(["repoId": .string(repo), "prompt": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "agents": .array(agents)])))
         case ("github", "prs"), ("github", "issues"):
             var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
             if let f = flag("--filter") { p["filter"] = .string(f) }

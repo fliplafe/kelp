@@ -99,8 +99,10 @@ extension Daemon {
             r.path = root; try store.save(r)
             for var w in try store.worktrees(repo: r.id) where w.path == old { w.path = root; try store.save(w) }
             notify("event.changed", "repo"); return try .from(r)
-        case "repo.remove":
+        case "repo.remove":   // its workspaces go with it, and so do their agents: none keeps working out of sight
             guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
+            let desks = Set(try store.worktrees(repo: r.id).map(\.id))
+            for s in try store.sessions() where desks.contains(s.worktreeId ?? "") { discard(s) }
             try store.delete(r); notify("event.changed", "repo"); return .null
 
         // MARK: worktrees
@@ -142,7 +144,7 @@ extension Daemon {
             if FileManager.default.fileExists(atPath: w.path) {
                 try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)
             }
-            for s in (try store.sessions()) where s.worktreeId == w.id { existing(s.id)?.pty.kill() }
+            for s in (try store.sessions()) where s.worktreeId == w.id { if remove { discard(s) } else { existing(s.id)?.pty.kill() } }
             if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
             notify("event.changed", "worktree"); return .null
         case "worktree.unarchive":
@@ -158,18 +160,17 @@ extension Daemon {
             if let wid, dir == nil { dir = try cwd(forWorktree: wid).path }
             guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
             let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
-            let s = try spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p))
-            if p["openURLs"]?.bool == true, let wid {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
-                existing(s.id)?.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(s.id)])) }
-            }
-            return try .from(s)
+            return try .from(spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p)))
         case "session.list":
             let live = try store.sessions().map { s -> Session in existing(s.id)?.snapshot ?? s }
             return try .from(live.filter { p["worktreeId"]?.string == nil || $0.worktreeId == p["worktreeId"]?.string })
         case "session.attach":
-            let s = try liveSession(p.req("id"))
+            let id = try p.req("id")
+            if existing(id) == nil, try store.session(id)?.status == .exited {   // ended: what it last printed, from its log
+                return .obj(["history": .string(TerminalReplies.withoutQueries(try liveSessionOrLog(id, bytes: LiveSession.ringLimit)).base64EncodedString())])
+            }
             // Showing a tab isn't reading it: the app marks it read once it was looked at (or typed into).
-            return .obj(["history": .string(s.attach(conn).base64EncodedString())])
+            return .obj(["history": .string(try liveSession(id).attach(conn).base64EncodedString())])
         case "session.detach": existing(try p.req("id"))?.detach(conn); return .null
         case "session.write":
             let s = try liveSession(p.req("id"))
@@ -179,7 +180,9 @@ extension Daemon {
         case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
             try liveSession(p.req("id")).send(p.req("text"), enter: p["enter"]?.bool != false)
             return .null
-        case "session.resize": try liveSession(p.req("id")).resize(cols: UInt16(p["cols"]?.int ?? 120), rows: UInt16(p["rows"]?.int ?? 32)); return .null
+        case "session.resize":
+            let (cols, rows) = Launch.size(p)
+            try liveSession(p.req("id")).resize(cols: cols, rows: rows); return .null
         case "session.kill":
             if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.kill() }
             else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill
@@ -194,8 +197,8 @@ extension Daemon {
         case "ports.list": return try .from(ports(worktree: p.req("worktreeId")))   // {worktreeId} → servers its sessions run
         case "session.usage": return try .from(usage())   // → [{session, cpu, memory, processes}], busiest first
         case "ports.stop":   // {worktreeId, pid}: only a process one of the workspace's sessions started
-            let pid = Int32(p["pid"]?.int ?? 0)
-            guard ports(worktree: try p.req("worktreeId")).contains(where: { $0.pid == pid }) else { throw RPCError.invalidParams("That process isn't running in this workspace.") }
+            let pid = Int32(clamping: p["pid"]?.int ?? 0)
+            guard pid > 0, ports(worktree: try p.req("worktreeId")).contains(where: { $0.pid == pid }) else { throw RPCError.invalidParams("That process isn't running in this workspace.") }
             kill(pid, SIGTERM); return .null
         case "session.busy":   // a shell running something in the foreground: closing it would stop that program
             return existing(try p.req("id"))?.pty.foregroundProgram.map { .string($0) } ?? .null
@@ -209,8 +212,8 @@ extension Daemon {
         case "session.markRead":
             if let r = existing(try p.req("id"))?.markRead() { try store.save(r); notify("event.session", try .from(r)) }
             return .null
-        case "session.hook":
-            let ls = try liveSession(p.req("id"))
+        case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
+            guard let ls = existing(try p.req("id")) else { return .null }
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
             if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
             let event: String = try p.req("event")
@@ -293,24 +296,6 @@ extension Daemon {
             try handleSync("session.send", .obj(["id": .string(try p.req("session")), "text": .string(ReviewMessage.compose(branch: w.branch, comments: open))]), conn: conn)
             for var c in open { c.state = .sent; try store.save(c) }
             return .int(open.count)
-
-        // MARK: fan-out
-        case "fanout.start":   // one prompt -> N agents, each in its own worktree
-            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let prompt = try p.req("prompt"), tag = p["name"]?.string ?? "fanout-\(Int(Date().timeIntervalSince1970) % 100000)"
-            let agents = (p["agents"]?.array ?? []).compactMap(\.string)
-            guard !agents.isEmpty else { throw RPCError.invalidParams("agents required") }
-            var out: [JSONValue] = []
-            for (i, a) in agents.enumerated() {
-                let br = "\(tag)-\(i + 1)-\(a)"
-                let path = try Git.addWorktree(repo: r.path, branch: br, base: r.baseBranch, into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
-                let w = Worktree(repoId: r.id, branch: br, path: path, note: "fan-out: \(prompt.prefix(60))"); try store.save(w)
-                var o = Launch(p); o.prompt = prompt; o.title = "\(a) #\(i + 1)"
-                let s = try spawn(cwd: path, manifest: manifest(a, command: nil), worktreeId: w.id, o)
-                out.append(.obj(["worktree": .string(w.id), "session": .string(s.id), "agent": .string(a)]))
-            }
-            notify("event.changed", "worktree")
-            return .array(out)
 
         default: throw RPCError.methodNotFound
         }

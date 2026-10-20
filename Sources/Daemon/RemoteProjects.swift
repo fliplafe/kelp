@@ -8,7 +8,7 @@ extension Daemon {
         switch method {
         case "repo.addRemote":   // {host, path} → the project (its local folder stands for the one on the host)
             let host = try p.req("host").trimmingCharacters(in: .whitespaces), path = try p.req("path").trimmingCharacters(in: .whitespaces)
-            guard !host.isEmpty, !host.hasPrefix("-"), !host.contains(" ") else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
+            guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
             guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
             let name = (path as NSString).lastPathComponent
             let folder = root.appendingPathComponent("remote/\(host.replacingOccurrences(of: "/", with: "_"))/\(name)")

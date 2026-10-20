@@ -26,10 +26,9 @@ For quick iteration: `swift build && .build/debug/KelpApp` (the app starts `kelp
 
 ```sh
 kelp status
-kelp task "Add a dark mode toggle to settings" --agent claude   # branch + worktree + agent, named from the prompt
+kelp session new --agent claude                                # in the workspace of the current folder
 kelp worktree create feat/login | list | current | note "half done"
 kelp terminal list | read <id> | send <id> "run the tests" | context <id>
-kelp fanout "Fix the flaky test" --agents claude,codex
 kelp diff | commit "msg" | merge | push
 kelp install                                                   # run the daemon as a LaunchAgent
 ```
