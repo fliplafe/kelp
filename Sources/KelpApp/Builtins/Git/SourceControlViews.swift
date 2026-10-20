@@ -1,6 +1,4 @@
 import AppKit
-import WorkbenchKit
-import Core
 import GitKit
 
 struct RowAction {

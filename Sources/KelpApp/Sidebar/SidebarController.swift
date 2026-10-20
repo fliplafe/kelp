@@ -23,13 +23,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             case .needs(let id): "n:" + id
             }
         }
-        /// The agent a row stands for.
-        var session: String? {
-            switch kind {
-            case .agent(let id), .needs(let id): id
-            default: nil
-            }
-        }
         /// What a dragged row reorders: a project's or a workspace's id.
         var id: String? {
             switch kind {

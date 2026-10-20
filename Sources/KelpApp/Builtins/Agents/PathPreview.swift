@@ -51,7 +51,6 @@ final class PathPreview {
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
         model.load(worktree: worktree)
     }
-    func close() { popover.close() }
 }
 
 @MainActor

@@ -1,7 +1,6 @@
 import AppKit
 import Core
 import GitKit
-import WorkbenchKit
 
 /// What the rows and buttons do: stage, commit, sync, branches, and the context menu.
 extension SourceControlController {

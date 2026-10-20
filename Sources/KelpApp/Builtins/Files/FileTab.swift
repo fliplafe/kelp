@@ -71,7 +71,7 @@ final class FileTab: SavableTab {
         e.view.clipsToBounds = true
         editor = e; lastSaved = text
         if ["md", "markdown"].contains(ext) {
-            let md = MarkdownTab(editor: e, url: url, path: p)
+            let md = MarkdownTab(editor: e, url: url)
             md.startInPreview = p == Help.location.path   // the help is for reading
             markdown = md; view = md.view
         } else {

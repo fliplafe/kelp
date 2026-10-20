@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import WorkbenchKit
 
 /// A tab whose provider is missing (its extension is disabled or uninstalled).
 @MainActor
