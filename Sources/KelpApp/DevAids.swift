@@ -99,20 +99,20 @@ extension AppDelegate {
                 if let s = w.attachedSheet {
                     print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
                     // Its own window: drawn next to the snapshot as "<name>-sheet.png".
-                    if let sv = s.contentView?.superview ?? s.contentView { Self.render(sv, scale: s.backingScaleFactor, to: path.replacingOccurrences(of: ".png", with: "-sheet.png")) }
+                    Self.snap(s, to: path.replacingOccurrences(of: ".png", with: "-sheet.png"))
                 }
                 // KELP_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
                 // reached otherwise without moving the user's pointer).
                 for text in (env["KELP_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
-                Self.render(v, scale: w.backingScaleFactor, to: path)
+                Self.snap(w, to: path)
                 // A popover (limits details…) is its own window: next to the snapshot, as "<name>-popover.png".
                 // An alert shown on its own (a background app has no window to put the sheet on): "<name>-alert.png".
                 for a in NSApp.windows where a.isVisible && a.className.contains("AlertPanel") {
                     print("ALERT", (a.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
-                    if let av = a.contentView?.superview ?? a.contentView { Self.render(av, scale: a.backingScaleFactor, to: path.replacingOccurrences(of: ".png", with: "-alert.png")) }
+                    Self.snap(a, to: path.replacingOccurrences(of: ".png", with: "-alert.png"))
                 }
                 for pop in NSApp.windows where pop.isVisible && pop.className.contains("Popover") {
-                    if let pv = pop.contentView?.superview ?? pop.contentView { Self.render(pv, scale: pop.backingScaleFactor, to: path.replacingOccurrences(of: ".png", with: "-popover.png")) }
+                    Self.snap(pop, to: path.replacingOccurrences(of: ".png", with: "-popover.png"))
                 }
                 // In another language: menu items still in English (their text isn't in Localizable.xcstrings yet).
                 if Bundle.main.preferredLocalizations.first != "en" {
@@ -230,6 +230,22 @@ extension AppDelegate {
             if i.keyEquivalent.lowercased() == key.lowercased(), m.intersection([.command, .shift, .option, .control]) == mods { return i }
         }
         return nil
+    }
+
+    /// The window as the window server composites it: the macOS 26 materials (sidebar, inspector, glass) and web
+    /// content included, which the layer render draws white or not at all. An app may read its own windows without
+    /// screen-recording permission. The call is unavailable to Swift since macOS 15, hence dlsym; the layer render
+    /// stays as the fallback.
+    static func snap(_ w: NSWindow, to path: String) {
+        guard !composited(w, to: path), let v = w.contentView?.superview ?? w.contentView else { return }
+        render(v, scale: w.backingScaleFactor, to: path)
+    }
+    private static func composited(_ w: NSWindow, to path: String) -> Bool {
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let sym = dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreateImage"),
+              let img = unsafeBitCast(sym, to: Capture.self)(.null, 1 << 3, UInt32(w.windowNumber), 1)?.takeRetainedValue(),
+              let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return false }
+        return (try? png.write(to: URL(fileURLWithPath: path))) != nil
     }
 
     /// Render the layer tree (what the compositor shows); cacheDisplay misses layer-only content.

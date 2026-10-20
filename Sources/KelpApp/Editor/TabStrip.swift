@@ -7,8 +7,8 @@ extension NSPasteboard.PasteboardType { static let kelpTab = NSPasteboard.Pasteb
 /// The top panes' strips are the window's title bar: their empty space moves the window, as a title bar's does.
 @MainActor
 final class TabStrip: NSView {
-    /// The title bar's height without a toolbar, so tabs line up with the traffic lights.
-    static let height: CGFloat = 28
+    /// The title bar's height without a toolbar, so tabs line up with the traffic lights (28 pt before macOS 26, 32 after).
+    static let height = NSWindow.frameRect(forContentRect: .zero, styleMask: [.titled]).height
     struct Item {
         let id: String; var title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
@@ -244,6 +244,11 @@ private final class TabButton: NSControl, NSDraggingSource {
         return v.isDescendant(of: close) ? v : self
     }
     override var mouseDownCanMoveWindow: Bool { false }
+    /// A capsule on macOS 26+, like the system's own controls there (search fields, buttons, Safari's tabs).
+    override func layout() {
+        super.layout()
+        if #available(macOS 26, *) { layer?.cornerRadius = bounds.height / 2 }
+    }
     override func mouseEntered(with e: NSEvent) { hover = true }
     override func mouseExited(with e: NSEvent) { hover = false }
     override func mouseDown(with e: NSEvent) { if let id = item?.id { strip?.onSelect?(id) } }

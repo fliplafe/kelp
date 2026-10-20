@@ -43,7 +43,11 @@ let package = Package(
             dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", .product(name: "Sparkle", package: "Sparkle")]
                 + (hasGhostty ? ["GhosttyKit"] : []),
             swiftSettings: [.swiftLanguageMode(.v5)],
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+            // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
+            // macOS 14 look (compatibility mode). Naming a current SDK gets the system's own design on macOS 26+.
+            // Limit: fixed at 26.0; raise it when a later SDK's look is wanted.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                                           "-Xlinker", "-platform_version", "-Xlinker", "macos", "-Xlinker", "14.0", "-Xlinker", "26.0"])]
         ),
         .testTarget(name: "CoreTests", dependencies: ["Core"]),
         .testTarget(name: "GitKitTests", dependencies: ["GitKit"]),
