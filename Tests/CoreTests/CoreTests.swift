@@ -213,3 +213,9 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
         fresh.close(); close(peer); close(oldPeer)
     }
 }
+
+@Test func lockedKeepsEveryChangeFromManyThreads() async {
+    let n = Locked(0)
+    await withTaskGroup(of: Void.self) { g in for _ in 0..<1000 { g.addTask { n.withLock { $0 += 1 } } } }
+    #expect(n.current == 1000)
+}

@@ -6,11 +6,10 @@ import GitKit
 /// or is cancelled) and a new empty project (`git init`, like the scratch project).
 extension Daemon {
     /// Running clones by the id the app gave them, for `repo.cloneCancel`.
-    final class Clones: @unchecked Sendable {   // running clones under their own lock
-        private let lock = NSLock()
-        private var running: [String: Process] = [:]
-        func set(_ id: String, _ p: Process?) { lock.withLock { running[id] = p } }
-        func cancel(_ id: String) { lock.withLock { running[id] }?.interrupt() }
+    final class Clones: Sendable {
+        private let running = Locked<[String: Process]>([:])
+        func set(_ id: String, _ p: Process?) { running.withLock { $0[id] = p } }
+        func cancel(_ id: String) { running.withLock { $0[id] }?.interrupt() }
     }
     static let clones = Clones()
 
@@ -91,30 +90,27 @@ extension Daemon {
 }
 
 /// git's stderr during a clone: the last progress line, and what it said when it failed.
-final class CloneLog: @unchecked Sendable {   // progress and failure under lock
-    private let lock = NSLock()
-    private var text = "", sent = Date.distantPast
+final class CloneLog: Sendable {
+    private let state = Locked<(text: String, sent: Date)>(("", .distantPast))
 
     /// The newest complete line, when it's time to show one.
     func add(_ d: Data) -> String? {
-        lock.withLock {
-            text += String(bytes: d, encoding: .utf8) ?? ""   // git writes ASCII here
-            if text.count > 8000 { text = String(text.suffix(4000)) }
-            guard Date().timeIntervalSince(sent) > 0.2 else { return nil }
-            let lines = text.split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+        state.withLock { st in
+            st.text += String(bytes: d, encoding: .utf8) ?? ""   // git writes ASCII here
+            if st.text.count > 8000 { st.text = String(st.text.suffix(4000)) }
+            guard Date().timeIntervalSince(st.sent) > 0.2 else { return nil }
+            let lines = st.text.split(whereSeparator: { $0 == "\r" || $0 == "\n" })
             guard let last = lines.last.map(String.init), !last.isEmpty else { return nil }
-            sent = Date(); return last.trimmingCharacters(in: .whitespaces)
+            st.sent = Date(); return last.trimmingCharacters(in: .whitespaces)
         }
     }
 
     /// "fatal: repository 'x' not found" → "Repository 'x' not found".
     var failure: String? {
-        lock.withLock {
-            let lines = text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
-            guard let f = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.hasPrefix("ERROR:") }) ?? lines.last else { return nil }
-            var m = f.replacingOccurrences(of: #"^(fatal|error|ERROR): ?"#, with: "", options: .regularExpression)
-            m = m.prefix(1).uppercased() + m.dropFirst()
-            return m
-        }
+        let lines = state.current.text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
+        guard let f = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.hasPrefix("ERROR:") }) ?? lines.last else { return nil }
+        var m = f.replacingOccurrences(of: #"^(fatal|error|ERROR): ?"#, with: "", options: .regularExpression)
+        m = m.prefix(1).uppercased() + m.dropFirst()
+        return m
     }
 }

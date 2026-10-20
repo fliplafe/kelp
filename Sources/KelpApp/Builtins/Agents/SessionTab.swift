@@ -70,16 +70,9 @@ final class SessionTab: TabContent {
     /// Limit: blocks up to 300 ms on the daemon round trip; a slower daemon closes the tab as before.
     private static func busy(_ sid: String) -> String? {
         guard let c = AppModel.shared.client else { return nil }   // the client answers on its own thread, not the main one
-        let done = DispatchSemaphore(value: 0), answer = BusyAnswer()
-        Task.detached { answer.set(try? await c.call("session.busy", .obj(["id": .string(sid)])).string); done.signal() }
+        let done = DispatchSemaphore(value: 0), answer = Locked<String?>(nil)
+        Task.detached { let name = try? await c.call("session.busy", .obj(["id": .string(sid)])).string; answer.withLock { $0 = name }; done.signal() }
         _ = done.wait(timeout: .now() + 0.3)
-        return answer.value   // under its lock: a late answer can't be written while this reads
+        return answer.current   // under its lock: a late answer can't be written while this reads
     }
-}
-
-/// The busy answer, handed from the client's thread to the main one under a lock.
-private final class BusyAnswer: @unchecked Sendable {   // name under lock
-    private let lock = NSLock(); private var name: String?
-    func set(_ n: String?) { lock.withLock { name = n } }
-    var value: String? { lock.withLock { name } }
 }

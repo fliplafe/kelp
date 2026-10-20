@@ -278,20 +278,20 @@ enum Shell {
 }
 
 /// A pipe's output, collected as it arrives (on the file handle's own queue).
-private final class PipeText: @unchecked Sendable {   // collected text under lock
+private final class PipeText: Sendable {
     let pipe = Pipe()
-    private let lock = NSLock()
-    private var data = Data(), eof = false
+    private let state = Locked<(data: Data, eof: Bool)>((Data(), false))
     init() {
-        pipe.fileHandleForReading.readabilityHandler = { [self] h in
+        pipe.fileHandleForReading.readabilityHandler = { [state] h in
             let d = h.availableData
-            lock.withLock { if d.isEmpty { eof = true; h.readabilityHandler = nil } else { data.append(d) } }
+            if d.isEmpty { h.readabilityHandler = nil }
+            state.withLock { if d.isEmpty { $0.eof = true } else { $0.data.append(d) } }
         }
     }
-    var ended: Bool { lock.withLock { eof } }
+    var ended: Bool { state.current.eof }
     // Lossy on purpose: a tool's output with a stray byte should still show.
     // swiftlint:disable:next optional_data_string_conversion
-    var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
+    var text: String { String(decoding: state.current.data, as: UTF8.self) }
 }
 
 // MARK: list views

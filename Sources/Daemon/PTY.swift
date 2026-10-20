@@ -225,11 +225,10 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 }
 
 /// Closes an fd from a dispatch source's cancel handler, only when asked to (a source cancelled at EOF leaves it open).
-private final class FDCloser: @unchecked Sendable {   // asked / done under lock
+private final class FDCloser: Sendable {
     let fd: Int32
-    private let lock = NSLock()
-    private var asked = false, done = false
+    private let state = Locked<(asked: Bool, done: Bool)>((false, false))
     init(_ fd: Int32) { self.fd = fd }
-    func ask() { lock.withLock { asked = true } }
-    func cancelled() { lock.withLock { if asked && !done { done = true; close(fd) } } }
+    func ask() { state.withLock { $0.asked = true } }
+    func cancelled() { state.withLock { if $0.asked && !$0.done { $0.done = true; close(fd) } } }
 }

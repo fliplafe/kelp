@@ -125,14 +125,12 @@ extension Daemon {
 }
 
 /// Output collected from a probe's PTY.
-private final class ScreenBuffer: @unchecked Sendable {   // data and last under lock
-    private let lock = NSLock()
-    private var data = Data()
-    private var last = Date()
-    func append(_ d: Data) { lock.withLock { data.append(d); last = Date() } }
+private final class ScreenBuffer: Sendable {
+    private let state = Locked<(data: Data, last: Date)>((Data(), Date()))
+    func append(_ d: Data) { state.withLock { $0.data.append(d); $0.last = Date() } }
     // swiftlint:disable:next optional_data_string_conversion
-    var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }   // lossy on purpose: TUI output
-    var quietFor: TimeInterval { lock.withLock { Date().timeIntervalSince(last) } }
+    var text: String { String(decoding: state.current.data, as: UTF8.self) }   // lossy on purpose: TUI output
+    var quietFor: TimeInterval { Date().timeIntervalSince(state.current.last) }
     func wait(_ seconds: TimeInterval, until ok: (String) -> Bool) -> Bool {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {
