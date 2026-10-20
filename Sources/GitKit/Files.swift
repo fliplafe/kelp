@@ -7,12 +7,17 @@ public struct SearchMatch: Codable, Sendable, Equatable {
 /// Project files and search. Uses git so .gitignore is honoured exactly like in a terminal.
 public enum ProjectFiles {
     /// Tracked + untracked-but-not-ignored files, relative paths. A tracked file deleted from the folder is left out: git
-    /// tags it "R" (one git process instead of a stat per file, and it works on a remote host too).
+    /// tags it "R" (one git process instead of a stat per file, and it works on a remote host too). Outside a sparse
+    /// checkout's cone ("S", never checked by git) a file is kept only if it's there.
     public static func list(_ root: String) throws -> [String] {
         let lines: [Substring] = try Git.run(["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"], cwd: root)
             .split(separator: "\0").filter { $0.count > 2 }
         let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
-        return lines.filter { !$0.hasPrefix("R ") && !gone.contains($0.dropFirst(2)) }.map { String($0.dropFirst(2)) }
+        let remote = RemoteHost.of(root) != nil
+        return lines.filter { l in
+            guard !l.hasPrefix("R "), !gone.contains(l.dropFirst(2)) else { return false }
+            return !l.hasPrefix("S ") || remote || FileManager.default.fileExists(atPath: root + "/" + l.dropFirst(2))
+        }.map { String($0.dropFirst(2)) }
     }
 
     /// Bundled or system ripgrep, else `git grep`.
@@ -52,29 +57,31 @@ public enum ProjectFiles {
     }
 
     /// A path made ready for fuzzyScore once: Quick Open scores every file of the project on each keystroke.
+    /// Unicode scalars of the composed form, so "é" is one letter however the name was stored and "日" can't be matched
+    /// from pieces of other characters (as UTF-8 bytes could).
     public struct FuzzyPath: Sendable {
-        let bytes: [UInt8], name: Int, length: Int   // lowercased UTF-8, where the file name starts, length in characters
+        let scalars: [Unicode.Scalar], name: Int, length: Int   // lowercased, where the file name starts, length in characters
         public init(_ path: String) {
-            bytes = Array(path.lowercased().utf8)
-            name = bytes.lastIndex(of: UInt8(ascii: "/")).map { $0 + 1 } ?? 0
+            scalars = fuzzyQuery(path)
+            name = scalars.lastIndex(of: "/").map { $0 + 1 } ?? 0
             length = path.count
         }
     }
-    /// The query as fuzzyScore wants it.
-    public static func fuzzyQuery(_ q: String) -> [UInt8] { Array(q.lowercased().utf8) }
+    /// The query (or a path) as fuzzyScore compares it.
+    public static func fuzzyQuery(_ q: String) -> [Unicode.Scalar] { Array(q.precomposedStringWithCanonicalMapping.lowercased().unicodeScalars) }
 
     /// Fuzzy subsequence score for quick open (higher is better, nil = no match). Matches inside the file name win.
     public static func fuzzyScore(_ candidate: String, _ query: String) -> Int? { fuzzyScore(FuzzyPath(candidate), fuzzyQuery(query)) }
 
-    public static func fuzzyScore(_ c: FuzzyPath, _ q: [UInt8]) -> Int? {
+    public static func fuzzyScore(_ c: FuzzyPath, _ q: [Unicode.Scalar]) -> Int? {
         if q.isEmpty { return 0 }
-        let full = subsequenceScore(c.bytes[...], q), inName = subsequenceScore(c.bytes[c.name...], q).map { $0 + 100 }
+        let full = subsequenceScore(c.scalars[...], q), inName = subsequenceScore(c.scalars[c.name...], q).map { $0 + 100 }
         guard let best = [full, inName].compactMap({ $0 }).max() else { return nil }
         return best - c.length / 4
     }
 
-    private static let wordStarts = Set("/._- ".utf8)
-    static func subsequenceScore(_ c: ArraySlice<UInt8>, _ q: [UInt8]) -> Int? {
+    private static let wordStarts = Set("/._- ".unicodeScalars)
+    static func subsequenceScore(_ c: ArraySlice<Unicode.Scalar>, _ q: [Unicode.Scalar]) -> Int? {
         var ci = c.startIndex, score = 0, streak = 0, last = -2
         for ch in q {
             guard ci < c.endIndex, let i = c[ci...].firstIndex(of: ch) else { return nil }

@@ -30,9 +30,12 @@ extension Daemon {
         let owner = sessionProcesses(worktree: wid).owner
         guard !owner.isEmpty else { return [] }
         var out: [Port] = [], pid: Int32 = 0, cmd = ""
-        // Only the sessions' processes (-a: and): a system-wide lsof walks every process on the Mac, every 3 s while Ports shows.
+        // Only the sessions' processes (-a: and): a system-wide lsof walks every process on the Mac, every 3 s while Ports
+        // shows. lsof exits 1 when one of them ended since ps (an agent's git, a build step), with the others' ports
+        // printed: through sh, so that isn't a failure. The pids are numbers.
         let pids = owner.keys.map(String.init).joined(separator: ",")
-        for line in (Self.run(["/usr/sbin/lsof", "-nP", "-a", "-p", pids, "-iTCP", "-sTCP:LISTEN", "-Fpcn"], path: "/bin:/usr/bin", timeout: 4) ?? "").split(whereSeparator: \.isNewline) {
+        let lsof = "/usr/sbin/lsof -nP -a -p \(pids) -iTCP -sTCP:LISTEN -Fpcn; exit 0"
+        for line in (Self.run(["/bin/sh", "-c", lsof], path: "/bin:/usr/bin", timeout: 4) ?? "").split(whereSeparator: \.isNewline) {
             switch line.first {
             case "p": pid = Int32(line.dropFirst()) ?? 0
             case "c": cmd = String(line.dropFirst())

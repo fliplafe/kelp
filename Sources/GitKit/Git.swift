@@ -82,10 +82,11 @@ public enum Git {
     }
 
     /// Every workspace list asks this for each project: a local checkout's HEAD file answers without a git process.
-    /// Detached, a linked worktree (.git is a file) or a remote project: git itself.
+    /// Detached, a linked worktree (.git is a file), a reftable repository or a remote project: git itself.
     public static func currentBranch(_ path: String) throws -> String {
         if RemoteHost.of(path) == nil, let head = try? String(contentsOfFile: path + "/.git/HEAD", encoding: .utf8), head.hasPrefix("ref: refs/heads/") {
-            return String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if name != ".invalid" { return name }   // a reftable repository's stub HEAD: the real one is in its tables
         }
         return try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
     }

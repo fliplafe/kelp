@@ -69,3 +69,33 @@ import Testing
     try "n\n".write(toFile: repo + "/new.txt", atomically: true, encoding: .utf8)
     #expect(try Set(ProjectFiles.list(repo)) == ["f.txt", ".env", "d/kept.txt", "new.txt"])
 }
+
+@Test func fuzzyMatchesWholeCharacters() {
+    let nfd = "cafe\u{301}/menu.txt", nfc = "caf\u{E9}/menu.txt"
+    #expect(ProjectFiles.fuzzyScore(nfd, "café") != nil && ProjectFiles.fuzzyScore(nfc, "cafe\u{301}") != nil)   // either way it's stored
+    #expect(ProjectFiles.fuzzyScore("旗祥/一覧.md", "日") == nil)   // 日's UTF-8 bytes are in 旗祥, the letter isn't
+    #expect(ProjectFiles.fuzzyScore("Отчёт/План.md", "план") != nil)
+}
+
+@Test func aSparseCheckoutListsOnlyWhatsCheckedOut() throws {
+    let repo = try tempRepo()
+    defer { try? FileManager.default.removeItem(atPath: repo) }
+    for d in ["a", "b"] {
+        try FileManager.default.createDirectory(atPath: repo + "/" + d, withIntermediateDirectories: true)
+        try "\(d)\n".write(toFile: repo + "/\(d)/file.txt", atomically: true, encoding: .utf8)
+    }
+    try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "dirs"], cwd: repo)
+    try Git.run(["sparse-checkout", "set", "--cone", "a"], cwd: repo)
+    let files = try ProjectFiles.list(repo)
+    #expect(files.contains("a/file.txt") && !files.contains("b/file.txt"))
+}
+
+@Test func theBranchOfAReftableRepository() throws {
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
+    try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: d) }
+    guard (try? Git.run(["init", "-q", "-b", "trunk", "--ref-format=reftable"], cwd: d)) != nil else { return }   // git before 2.45
+    #expect(try String(contentsOfFile: d + "/.git/HEAD", encoding: .utf8).contains(".invalid"))   // the stub the fast path must not believe
+    try Git.run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"], cwd: d)
+    #expect(try Git.currentBranch(d) == "trunk")
+}
