@@ -23,6 +23,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         var choice: JSONValue?
         var checked = false
         var image: NSImage?
+        /// A command's shortcut, at the end of its title's line as in a menu.
+        var key = ""
     }
     /// A setting's choices on screen: the key, the value to go back to, whether moving tries them on, the query to return to.
     private struct Choosing { let key: String; let saved: JSONValue?; let tries: Bool; let query: String }
@@ -58,7 +60,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     /// The palette's own list (not a setting's choices), with `query` typed.
     private func list(query: String) {
         stopChoosing()
-        field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands — # for pull requests")
+        field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands")
         // The keys it knows, under the list (they're not written anywhere else).
         keys.stringValue = String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests")
         field.stringValue = query
@@ -170,33 +172,6 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     private func collect() {
         var items: [Item] = []
-        // Commands: every enabled menu item with an action.
-        func walk(_ m: NSMenu, path: String) {
-            for i in m.items {
-                if let s = i.submenu { walk(s, path: path.isEmpty ? i.title : path + " › " + i.title); continue }
-                guard let a = i.action, !i.isSeparatorItem, !i.isHidden, !i.title.isEmpty else { continue }
-                // Only what the menu would offer now: someone handles it and it's enabled (Run File needs a file…).
-                guard let t = NSApp.target(forAction: a, to: i.target, from: i), (t as? NSMenuItemValidation)?.validateMenuItem(i) ?? true else { continue }
-                let key = i.keyEquivalent.isEmpty ? "" : Self.shortcut(i)
-                items.append(Item(kind: "Command", icon: "command", title: i.title, detail: [path, key].filter { !$0.isEmpty }.joined(separator: "   "), action: {
-                    NSApp.sendAction(a, to: i.target, from: i)
-                }))
-            }
-        }
-        if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
-        // Every setting: one with choices (Color Theme…) lists them here, the others open their page.
-        for section in ExtensionRegistry.shared.all.settings {
-            for spec in section.specs {
-                let title = "\(loc(section.title)): \(loc(spec.title))", choices = Self.choices(spec)
-                guard !choices.isEmpty else {
-                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(section: section.id) }))
-                    continue
-                }
-                let now = SettingsStore.shared.value(spec.key)
-                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { [weak self] in self?.pick(section, spec) },
-                                  value: choices.first { $0.0 == now }?.1 ?? ""))
-            }
-        }
         if !commandsOnly {
             collectRecents()
             if let e = Workbench.editor {
@@ -226,6 +201,33 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                                                  split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }) }
                     filter()
                 }
+            }
+        }
+        // After what's open: the empty field without agents to list starts with tabs and workspaces, not the Kelp menu.
+        // Commands: every enabled menu item with an action.
+        func walk(_ m: NSMenu, path: String) {
+            for i in m.items {
+                if let s = i.submenu { walk(s, path: path.isEmpty ? i.title : path + " › " + i.title); continue }
+                guard let a = i.action, !i.isSeparatorItem, !i.isHidden, !i.title.isEmpty else { continue }
+                // Only what the menu would offer now: someone handles it and it's enabled (Run File needs a file…).
+                guard let t = NSApp.target(forAction: a, to: i.target, from: i), (t as? NSMenuItemValidation)?.validateMenuItem(i) ?? true else { continue }
+                // No icon unless the menu item has one: the same ⌘ on every row said nothing.
+                items.append(Item(kind: "Command", icon: "", title: i.title, detail: path, action: { NSApp.sendAction(a, to: i.target, from: i) },
+                                  image: i.image, key: i.keyEquivalent.isEmpty ? "" : Self.shortcut(i)))
+            }
+        }
+        if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
+        // Every setting: one with choices (Color Theme…) lists them here, the others open their page.
+        for section in ExtensionRegistry.shared.all.settings {
+            for spec in section.specs {
+                let title = "\(loc(section.title)): \(loc(spec.title))", choices = Self.choices(spec)
+                guard !choices.isEmpty else {
+                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(section: section.id) }))
+                    continue
+                }
+                let now = SettingsStore.shared.value(spec.key)
+                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { [weak self] in self?.pick(section, spec) },
+                                  value: choices.first { $0.0 == now }?.1 ?? ""))
             }
         }
         all = items
@@ -306,7 +308,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         if !commandsOnly, choosing == nil, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
         if q.isEmpty {
             showingRecents = !commandsOnly && choosing == nil && !recents.isEmpty
-            setRows(showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200)), grouped: false)
+            setRows(showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200)),
+                    grouped: !showingRecents && !commandsOnly && choosing == nil)
         } else {
             showingRecents = false
             setRows(pool.compactMap { it -> (Item, Int)? in
@@ -408,10 +411,18 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         // The choice in effect: a tick at the end, as in a menu.
         let tick = NSImageView(image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: String(localized: "Current")) ?? NSImage())
         tick.contentTintColor = .controlAccentColor; tick.isHidden = !it.checked
-        let texts = NSStackView(views: [t1, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
-        let line = NSStackView(views: [lead, texts, NSView(), kind, tick]); line.spacing = 10; line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
+        // A command's shortcut: at the end of the title's line, as in a menu.
+        let key = NSTextField(labelWithString: it.key); key.font = .systemFont(ofSize: 12); key.textColor = .secondaryLabelColor; key.isHidden = it.key.isEmpty
+        key.setContentCompressionResistancePriority(.required, for: .horizontal); key.setContentHuggingPriority(.required, for: .horizontal)
+        let top = NSStackView(views: [t1, key]); top.spacing = 10; top.distribution = .fill
+        let texts = NSStackView(views: [top, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
+        top.widthAnchor.constraint(equalTo: texts.widthAnchor).isActive = true
+        let line = NSStackView(views: [lead, texts, kind, tick]); line.spacing = 10; line.distribution = .fill
+        line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         lead.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        texts.setHuggingPriority(.init(1), for: .horizontal)   // takes the row's width, so the shortcut sits at its end
+        for v in [kind, tick] { v.setContentHuggingPriority(.required, for: .horizontal) }
         return line
     }
 

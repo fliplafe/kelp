@@ -5977,16 +5977,6 @@
         }
       }
     },
-    "Search workspaces, agents, tabs, files and commands — # for pull requests": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Рабочие области, агенты, вкладки, файлы и команды — # для pull request'ов"
-          }
-        }
-      }
-    },
     "Select All": {
       "localizations": {
         "ru": {
@@ -9895,6 +9885,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Поиск"
+          }
+        }
+      }
+    },
+    "Search workspaces, agents, tabs, files and commands": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочие области, агенты, вкладки, файлы и команды"
           }
         }
       }
