@@ -257,6 +257,7 @@ final class EditorArea: NSViewController {
         guard start == nil, let w = worktree else { return }
         let s = StartView(worktree: w)
         s.onAgent = { [weak self] agent in self?.newAgent(agent) }
+        s.onPrompt = { [weak self] agent, text in self?.newAgent(agent, prompt: text) }
         s.onOpen = { [weak self] uri in self?.open(uri) }
         start = s
         s.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(s)
