@@ -51,6 +51,8 @@ enum Builtins {
                   "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
                 s("agents.skills.settings", "Skill: change Kelp settings", "boolean", true,
                   "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask."),
+                s("agents.skills.terminals", "Skill: run commands in Kelp tabs", "boolean", true,
+                  "Claude Code runs tests or a dev server in a tab beside it, waits for them and reads what they printed, and shows its progress on its row."),
                 s("sessions.hibernateMinutes", "Pause idle agents", "number", 0, "Paused agents free memory and resume the same conversation.",
                   options: ["0", "15", "30", "60", "240"]),
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),

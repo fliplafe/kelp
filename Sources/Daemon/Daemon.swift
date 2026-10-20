@@ -77,6 +77,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         for var s in (try? store.sessions()) ?? [] where s.status != .exited {
             let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
             s.status = (m?.resumeArgs.isEmpty == false) ? .hibernated : .exited
+            s.progress = nil   // what ran there isn't getting any further
             try? store.save(s)
         }
         _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one

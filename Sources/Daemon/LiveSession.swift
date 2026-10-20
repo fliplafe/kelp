@@ -180,7 +180,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         detector.exited()
         let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure
         if exitCode != 0, record.agent != "shell" { record.summary = "Ended with an error (exit code \(exitCode))" }
-        record.progress = nil
+        record.progress = nil; record.exitCode = Int((code & 0x7f) == 0 ? (code >> 8) & 0xff : 128 + (code & 0x7f))
         let changed = sync()
         try? log?.close()
         lock.unlock()

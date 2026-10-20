@@ -8,7 +8,10 @@ usage: kelp <command>
   repo add [path] | repo list
   worktree create <branch> [--repo id] [--base b] | list | current | note <text> | remove <id> [--force] | archive <id>
   agent list                           (use `kelp session new --agent <id>`)
-  session new [--agent id] [--worktree id] [--cmd "..."] | list
+  session new [--agent id] [--worktree id] [--cmd "..."] [--split right|down] [--wait] | list
+                                       --split opens its tab beside yours; --wait prints its id, then exits with
+                                       its command's exit code when it ends
+  wait <session> [--for done,waiting,idle,exited] [--timeout 10m]   until it stops working (or reaches one of those)
   terminal list | read <session> [bytes] | send <session> <text> [--no-enter]
   diff [--source unstaged|staged|all|branch] | commit <msg> | merge | push
   comment add <file> <line[-line]> <text> | send <session>
@@ -177,6 +180,7 @@ func plist() -> String {
             let force = has("--force")
             show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")), "force": .bool(force)])))
         case ("session", "new"):
+            let wait = has("--wait"), split = flag("--split")
             var p: [String: JSONValue] = [:]
             if let a = flag("--agent") { p["agent"] = .string(a) }
             if let m = flag("--cmd") { p["command"] = .string(m) }
@@ -184,8 +188,20 @@ func plist() -> String {
             if let w = flag("--worktree") { p["worktreeId"] = .string(try await resolve(c, w, "worktree.list")) }
             else if let w = try? await currentWorktree(c) { p["worktreeId"] = w["id"] }
             else { fail("not inside a Kelp project: run it in a project's folder or pass --worktree <id> (see `kelp status`)") }
-            show(try await c.call("session.create", .object(p)))
+            let s = try await c.call("session.create", .object(p))
+            guard let id = s["id"]?.string else { show(s); return }
+            // Its tab beside yours; without the app it runs all the same (its row shows once the app opens).
+            if let split { _ = try? await IDE.open("session:\(id)", split: split, cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }) }
+            guard wait else { show(s); return }
+            print(id)   // for `kelp terminal read`, once it ends
+            exit(Int32(try await waitFor(c, id, timeout: nil) { $0.status == .exited }?.exitCode ?? 1))
         case ("session", "list"), ("terminal", "list"): show(try await c.call("session.list"))
+        case ("wait", let target?):   // until the session stops working, or reaches one of --for; prints the state it reached
+            let want = flag("--for").map { Set($0.split(separator: ",").map(String.init)) }, timeout = flag("--timeout").map(duration)
+            let id = try await resolve(c, target, "session.list")
+            guard let s = try await waitFor(c, id, timeout: timeout, until: { want?.contains($0.status.rawValue) ?? ($0.status != .working) }) else { fail("timed out") }
+            print(s.status.rawValue)
+            if s.status == .exited { exit(Int32(s.exitCode ?? 0)) }   // its command's exit code
         case ("report", let state?):   // inside a session: what this program is doing, on its row and tab
             guard let id = ProcessInfo.processInfo.environment["KELP_SESSION"] else { fail("report: run it inside a Kelp session") }
             let progress = flag("--progress").flatMap { Int($0) }, kind = flag("--kind"), msg = args.joined(separator: " ")
@@ -316,6 +332,25 @@ func plist() -> String {
     }
 
     /// Accept a full id or a unique prefix (what `kelp status` prints).
+    /// Looks at the session twice a second until `done` says so, or it ended or was paused (it can't change then);
+    /// nil when `timeout` ran out first.
+    static func waitFor(_ c: RPCClient, _ id: String, timeout: TimeInterval?, until done: (Session) -> Bool) async throws -> Session? {
+        let end = timeout.map { Date().addingTimeInterval($0) }
+        while true {
+            guard let s = try await c.call("session.list", as: [Session].self).first(where: { $0.id == id }) else { fail("no session \(id)") }
+            if done(s) || s.status == .exited || s.status == .hibernated { return s }
+            if let end, Date() > end { return nil }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+    }
+
+    /// "90", "30s", "10m", "1h" → seconds.
+    static func duration(_ s: String) -> TimeInterval {
+        let unit = ["s": 1.0, "m": 60, "h": 3600][String(s.suffix(1))]
+        guard let n = Double(unit == nil ? s : String(s.dropLast())) else { fail("bad duration \(s): use 30s, 10m or 1h") }
+        return n * (unit ?? 1)
+    }
+
     static func resolve(_ c: RPCClient, _ prefix: String, _ listMethod: String) async throws -> String {
         guard !prefix.isEmpty else { fail("id required") }
         let found = ((try await c.call(listMethod).array) ?? []).compactMap { $0["id"]?.string }.filter { $0.hasPrefix(prefix) }

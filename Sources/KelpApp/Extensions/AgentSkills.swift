@@ -17,6 +17,10 @@ enum AgentSkills {
             description: "Use when the user wants to see or change how Kelp, the IDE this session runs in, is set up: theme, fonts, editor, "
                 + "terminal, agents, turning extensions on or off. Done with the kelp CLI (kelp settings set …), not Claude Code's own settings.",
             body: settingsGuide())
+        put("kelp-terminals", on: s.bool("agents.skills.terminals") != false,
+            description: "Use when you run tests, a build or a dev server, or work through a long multi-step task, in Kelp, the IDE this session runs "
+                + "in: run the command in a Kelp tab the user can watch, wait for it, read what it printed, and show your progress on your row.",
+            body: terminalsGuide)
         // The guide also sits next to the user's extensions, for people.
         let guide = ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md")
         writeIfChanged(guide, ExtensionGuide.markdown)
@@ -40,6 +44,24 @@ enum AgentSkills {
 
         """
     }
+
+    private static let terminalsGuide = """
+        # Running commands in Kelp tabs
+
+        This session runs inside Kelp and the `kelp` CLI is on PATH. Tests, builds and servers go in a tab of this
+        workspace, where the user sees them and can run them again; quick commands (git status, ls) stay in your shell.
+
+        - `kelp session new --cmd "swift test" --split down --wait` — a tab below yours runs it; prints the tab's session
+          id, then exits with the command's exit code when it ends.
+        - `kelp session new --cmd "npm run dev" --split down` — something that keeps running; prints the session (`id`).
+        - `kelp terminal read <id> [bytes]` — what the tab printed (the last 8 KB), e.g. which tests failed.
+        - `kelp wait <id> [--for done,waiting,idle,exited] [--timeout 10m]` — until it stops working, or reaches one of
+          those; prints the state, and exits with the command's exit code once it ended.
+        - `kelp report working "Migrating table 3 of 10" --progress 30` — on a long multi-step task, what you're doing
+          and how far you got show on your row; `kelp report clear` takes it away. That you finished or ask something
+          already shows by itself.
+
+        """
 
     private static func put(_ name: String, on: Bool, description: String, body: String) {
         let plugin = Paths.agentSkills.appendingPathComponent(name)

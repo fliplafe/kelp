@@ -9836,6 +9836,26 @@
           }
         }
       }
+    },
+    "Skill: run commands in Kelp tabs": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Навык: запускать команды во вкладках Kelp"
+          }
+        }
+      }
+    },
+    "Claude Code runs tests or a dev server in a tab beside it, waits for them and reads what they printed, and shows its progress on its row.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code запускает тесты или dev-сервер во вкладке рядом, ждёт их, читает их вывод и показывает свой прогресс в своей строке."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

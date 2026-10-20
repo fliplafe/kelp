@@ -83,6 +83,8 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var workDir: String?
     /// How far what runs in it got, 0–100, when it says (OSC 7501's `progress`, `kelp report`, ConEmu's OSC 9;4).
     public var progress: Int?
+    /// How its program ended: the exit code, or 128 + the signal that stopped it; nil while it runs.
+    public var exitCode: Int?
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent

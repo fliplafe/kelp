@@ -154,6 +154,12 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     await #expect(throws: (any Error).self) { _ = try await r.c.call(SessionReport(id: s.id, state: "sleeping")) }
 }
 
+@Test func aCommandThatEndsKeepsItsExitCode() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "exit 3")
+    #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }.map { $0.status == .exited && $0.exitCode == 3 } == true })
+}
+
 @Test func aSessionWithNoTurnYetHasNoTurnAndNoReply() async throws {
     let r = try await rig(); defer { r.d.stop() }
     let s = try await session(r, "cat")
