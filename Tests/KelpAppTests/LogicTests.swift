@@ -98,10 +98,11 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     let d = Debounce()
     var ran: [Int] = []
     for i in 1...3 { d.after(0.05) { ran.append(i) } }
-    try await Task.sleep(for: .milliseconds(200))
+    for _ in 0..<100 where ran.isEmpty { try await Task.sleep(for: .milliseconds(50)) }   // waits for it, however busy the Mac
+    try await Task.sleep(for: .milliseconds(100))   // and a little longer: nothing else may run after the last call
     #expect(ran == [3])
     d.after(0.05) { ran.append(4) }; d.cancel()
-    try await Task.sleep(for: .milliseconds(150))
+    try await Task.sleep(for: .milliseconds(300))   // a negative check needs a window: six times the delay
     #expect(ran == [3])
 }
 

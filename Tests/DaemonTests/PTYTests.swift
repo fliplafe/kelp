@@ -36,7 +36,7 @@ final class Box: @unchecked Sendable {
     #expect(!box.text.contains("tty=??"), "no controlling terminal: \(box.text.debugDescription)")
     #expect(box.text.contains("size=30 100"), "initial size lost: \(box.text.debugDescription)")
     p.resize(cols: 50, rows: 20)
-    try await Task.sleep(for: .milliseconds(600))
+    for _ in 0..<100 where !box.text.contains("20 50") { try await Task.sleep(for: .milliseconds(50)) }   // a busy machine is slow, not wrong
     #expect(box.text.contains("20 50"), "\(box.text.debugDescription)")
     p.kill()
 }
