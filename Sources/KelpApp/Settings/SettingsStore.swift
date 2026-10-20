@@ -48,6 +48,12 @@ final class SettingsStore {
         }
     }
 
+    /// Shows a value without saving it (the palette trying themes on); `set` keeps one, `preview(key, saved)` goes back.
+    func preview(_ key: String, _ v: JSONValue?) {
+        var next = values; next[key] = v
+        apply(next)
+    }
+
     func set(_ key: String, _ v: JSONValue?) {
         var next = values; next[key] = v
         apply(next)   // optimistic; the daemon's echo confirms

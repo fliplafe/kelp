@@ -202,9 +202,9 @@ enum Builtins {
     static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "kelp.appearance", specs: [
-            s("workbench.theme", "Theme", "theme", "auto",
+            s("workbench.theme", "Color Theme", "theme", "auto",
               "The window, terminal and editor together. Match System switches Kelp Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors."),
-            s("workbench.iconTheme", "File Icons", "enum", .string(FileIcon.system),
+            s("workbench.iconTheme", "File Icon Theme", "enum", .string(FileIcon.system),
               "Icons in Files, Source Control and tabs. VS Code icon themes work as they are: Settings › Extensions › Install…"),
             s("workbench.textSize", "Sidebar and inspector text", "enum", "normal", "The terminal and the editor have their own font sizes.",
               options: ["normal", "large", "larger"]),

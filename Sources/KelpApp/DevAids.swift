@@ -214,7 +214,7 @@ extension AppDelegate {
                    main.window?.firstResponder?.tryToPerform(a, with: item) == true { return }
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
                     if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: (123...126).contains(code) ? mods.union([.numericPad, .function]) : mods, timestamp: ProcessInfo.processInfo.systemUptime,
-                                                windowNumber: main.window?.windowNumber ?? 0, context: nil, characters: ch, charactersIgnoringModifiers: ch,
+                                                windowNumber: (NSApp.keyWindow ?? main.window)?.windowNumber ?? 0, context: nil, characters: ch, charactersIgnoringModifiers: ch,
                                                 isARepeat: false, keyCode: code) { NSApp.sendEvent(e) }
                 }
             }

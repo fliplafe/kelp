@@ -126,7 +126,7 @@ File icon themes in VS Code's format, so existing ones work unchanged:
 `path` is a VS Code file icon theme: `iconDefinitions` (each with an `iconPath` to an SVG or PNG), then `file`, `folder`,
 `folderExpanded`, `fileExtensions`, `fileNames`, `folderNames`, `folderNamesExpanded`, `languageIds` and a `light` section.
 Font icons (`fontCharacter`) aren't drawn. A VS Code extension needs no `extension.json`: Settings › Extensions › Install…
-takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). Pick the theme in Settings › Appearance › File Icons.
+takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). Pick the theme in Settings › Appearance › File Icon Theme.
 
 ## agents
 Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.

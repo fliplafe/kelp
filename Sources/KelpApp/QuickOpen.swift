@@ -5,7 +5,8 @@ import WorkbenchKit
 
 /// ⌘P: files, worktrees, agents, tabs, commands in one fuzzy list; "#123" finds a pull request. ⇧⌘P: commands only.
 /// Empty, it lists the agents to get back to — those that need you first — on ⌘1–⌘6, in an order that holds still
-/// while it's open. ⇧↩ opens the choice in a split.
+/// while it's open. ⇧↩ opens the choice in a split. A setting with choices (Color Theme, File Icon Theme, on/off…) lists them
+/// right here, the one in effect ticked; for looks, moving through them tries each on, ↩ keeps it, esc goes back.
 @MainActor
 final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     static let shared = QuickOpen()
@@ -16,7 +17,16 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         var split: (() -> Void)?
         /// An agent's: its state where the icon goes, as on its tab.
         var session: Session?
+        /// A setting with choices: its value now, on the right; choosing it lists the choices here.
+        var value: String?
+        /// One of those choices: the value it sets, whether it's in effect, and its theme's colors.
+        var choice: JSONValue?
+        var checked = false
+        var image: NSImage?
     }
+    /// A setting's choices on screen: the key, the value to go back to, whether moving tries them on, the query to return to.
+    private struct Choosing { let key: String; let saved: JSONValue?; let tries: Bool; let query: String }
+    private var choosing: Choosing?
     /// A list row: a group's heading ("Files", "Agents"…) while searching, or an item.
     private enum Row { case heading(String), item(Item) }
     private var rows: [Row] = []
@@ -28,22 +38,103 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private var prSearch: Task<Void, Never>?
     private let field = NSSearchField()
     private let table = NSTableView()
+    private let keys = NSTextField(labelWithString: "")
     private var all: [Item] = []
     private var commandsOnly = false
 
     func show(commandsOnly: Bool) {
         if panel == nil { build() }
         self.commandsOnly = commandsOnly
-        field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands — # for pull requests")
-        field.stringValue = ""
-        collect()
-        filter()
+        list(query: "")
         if let w = NSApp.mainWindow {
             let f = w.frame
             panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 120))
         }
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
+    }
+
+    /// The palette's own list (not a setting's choices), with `query` typed.
+    private func list(query: String) {
+        stopChoosing()
+        field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands — # for pull requests")
+        // The keys it knows, under the list (they're not written anywhere else).
+        keys.stringValue = String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests")
+        field.stringValue = query
+        collect()
+        filter()
+    }
+
+    /// A setting's choices in the list instead, the one in effect ticked and selected. Looks (Appearance) are tried on
+    /// as the selection moves, so you see the theme before keeping it.
+    private func pick(_ section: SettingsSection, _ spec: SettingSpec) {
+        let store = SettingsStore.shared, now = store.value(spec.key)
+        choosing = Choosing(key: spec.key, saved: store.values[spec.key], tries: section.id == "appearance", query: field.stringValue)
+        all = Self.choices(spec).map { v, name in
+            let (note, image) = spec.key == "workbench.theme" ? Self.themeLook(v.string ?? "") : ("", nil)
+            return Item(kind: "Choice", icon: v.string == "ghostty" ? "terminal" : "", title: name, detail: note, action: { store.set(spec.key, v) },
+                        choice: v, checked: v == now, image: image)
+        }
+        field.placeholderString = "\(loc(section.title)) › \(loc(spec.title))"
+        keys.stringValue = choosing?.tries == true ? String(localized: "↑↓ Try On    ↩ Keep    esc Back") : String(localized: "↑↓ Select    ↩ Choose    esc Back")
+        field.stringValue = ""
+        filter()
+    }
+
+    /// Leaves a setting's choices with the value it had: what was tried on goes away.
+    private func stopChoosing() {
+        if let c = choosing { SettingsStore.shared.preview(c.key, c.saved) }
+        choosing = nil
+    }
+
+    /// The selected choice, on screen while it's selected (looks only).
+    private func tryOn() {
+        guard let c = choosing, c.tries, rows.indices.contains(table.selectedRow), case .item(let it) = rows[table.selectedRow] else { return }
+        SettingsStore.shared.preview(c.key, it.choice)
+    }
+
+    /// What a setting can be set to: the values and their names.
+    static func choices(_ spec: SettingSpec) -> [(JSONValue, String)] {
+        switch spec.type {
+        case "boolean": return [(.bool(true), String(localized: "On")), (.bool(false), String(localized: "Off"))]
+        case "number":
+            return (spec.options ?? []).compactMap(Double.init).map { v -> (JSONValue, String) in
+                let whole = v == v.rounded()
+                return (whole ? .int(Int(v)) : .double(v), SettingRow.label(spec.key, whole ? String(Int(v)) : String(v)))
+            }
+        default: return SettingRow.options(spec).map { (.string($0), SettingRow.label(spec.key, $0)) }
+        }
+    }
+
+    /// A color theme's row: light or dark, and a tile of its colors (Match System shows both of its themes).
+    static func themeLook(_ id: String) -> (String, NSImage?) {
+        let themes = ThemeManager.shared.themes
+        switch id {
+        case "auto": return (String(localized: "Kelp Light or Dark, as macOS is"), swatch(themes.filter { $0.id == "kelp.light" || $0.id == "kelp.dark" }))
+        case "ghostty": return (String(localized: "The terminal keeps your Ghostty colors"), nil)
+        default:
+            guard let t = themes.first(where: { $0.id == id }) else { return ("", nil) }
+            return (t.appearance == "light" ? String(localized: "Light") : String(localized: "Dark"), swatch([t]))
+        }
+    }
+
+    /// Themes side by side in an 18 pt tile: each its background with two lines of "text" in its foreground and blue.
+    static func swatch(_ themes: [Theme]) -> NSImage {
+        func color(_ hex: String?) -> NSColor { hex.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } ?? .gray }
+        return NSImage(size: NSSize(width: 18, height: 18), flipped: true) { r in
+            let tile = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
+            NSGraphicsContext.saveGraphicsState(); tile.addClip()
+            let w = r.width / CGFloat(max(themes.count, 1))
+            for (i, t) in themes.enumerated() {
+                let x = CGFloat(i) * w, c = t.terminal
+                color(c?.background).setFill(); NSRect(x: x, y: 0, width: w, height: r.height).fill()
+                color(c?.foreground).setFill(); NSRect(x: x + 3, y: 5, width: (w - 6) * 0.9, height: 2).fill()
+                color(c?.palette?.dropFirst(4).first).setFill(); NSRect(x: x + 3, y: 10, width: (w - 6) * 0.6, height: 2).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            NSColor.separatorColor.setStroke(); tile.stroke()
+            return true
+        }
     }
 
     private func build() {
@@ -61,8 +152,6 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         table.rowHeight = 34; table.dataSource = self; table.delegate = self; table.style = .plain; table.backgroundColor = .clear
         table.target = self; table.doubleAction = #selector(activate)
         let sv = NSScrollView(); sv.documentView = table; sv.hasVerticalScroller = true; sv.drawsBackground = false
-        // The keys it knows, under the list (they're not written anywhere else).
-        let keys = NSTextField(labelWithString: String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests"))
         keys.font = .systemFont(ofSize: 11); keys.textColor = .secondaryLabelColor
         let line = NSBox(); line.boxType = .separator
         for v in [field, sv, line, keys] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; effect.addSubview(v) }
@@ -92,20 +181,17 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             }
         }
         if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
-        // Themes, like VS Code's "Color Theme" command.
-        for (id, name) in [("auto", "Match System")] + ThemeManager.shared.themes.map({ ($0.id, $0.name) }) {
-            items.append(Item(kind: "Command", icon: "paintpalette", title: String(localized: "Color Theme: \(name)"), detail: String(localized: "Settings › Appearance"),
-                              action: { SettingsStore.shared.set("workbench.theme", .string(id)) }))
-        }
-        for (id, name) in FileIcon.themes {
-            items.append(Item(kind: "Command", icon: "doc.richtext", title: String(localized: "File Icon Theme: \(name)"), detail: String(localized: "Settings › Appearance"),
-                              action: { SettingsStore.shared.set("workbench.iconTheme", .string(id)) }))
-        }
-        // Every setting, to jump to its page.
+        // Every setting: one with choices (Color Theme…) lists them here, the others open their page.
         for section in ExtensionRegistry.shared.all.settings {
             for spec in section.specs {
-                items.append(Item(kind: "Setting", icon: section.icon, title: "\(loc(section.title)): \(loc(spec.title))", detail: loc(spec.description ?? ""),
-                                  action: { SettingsWindow.show(section: section.id) }))
+                let title = "\(loc(section.title)): \(loc(spec.title))", choices = Self.choices(spec)
+                guard !choices.isEmpty else {
+                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(section: section.id) }))
+                    continue
+                }
+                let now = SettingsStore.shared.value(spec.key)
+                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { [weak self] in self?.pick(section, spec) },
+                                  value: choices.first { $0.0 == now }?.1 ?? ""))
             }
         }
         if !commandsOnly {
@@ -129,6 +215,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 Task {
                     let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
+                    guard choosing == nil else { return }   // a setting's choices are on screen; going back lists again
                     all += files.map { f in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
                                                  action: { Workbench.open(TabURI.file(root + "/" + f)) },
                                                  split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }) }
@@ -210,10 +297,10 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     private func filter() {
         let q = field.stringValue
-        let pool = commandsOnly ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
-        if !commandsOnly, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
+        let pool = commandsOnly && choosing == nil ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
+        if !commandsOnly, choosing == nil, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
         if q.isEmpty {
-            showingRecents = !commandsOnly && !recents.isEmpty
+            showingRecents = !commandsOnly && choosing == nil && !recents.isEmpty
             setRows(showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200)), grouped: false)
         } else {
             showingRecents = false
@@ -221,7 +308,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                 // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
                 if it.kind == "File" { return ProjectFiles.fuzzyScore(it.detail, q).map { (it, $0) } }
                 return Self.wordScore(it.title, q).map { (it, $0 + (it.kind == "Command" ? 2 : 0)) }
-            }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0), grouped: !commandsOnly)
+            }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0), grouped: !commandsOnly && choosing == nil)
         }
     }
 
@@ -240,9 +327,13 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         }
         table.reloadData()
         if let first = rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
-            table.selectRowIndexes([first], byExtendingSelection: false); table.scrollRowToVisible(0)
+            // A setting's choices open on the one in effect.
+            let ticked = field.stringValue.isEmpty ? rows.firstIndex { if case .item(let it) = $0 { it.checked } else { false } } : nil
+            table.selectRowIndexes([ticked ?? first], byExtendingSelection: false); table.scrollRowToVisible(ticked ?? 0)
         }
+        tryOn()   // the same row index can hold another choice now, so no selection-change call comes
     }
+    func tableViewSelectionDidChange(_ n: Notification) { tryOn() }
 
     private static func group(_ kind: String) -> String {
         ["File": "Files", "Agent": "Agents", "Command": "Commands", "Setting": "Settings", "Workspace": "Workspaces", "Tab": "Tabs"][kind] ?? kind
@@ -253,7 +344,9 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         case #selector(NSResponder.moveDown(_:)): move(1); return true
         case #selector(NSResponder.moveUp(_:)): move(-1); return true
         case #selector(NSResponder.insertNewline(_:)): choose(split: NSApp.currentEvent?.modifierFlags.contains(.shift) == true); return true
-        case #selector(NSResponder.cancelOperation(_:)): panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil); return true   // back to the terminal
+        case #selector(NSResponder.cancelOperation(_:)):
+            if let c = choosing { list(query: c.query); return true }   // a setting's choices: back to the list, the old value back
+            panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil); return true   // back to the terminal
         default: return false
         }
     }
@@ -268,11 +361,13 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private func choose(split: Bool) {
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard rows.indices.contains(r), case .item(let it) = rows[r] else { return }
+        if it.value != nil { it.action(); return }   // a setting with choices lists them; the palette stays
+        choosing = nil   // the choice is kept: closing mustn't put the old value back
         panel.orderOut(nil)
         NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         if split, let s = it.split { s() } else { it.action() }
     }
-    func windowDidResignKey(_ n: Notification) { panel.orderOut(nil) }
+    func windowDidResignKey(_ n: Notification) { stopChoosing(); panel.orderOut(nil) }
 
     func numberOfRows(in t: NSTableView) -> Int { rows.count }
     func tableView(_ t: NSTableView, shouldSelectRow row: Int) -> Bool { if case .item = rows[row] { true } else { false } }
@@ -284,7 +379,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             let v = NSStackView(views: [h]); v.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 0, right: 10)
             return v
         }
-        let img = NSImageView(image: it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage())
+        let img = NSImageView(image: it.image ?? (it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage()))
         img.contentTintColor = .secondaryLabelColor
         // An agent: its state while there's something to see (as on its tab), else its own icon.
         let lead: NSView
@@ -299,12 +394,17 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             lead = img
         }
         let t1 = NSTextField(labelWithString: ""); t1.attributedStringValue = Self.highlighted(it.title, field.stringValue); t1.lineBreakMode = .byTruncatingTail
-        let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingMiddle
+        let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = it.kind == "Setting" ? .byTruncatingTail : .byTruncatingMiddle   // paths keep both ends, prose its start
+        t2.isHidden = it.detail.isEmpty
         // Empty field: the agents on ⌘1–⌘6 say so.
         let n = showingRecents && row < 6 && it.kind != "Workspace" ? "⌘\(row + 1)  " : ""
-        let kind = NSTextField(labelWithString: n + (showingRecents ? loc(it.kind) : "")); kind.font = .systemFont(ofSize: 11); kind.textColor = .secondaryLabelColor
+        let kind = NSTextField(labelWithString: n + (showingRecents ? loc(it.kind) : it.value.map { $0 + "  ›" } ?? "")); kind.font = .systemFont(ofSize: 11)
+        kind.textColor = .secondaryLabelColor
+        // The choice in effect: a tick at the end, as in a menu.
+        let tick = NSImageView(image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: String(localized: "Current")) ?? NSImage())
+        tick.contentTintColor = .controlAccentColor; tick.isHidden = !it.checked
         let texts = NSStackView(views: [t1, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
-        let line = NSStackView(views: [lead, texts, NSView(), kind]); line.spacing = 10; line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
+        let line = NSStackView(views: [lead, texts, NSView(), kind, tick]); line.spacing = 10; line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         lead.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return line
