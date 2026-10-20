@@ -270,10 +270,52 @@
     },
     "%lld need you": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld needs you"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld need you"
+                }
+              }
+            }
+          }
+        },
         "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ждут вас: %lld"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ждёт вас"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ждут вас"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ждут вас"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ждут вас"
+                }
+              }
+            }
           }
         }
       }
@@ -388,16 +430,6 @@
       }
     },
     "+%lld": {},
-    "1 needs you": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 ждёт вас"
-          }
-        }
-      }
-    },
     "1 running agent stops. Files in the project are not touched.": {
       "localizations": {
         "ru": {

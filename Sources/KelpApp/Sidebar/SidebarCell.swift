@@ -29,7 +29,7 @@ final class SidebarCell: NSTableCellView {
             // A name, not a section label: what's under it is the project's. On the right only what needs doing.
             // Not the cell's textField: the source list would restyle it as a grey group heading.
             textField = nil; title.font = .ui(13, weight: .semibold); title.textColor = .labelColor
-            trailing.font = .ui(11, weight: .semibold); trailing.textColor = .systemOrange
+            trailing.font = .ui(11, weight: .semibold); trailing.textColor = .textOrange
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", String(localized: "New Workspace")); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
             b.toolTip = String(localized: "New workspace (⌘N)"); b.isHidden = true; add = b   // on hover, like Finder's sidebar
@@ -66,8 +66,8 @@ final class SidebarCell: NSTableCellView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseEntered(with e: NSEvent) { add?.isHidden = false }
-    override func mouseExited(with e: NSEvent) { add?.isHidden = true }
+    override func mouseEntered(with e: NSEvent) { add?.isHidden = false; fitBadges() }
+    override func mouseExited(with e: NSEvent) { add?.isHidden = true; fitBadges() }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -97,9 +97,27 @@ final class SidebarCell: NSTableCellView {
         let p = w.flatMap { RowBadges.pr(RowBadges.shared.prs[$0.id]) }
         if let c { changes.attributedTitle = c; changes.toolTip = String(localized: "Not committed yet — click for the changes") }
         if let p { pr.attributedTitle = p.0; pr.toolTip = p.1 }
+        hasBadge = (c != nil, p != nil)
+        fitBadges()
+    }
+    private var hasBadge = (changes: false, pr: false)
+
+    /// Badges show while the name fits beside them: they step aside before it truncates (left to itself the stack
+    /// squeezes the name instead: "kdrde…  +2 −1").
+    private func fitBadges() {
         guard let r = changes.superview as? NSStackView else { return }
-        r.setVisibilityPriority(c == nil ? .notVisible : .detachOnlyIfNecessary, for: changes)
-        r.setVisibilityPriority(p == nil ? .notVisible : .detachOnlyIfNecessary, for: pr)
+        let others = r.views.filter { $0 !== changes && $0 !== pr && !$0.isHidden }
+        var room = bounds.width - 8 - others.reduce(0) { $0 + max(0, $1.intrinsicContentSize.width) + r.spacing }
+        for (b, has) in [(changes, hasBadge.changes), (pr, hasBadge.pr)] {
+            let need = b.intrinsicContentSize.width + r.spacing, show = has && room >= need
+            if show { room -= need }
+            r.setVisibilityPriority(show ? .mustHold : .notVisible, for: b)
+        }
+    }
+    override func setFrameSize(_ s: NSSize) {
+        let old = frame.width
+        super.setFrameSize(s)
+        if s.width != old { fitBadges() }
     }
 
     func update() {
@@ -114,8 +132,8 @@ final class SidebarCell: NSTableCellView {
             icon.contentTintColor = .secondaryLabelColor
             title.stringValue = r?.name ?? ""
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
-            let waiting = m.worktrees.filter { $0.repoId == id }.flatMap { live($0.id) }.filter(Self.wantsYou).count
-            trailing.stringValue = missing ? String(localized: "Folder missing") : waiting == 0 ? "" : waiting == 1 ? String(localized: "1 needs you") : String(localized: "\(waiting) need you")
+            // Who needs you is on the agents' own rows and in the line above the projects, not repeated here.
+            trailing.stringValue = missing ? String(localized: "Folder missing") : ""
         case .section(let name):
             let needs = name == "Needs You"
             icon.image = .symbol(needs ? "bell.fill" : "pin.fill"); icon.contentTintColor = needs ? .systemOrange : .secondaryLabelColor
@@ -159,13 +177,11 @@ final class SidebarCell: NSTableCellView {
         }
     }
 
-    /// One line, as Mail lists mailboxes: an agent asking for you has its name and time in orange (red when it failed),
-    /// one that finished unseen is bold (isNews); what it asks or did is on the hover card.
+    /// One line, as Mail lists mailboxes: an agent asking for you or done unseen is bold (isNews) and its mark says which;
+    /// the colour stays on the mark (orange text on a light sidebar is 2:1). What it asks or did is on the hover card.
     private func showState(_ s: Session) {
-        let st = Self.shownStatus(s)
-        let tint: NSColor? = st == .waiting ? .systemOrange : st == .error || s.endedWithError ? .systemRed : nil
-        title.textColor = tint ?? (s.status == .hibernated ? .secondaryLabelColor : .labelColor)
-        trailing.textColor = tint ?? .secondaryLabelColor
+        title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
+        trailing.textColor = .secondaryLabelColor
         toolTip = nil
     }
 

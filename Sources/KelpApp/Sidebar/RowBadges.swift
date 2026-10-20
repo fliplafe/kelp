@@ -43,14 +43,14 @@ final class RowBadges {
         }
     }
 
-    /// "+6 −2" in green and red; a side with nothing changed is left out ("+6", not "+6 −0").
+    /// "+6 −2" in green and red (text shades: NSColor.textGreen); a side with nothing changed is left out ("+6", not "+6 −0").
     static func changes(_ s: LineStats?) -> NSAttributedString? {
         guard let s, s.totalAdded + s.totalRemoved > 0 else { return nil }
         return changes(added: s.totalAdded, removed: s.totalRemoved)
     }
     static func changes(added: Int, removed: Int, font: NSFont = .uiDigits(11, weight: .regular)) -> NSAttributedString {
         let t = NSMutableAttributedString()
-        for (text, n, color) in [("+\(added)", added, NSColor.systemGreen), ("−\(removed)", removed, NSColor.systemRed)] where n > 0 {
+        for (text, n, color) in [("+\(added)", added, NSColor.textGreen), ("−\(removed)", removed, NSColor.textRed)] where n > 0 {
             t.append(NSAttributedString(string: (t.length > 0 ? " " : "") + text, attributes: [.font: font, .foregroundColor: color]))
         }
         return t
@@ -60,11 +60,11 @@ final class RowBadges {
     static func pr(_ p: JSONValue?) -> (NSAttributedString, String)? {
         guard let p, let n = p["number"]?.int else { return nil }
         let state = p["isDraft"]?.bool == true ? "DRAFT" : p["state"]?.string ?? ""
-        let color: NSColor = state == "DRAFT" ? .secondaryLabelColor : state == "MERGED" ? .systemPurple : state == "CLOSED" ? .systemRed : .systemGreen
+        let color: NSColor = state == "DRAFT" ? .secondaryLabelColor : state == "MERGED" ? .textPurple : state == "CLOSED" ? .textRed : .textGreen
         let failed = p["checks"]?["failed"]?.int ?? 0, pending = p["checks"]?["pending"]?.int ?? 0, passed = p["checks"]?["passed"]?.int ?? 0
         let f = NSFont.uiDigits(11, weight: .medium)
         let t = NSMutableAttributedString(string: "#\(n)", attributes: [.font: f, .foregroundColor: color])
-        let (mark, mc): (String, NSColor) = failed > 0 ? (" ✕", .systemRed) : pending > 0 ? (" ●", .systemOrange) : passed > 0 ? (" ✓", .systemGreen) : ("", color)
+        let (mark, mc): (String, NSColor) = failed > 0 ? (" ✕", .textRed) : pending > 0 ? (" ●", .textOrange) : passed > 0 ? (" ✓", .textGreen) : ("", color)
         if !mark.isEmpty { t.append(NSAttributedString(string: mark, attributes: [.font: NSFont.ui(9, weight: .bold), .foregroundColor: mc])) }
         let checks = failed > 0 ? String(localized: "\(failed) checks failing") : pending > 0 ? String(localized: "\(pending) checks running") : passed > 0 ? String(localized: "checks passed") : String(localized: "no checks")
         let said = switch state {

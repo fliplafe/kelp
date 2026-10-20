@@ -28,7 +28,7 @@ final class AgentSummary: NSStackView {
         let asking = agents.filter(SidebarCell.wantsYou).count   // as the projects count it
         working.stringValue = String(localized: "\(busy) working")
         waiting.attributedTitle = NSAttributedString(string: String(localized: "\(asking) need you"),
-                                                     attributes: [.font: NSFont.ui(11, weight: .medium), .foregroundColor: NSColor.systemOrange])
+                                                     attributes: [.font: NSFont.ui(11, weight: .medium), .foregroundColor: NSColor.textOrange])
         for v in [workingMark, working] { v.isHidden = busy == 0 }
         for v in [waitingMark, waiting] { v.isHidden = asking == 0 }
         isHidden = busy + asking == 0

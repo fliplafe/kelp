@@ -183,7 +183,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         if let s = status[n.path] {
             let (letter, color) = s.badge
             badge.stringValue = letter; badge.textColor = color; tf.textColor = color
-        } else if n.children != nil, status.keys.contains(where: { $0.hasPrefix(n.path + "/") }) { tf.textColor = .systemOrange }
+        } else if n.children != nil, status.keys.contains(where: { $0.hasPrefix(n.path + "/") }) { tf.textColor = .textOrange }
         badge.font = .ui(10, weight: .bold)
         for v in [img, tf, badge] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(v) }
         cell.textField = tf; cell.imageView = img

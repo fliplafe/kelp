@@ -477,9 +477,9 @@ func pinned(bar: NSView, body: NSView) -> NSView {
 }
 
 extension FileChange {
-    /// VS Code's status letter and colour, as Files and the diff's file list show it.
+    /// VS Code's status letter and colour, as Files and the diff's file list show it (text shades: they colour names too).
     var badge: (String, NSColor) {
-        conflicted ? ("!", .systemRed) : untracked ? ("U", .systemGreen) : (index == "D" || worktree == "D") ? ("D", .systemRed)
-            : index == "A" ? ("A", .systemGreen) : ("M", .systemOrange)
+        conflicted ? ("!", .textRed) : untracked ? ("U", .textGreen) : (index == "D" || worktree == "D") ? ("D", .textRed)
+            : index == "A" ? ("A", .textGreen) : ("M", .textOrange)
     }
 }
