@@ -3,8 +3,9 @@ import SwiftUI
 import Core
 import WorkbenchKit
 
-/// The window: the window bar (where you are, ⌘P, the panel toggles) across the top, and under it projects & agents |
-/// editor area | inspector, whose own first rows (search, tab strips, panel icons) line up as the second row.
+/// The window, as Finder and Xcode are on macOS 26: projects & agents in a sidebar the full height of the window (the
+/// traffic lights sit in it), then the window bar (where you are, ⌘P, the inspector toggle) over editor area | inspector.
+/// Their first rows (search, tab strips, panel icons) line up as the second row.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let editors = EditorHost()
@@ -42,19 +43,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let root = NSViewController(); root.view = NSView(); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
-        for v in [bar, split.view, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        for v in [split.view, bar, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
         editors.onPointerEntered = { [weak self] in self?.endPeek() }
         let lights = w.standardWindowButton(.zoomButton).map { $0.convert($0.bounds, to: nil).maxX } ?? 69
+        // The bar starts where the editor area does; with the sidebar away it runs under the traffic lights.
+        let barStart = bar.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor)
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.view.topAnchor), bar.heightAnchor.constraint(equalToConstant: WindowBar.height),
-            bar.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
-            split.view.topAnchor.constraint(equalTo: bar.bottomAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
+            split.view.topAnchor.constraint(equalTo: root.view.topAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
             split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
-            // The bar is as tall as the title bar, so the traffic lights and the toggles share a centre line.
-            sidebarToggle.leadingAnchor.constraint(equalTo: root.view.leadingAnchor, constant: lights + 12),
+            bar.topAnchor.constraint(equalTo: root.view.topAnchor), bar.heightAnchor.constraint(equalToConstant: WindowBar.height),
+            barStart, bar.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+            // The bar is as tall as the title bar, so the traffic lights and the toggles share a centre line. The sidebar's
+            // toggle is in the sidebar's top right corner, or after the traffic lights while the sidebar is away.
+            sidebarToggle.leadingAnchor.constraint(greaterThanOrEqualTo: root.view.leadingAnchor, constant: lights + 12),
+            { let c = sidebarToggle.trailingAnchor.constraint(equalTo: editors.view.leadingAnchor, constant: -8); c.priority = .init(600); return c }(),
             sidebarToggle.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             // The workspace starts over the editor area; with the sidebar away, after its toggle.
             bar.context.leadingAnchor.constraint(greaterThanOrEqualTo: sidebarToggle.trailingAnchor, constant: 12),
@@ -218,8 +223,8 @@ final class EditorHost: NSViewController {
         current = area
         area.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(area.view)
-        // Up into the title bar: the top panes' tab strips are the window's title bar.
-        NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor),
+        // Under the window bar, which lies over this view's top (the split view is the window's full height).
+        NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height),
                                      area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                                      area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
         area.reconcile()
@@ -247,7 +252,7 @@ final class EditorHost: NSViewController {
         welcome?.removeFromSuperview()
         let w = WelcomeView(hasRepos: hasRepos)
         w.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(w)
-        NSLayoutConstraint.activate([w.topAnchor.constraint(equalTo: view.topAnchor), w.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        NSLayoutConstraint.activate([w.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height), w.bottomAnchor.constraint(equalTo: view.bottomAnchor),
                                      w.leadingAnchor.constraint(equalTo: view.leadingAnchor), w.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
         welcome = w
     }

@@ -90,8 +90,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         add.identifier = .init("workspace.addProject"); add.target = NSApp.delegate; add.action = #selector(AppDelegate.runCommand(_:))
         for x in [add, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            // The window's second row: level with the tab strips and the inspector's panel icons.
-            search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
+            // Under the traffic lights, in the window's second row: level with the tab strips and the inspector's panel icons.
+            search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
             add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
             scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),

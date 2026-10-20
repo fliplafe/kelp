@@ -31,8 +31,7 @@ final class WindowBar: NSView {
         pr.target = self; pr.action = #selector(openPR)
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
-        let sep = NSBox(); sep.boxType = .separator
-        for v in [context, search, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [context, search] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         // Short of room, the search leaves the centre first, then narrows; only then does the path shorten.
         let wide = search.widthAnchor.constraint(equalToConstant: 280); wide.priority = .init(250)
         let center = search.centerXAnchor.constraint(equalTo: centerXAnchor); center.priority = .init(200)
@@ -42,8 +41,7 @@ final class WindowBar: NSView {
             search.heightAnchor.constraint(equalToConstant: 22), wide, center,
             search.widthAnchor.constraint(greaterThanOrEqualToConstant: 120), search.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
             search.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
-            search.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48),   // clear of the inspector toggle
-            sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
+            search.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
         track { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }

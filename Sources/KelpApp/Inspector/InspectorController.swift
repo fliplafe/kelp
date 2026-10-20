@@ -32,21 +32,24 @@ final class InspectorController: NSViewController {
         host.clipsToBounds = true
         let sep = NSBox(); sep.boxType = .separator; rowSep.boxType = .separator
         for x in [selector, sep, rowSep, heading, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        // The window bar lies over the inspector's top (it's the window's full height): its rows start under it.
+        let under = NSLayoutGuide(); v.addLayoutGuide(under)
+        under.topAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height).isActive = true
         align = ["left": selector.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
                  "center": selector.centerXAnchor.constraint(equalTo: v.centerXAnchor),
                  "right": selector.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -8)]
         align.values.forEach { $0.priority = .defaultHigh }
         // Level with the tabs, the full height of their strip; or as tall, under the panel.
-        top = [selector.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2), host.bottomAnchor.constraint(equalTo: v.bottomAnchor)]
+        top = [selector.centerYAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height / 2), host.bottomAnchor.constraint(equalTo: v.bottomAnchor)]
         bottom = [selector.bottomAnchor.constraint(equalTo: v.bottomAnchor), rowSep.bottomAnchor.constraint(equalTo: selector.topAnchor),
                   host.bottomAnchor.constraint(equalTo: rowSep.topAnchor)]
         NSLayoutConstraint.activate([
             selector.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), selector.heightAnchor.constraint(equalToConstant: TabStrip.height),
             selector.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -8),
-            sep.bottomAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            sep.bottomAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height), sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             rowSep.leadingAnchor.constraint(equalTo: v.leadingAnchor), rowSep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             heading.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), heading.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -8),
-            heading.centerYAnchor.constraint(equalTo: v.topAnchor, constant: TabStrip.height / 2),
+            heading.centerYAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height / 2),
             host.topAnchor.constraint(equalTo: sep.bottomAnchor), host.leadingAnchor.constraint(equalTo: v.leadingAnchor), host.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             v.widthAnchor.constraint(greaterThanOrEqualToConstant: 240)
@@ -138,7 +141,8 @@ final class InspectorController: NSViewController {
     /// The row's right-click menu (on an icon or the band around it): which icons show, where the row sits, auto-hide.
     private func rowMenu(_ e: NSEvent) -> NSMenu? {
         let p = view.convert(e.locationInWindow, from: nil)
-        guard p.y >= view.bounds.height - TabStrip.height || (selector.frame.minY...selector.frame.maxY).contains(p.y) else { return nil }
+        let band = view.bounds.height - WindowBar.height
+        guard (band - TabStrip.height...band).contains(p.y) || (selector.frame.minY...selector.frame.maxY).contains(p.y) else { return nil }
         let s = SettingsStore.shared, hidden = Set(ids(Self.hiddenKey)), m = NSMenu()
         m.addItem(.sectionHeader(title: String(localized: "Icons")))
         for panel in panels {
