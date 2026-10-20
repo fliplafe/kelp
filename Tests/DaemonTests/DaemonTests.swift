@@ -97,6 +97,21 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     #expect(comments.first?.state == .sent)
 }
 
+@Test func discardHunkOnlyWhatWasShown() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "h", "setup": false]), as: Worktree.self)
+    try "hello\nagain\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    let diff: [FileDiff] = try await c.call("git.diff", .obj(["id": .string(wt.id), "source": "unstaged"]), as: [FileDiff].self)
+    let header = try #require(diff.first?.hunks.first?.header)
+    // A header that isn't the file's now (it changed since it was shown): nothing goes.
+    await #expect(throws: (any Error).self) { try await c.call(GitDiscardHunk(id: wt.id, file: "a.txt", hunk: 0, header: "@@ -9 +9 @@")) }
+    #expect(try String(contentsOfFile: wt.path + "/a.txt", encoding: .utf8) == "hello\nagain\n")
+    _ = try await c.call(GitDiscardHunk(id: wt.id, file: "a.txt", hunk: 0, header: header))
+    #expect(try String(contentsOfFile: wt.path + "/a.txt", encoding: .utf8) == "hello\n")
+}
+
 @Test func fanoutStart() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)

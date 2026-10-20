@@ -57,7 +57,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         pathLabel.lineBreakMode = .byTruncatingHead; pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let fc = NSTableColumn(identifier: .init("file")); fc.title = String(localized: "Files")
-        files.addTableColumn(fc); files.dataSource = self; files.delegate = self; files.rowHeight = 20; files.style = .sourceList
+        files.addTableColumn(fc); files.dataSource = self; files.delegate = self; files.rowHeight = 26; files.style = .sourceList
         files.headerView = nil
         fc.resizingMask = .autoresizingMask; files.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle   // rows as wide as the pane
         let fm = NSMenu(); fm.addItem(withTitle: String(localized: "Stage"), action: #selector(stageFile), keyEquivalent: "").target = self
@@ -246,9 +246,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             // The same letters and colours as Source Control and Files; a long path loses its middle, not its counts.
             let (letter, color) = changes.first { $0.path == d.path }?.badge ?? (" ", .labelColor)
             let t = NSMutableAttributedString(string: letter + "  ", attributes: [.font: NSFont.ui(10, weight: .bold), .foregroundColor: color])
-            t.append(NSAttributedString(string: d.path + "  ", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor]))
+            // The name, its counts, then its folder in grey, which gives way first: names are what you look for.
+            let dir = (d.path as NSString).deletingLastPathComponent
+            t.append(NSAttributedString(string: (d.path as NSString).lastPathComponent + "  ", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
             t.append(RowBadges.changes(added: d.additions, removed: d.deletions))
-            let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingMiddle
+            if !dir.isEmpty { t.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])) }
+            let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingTail
             t.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: t.length))
             let v = label("", font: .systemFont(ofSize: 11)); v.attributedStringValue = t
             return v
@@ -268,17 +271,24 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             case .gap(let n): return band(first ? String(localized: "⋯  \(n) unchanged lines") : "")
             case .hunk(let f, let h, let header):
                 guard first else { return band("") }
-                let stack = NSStackView(); stack.spacing = 6; stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 0)
-                stack.wantsLayer = true; stack.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.06).cgColor
+                let stack = NSStackView(); stack.spacing = 6; stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+                stack.wantsLayer = true; stack.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+                let where_ = label(header, font: .monospacedSystemFont(ofSize: 11, weight: .regular), color: .secondaryLabelColor)
+                where_.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                stack.addArrangedSubview(where_)
                 if canStageHunks {
+                    // Named buttons at the hunk's end, as in Xcode's and GitHub Desktop's reviews.
                     let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
-                    // An icon fits the narrow gutter, like VS Code's hunk actions.
-                    let b = NSButton(image: .symbol(staged ? "minus.circle" : "plus.circle", staged ? String(localized: "Unstage Hunk") : String(localized: "Stage Hunk")),
-                                     target: self, action: #selector(hunkAction(_:)))
-                    b.isBordered = false; b.contentTintColor = .secondaryLabelColor; b.toolTip = staged ? String(localized: "Unstage Hunk") : String(localized: "Stage Hunk"); b.tag = f * 10000 + h
-                    stack.addArrangedSubview(b)
+                    func button(_ title: String, _ a: Selector) -> NSButton {
+                        let b = NSButton(title: title, target: self, action: a); b.bezelStyle = .push; b.controlSize = .small
+                        b.tag = f * 10000 + h; return b
+                    }
+                    stack.addArrangedSubview(NSView())
+                    // Only where the hunks shown are the unstaged diff's, the one Discard works on.
+                    let unstaged = single.map { $0.source == "unstaged" && $0.commit == nil } ?? (source.indexOfSelectedItem == 1)
+                    if unstaged { stack.addArrangedSubview(button(String(localized: "Discard…"), #selector(discardHunk(_:)))) }
+                    stack.addArrangedSubview(button(staged ? String(localized: "Unstage") : String(localized: "Stage"), #selector(hunkAction(_:))))
                 }
-                stack.addArrangedSubview(label(header, font: .monospacedSystemFont(ofSize: 11, weight: .regular), color: .tertiaryLabelColor))
                 return stack
             case .line(let f, let l):
                 switch id {
@@ -309,7 +319,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
     private func tint(_ k: DiffLine.Kind) -> NSColor? { k == .add ? Self.addTint : k == .del ? Self.delTint : nil }
     private func number(_ n: Int?, kind: DiffLine.Kind) -> NSTextField {
-        let t = label(n.map(String.init) ?? "", font: font, color: .tertiaryLabelColor, align: .right)
+        let t = label(n.map(String.init) ?? "", font: font, color: .secondaryLabelColor, align: .right)
         if let c = tint(kind) { t.drawsBackground = true; t.backgroundColor = c }
         return t
     }
@@ -369,6 +379,28 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(diffs[f].path), "hunk": .int(h), "reverse": .bool(staged)]))
             await load()
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+        }
+    }
+    /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
+    @objc private func discardHunk(_ b: NSButton) {
+        guard let wid = worktreeId, let window = view.window else { return }
+        let f = b.tag / 10000, h = b.tag % 10000
+        guard diffs.indices.contains(f), diffs[f].hunks.indices.contains(h) else { return }
+        let lines = diffs[f].hunks[h].lines, file = (diffs[f].path as NSString).lastPathComponent, header = diffs[f].hunks[h].header
+        let added = lines.filter { $0.kind == .add }.count, removed = lines.filter { $0.kind == .del }.count
+        let a = NSAlert()
+        a.messageText = String(localized: "Discard this change?")
+        a.informativeText = String(localized: "\(file) goes back to the committed lines here: \(added) added lines go, \(removed) removed lines come back. This can't be undone.")
+        a.addButton(withTitle: String(localized: "Discard")).hasDestructiveAction = true
+        a.addButton(withTitle: String(localized: "Cancel"))
+        a.beginSheetModal(for: window) { [weak self] r in
+            guard r == .alertFirstButtonReturn, let self else { return }
+            Task {
+                let p: JSONValue = .obj(["id": .string(wid), "file": .string(self.diffs[f].path), "hunk": .int(h), "header": .string(header)])
+                if let e = await AppModel.shared.tryCall(GitDiscardHunk.name, p).error { Banner.show(e, style: .error) }
+                await self.load()
+                NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+            }
         }
     }
     private func selectedFilePath() -> String? { files.clickedRow >= 0 ? diffs[files.clickedRow].path : (files.selectedRow >= 0 ? diffs[files.selectedRow].path : nil) }

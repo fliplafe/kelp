@@ -28,7 +28,8 @@ extension Handled {
 extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
-                                                          WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self] as [any Handled.Type]).map { ($0.name, $0) })
+                                                          WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
+                                                          GitDiscardHunk.self] as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
@@ -313,6 +314,17 @@ extension DaemonInfo: Handled {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
                       liveSessions: d.lock.withLock { d.live.values.filter { $0.snapshot.status != .exited }.count })
+    }
+}
+
+extension GitDiscardHunk: Handled {
+    func handle(_ d: Daemon) throws -> Done {
+        let w = try d.cwd(forWorktree: id)
+        guard let diff = try Git.diff(w.path, source: .unstaged, file: file).first, diff.hunks.indices.contains(hunk),
+              diff.hunks[hunk].header == header else {
+            throw RPCError.invalidParams("The file changed since it was shown; nothing was discarded.")
+        }
+        try Git.discardHunk(w.path, diff: diff, hunk: hunk); return Done()
     }
 }
 

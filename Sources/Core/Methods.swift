@@ -84,3 +84,12 @@ public struct WorktreeNote: RPCMethod {
     public var id: String, note: String
     public init(id: String, note: String) { self.id = id; self.note = note }
 }
+
+/// Throws away one hunk of a file's unstaged changes (index `hunk` of its unstaged diff) in workspace `id`. `header`
+/// is the hunk's "@@ … @@" line as the caller saw it: if the file changed since, nothing is thrown away.
+public struct GitDiscardHunk: RPCMethod {
+    public static let name = "git.discardHunk"
+    public typealias Result = Done
+    public var id: String, file: String, hunk: Int, header: String
+    public init(id: String, file: String, hunk: Int, header: String) { self.id = id; self.file = file; self.hunk = hunk; self.header = header }
+}

@@ -52,6 +52,13 @@ func tempRepo() throws -> String {
     #expect(staged[0].hunks.count == 1 && staged[0].hunks[0].lines.contains { $0.text == "twenty-nine" })
     let rest = try Git.diff(repo, source: .unstaged, file: "g.txt")
     #expect(rest[0].hunks.count == 1 && rest[0].hunks[0].lines.contains { $0.text == "two" })
+
+    // Discarding the unstaged hunk puts line 2 back in the file and leaves the staged one alone.
+    try Git.discardHunk(repo, diff: rest[0], hunk: 0)
+    let file = try String(contentsOfFile: repo + "/g.txt", encoding: .utf8).split(separator: "\n")
+    #expect(file[1] == "2" && file[28] == "twenty-nine")
+    #expect(try Git.diff(repo, source: .unstaged, file: "g.txt").isEmpty)
+    #expect(try Git.diff(repo, source: .staged).count == 1)
 }
 
 @Test func statusUntrackedAndCommit() throws {

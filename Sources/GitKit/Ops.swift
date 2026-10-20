@@ -9,6 +9,11 @@ extension Git {
         try run(["apply", "--cached", "--recount", "--unidiff-zero"] + (reverse ? ["-R"] : []) + ["-"], cwd: path, stdin: diff.patch(hunk: hunk))
     }
 
+    /// Throw away one unstaged hunk of `diff` (the working tree's version of `git restore -p`): its reverse, applied to the files.
+    public static func discardHunk(_ path: String, diff: FileDiff, hunk: Int) throws {
+        try run(["apply", "--recount", "--unidiff-zero", "-R", "-"], cwd: path, stdin: diff.patch(hunk: hunk))
+    }
+
     @discardableResult
     public static func commit(_ path: String, message: String, all: Bool = false, amend: Bool = false) throws -> String {
         try run(["commit", "-q"] + (all ? ["-a"] : []) + (amend ? ["--amend"] : []) + ["-m", message], cwd: path)
