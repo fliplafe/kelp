@@ -45,6 +45,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private let leftScroll = NSScrollView(), resultsScroll = NSScrollView()
     private var nodes: [FileNode] = []
     private var status: [String: FileChange] = [:]
+    /// Folders with a changed file somewhere under them (drawn orange).
+    private var changedFolders = Set<String>()
+    /// The paths the tree was built from: an edit that adds or removes none only changes badges.
+    private var shownPaths: [String]?
+    /// Something changed while the panel was out of the window.
+    private var stale = false
     private var matches: [SearchMatch] = []
     private var watcher: FileWatcher?
     private var worktree: Worktree?
@@ -121,7 +127,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard wid != worktree?.id else { return }
         let next = AppModel.shared.worktree(wid)
         // Another folder: drop the old tree now, or a click before the reload would act on its paths under the new root.
-        if next?.path != worktree?.path { nodes = []; status = [:]; outline.reloadData() }
+        if next?.path != worktree?.path { nodes = []; status = [:]; shownPaths = nil; outline.reloadData() }
         worktree = next
         matches = []; results.reloadData()
         watcher = worktree.flatMap { w in
@@ -148,20 +154,29 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         treeReload = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
     }
 
+    override func viewDidAppear() { super.viewDidAppear(); if stale { reloadTree() } }
+
     func reloadTree(then done: (() -> Void)? = nil) {
         guard renaming == nil else { scheduleReload(); return }   // a reload would end the edit
+        // Swapped out of the inspector: nothing to read until it shows again.
+        guard done != nil || view.window != nil else { stale = true; return }
+        stale = false
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
             let paths = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(w.id)]), as: [String].self)) ?? []
             let st = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(w.id)]), as: [FileChange].self)) ?? []
             guard worktree?.id == w.id else { return }   // switched meanwhile: these paths are another folder's
-            let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
-            let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
             status = Dictionary(st.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
-            nodes = FileNode.tree(paths); outline.reloadData()
-            func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
-            expand(nodes)
-            if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
+            changedFolders = Set(status.keys.flatMap { p in p.indices.filter { p[$0] == "/" }.map { String(p[..<$0]) } })
+            if paths == shownPaths { reloadIcons() } else {   // an agent saving a file changes its badge, not the tree
+                shownPaths = paths
+                let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
+                let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
+                nodes = FileNode.tree(paths); outline.reloadData()
+                func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
+                expand(nodes)
+                if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
+            }
             done?()
             if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { QLPreviewPanel.shared().reloadData() }
         }
@@ -183,7 +198,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         if let s = status[n.path] {
             let (letter, color) = s.badge
             badge.stringValue = letter; badge.textColor = color; tf.textColor = color
-        } else if n.children != nil, status.keys.contains(where: { $0.hasPrefix(n.path + "/") }) { tf.textColor = .textOrange }
+        } else if n.children != nil, changedFolders.contains(n.path) { tf.textColor = .textOrange }
         badge.font = .ui(10, weight: .bold)
         for v in [img, tf, badge] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(v) }
         cell.textField = tf; cell.imageView = img

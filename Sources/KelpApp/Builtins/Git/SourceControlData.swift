@@ -14,8 +14,9 @@ extension SourceControlController {
         rebuild(); reloadAll()
     }
 
-    /// The workspace this panel shows (and keeps the Source Control badge of).
-    var workspace: String? { worktreeId }
+    /// The workspace this panel shows and keeps the Source Control badge of; out of the window it reads nothing,
+    /// so the badge counts by itself.
+    var workspace: String? { view.window == nil ? nil : worktreeId }
 
     private func scheduleReload() {
         pending?.cancel()
@@ -24,6 +25,9 @@ extension SourceControlController {
     }
 
     func reloadAll() {
+        // Swapped out of the inspector: no git until it shows again.
+        guard view.window != nil else { stale = true; return }
+        stale = false
         guard let wid = worktreeId, let c = AppModel.shared.client else { return }
         let id = JSONValue.obj(["id": .string(wid)])
         Task {
@@ -77,7 +81,11 @@ extension SourceControlController {
     }
 
     /// Shown again (another panel was on screen): what CI did meanwhile.
-    override func viewDidAppear() { super.viewDidAppear(); if !ciRuns.isEmpty { loadCI() } }
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if stale { reloadAll() }
+        if !ciRuns.isEmpty { loadCI() }
+    }
 
     /// The CI line under Commit. While a run goes on, or a push's run hasn't shown up yet, it looks again
     /// as long as the panel is on screen. No upstream, no gh / glab, no runs: no line.

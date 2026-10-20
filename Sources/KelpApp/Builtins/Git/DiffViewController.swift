@@ -141,6 +141,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     @objc func reload() { Task { await load() } }
+    /// Git changed while the tab was in the background: it reads the diff again when shown, not on every save meanwhile.
+    var stale = false
+    override func viewDidAppear() { super.viewDidAppear(); if stale { stale = false; reload() } }
     func showLastTurn() { source.selectItem(at: 5) }
     @objc private func sourceChanged() { askCommit = source.indexOfSelectedItem == 4; reload() }
     private var askCommit = false

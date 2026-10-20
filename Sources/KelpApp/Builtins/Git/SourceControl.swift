@@ -53,6 +53,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
     var watcher: FileWatcher?
     var pending: DispatchWorkItem?
+    /// Something changed while the panel was out of the window.
+    var stale = false
     var busy = false { didSet { updateCommitButton() } }
     let stats = NSTextField(labelWithString: "")
     let ciRow = CIStatusRow()

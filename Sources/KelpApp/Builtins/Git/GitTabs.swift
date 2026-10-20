@@ -33,7 +33,10 @@ final class DiffTab: TabContent {
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
         observer = NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated { if (n.object as? String) == self?.worktreeId, self?.commit == nil { self?.controller.reload() } }
+            MainActor.assumeIsolated {
+                guard let self, (n.object as? String) == self.worktreeId, self.commit == nil else { return }
+                if self.controller.view.window == nil { self.controller.stale = true } else { self.controller.reload() }
+            }
         }
     }
     private var observer: NSObjectProtocol?
