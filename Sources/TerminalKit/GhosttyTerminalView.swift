@@ -58,6 +58,9 @@ public final class GhosttyRuntime {
 
     private static func makeConfig() -> ghostty_config_t? {
         let cfg = ghostty_config_new()
+        let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-ghostty-defaults-\(getpid()).conf")
+        try? defaults.write(to: d, atomically: true, encoding: .utf8)
+        ghostty_config_load_file(cfg, d.path)   // first: the user's Ghostty config may change them
         if appearance.useGhosttyConfig { ghostty_config_load_default_files(cfg) }   // the user's Ghostty theme, font, cursor…
         let f = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-ghostty-\(getpid()).conf")
         try? (overrides + "\n" + appearance.configText).write(to: f, atomically: true, encoding: .utf8)
@@ -72,6 +75,10 @@ public final class GhosttyRuntime {
         let cfg = Self.makeConfig()
         setUp(cfg)
     }
+
+    /// Under the user's Ghostty config: text keeps 3:1 contrast with its background, so colours picked for a dark
+    /// terminal (Claude Code's near-white greys) stay readable on a light one, and dark ones on a dark one.
+    private static let defaults = "minimum-contrast = 3\n"
 
     // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Kelp; Ghostty keeps only terminal ones.
     // ⇧↩ types a line feed: a new line in agent prompts (Claude Code, Codex) instead of sending the message.
