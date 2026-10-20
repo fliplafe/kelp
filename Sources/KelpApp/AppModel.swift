@@ -42,8 +42,17 @@ final class AppModel {
         if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
     }
 
-    /// Tells the daemon what's on screen, so agents can ask (`kelp ui state`, MCP).
+    /// Tells the daemon what's on screen, so agents can ask (`kelp ui state`). Every tab and focus change calls it:
+    /// a burst sends one notification, and only when the state differs from the last one sent.
     func publishUIState() {
+        guard !publishQueued else { return }
+        publishQueued = true
+        DispatchQueue.main.async { [self] in publishQueued = false; sendUIState() }
+    }
+    @ObservationIgnored private var publishQueued = false
+    @ObservationIgnored private var published: JSONValue?
+
+    private func sendUIState() {
         guard let c = client else { return }
         let w = worktree(Workbench.shared.workspaceId)
         let reg = ExtensionRegistry.shared
@@ -59,6 +68,8 @@ final class AppModel {
             "commands": .array(reg.all.commands.map { .obj(["id": .string($0.id), "title": .string($0.title)]) }),
             "panels": .array(reg.all.panels.map { .obj(["id": .string($0.id), "title": .string($0.title)]) })
         ])
+        guard state != published else { return }
+        published = state
         c.notify("ui.publish", .obj(["state": state]))
     }
 
@@ -105,6 +116,7 @@ final class AppModel {
         await SettingsStore.shared.load()
         await refresh()
         connected = client === c   // after the lists: what waits for the connection finds the projects in
+        published = nil   // a new daemon knows nothing yet
         publishUIState()
         watchContext()
     }

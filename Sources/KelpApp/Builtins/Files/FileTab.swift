@@ -17,8 +17,7 @@ final class FileTab: SavableTab {
     private(set) var markdown: MarkdownTab?
     private var notebook: NotebookTab?
     private var lastSaved = ""
-    private var wasEdited = false
-    var isEdited: Bool { editor.map { $0.text != lastSaved } ?? false }
+    private(set) var isEdited = false
     private static var autosave: Bool { SettingsStore.shared.bool("editor.autoSave") == true }
     private var saveTask: Task<Void, Never>?
     private var lspTask: Task<Void, Never>?
@@ -186,8 +185,9 @@ final class FileTab: SavableTab {
     }
 
     private func editedStateMayHaveChanged() {
-        guard isEdited != wasEdited else { return }
-        wasEdited = isEdited; onChange?()
+        let now = editor.map { $0.text != lastSaved } ?? false
+        guard now != isEdited else { return }
+        isEdited = now; onChange?()
     }
 
     private func diskChanged() {

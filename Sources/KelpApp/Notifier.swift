@@ -59,7 +59,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func updateBadge() {
         let n = AppModel.shared.sessions.filter { $0.unread && $0.status != .exited }.count
-        NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil
+        let label = n > 0 ? "\(n)" : nil
+        if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
         clearSeen()
     }
 

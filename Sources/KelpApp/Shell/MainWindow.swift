@@ -312,8 +312,7 @@ final class EditorHost: NSViewController {
     private func refresh() {
         for (id, a) in areas where AppModel.shared.worktree(id) == nil { a.view.removeFromSuperview(); a.removeFromParent(); areas[id] = nil; recent.removeAll { $0 == id } }
         if let c = current, areas[c.workspaceId] == nil { current = nil; showWelcome() }
-        current?.reconcile()
-        for (id, a) in areas where id != current?.workspaceId { a.reconcile() }
+        current?.reconcile()   // the others reconcile when shown
         if current == nil { showWelcome() }
     }
 
