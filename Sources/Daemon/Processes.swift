@@ -30,7 +30,9 @@ extension Daemon {
         let owner = sessionProcesses(worktree: wid).owner
         guard !owner.isEmpty else { return [] }
         var out: [Port] = [], pid: Int32 = 0, cmd = ""
-        for line in (Self.run(["/usr/sbin/lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], path: "/bin:/usr/bin", timeout: 4) ?? "").split(whereSeparator: \.isNewline) {
+        // Only the sessions' processes (-a: and): a system-wide lsof walks every process on the Mac, every 3 s while Ports shows.
+        let pids = owner.keys.map(String.init).joined(separator: ",")
+        for line in (Self.run(["/usr/sbin/lsof", "-nP", "-a", "-p", pids, "-iTCP", "-sTCP:LISTEN", "-Fpcn"], path: "/bin:/usr/bin", timeout: 4) ?? "").split(whereSeparator: \.isNewline) {
             switch line.first {
             case "p": pid = Int32(line.dropFirst()) ?? 0
             case "c": cmd = String(line.dropFirst())

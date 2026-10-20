@@ -81,7 +81,12 @@ public enum Git {
         return (try? currentBranch(repo)) ?? "main"
     }
 
+    /// Every workspace list asks this for each project: a local checkout's HEAD file answers without a git process.
+    /// Detached, a linked worktree (.git is a file) or a remote project: git itself.
     public static func currentBranch(_ path: String) throws -> String {
-        try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
+        if RemoteHost.of(path) == nil, let head = try? String(contentsOfFile: path + "/.git/HEAD", encoding: .utf8), head.hasPrefix("ref: refs/heads/") {
+            return String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
