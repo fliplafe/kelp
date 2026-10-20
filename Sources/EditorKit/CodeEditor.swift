@@ -44,7 +44,7 @@ public final class CodeEditor: NSObject {
         if ProcessInfo.processInfo.environment["KELP_EDITOR_TIMING"] != nil { print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms") }
     }
 
-    public var view: NSView { controller.view }
+    public var view: NSView { let v = controller.view; evenFoldRibbon(); return v }
     public var text: String { controller.text }
 
     /// Replace contents (e.g. the file changed on disk) without echoing a change event.
@@ -135,6 +135,17 @@ public final class CodeEditor: NSObject {
         c.appearance.font = Self.font
         c.peripherals.showMinimap = Self.showMinimap && !big
         controller.configuration = c
+        evenFoldRibbon()
+    }
+
+    /// CodeEdit's fold ribbon is twice as strong in dark mode as in light (white 20 % marks, a heavy grey bar beside the
+    /// line numbers, against black 10 %), and its colours are internal: half its opacity in dark evens the two out.
+    private func evenFoldRibbon() {
+        func ribbon(in v: NSView) -> NSView? {
+            NSStringFromClass(type(of: v)).hasSuffix("LineFoldRibbonView") ? v : v.subviews.lazy.compactMap(ribbon).first
+        }
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua   // as defaultTheme decides
+        ribbon(in: controller.view)?.alphaValue = dark ? 0.5 : 1
     }
 
     static var font: NSFont {
