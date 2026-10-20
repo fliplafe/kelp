@@ -189,6 +189,11 @@ final class NoteBox: @unchecked Sendable {
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(repoPath)]), as: Repo.self)
+    // .kelp.yaml links nothing until the user trusts this version of it.
+    let first = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "first"]))
+    #expect(first["setupNeedsTrust"]?.bool == true)
+    #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: (first["path"]?.string ?? "") + "/node_modules")) == nil)
+    _ = try await c.call("scripts.trust", .obj(["worktreeId": first["id"] ?? .null]))
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "dark-mode", "setup": false]), as: Worktree.self)
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "fake", "prompt": "Add a dark mode toggle to settings"]),
                                       as: Session.self)

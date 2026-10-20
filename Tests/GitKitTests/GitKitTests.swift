@@ -436,3 +436,12 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(try Git.run(["diff", "--cached", "--name-only"], cwd: repo).isEmpty)   // the real index stayed as it was: nothing got staged
     #expect(try Git.status(repo).contains { $0.path == "new.txt" && $0.untracked })
 }
+
+@Test func sharedFoldersNeverLinkOutsideTheProject() throws {
+    let repo = try tempRepo(), wt = try tempRepo()
+    try FileManager.default.createDirectory(atPath: repo + "/node_modules", withIntermediateDirectories: true)
+    Git.linkShared(["node_modules", "../outside", "/etc", "a/../../b", "~/x"], repo: repo, worktree: wt)
+    #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: wt + "/node_modules")) != nil)
+    #expect(!FileManager.default.fileExists(atPath: (wt as NSString).deletingLastPathComponent + "/outside"))
+    #expect(!FileManager.default.fileExists(atPath: wt + "/etc"))
+}

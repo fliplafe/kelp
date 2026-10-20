@@ -13,7 +13,7 @@ extension Daemon {
     /// Nothing to run counts as trusted.
     func trusted(repoPath: String) -> Bool {
         let text = configText(repoPath), cfg = RepoConfig.parse(text)
-        guard cfg.setup != nil || !cfg.scripts.isEmpty else { return true }
+        guard cfg.setup != nil || !cfg.scripts.isEmpty || !cfg.tabs.isEmpty || !cfg.shared.isEmpty else { return true }   // nothing it could run or link
         let known = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: trustFile))) ?? [:]
         return known[repoPath] == Self.digest(text)
     }

@@ -31,7 +31,8 @@ extension Git {
 
     /// Symlink shared directories (node_modules, .venv…) from the main checkout instead of reinstalling.
     public static func linkShared(_ dirs: [String], repo: String, worktree: String) {
-        for d in dirs {
+        // Only paths inside the project: "/etc", "../x" or "a/../../b" would link (or create folders) outside it.
+        for d in dirs where !d.hasPrefix("/") && !d.hasPrefix("~") && !d.split(separator: "/").contains("..") {
             let src = (repo as NSString).appendingPathComponent(d), dst = (worktree as NSString).appendingPathComponent(d)
             guard FileManager.default.fileExists(atPath: src), !FileManager.default.fileExists(atPath: dst) else { continue }
             try? FileManager.default.createDirectory(atPath: (dst as NSString).deletingLastPathComponent, withIntermediateDirectories: true)

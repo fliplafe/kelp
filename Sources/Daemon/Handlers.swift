@@ -120,9 +120,15 @@ extension Daemon {
             try store.save(w)
             var result = try JSONValue.from(w)
             let cfg = RepoConfig.load(repoPath: r.path)
-            Git.linkShared(cfg.shared, repo: r.path, worktree: path)
-            if p["tabs"]?.bool != false { for t in cfg.tabs { _ = try? spawn(cwd: path, manifest: manifest(t, command: nil), worktreeId: w.id) } }
-            if cfg.setup != nil, p["setup"]?.bool != false, !trusted(repoPath: r.path), case .object(var o) = result {
+            // Everything .kelp.yaml does waits for the user's trust in this version of the file, not only `setup`: `tabs`
+            // starts agents and `shared` links folders, and a freshly cloned repository wrote that file, not the user.
+            let trustedConfig = trusted(repoPath: r.path)
+            if trustedConfig {
+                Git.linkShared(cfg.shared, repo: r.path, worktree: path)
+                if p["tabs"]?.bool != false { for t in cfg.tabs { _ = try? spawn(cwd: path, manifest: manifest(t, command: nil), worktreeId: w.id) } }
+            }
+            let asks = cfg.setup != nil || !cfg.tabs.isEmpty || !cfg.shared.isEmpty
+            if asks, p["setup"]?.bool != false, !trustedConfig, case .object(var o) = result {
                 o["setupNeedsTrust"] = true; result = .object(o)   // the app asks, then scripts.trust + scripts.run "setup"
             } else if let setup = cfg.setup, p["setup"]?.bool != false {
                 var o = Launch(); o.title = "setup"
