@@ -3,7 +3,7 @@ import Core
 
 /// Open a project over SSH in two steps: connect to the host (ssh's own reason if Kelp can't), then pick the folder
 /// there from a list, as an open panel does (double-click goes in, repositories are marked). Open takes the selected
-/// folder, else the one listed.
+/// folder, else the one listed; one that isn't in a repository yet gets `git init` first, and the button says so.
 @MainActor
 final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewDataSource, NSTableViewDelegate {
     /// The host, as after `ssh` (the hosts in ~/.ssh/config to pick from).
@@ -16,8 +16,8 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
     private let spinner = NSProgressIndicator()
     private let go = NSButton(), cancel = NSButton()
     private var rows: [RemoteListFolders.Folder] = []
-    /// The host and folder listed: nil until connected, and again once the host is edited.
-    private var listed: (host: String, path: String)?
+    /// The host and folder listed (and whether it's in a repository): nil until connected, and again once the host is edited.
+    private var listed: (host: String, path: String, repo: Bool)?
     private static var shown: RemoteSheet?
 
     /// `start`: "host" or "host:/path", connected to at once (the snapshot dev aid; a background app's sheet gets no keys).
@@ -76,8 +76,18 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
     private func update() {
         let on = listed != nil
         grid.row(at: 1).isHidden = !on; scroll.isHidden = !on
-        go.title = on ? String(localized: "Open") : String(localized: "Connect")
+        go.title = !on ? String(localized: "Connect") : target?.repo == false ? String(localized: "Initialize Git and Open") : String(localized: "Open")
     }
+
+    /// What Open opens: the selected folder, else the one listed.
+    private var target: (path: String, repo: Bool)? {
+        guard let l = listed else { return nil }
+        let r = table.selectedRow
+        guard rows.indices.contains(r), rows[r].name != ".." else { return (l.path, l.repo) }
+        return (Self.join(l.path, rows[r].name), l.repo || rows[r].git)
+    }
+
+    func tableViewSelectionDidChange(_ n: Notification) { update() }
 
     func controlTextDidChange(_ n: Notification) { if n.object as? NSComboBox === host { hostEdited() } }
     func comboBoxSelectionDidChange(_ n: Notification) { hostEdited() }
@@ -89,8 +99,7 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
         guard let l = listed, l.host == h else { list(h, "~"); return }
         let typed = path.stringValue.trimmingCharacters(in: .whitespaces)
         if !typed.isEmpty, typed != l.path { list(h, typed); return }   // a path typed: go there first
-        let r = table.selectedRow
-        open(h, rows.indices.contains(r) && rows[r].name != ".." ? Self.join(l.path, rows[r].name) : l.path)
+        if let t = target { open(h, t.path, init: !t.repo) }
     }
 
     @objc private func enter() {
@@ -105,17 +114,17 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
             let r = await AppModel.shared.tryCall(RemoteListFolders(host: h, path: p))
             busy(false)
             guard let v = r.value else { say(r.error, error: true); return }
-            listed = (h, v.path); path.stringValue = v.path; say(nil)
+            listed = (h, v.path, v.repo); path.stringValue = v.path; say(nil)
             rows = (v.path == "/" ? [] : [.init(name: "..", git: false)]) + v.folders
             table.reloadData(); update()
             window?.makeFirstResponder(table)
         }
     }
 
-    private func open(_ h: String, _ p: String) {
+    private func open(_ h: String, _ p: String, init: Bool) {
         busy(true); say(String(localized: "Opening…"))
         Task {
-            let r = await AppModel.shared.tryCall("repo.addRemote", .obj(["host": .string(h), "path": .string(p)]))
+            let r = await AppModel.shared.tryCall("repo.addRemote", .obj(["host": .string(h), "path": .string(p), "init": .bool(`init`)]))
             busy(false)
             if let e = r.error { say(e, error: true); return }
             UserDefaults.standard.set(h, forKey: "remote.host")

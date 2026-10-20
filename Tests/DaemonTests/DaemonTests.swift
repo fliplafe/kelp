@@ -431,8 +431,16 @@ final class NoteBox: @unchecked Sendable {
     try "changed\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
     // The folder browser: the repository is listed and marked; a missing folder says so.
     let listed = try await c.call(RemoteListFolders(host: "box", path: (there as NSString).deletingLastPathComponent))
-    #expect(listed.folders.contains(.init(name: (there as NSString).lastPathComponent, git: true)))
+    #expect(listed.folders.contains(.init(name: (there as NSString).lastPathComponent, git: true)) && !listed.repo)
+    #expect(try await c.call(RemoteListFolders(host: "box", path: there)).repo)
     await #expect(throws: (any Error).self) { try await c.call(RemoteListFolders(host: "box", path: "/nope/nothing")) }
+    // A folder that isn't a repository opens only with init, which makes it one.
+    let loose = tmp().path
+    try FileManager.default.createDirectory(atPath: loose, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: loose + "/a.txt", contents: Data())
+    await #expect(throws: (any Error).self) { try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(loose)])) }
+    _ = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(loose), "init": true]))
+    #expect(FileManager.default.fileExists(atPath: loose + "/.git"))
     let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
     #expect(repo.path.hasPrefix(root.path + "/remote/box/") && !FileManager.default.fileExists(atPath: repo.path + "/a.txt"))
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })

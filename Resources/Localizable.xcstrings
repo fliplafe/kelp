@@ -9772,6 +9772,16 @@
           }
         }
       }
+    },
+    "Initialize Git and Open": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создать git-репозиторий и открыть"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -6,7 +6,7 @@ import GitKit
 extension Daemon {
     func handleRemote(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
         switch method {
-        case "repo.addRemote":   // {host, path} → the project (its local folder stands for the one on the host)
+        case "repo.addRemote":   // {host, path, init?} → the project (its local folder stands for the one on the host)
             let host = try p.req("host").trimmingCharacters(in: .whitespaces), path = try p.req("path").trimmingCharacters(in: .whitespaces)
             guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
             guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
@@ -17,6 +17,11 @@ extension Daemon {
             func mark(_ r: RemoteHost) throws { try JSONEncoder().encode(r).write(to: folder.appendingPathComponent(RemoteHost.marker)) }
             // ~ as the host's shell spells it: ask git there where the repository's top is.
             try mark(RemoteHost(host: host, path: path))
+            // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
+            if p["init"]?.bool == true {
+                do { _ = try Git.run(["init", "-q"], cwd: folder.path) }
+                catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
+            }
             let top: String
             do { top = try Git.root(of: folder.path) }
             catch let e as GitError {
@@ -39,8 +44,10 @@ extension RemoteListFolders: Handled {
     func handle(_ d: Daemon) throws -> Result {
         let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
         guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
-        // In sh whatever the host's login shell is: the folder's path, then "g name" for a repository, "d name" for the rest.
+        // In sh whatever the host's login shell is: the folder's path, whether it's in a repository, then "g name" for a
+        // repository, "d name" for the rest.
         let script = "cd \(RemoteHost.cdArg(path.isEmpty ? "~" : path)) || exit 1; pwd; "
+            + "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo repo; else echo none; fi; "
             + #"for f in *; do [ -d "$f" ] || continue; if [ -e "$f/.git" ]; then echo "g $f"; else echo "d $f"; fi; done"#
         let out: String
         do {
@@ -51,7 +58,8 @@ extension RemoteListFolders: Handled {
             throw RPCError.invalidParams(why.isEmpty ? "Couldn't connect to \(host)." : why)
         }
         let lines = out.split(separator: "\n").map(String.init)
-        guard let top = lines.first else { throw RPCError.invalidParams("Couldn't list \(path) on \(host).") }
-        return Result(path: top, folders: lines.dropFirst().filter { $0.count > 2 }.map { Folder(name: String($0.dropFirst(2)), git: $0.hasPrefix("g ")) })
+        guard lines.count >= 2 else { throw RPCError.invalidParams("Couldn't list \(path) on \(host).") }
+        return Result(path: lines[0], repo: lines[1] == "repo",
+                      folders: lines.dropFirst(2).filter { $0.count > 2 }.map { Folder(name: String($0.dropFirst(2)), git: $0.hasPrefix("g ")) })
     }
 }
