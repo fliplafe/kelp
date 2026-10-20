@@ -520,7 +520,7 @@ final class EditorArea: NSViewController {
         }
     }
 
-    /// Daemon state changed: sessions started elsewhere (CLI, agents, fan-out) get a tab; deleted ones go.
+    /// Daemon state changed: sessions started elsewhere (CLI, agents, scripts) get a tab; deleted ones go.
     func reconcile() {
         let mine = AppModel.shared.sessions.filter { $0.worktreeId == workspaceId }
         let known = Set(AppModel.shared.sessions.map(\.id))

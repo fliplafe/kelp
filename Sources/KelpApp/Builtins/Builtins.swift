@@ -90,7 +90,7 @@ enum Builtins {
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
-            s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true),
+            s("editor.lsp", "Language servers (completion, jump to definition)", "boolean", true),
             s("editor.formatOnSave", "Format on save", "boolean", false, "⌘S runs Format Document first, for languages that have a formatter.")
         ])]
         let ts = LanguageSpec.Server(command: "typescript-language-server", args: ["--stdio"], install: "npm i -g typescript-language-server typescript")

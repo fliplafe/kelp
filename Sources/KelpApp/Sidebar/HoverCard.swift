@@ -100,6 +100,7 @@ final class CardModel {
                 let secs = Int(t["seconds"].flatMap { if case .double(let d) = $0 { d } else { $0.int.map(Double.init) } } ?? 0)
                 let took = secs < 60 ? "\(secs)s" : "\(secs / 60)m"
                 turn = files.isEmpty ? String(localized: "Last turn changed no files · \(took)")
+                    : files.count == 1 ? String(localized: "Last turn: 1 file +\(add) −\(del) · \(took)")
                     : String(localized: "Last turn: \(files.count) files +\(add) −\(del) · \(took)")
             }
             if let u = try? await c.call(SessionContextWindow(id: a.id)) { context = (u.used, u.window) }
