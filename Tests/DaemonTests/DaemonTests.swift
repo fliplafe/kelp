@@ -393,7 +393,8 @@ final class NoteBox: @unchecked Sendable {
 
 @Test func namingFromPrompt() {
     #expect(Naming.slug("Add a dark-mode toggle to the Settings screen!") == "add-dark-mode-toggle-settings")
-    #expect(Naming.title("short") == "short")
+    #expect(Naming.title("short") == "Short")
+    #expect(Naming.title("посмотри ресерч http://localhost:8765/p и предложи как улучшить подсказки") == "Посмотри ресерч и предложи как…")
 }
 
 /// A project on another machine: git, the file list, a file and a session all happen "there" (an ssh stand-in that
@@ -498,4 +499,20 @@ final class NoteBox: @unchecked Sendable {
 /// pool is full, and a test that awaited would hang instead of failing.
 private func signals(_ s: DispatchSemaphore, _ n: Int, by deadline: DispatchTime) -> Int {
     (0..<n).filter { _ in s.wait(timeout: deadline) == .success }.count
+}
+
+@Test func agentTopicNamesSessionAndWorkspace() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("agents"), withIntermediateDirectories: true)
+    // Like Claude Code: its own name in the title first, then the conversation's topic.
+    try JSONEncoder().encode(AgentManifest(id: "topical", name: "Topical", command: "/bin/zsh",
+                                           args: ["-c", #"printf '\e]0;✳ Topical\a'; sleep 1; printf '\e]0;✳ Ревью и оценка приложения\a'; sleep 30"#]))
+        .write(to: root.appendingPathComponent("agents/topical.json"))
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let ws = try await c.call("workspace.create", .obj(["repoId": .string(repo.id)]))
+    let wid = try #require(ws["id"]?.string)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wid), "agent": "topical", "prompt": "сделай ревью приложения и дай ему оценку по десятибалльной шкале"]), as: Session.self)
+    #expect(try await waitFor(10) { try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.title == "Ревью и оценка приложения" })
+    #expect(try await waitFor(5) { try await c.call("worktree.list", as: [Worktree].self).first { $0.id == wid }?.note == "Ревью и оценка приложения" })
 }

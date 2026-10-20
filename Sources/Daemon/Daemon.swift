@@ -243,6 +243,7 @@ public final class Daemon: @unchecked Sendable {
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
         let sid = rec.id
         ls.onFirstPrompt = { [weak self] text in Task { await self?.autoTitle(session: sid, prompt: text) } }
+        if !["shell", "custom"].contains(manifest.id) { ls.onTopic = { [weak self] t in Task { await self?.retitle(session: sid, topic: t) } } }
         lock.lock(); live[rec.id] = ls; lock.unlock()
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
@@ -349,7 +350,7 @@ public final class Daemon: @unchecked Sendable {
 
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.
     func autoTitle(session id: String, prompt: String) async {
-        guard let ls = existing(id), !ls.snapshot.titleManual else { return }
+        guard let ls = existing(id), !ls.snapshot.titleManual, ls.topic == nil else { return }   // the agent's own topic is better
         let title = Naming.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(s)
@@ -366,6 +367,19 @@ public final class Daemon: @unchecked Sendable {
                 var nw = w; nw.branch = b; if nw.note.isEmpty { nw.note = title }
                 try? store.save(nw); notify("event.changed", "worktree")
             }
+        }
+    }
+
+    /// The agent's own short topic (Claude Code's terminal title) names the session instead of its prompt, and its
+    /// workspace while that still has the name the session gave it (or a placeholder). A title set by hand stays.
+    func retitle(session id: String, topic: String) async {
+        guard let ls = existing(id), !ls.snapshot.titleManual, ls.snapshot.title != topic else { return }
+        let old = ls.snapshot.title
+        let s = ls.update { if !$0.titleManual { $0.title = topic } }
+        publish(s)
+        if var w = try? store.worktree(s.worktreeId ?? ""),
+           (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil {
+            w.note = topic; try? store.save(w); notify("event.changed", "worktree")
         }
     }
 

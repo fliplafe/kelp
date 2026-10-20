@@ -18,6 +18,13 @@ final class LiveSession: @unchecked Sendable {
     var onOutput: (@Sendable (String, Data, Set<Int>) -> Void)?
     var onStatus: (@Sendable (Session) -> Void)?
     var onFirstPrompt: (@Sendable (String) -> Void)?
+    /// The topic the agent keeps in the terminal's title (Claude Code does): a short name for the session.
+    var onTopic: (@Sendable (String) -> Void)?
+    private var titleCarry = ""
+    private var lastTopic: String?
+    var topic: String? { lock.withLock { lastTopic } }
+    /// What a title that only names the program or its folder contains (TerminalTitle.topic).
+    private let selfNames: [String]
     /// First local URL a process prints (dev servers): the app opens it in the worktree's browser.
     var onLocalURL: (@Sendable (String) -> Void)?
     /// Plan usage the agent printed (Claude Code's "used 80% of your weekly limit").
@@ -66,6 +73,7 @@ final class LiveSession: @unchecked Sendable {
         var rec = record
         detector = StatusDetector(manifest: manifest)
         hooked = manifest.hooksSettingsFlag != nil
+        selfNames = [manifest.id, manifest.name, (record.cwd as NSString).lastPathComponent]
         autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
         try Paths.ensure(historyDir)
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
@@ -95,6 +103,11 @@ final class LiveSession: @unchecked Sendable {
                 default: break
                 }
             }
+        }
+        var topic: String?
+        if onTopic != nil, text.contains("\u{1B}]") || !titleCarry.isEmpty,
+           let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic {
+            lastTopic = t; topic = t
         }
         if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + StatusDetector.stripANSI(text)).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
@@ -127,6 +140,7 @@ final class LiveSession: @unchecked Sendable {
         if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !limits.isEmpty { onLimits?(limits) }
         if let url { onLocalURL?(url) }
+        if let topic { onTopic?(topic) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
         onOutput?(record.id, d, subs)
         if let changed { onStatus?(changed) }

@@ -211,3 +211,17 @@ import Core
     d.program("error"); #expect(d.status == .error)
     d.output("lots of words here"); _ = d.tick(at: Date().addingTimeInterval(60)); #expect(d.status == .error)   // heuristics are off now
 }
+
+@Test func terminalTitleTopics() {
+    var carry = ""
+    // Claude Code's topic, split across two reads, after its own name.
+    #expect(TerminalTitle.scan("\u{1B}]0;✳ Claude Code\u{07}text\u{1B}]0;✳ Ревью и оц", carry: &carry) == ["✳ Claude Code"])
+    #expect(TerminalTitle.scan("енка приложения\u{07}", carry: &carry) == ["✳ Ревью и оценка приложения"])
+    let claude = ["claude", "Claude Code", "Kelp"]
+    #expect(TerminalTitle.topic("✳ Ревью и оценка приложения", names: claude) == "Ревью и оценка приложения")
+    #expect(TerminalTitle.topic("◐ Claude Code", names: claude) == nil)
+    // Others name themselves or the folder: no topic.
+    #expect(TerminalTitle.topic("π - Kelp", names: ["pi", "Pi", "Kelp"]) == nil)
+    #expect(TerminalTitle.topic("grok", names: ["grok", "Grok", "Kelp"]) == nil)
+    #expect(TerminalTitle.topic("crush ~/projects/shop", names: ["crush", "Crush", "shop"]) == nil)
+}

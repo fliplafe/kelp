@@ -8,8 +8,18 @@ enum Naming {
         let parts = s.lowercased().split { !($0.isLetter || $0.isNumber) }.map(String.init).filter { !stop.contains($0) && $0.allSatisfy(\.isASCII) }
         return parts.prefix(words).joined(separator: "-")
     }
+    /// A name that fits a tab: the prompt's first line without links or paths, cut at a word within 32 characters,
+    /// capitalised. "посмотри ресерч http://localhost:8765/p и предложи…" → "Посмотри ресерч и предложи…".
+    /// Agents that keep a topic in the terminal's title (Claude Code) rename the session with it later.
     static func title(_ s: String) -> String {
         let first = s.split(separator: "\n").first.map(String.init) ?? s
-        return first.count > 40 ? String(first.prefix(39)) + "…" : first
+        let words = first.split(separator: " ").filter { !$0.contains("://") && !$0.hasPrefix("/") && !$0.hasPrefix("~/") }
+        var out = ""
+        for w in words {
+            guard out.count + w.count + 1 <= 32 else { out += "…"; break }
+            out += (out.isEmpty ? "" : " ") + w
+        }
+        if out.isEmpty || out == "…" { out = String(first.prefix(31)) + (first.count > 31 ? "…" : "") }
+        return out.prefix(1).uppercased() + out.dropFirst()
     }
 }
