@@ -187,14 +187,9 @@ final class ExtensionRegistry {
             let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: tmp) }
             if src.pathExtension.lowercased() == "vsix" {
-                let unzip = Process()
-                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); unzip.arguments = ["-x", "-k", src.path, tmp.path]
-                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in   // no thread waits on it
-                    unzip.terminationHandler = { _ in c.resume() }
-                    do { try unzip.run() } catch { c.resume(throwing: error) }
-                }
+                let unzip = await Shell.exec(["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
                 folder = tmp.appendingPathComponent("extension")
-                guard unzip.terminationStatus == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
+                guard unzip.code == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
                     throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
                 }
                 name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: folder.appendingPathComponent("package.json"))).manifest.id)

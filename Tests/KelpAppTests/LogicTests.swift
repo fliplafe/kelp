@@ -79,3 +79,15 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(w != nil && seen.contains { $0.hasSuffix("/b.swift") })
     #expect(!seen.contains { $0.contains("/node_modules/") })
 }
+
+/// One way to run a program: its code and output, stdin, a timeout that kills it, a launch that fails.
+@Test func shellExecRunsAndKills() async throws {
+    let echo = await Shell.exec(["/bin/cat"], input: "hi")
+    #expect(echo.code == 0 && echo.stdout == "hi")
+    #expect(await Shell.exec(["/bin/sh", "-c", "echo e >&2; exit 3"]).code == 3)
+    let t = Date(), slow = await Shell.exec(["/bin/sleep", "5"], timeout: 0.2)
+    #expect(slow.code != 0 && Date().timeIntervalSince(t) < 2)
+    #expect(await Shell.exec(["/nonexistent/tool"]).code == -1)
+    #expect(await AgentAvailability.runs("git"))
+    #expect(!(await AgentAvailability.runs("kelp-no-such-agent")))
+}

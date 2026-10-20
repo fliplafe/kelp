@@ -223,8 +223,13 @@ enum ExtActions {
 enum Shell {
     struct Result: Sendable { var code: Int32; var stdout: String; var stderr: String }
     static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60) async -> Result {
+        await exec(["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout)
+    }
+
+    /// A program by path (`argv[0]`), with the same PATH, pipes and timeout (killed then: its code is the signal's).
+    static func exec(_ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60) async -> Result {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/zsh"); p.arguments = ["-lc", command]
+        p.executableURL = URL(fileURLWithPath: argv.first ?? "/usr/bin/false"); p.arguments = Array(argv.dropFirst())
         p.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory())
         var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
         p.environment = env

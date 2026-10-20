@@ -52,22 +52,12 @@ final class NotebookTab: NSViewController {
         guard let j = Self.jupyter() else { status.stringValue = String(localized: "Jupyter not found — pip install jupyter"); return }
         status.stringValue = String(localized: "Running…")
         let file = url
-        Task.detached {
-            let p = Process(); p.executableURL = URL(fileURLWithPath: j)
-            p.arguments = ["nbconvert", "--to", "notebook", "--execute", "--inplace", file.path]
-            p.currentDirectoryURL = file.deletingLastPathComponent()
-            let err = Pipe(); p.standardError = err; p.standardOutput = FileHandle.nullDevice
-            do { try p.run() } catch {
-                let why = error.localizedDescription
-                await MainActor.run { self.status.stringValue = String(localized: "Failed: \(why)") }; return
-            }
-            // Read while it runs: a long traceback fills the pipe and would block it before it could exit.
-            let errData = err.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-            let ok = p.terminationStatus == 0
-            // swiftlint:disable:next optional_data_string_conversion
-            let msg = String(decoding: errData, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
-            await MainActor.run { self.status.stringValue = ok ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)"); self.reload() }
+        Task {
+            // A notebook may compute for hours: the timeout is only for one that never ends.
+            let r = await Shell.exec([j, "nbconvert", "--to", "notebook", "--execute", "--inplace", file.path], cwd: file.deletingLastPathComponent().path, timeout: 12 * 3600)
+            let msg = r.stderr.split(separator: "\n").last.map(String.init) ?? ""
+            status.stringValue = r.code == 0 ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)")
+            reload()
         }
     }
 

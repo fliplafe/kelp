@@ -100,13 +100,6 @@ final class AgentAvailability {
     /// `<command> --version` exits 0 within a few seconds. Waits without holding a thread (a dozen agents are asked at once).
     nonisolated static func runs(_ command: String) async -> Bool {
         guard let path = try? LoginPath.resolve(command) else { return false }
-        let p = Process(); p.executableURL = URL(fileURLWithPath: path); p.arguments = ["--version"]
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value; p.environment = env
-        p.standardInput = FileHandle.nullDevice; p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        return await withCheckedContinuation { c in
-            p.terminationHandler = { c.resume(returning: $0.terminationReason == .exit && $0.terminationStatus == 0) }
-            do { try p.run() } catch { c.resume(returning: false); return }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 8) { if p.isRunning { p.terminate() } }   // hung: counts as missing
-        }
+        return await Shell.exec([path, "--version"], timeout: 8).code == 0   // hung: killed, counts as missing
     }
 }
