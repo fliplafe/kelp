@@ -401,7 +401,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         section(.merge, changes.filter(\.conflicted))
         section(.staged, changes.filter { $0.staged && !$0.conflicted })
         section(.changes, changes.filter { ($0.unstaged || $0.untracked) && !$0.conflicted })
-        if changes.isEmpty, info != nil { out.append(Node(.note("No changes"))) }
+        if changes.isEmpty, info != nil { out.append(Node(.note(String(localized: "No changes")))) }
         roots = out
         outline.reloadData(); outline.expandItem(nil, expandChildren: true)
     }
@@ -850,7 +850,7 @@ final class FileCell: NSTableCellView, Hoverable {
 final class NoteCell: NSTableCellView {
     init(_ text: String) {
         super.init(frame: .zero)
-        let t = NSTextField(labelWithString: text); t.font = .ui(12); t.textColor = .tertiaryLabelColor
+        let t = NSTextField(labelWithString: text); t.font = .ui(12); t.textColor = .secondaryLabelColor
         pinRow(self, [t], leading: 26)
     }
     required init?(coder: NSCoder) { fatalError() }
