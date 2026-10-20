@@ -32,7 +32,7 @@ final class AgentIcons {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for name in Self.sources[id]?.apps ?? [] {
             for dir in ["/Applications", "\(home)/Applications"] where FileManager.default.fileExists(atPath: "\(dir)/\(name).app") {
-                images[id] = NSWorkspace.shared.icon(forFile: "\(dir)/\(name).app"); return
+                images[id] = IconTile.app(NSWorkspace.shared.icon(forFile: "\(dir)/\(name).app")); return
             }
         }
         let cached = folder.appendingPathComponent("\(id).icon")
@@ -81,22 +81,35 @@ final class AgentIcons {
 
     // MARK: drawing
 
-    /// App-like rounded icon. A logo that's mostly dark or mostly light gets a tile of the opposite tone behind it.
+    /// App-like rounded icon, the same tile every agent shows as. A logo on transparency sits on a tile: of the opposite
+    /// tone when it's monochrome, white when it's in colour; artwork that fills its square is clipped to the tile.
     static func tile(_ data: Data) -> NSImage? {
         guard let logo = NSImage(data: data) else { return nil }
         let side: CGFloat = 32
-        let tone = luminance(logo)
+        let tone = luminance(logo), clear = transparent(logo)
         let img = NSImage(size: NSSize(width: side, height: side), flipped: false) { r in
-            let path = NSBezierPath(roundedRect: r.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
-            if let tone {
-                (tone < 0.5 ? NSColor(white: 0.96, alpha: 1) : NSColor(white: 0.14, alpha: 1)).setFill(); path.fill()
+            let path = NSBezierPath(roundedRect: r, xRadius: 7, yRadius: 7)
+            if tone != nil || clear {
+                (tone.map { $0 < 0.5 } ?? true ? NSColor(white: 0.96, alpha: 1) : NSColor(white: 0.14, alpha: 1)).setFill(); path.fill()
                 logo.draw(in: r.insetBy(dx: 6, dy: 6))
             } else {
-                path.addClip(); logo.draw(in: r)   // a full-color icon fills its square
+                path.addClip(); logo.draw(in: r)   // a full-colour icon fills its square
             }
             return true
         }
         return img
+    }
+
+    /// More than a fifth of the logo is see-through: it's a mark, not an app icon's square.
+    private static func transparent(_ img: NSImage) -> Bool {
+        let n = 16
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        img.draw(in: NSRect(x: 0, y: 0, width: n, height: n)); NSGraphicsContext.restoreGraphicsState()
+        var clear = 0
+        for x in 0..<n { for y in 0..<n where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) < 0.3 { clear += 1 } }
+        return clear > n * n / 5
     }
 
     /// Average lightness of the opaque pixels — nil for colorful or fully opaque artwork, which needs no tile.

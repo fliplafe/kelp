@@ -39,14 +39,17 @@ enum AgentCatalog {
         return "\(base) \(i + 1)"
     }
 
-    /// The agent's real icon when there is one (AgentIcons), else its symbol.
+    /// The agent's real icon when there is one (AgentIcons), else its initial on a tile of the same shape; a terminal's symbol.
     @MainActor static func icon(_ id: String?, size: CGFloat = 16) -> NSImage? {
-        guard let id, id != "shell", id != "custom", let real = AgentIcons.shared.image(id)?.copy() as? NSImage else {
-            return .symbol(symbol(id))
-        }
+        guard let id, id != "shell", id != "custom" else { return .symbol(symbol(id)) }
+        guard let real = AgentIcons.shared.image(id)?.copy() as? NSImage else { return IconTile.letter(name(id), color: brand[id], size: size) }
         real.size = NSSize(width: size, height: size)
         return real
     }
+    /// Colours for the initials of agents whose icon isn't found (yet): the vendor's, near enough.
+    @MainActor private static let brand: [String: NSColor] = ["claude": NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1),
+                                                              "codex": NSColor(white: 0.15, alpha: 1), "grok": NSColor(white: 0.15, alpha: 1),
+                                                              "cursor": NSColor(white: 0.15, alpha: 1), "gemini": .systemBlue]
 
     /// A few agents have a fitting symbol; any other one gets its initial on a filled tile, the shape of the real logos.
     static func symbol(_ id: String?) -> String {
