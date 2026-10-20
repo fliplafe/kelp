@@ -37,7 +37,7 @@ extension Daemon {
             if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self) } }
             if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
-            if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await handleHistory(method, p) { return r }
+            if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await offload({ [self] in try handleHistory(method, p) }) { return r }
             if ["github.", "linear.", "jira.", "bitbucket.", "ci."].contains(where: method.hasPrefix) || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
             return try await offload { [self] in

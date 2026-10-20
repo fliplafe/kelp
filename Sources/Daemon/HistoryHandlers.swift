@@ -52,7 +52,8 @@ extension Daemon {
               "cost": .double(b.estimatedCostUSD), "models": .array(b.models.map { .string($0) })])
     }
 
-    func handleHistory(_ method: String, _ p: JSONValue) async throws -> JSONValue? {
+    /// Reads transcripts on disk (GBs the first time): runs through `offload`.
+    func handleHistory(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
         case "usage.get":   // per account: Claude 5h block / today / week, Codex limits
             // Limit: one cached answer for 60 s (a scan reads GBs of transcripts); per-file incremental parsing if it gets slow
