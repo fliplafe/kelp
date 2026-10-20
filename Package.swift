@@ -35,12 +35,13 @@ let package = Package(
         .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
         .executableTarget(name: "kelp", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
+        .target(name: "WorkbenchKit", dependencies: ["Core"]),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
         .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.4.1, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", .product(name: "Sparkle", package: "Sparkle")]
+            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", .product(name: "Sparkle", package: "Sparkle")]
                 + (hasGhostty ? ["GhosttyKit"] : []),
             swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
@@ -57,6 +58,7 @@ let package = Package(
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
         .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
+        .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
     ]
 )

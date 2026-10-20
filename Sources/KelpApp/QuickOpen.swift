@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import GitKit
+import WorkbenchKit
 
 /// ⌘P: files, worktrees, agents, tabs, commands in one fuzzy list; "#123" finds a pull request. ⇧⌘P: commands only.
 /// Empty, it lists the agents to get back to — those that need you first — on ⌘1–⌘6, in an order that holds still

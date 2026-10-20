@@ -3,6 +3,7 @@ import SwiftUI
 import WebKit
 import Core
 import Agents
+import WorkbenchKit
 
 /// extension.json, as described in docs/extensions.md.
 struct ExtManifest: Decodable {

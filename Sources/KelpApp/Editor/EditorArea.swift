@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 enum SplitDirection: String { case right, down }
 

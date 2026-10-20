@@ -1,5 +1,6 @@
 import AppKit
 import EditorKit
+import WorkbenchKit
 
 /// "untitled:<n>": a new file with no name yet, like VS Code's Untitled-1. Plain text until it's saved: the first ⌘S
 /// asks where and under what name (the extension makes it code; none makes it .txt), then the tab is that file's.

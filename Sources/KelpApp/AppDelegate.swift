@@ -2,6 +2,7 @@ import AppKit
 import Core
 import Agents
 import Sparkle
+import WorkbenchKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -137,27 +138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func item(_ c: CommandSpec) -> NSMenuItem {
         let i = NSMenuItem(title: c.title, action: #selector(runCommand(_:)), keyEquivalent: "")
         i.target = self; i.identifier = NSUserInterfaceItemIdentifier(c.id)
-        if let k = c.key.flatMap(Self.parseKey) { i.keyEquivalent = k.0; i.keyEquivalentModifierMask = k.1 }
+        if let k = c.key.flatMap(KeySpec.init) { i.keyEquivalent = k.key; i.keyEquivalentModifierMask = k.mods.flags }
         return i
-    }
-
-    /// "cmd+shift+k" → key equivalent and modifiers (commands declare keys this way; settings.json `keys` too).
-    static func parseKey(_ s: String) -> (String, NSEvent.ModifierFlags)? {
-        let named = ["up": "\u{F700}", "down": "\u{F701}", "left": "\u{F702}", "right": "\u{F703}", "return": "\r", "tab": "\t",
-                     "space": " ", "esc": "\u{1b}", "delete": "\u{8}", "plus": "+"]
-        var mods: NSEvent.ModifierFlags = []
-        var key = ""
-        for part in s.lowercased().split(separator: "+") {
-            switch part {
-            case "cmd", "command": mods.insert(.command)
-            case "shift": mods.insert(.shift)
-            case "opt", "option", "alt": mods.insert(.option)
-            case "ctrl", "control": mods.insert(.control)
-            default: key = named[String(part)] ?? String(part)
-            }
-        }
-        guard !key.isEmpty else { return nil }
-        return (mods.contains(.shift) && key.count == 1 ? key.uppercased() : key, mods)
     }
 
     /// The menu bar is laid out here by command id, like Zed's app menus; titles, keys and actions come from the

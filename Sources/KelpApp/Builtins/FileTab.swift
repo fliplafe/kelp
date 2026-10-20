@@ -2,6 +2,7 @@ import AppKit
 import Core
 import EditorKit
 import GitKit
+import WorkbenchKit
 
 /// A file as a tab: code editor with LSP, Markdown with preview, notebooks, or a Quick Look preview.
 /// Like a Mac document: edits show as a dot on the tab and the window's close button, ⌘S saves, closing asks

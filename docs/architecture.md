@@ -26,6 +26,7 @@ contributions, the command palette and settings.
 - **Tab**: anything shown in the editor area, addressed by a URI:
   `session:<id>`, `file:<path>#L12`, `diff:<path>`, `https://…`, `ext:<extension>/<view>`.
   Groups of tabs split right/down; drag tabs between groups or onto an edge to split.
+  The model (`WorkspaceLayout`, `TabURI`) is in WorkbenchKit, a library with tests and no AppKit, like VS Code's `common/`.
 
 ## Contribution points (built-in Swift extensions and `extension.json` folders use the same ones)
 | Point | Where it shows |

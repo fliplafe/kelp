@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// Every past Claude / Codex conversation on this Mac: search, resume in place, or copy the resume command.
 @MainActor

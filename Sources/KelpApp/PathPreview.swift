@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Core
 import GitKit
+import WorkbenchKit
 
 /// Paths agents print, made useful: ⌘-click opens them (on their line), resting the pointer on one shows the file —
 /// the changed lines when it has changes, the lines around the one named, or the picture.

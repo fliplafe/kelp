@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Core
+import WorkbenchKit
 
 /// The window: the window bar (where you are, ⌘P, the panel toggles) across the top, and under it projects & agents |
 /// editor area | inspector, whose own first rows (search, tab strips, panel icons) line up as the second row.

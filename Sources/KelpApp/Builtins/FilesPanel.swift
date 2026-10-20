@@ -3,6 +3,7 @@ import Core
 import Quartz
 import GitKit
 import Markdown
+import WorkbenchKit
 
 final class FileNode: NSObject {
     let name: String, path: String   // path relative to worktree root

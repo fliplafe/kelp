@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Core
+import WorkbenchKit
 
 /// Account profiles for Claude Code / Codex: each has its own config dir (CLAUDE_CONFIG_DIR / CODEX_HOME),
 /// so logins stay side by side and switching is just a different environment.

@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// Present an alert as a sheet on the main window and await the answer (native, non-blocking).
 @MainActor

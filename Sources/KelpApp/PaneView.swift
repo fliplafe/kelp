@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import TerminalKit
+import WorkbenchKit
 
 extension NSPasteboard.PasteboardType { static let kelpPane = NSPasteboard.PasteboardType("dev.kelp.pane") }
 

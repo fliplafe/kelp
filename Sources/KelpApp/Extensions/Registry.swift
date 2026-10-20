@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Core
 import Agents
+import WorkbenchKit
 
 /// What the IDE knows when a contribution runs: the workspace on screen and what has focus.
 @MainActor

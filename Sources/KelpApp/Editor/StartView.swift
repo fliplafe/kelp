@@ -1,6 +1,7 @@
 import AppKit
 import GitKit
 import Core
+import WorkbenchKit
 
 /// An empty workspace: what can be opened here, one click each (like Xcode's welcome window) — the installed agents,
 /// a terminal, and whatever extensions add (the browser…).
@@ -101,13 +102,13 @@ private final class StartRow: NSView {
 
     /// "shift+cmd+b" → "⇧⌘B".
     static func symbols(_ key: String) -> String? {
-        guard let (k, mods) = AppDelegate.parseKey(key) else { return nil }
+        guard let k = KeySpec(key) else { return nil }
         var s = ""
-        if mods.contains(.control) { s += "⌃" }
-        if mods.contains(.option) { s += "⌥" }
-        if mods.contains(.shift) { s += "⇧" }
-        if mods.contains(.command) { s += "⌘" }
-        return s + k.uppercased()
+        if k.mods.contains(.control) { s += "⌃" }
+        if k.mods.contains(.option) { s += "⌥" }
+        if k.mods.contains(.shift) { s += "⇧" }
+        if k.mods.contains(.command) { s += "⌘" }
+        return s + k.key.uppercased()
     }
 }
 

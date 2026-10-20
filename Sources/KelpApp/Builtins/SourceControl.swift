@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import GitKit
+import WorkbenchKit
 
 /// Source Control, modeled on VS Code's: branch and sync up top, the commit message, merge / staged / unstaged
 /// changes (click → diff), and the history graph. All git work happens in the daemon; this only lays out the answers.

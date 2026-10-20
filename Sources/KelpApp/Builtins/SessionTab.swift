@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// An agent or terminal session as a tab (libghostty via PaneView; the daemon keeps the process).
 @MainActor

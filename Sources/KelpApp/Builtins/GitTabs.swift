@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import GitKit
+import WorkbenchKit
 
 /// "diff:<workspace>" (every change) or "diff:<workspace>?file=<path>[&source=unstaged|staged][&commit=<hash>]" (one file,
 /// like VS Code's diff editor: "name (Working Tree)", "name (Index)", "name (abc1234)").

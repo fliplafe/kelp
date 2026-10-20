@@ -1,17 +1,25 @@
 import AppKit
 import SwiftUI
 import Core
+import WorkbenchKit
+
+/// The one place a `KeySpec`'s modifiers meet AppKit's flags (menu items, key events).
+extension KeySpec.Modifiers {
+    private static let appKit: [(Self, NSEvent.ModifierFlags)] = [(.control, .control), (.option, .option), (.shift, .shift), (.command, .command)]
+    /// The shortcut modifiers among `flags`; caps lock, fn and the like are dropped.
+    init(_ flags: NSEvent.ModifierFlags) { self.init(Self.appKit.filter { flags.contains($0.1) }.map(\.0)) }
+    var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(Self.appKit.filter { contains($0.0) }.map(\.1)) }
+}
 
 /// Settings › Keyboard: any menu command's shortcut, set by pressing it. The menu is built with Kelp's defaults and
 /// then the overrides in settings.json are laid over it: `"keys": {"editor.saveAll": "opt+cmd+s"}` ("" = none).
 /// Kelp's commands go by their id; the menu's other items (Copy, Minimize, the agents in New Tab) by their English path.
 @MainActor
 enum KeyBindings {
-    struct Key: Equatable { var key: String; var mods: NSEvent.ModifierFlags }
-    struct Entry: Identifiable { let id: String; let menu: String; let title: String; var key: Key?; let defaultKey: Key? }
+    struct Entry: Identifiable { let id: String; let menu: String; let title: String; var key: KeySpec?; let defaultKey: KeySpec? }
 
     /// Each item's default, recorded every time the menu is built (always with the defaults).
-    private static var defaults: [String: Key?] = [:]
+    private static var defaults: [String: KeySpec?] = [:]
     private static let mask: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
 
     static var overrides: [String: String] {
@@ -33,10 +41,10 @@ enum KeyBindings {
                 let old = (path + [command ? legacy[id] ?? i.title : name]).joined(separator: " › ")
                 if id != old, let v = over.removeValue(forKey: old) { over[id] = over[id] ?? v; moved = true }
                 i.identifier = NSUserInterfaceItemIdentifier(id)
-                defaults[id] = i.keyEquivalent.isEmpty ? Key?.none : Key(key: i.keyEquivalent, mods: i.keyEquivalentModifierMask.intersection(mask))
+                defaults[id] = i.keyEquivalent.isEmpty ? KeySpec?.none : KeySpec(key: i.keyEquivalent, mods: .init(i.keyEquivalentModifierMask))
                 guard let spec = over[id] else { continue }
-                let k = spec.isEmpty ? nil : AppDelegate.parseKey(spec)
-                i.keyEquivalent = k?.0 ?? ""; i.keyEquivalentModifierMask = k?.1 ?? []
+                let k = spec.isEmpty ? nil : KeySpec(spec)
+                i.keyEquivalent = k?.key ?? ""; i.keyEquivalentModifierMask = k?.mods.flags ?? []
             }
         }
         walk(menu, [])
@@ -73,7 +81,7 @@ enum KeyBindings {
             for i in m.items where !i.isSeparatorItem {
                 if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s, path + [i.identifier?.rawValue ?? i.title]) }; continue }
                 guard let id = i.identifier?.rawValue, defaults.keys.contains(id), !(i.action.map(systemActions.contains) ?? false) else { continue }
-                let key = i.keyEquivalent.isEmpty ? nil : Key(key: i.keyEquivalent, mods: i.keyEquivalentModifierMask.intersection(mask))
+                let key = i.keyEquivalent.isEmpty ? nil : KeySpec(key: i.keyEquivalent, mods: .init(i.keyEquivalentModifierMask))
                 out.append(Entry(id: id, menu: path.map(loc).joined(separator: " › "), title: i.title,
                                  key: key, defaultKey: defaults[id] ?? nil))
             }
@@ -88,27 +96,15 @@ enum KeyBindings {
     }
 
     /// nil: back to Kelp's default; a key with no key text: no shortcut.
-    static func set(_ id: String, _ key: Key?) {
+    static func set(_ id: String, _ key: KeySpec?) {
         var o = overrides
-        if let key { o[id] = key.key.isEmpty ? "" : spec(key) } else { o[id] = nil }
+        if let key { o[id] = key.key.isEmpty ? "" : key.description } else { o[id] = nil }
         SettingsStore.shared.set("keys", o.isEmpty ? nil : .object(o.mapValues { .string($0) }))
     }
     static func resetAll() { SettingsStore.shared.set("keys", nil) }
 
-    /// "shift+cmd+k", the form settings.json and extension manifests use.
-    static func spec(_ k: Key) -> String {
-        var parts: [String] = []
-        if k.mods.contains(.control) { parts.append("ctrl") }
-        if k.mods.contains(.option) { parts.append("opt") }
-        if k.mods.contains(.shift) { parts.append("shift") }
-        if k.mods.contains(.command) { parts.append("cmd") }
-        let named: [String: String] = ["\u{F700}": "up", "\u{F701}": "down", "\u{F702}": "left", "\u{F703}": "right", "\r": "return", "\t": "tab",
-                                       " ": "space", "\u{1b}": "esc", "\u{8}": "delete", "\u{7f}": "delete", "+": "plus"]
-        return (parts + [named[k.key] ?? k.key.lowercased()]).joined(separator: "+")
-    }
-
     /// "⇧⌘K", as menus show it.
-    static func display(_ k: Key) -> String {
+    static func display(_ k: KeySpec) -> String {
         var s = ""
         if k.mods.contains(.control) { s += "⌃" }
         if k.mods.contains(.option) { s += "⌥" }
@@ -120,13 +116,13 @@ enum KeyBindings {
     }
 
     /// What else answers to this combination: another of Kelp's commands, or macOS (which gets it first).
-    static func conflict(_ k: Key, keyCode: UInt16?, except id: String) -> String? {
-        let norm = Key(key: k.key.lowercased(), mods: k.mods)
-        if let other = entries().first(where: { $0.id != id && $0.key.map { Key(key: $0.key.lowercased(), mods: $0.mods) } == norm }) {
+    static func conflict(_ k: KeySpec, keyCode: UInt16?, except id: String) -> String? {
+        let norm = KeySpec(key: k.key.lowercased(), mods: k.mods)
+        if let other = entries().first(where: { $0.id != id && $0.key.map { KeySpec(key: $0.key.lowercased(), mods: $0.mods) } == norm }) {
             let name = "\(other.menu) › \(other.title)"
             return String(localized: "Also the shortcut for \(name).")
         }
-        if let code = keyCode, let name = system[SystemKey(code: code, mods: k.mods.rawValue & mask.rawValue)] {
+        if let code = keyCode, let name = system[SystemKey(code: code, mods: k.mods.flags.rawValue)] {
             return String(localized: "macOS uses this for \(name), so Kelp won't see it (System Settings › Keyboard › Keyboard Shortcuts).")
         }
         return nil
@@ -215,7 +211,7 @@ struct KeyboardSettings: View {
             default:
                 let fKey = (0xF704...0xF70F).contains(chars.unicodeScalars.first?.value ?? 0)
                 guard !mods.subtracting(.shift).isEmpty || fKey else { NSSound.beep(); return nil }   // a plain letter would type
-                let key = KeyBindings.Key(key: mods.contains(.shift) && chars.count == 1 ? chars.uppercased() : chars, mods: mods)
+                let key = KeySpec(key: mods.contains(.shift) && chars.count == 1 ? chars.uppercased() : chars, mods: .init(mods))
                 warning[id] = KeyBindings.conflict(key, keyCode: ev.keyCode, except: id)
                 KeyBindings.set(id, key); stop(); later()
             }

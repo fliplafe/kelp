@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// The Run menu: the project's commands from `.kelp.yaml` (⌘R run, ⌘U test, ⌘. stops), each in a tab of its own,
 /// opened behind what you're doing; when it ends, a banner says how, with the way to its output. A project's

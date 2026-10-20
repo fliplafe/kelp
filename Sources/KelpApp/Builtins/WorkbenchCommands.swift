@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 extension Builtins {
     /// The shell's own actions (sidebar and inspector, panes, tabs, workspaces, text size, the Run menu, help) as commands,
