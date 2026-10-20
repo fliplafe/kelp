@@ -11,6 +11,7 @@ let testHome: String = {
         setenv("CLAUDE_CONFIG_DIR", h + "/claude", 1)
         setenv("CODEX_HOME", h + "/codex", 1)
         setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1)
+        setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1); setenv("GIT_CONFIG_NOSYSTEM", "1", 1)   // not the user's ~/.gitconfig (signing, hooks)
         setenv("KELP_TEST_ISOLATED", "1", 1)
     }
     return String(cString: getenv("KELP_HOME"))

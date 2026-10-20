@@ -49,7 +49,9 @@ public enum Git {
         if stdin != nil { p.standardInput = inp }
         try p.run()
         // A host that drops packets or a credential helper waiting on nobody must not hold this thread for good.
-        let watchdog = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        // Its children too (ssh during a fetch, a credential helper): they hold the pipes open, so stopping git alone would
+        // leave the reads below waiting.
+        let watchdog = DispatchWorkItem { if p.isRunning { Self.stopTree(p.processIdentifier) } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeLimit, execute: watchdog)
         defer { watchdog.cancel() }
         if let stdin {
@@ -68,6 +70,14 @@ public enum Git {
             throw GitError(args: args, status: p.terminationStatus, stderr: String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return outData
+    }
+
+    /// SIGTERM to `pid` and everything it started, children first (found before the parent goes, while they're still its).
+    static func stopTree(_ pid: pid_t) {
+        var kids = [pid_t](repeating: 0, count: 256)
+        let n = Int(proc_listchildpids(pid, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
+        for k in kids.prefix(max(0, n)) where k > 0 { stopTree(k) }
+        kill(pid, SIGTERM)
     }
 
     /// File names as pathspecs that mean just those files: "[id].tsx" isn't a pattern for "i.tsx" or "d.tsx".

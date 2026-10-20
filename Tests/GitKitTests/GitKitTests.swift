@@ -3,8 +3,23 @@ import Testing
 @testable import GitKit
 import Core
 
+/// This process's git and Kelp see none of the user's own: no ~/.gitconfig (signing, hooks, templates), no system config,
+/// a throwaway KELP_HOME (RemoteHost.of reads Paths.root). Replaces whatever was inherited; done once (KELP_TEST_ISOLATED).
+/// Its folders live under one root that goes when the process exits.
+let gitTestRoot: String = {
+    let r = NSTemporaryDirectory() + "kelp-gittests-\(UUID().uuidString.prefix(6))"
+    try? FileManager.default.createDirectory(atPath: r, withIntermediateDirectories: true)
+    atexit { try? FileManager.default.removeItem(atPath: gitTestRoot) }
+    if getenv("KELP_TEST_ISOLATED") == nil {
+        setenv("KELP_HOME", r + "/home", 1)
+        setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1); setenv("GIT_CONFIG_NOSYSTEM", "1", 1)
+        setenv("KELP_TEST_ISOLATED", "1", 1)
+    }
+    return r
+}()
+
 func tempRepo() throws -> String {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
+    let d = gitTestRoot + "/" + UUID().uuidString
     try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
     try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
@@ -448,4 +463,13 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
 
 @Test func aHostCantNameAFolderOutsideRemote() {
     for bad in [".", "..", "a/b", "../x"] { #expect(!RemoteHost.isHost(bad), "\(bad)") }
+}
+
+/// A stuck run that started children is stopped within the time limit. (The review's case, a child keeping the read
+/// waiting after git alone was stopped, didn't reproduce here: this passes on the old code too. Stopping the whole
+/// tree is kept as the safe way; this checks it doesn't hang.)
+@Test func aStuckRunStopsWithItsChildren() throws {
+    let t = Date()
+    #expect(throws: (any Error).self) { try Git.runData(["-c", "sleep 30 & sleep 30; wait"], cwd: "/tmp", executable: "/bin/sh", timeLimit: 0.5) }
+    #expect(Date().timeIntervalSince(t) < 5)
 }

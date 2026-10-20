@@ -18,6 +18,7 @@ let isolatedKeychain: String = {
         setenv("CODEX_HOME", testRoot + "/codex", 1)
         setenv("KELP_LOGIN_PATH", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin", 1)
         setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1)
+        setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1); setenv("GIT_CONFIG_NOSYSTEM", "1", 1)   // not the user's ~/.gitconfig (signing, hooks)
         setenv("KELP_TEST_ISOLATED", "1", 1)
     }
     return String(cString: getenv("KELP_KEYCHAIN_SERVICE"))
