@@ -68,8 +68,10 @@ final class StartView: NSView, NSTextFieldDelegate {
         stack.setCustomSpacing(6, after: open); stack.setCustomSpacing(14, after: card)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         let width = stack.widthAnchor.constraint(equalToConstant: 460); width.priority = .defaultHigh
+        // A little above the middle; in a low window it starts at the top instead of going under it.
+        let middle = stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -30); middle.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -30),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor), middle, stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 24),
             width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
             icon.widthAnchor.constraint(equalToConstant: 56), icon.heightAnchor.constraint(equalToConstant: 56),
             title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor), folder.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),

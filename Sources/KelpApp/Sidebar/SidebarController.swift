@@ -121,19 +121,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     }
 
     private func updateVisibleCells() {
-        var resized = IndexSet()
-        for row in 0..<outline.numberOfRows {
-            (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update()
-            guard let n = outline.item(atRow: row) as? Node else { continue }
-            if Self.isTall(n) != tall.contains(n.key) { resized.insert(row); tall.formSymmetricDifference([n.key]) }
-        }
-        guard !resized.isEmpty else { return }
-        NSAnimationContext.runAnimationGroup { $0.duration = 0; outline.noteHeightOfRows(withIndexesChanged: resized) }
+        for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
     }
-
-    /// Rows with a second line: an agent that asks for you or finished unseen says what happened, like a notification.
-    private var tall: Set<String> = []
-    static func isTall(_ n: Node) -> Bool { n.session.flatMap(AppModel.shared.session).map(SidebarCell.wantsYou) ?? false }
 
     /// Nothing matches the search or the filter: say which, and offer the way back.
     private func showNoMatch(_ on: Bool) {
@@ -307,7 +296,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     // One line per row, like Mail's mailbox list; section headers a little taller for air above them, and an agent
     // with news two lines (what it asks or did under its name).
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if let n = item as? Node, Self.isTall(n) { return TextSize.of(44) }
         return TextSize.of(Self.isHeader(item) ? 32 : 28)
     }
 
@@ -528,8 +516,6 @@ final class SidebarCell: NSTableCellView {
     /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
     private let trailing = NSTextField(labelWithString: "")
     private let mark = StatusMark(size: 14)
-    /// Under an agent's name while it wants you: "Needs your input · Allow Bash?", "Done · Fixed the parser tests".
-    private let detail = NSTextField(labelWithString: "")
     private var add: NSButton?
     /// Lines not committed and the PR, for rows that stand for a folder (RowBadges); they go first when the row is short of room.
     private let changes = NSButton(), pr = NSButton()
@@ -564,7 +550,8 @@ final class SidebarCell: NSTableCellView {
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
             let name = NSStackView(views: [title, count]); name.spacing = 6
-            layout(row: [icon, withDetail(name), trailing, mark])
+            name.setClippingResistancePriority(.defaultLow, for: .horizontal); name.setHuggingPriority(.defaultLow, for: .horizontal)
+            layout(row: [icon, name, trailing, mark])
         case .workspace:
             title.font = .ui(13)
             layout(row: [title, NSView(), changes, pr, trailing, mark])
@@ -572,7 +559,7 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            layout(row: [icon, withDetail(title), trailing, mark])
+            layout(row: [icon, title, trailing, mark])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         if case .needs = node.kind { count.setContentCompressionResistancePriority(.init(200), for: .horizontal) }   // the place gives way to the name
@@ -583,18 +570,6 @@ final class SidebarCell: NSTableCellView {
 
     override func mouseEntered(with e: NSEvent) { add?.isHidden = false }
     override func mouseExited(with e: NSEvent) { add?.isHidden = true }
-
-    /// The name with `detail` under it; it takes the row's spare width and gives way first when the row is narrow.
-    private func withDetail(_ name: NSView) -> NSView {
-        detail.font = .ui(11); detail.lineBreakMode = .byTruncatingTail; detail.maximumNumberOfLines = 1; detail.isHidden = true
-        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let v = NSStackView(views: [name, detail]); v.orientation = .vertical; v.alignment = .leading; v.spacing = 1
-        v.detachesHiddenViews = true
-        for s in [v, name as? NSStackView].compactMap({ $0 }) {
-            s.setClippingResistancePriority(.defaultLow, for: .horizontal); s.setHuggingPriority(.defaultLow, for: .horizontal)
-        }
-        return v
-    }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -656,8 +631,8 @@ final class SidebarCell: NSTableCellView {
             let w = m.worktree(s.worktreeId)
             count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
             mark.status = s.endedWithError ? .error : s.status; mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
-            trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt); toolTip = nil
-            showDetail(s)
+            trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt)
+            showState(s)
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
             let agents = live(id)
@@ -678,28 +653,23 @@ final class SidebarCell: NSTableCellView {
             icon.alphaValue = s.status == .hibernated ? 0.45 : 1
             title.stringValue = AgentCatalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
-            title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
-            toolTip = nil
-            showDetail(s)
+            showState(s)
         }
     }
 
-    private func showDetail(_ s: Session) {
-        detail.isHidden = !Self.wantsYou(s)
-        guard !detail.isHidden else { return }
+    /// One line, as Mail lists mailboxes: an agent asking for you has its name and time in orange (red when it failed),
+    /// one that finished unseen is bold (isNews); what it asks or did is on the hover card.
+    private func showState(_ s: Session) {
         let st = Self.shownStatus(s)
-        let color: NSColor = st == .waiting ? .systemOrange : st == .error ? .systemRed : .controlAccentColor
-        let t = NSMutableAttributedString(string: st.words, attributes: [.font: NSFont.ui(11, weight: .medium), .foregroundColor: color])
-        if !s.summary.isEmpty { t.append(NSAttributedString(string: " · " + s.summary, attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.secondaryLabelColor])) }
-        let one = NSMutableParagraphStyle(); one.lineBreakMode = .byTruncatingTail   // an attributed value brings its own wrapping
-        t.addAttribute(.paragraphStyle, value: one, range: NSRange(location: 0, length: t.length))
-        detail.attributedStringValue = t
-        detail.toolTip = s.summary.isEmpty ? nil : s.summary
+        let tint: NSColor? = st == .waiting ? .systemOrange : st == .error || s.endedWithError ? .systemRed : nil
+        title.textColor = tint ?? (s.status == .hibernated ? .secondaryLabelColor : .labelColor)
+        trailing.textColor = tint ?? .secondaryLabelColor
+        toolTip = nil
     }
 
-    /// Asks for you, failed, or finished and not looked at yet: the row says so on a second line.
+    /// Asks for you, failed, or finished and not looked at yet.
     static func wantsYou(_ s: Session) -> Bool {
         let st = shownStatus(s)
         return s.agent != "shell" && (st == .waiting || st == .error || (st == .done && s.unread))
