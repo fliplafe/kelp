@@ -445,3 +445,7 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(!FileManager.default.fileExists(atPath: (wt as NSString).deletingLastPathComponent + "/outside"))
     #expect(!FileManager.default.fileExists(atPath: wt + "/etc"))
 }
+
+@Test func aHostCantNameAFolderOutsideRemote() {
+    for bad in [".", "..", "a/b", "../x"] { #expect(!RemoteHost.isHost(bad), "\(bad)") }
+}

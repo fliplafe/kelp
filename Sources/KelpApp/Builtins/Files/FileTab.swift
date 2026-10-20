@@ -178,7 +178,8 @@ final class FileTab: SavableTab {
     @discardableResult
     private func write() -> Bool {
         guard let e = editor else { return true }
-        do { try e.text.write(to: url, atomically: true, encoding: .utf8); lastSaved = e.text; gone = false }
+        // Through a symlink to the file it points at: an atomic write to the link would replace it with a plain file.
+        do { try e.text.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8); lastSaved = e.text; gone = false }
         catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error); return false }
         editedStateMayHaveChanged()
         return true

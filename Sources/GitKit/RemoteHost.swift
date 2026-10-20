@@ -39,7 +39,10 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     }
 
     /// What may follow `ssh`: not an option, nothing a shell would split.
-    public static func isHost(_ h: String) -> Bool { !h.isEmpty && !h.hasPrefix("-") && !h.contains(where: \.isWhitespace) }
+    /// Also a folder name under remote/: "." / ".." or a "/" would put it somewhere else.
+    public static func isHost(_ h: String) -> Bool {
+        !h.isEmpty && !h.hasPrefix("-") && !h.contains(where: \.isWhitespace) && !h.contains("/") && h != "." && h != ".."
+    }
 
     /// For a path inside a remote project's folder: the folder, its remote, and the path on the host.
     public static func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? {

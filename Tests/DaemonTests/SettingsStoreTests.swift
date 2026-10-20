@@ -86,3 +86,13 @@ private func home() throws -> URL {
     #expect(throws: (any Error).self) { _ = try s.set("b", .int(2)) }
     #expect(try String(contentsOf: f, encoding: .utf8) == "{ \"a\": 1, \"half-typed\": ")   // the user's text is still there
 }
+
+@Test func settingsKeptInADotfilesRepoStayALink() throws {
+    let d = try home(), dotfiles = try home()
+    let real = dotfiles.appendingPathComponent("kelp-settings.json")
+    try "{}".write(to: real, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: d.appendingPathComponent("settings.json"), withDestinationURL: real)
+    _ = try SettingsStore(root: d).set("theme", .string("nord"))
+    #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: d.appendingPathComponent("settings.json").path)) != nil)   // still a link
+    #expect(try String(contentsOf: real, encoding: .utf8).contains("nord"))   // and the file it points at has the change
+}

@@ -56,7 +56,8 @@ final class SettingsStore: @unchecked Sendable {   // values and mtime under loc
     /// Caller holds the lock (or is init).
     private func write() throws {
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try (e.encode(JSONValue.object(values)) + Data("\n".utf8)).write(to: url, options: .atomic)
+        // To where a symlink points (settings.json kept in a dotfiles repo): an atomic write would replace the link itself.
+        try (e.encode(JSONValue.object(values)) + Data("\n".utf8)).write(to: url.resolvingSymlinksInPath(), options: .atomic)
         mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date   // our own write isn't a hand edit
     }
 }

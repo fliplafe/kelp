@@ -17,6 +17,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     private var detector: StatusDetector
     private let log: FileHandle?
     private var logSize = 0
+    private var logURL: URL?
     private(set) var attached = Set<Int>()   // connection ids receiving raw output
     /// Being deleted: nothing it does may save its record again.
     private var discarded = false
@@ -96,15 +97,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         try Paths.ensure(historyDir)
         // A woken session goes on in the same log: what it showed before the pause stays readable.
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
+        self.logURL = logURL
         if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
         log = try? FileHandle(forWritingTo: logURL)
         logSize = Int((try? log?.seekToEnd()) ?? 0)
         pty = try PTY(argv: argv, cwd: record.cwd, env: env, cols: cols, rows: rows)
         rec.pid = pty.pid
         self.record = rec
-        if logSize > Self.logLimit, let h = try? FileHandle(forReadingFrom: logURL) {
-            try? h.seek(toOffset: UInt64(logSize - Self.ringLimit)); trimLog((try? h.readToEnd()) ?? Data()); try? h.close()
-        }
+        if logSize > Self.logLimit { trimLogToItsTail() }
         pty.onOutput = { [weak self] d in self?.handleOutput(d) }
         pty.onExit = { [weak self] code in self?.handleExit(code) }
     }
@@ -116,6 +116,15 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     func discard() { lock.withLock { discarded = true }; pty.kill() }
 
     /// The log becomes `tail`. Caller holds the lock (or is the initializer).
+    /// Keeps the log's own last `ringLimit` bytes, read from the file: after a wake the ring holds only what was printed
+    /// since, and trimming to that would drop most of what the session showed before its pause.
+    private func trimLogToItsTail() {
+        guard let u = logURL, let h = try? FileHandle(forReadingFrom: u) else { return }
+        defer { try? h.close() }
+        try? h.seek(toOffset: UInt64(max(0, logSize - Self.ringLimit)))
+        trimLog((try? h.readToEnd()) ?? Data())
+    }
+
     private func trimLog(_ tail: Data) { try? log?.truncate(atOffset: 0); try? log?.write(contentsOf: tail); logSize = tail.count }
 
     private func handleOutput(_ d: Data) {
@@ -125,7 +134,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         // ever printed (300 MB of output held 300 MB). The slack makes the copy rare.
         if ring.count > 2 * Self.ringLimit { ring = Data(ring.suffix(Self.ringLimit)) }
         try? log?.write(contentsOf: d); logSize += d.count
-        if logSize > Self.logLimit { trimLog(ring.suffix(Self.ringLimit)) }
+        if logSize > Self.logLimit { trimLogToItsTail() }
         let text = String(decoding: d, as: UTF8.self)
         var probe = false
         let said = (record.summary, record.progress)
