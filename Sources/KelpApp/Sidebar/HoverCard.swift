@@ -38,7 +38,9 @@ final class HoverCard {
     private func show(_ key: String, rect: NSRect, in view: NSView) {
         guard view.window != nil, let model = CardModel(key) else { close(); return }   // events come only while the window is key
         shownKey = key
-        popover.contentViewController = NSHostingController(rootView: CardView(model: model))
+        let host = NSHostingController(rootView: CardView(model: model))
+        host.sizingOptions = .preferredContentSize   // else the popover is placed at a pre-layout size and grows down from its top, off the row
+        popover.contentViewController = host
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxX)
         model.load()
     }

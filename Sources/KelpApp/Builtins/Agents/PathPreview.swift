@@ -45,7 +45,9 @@ final class PathPreview {
     func show(_ token: String?, rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
         guard let token, let f = TerminalPaths.resolve(token, cwd: cwd) else { popover.close(); return }
         let model = PreviewModel(path: f.path, line: f.line, cwd: cwd)
-        popover.contentViewController = NSHostingController(rootView: PathPreviewView(model: model))
+        let host = NSHostingController(rootView: PathPreviewView(model: model))
+        host.sizingOptions = .preferredContentSize   // placed and resized around the anchor (see HoverCard)
+        popover.contentViewController = host
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
         model.load(worktree: worktree)
     }
