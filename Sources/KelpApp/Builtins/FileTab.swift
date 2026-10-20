@@ -164,7 +164,6 @@ final class FileTab: SavableTab {
     }
 
     private func startLSP() {
-        guard SettingsStore.shared.bool("editor.lsp") != false else { return }
         let p = path, r = root
         Task { [weak self] in
             guard let c = await LSPManager.shared.client(root: r, path: p), let e = self?.editor else { return }

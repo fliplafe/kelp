@@ -9,7 +9,7 @@ final class LSPManager {
     private var starting: [String: Task<LSPClient?, Never>] = [:]
     private(set) var diagnostics: [String: [Diagnostic]] = [:]   // absolute path -> list
     var onDiagnostics: ((String) -> Void)?
-    var enabled: Bool { UserDefaults.standard.object(forKey: "lspEnabled") as? Bool ?? true }
+    var enabled: Bool { SettingsStore.shared.bool("editor.lsp") != false }
 
     func client(root: String, path: String) async -> LSPClient? {
         guard enabled, let spec = LSPServers.byExtension[(path as NSString).pathExtension] else { return nil }
