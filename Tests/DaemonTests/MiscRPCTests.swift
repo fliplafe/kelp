@@ -90,3 +90,17 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(rows.first { $0["id"]?.string == "demo" }?["version"]?.string == "4.5.6")
     #expect(!rows.contains { $0["id"]?.string == "gone" })   // not installed: not listed
 }
+
+@Test func planLimitsAreReadInAFolderTheAgentAlreadyTrusts() {
+    func pick(_ used: [String], _ trusted: [String], usable: Set<String>? = nil) -> String? {
+        Daemon.probeFolder(used: used, trusted: trusted, remoteRoot: "/h/.kelp/remote") { usable?.contains($0) ?? true }
+    }
+    // The newest session was in a remote project's local folder: it holds nothing, and the agent never trusted it.
+    #expect(pick(["/h/.kelp/remote/box/app", "/p/web"], ["/p/web", "/p/api"]) == "/p/web")
+    // A recent folder the agent hasn't trusted would stop at its trust question: a trusted one is used instead.
+    #expect(pick(["/tmp/scratch"], ["/p/web", "/p/api"]) == "/p/api")   // trusted ones in a stable order
+    #expect(pick([], ["/p/web"]) == "/p/web")                             // no sessions yet: still something to read from
+    #expect(pick(["/p/new"], []) == "/p/new")                             // no trust list to go by: recent folders as before
+    #expect(pick(["/p/gone"], ["/p/gone", "/p/api"], usable: ["/p/api"]) == "/p/api")   // a folder that no longer exists is skipped
+    #expect(pick([], []) == nil)
+}

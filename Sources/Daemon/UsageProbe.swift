@@ -1,6 +1,7 @@
 import Foundation
 import Core
 import Agents
+import GitKit
 
 /// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok Build, Antigravity). A hidden copy of
 /// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
@@ -70,8 +71,29 @@ extension Daemon {
             let d = root.appendingPathComponent("probe"); try? Paths.ensure(d); return d.path
         }
         let used = ((try? store.sessions()) ?? []).filter { $0.agent == agent }.sorted { $0.createdAt > $1.createdAt }.map(\.cwd)
-        let trusted = agent == "antigravity" ? Self.antigravityTrusted() : []
-        return (used + trusted).first { FileManager.default.fileExists(atPath: $0) }
+        let trusted = agent == "antigravity" ? Self.antigravityTrusted() : agent == "claude" ? Self.claudeTrusted() : []
+        return Self.probeFolder(used: used, trusted: trusted, remoteRoot: root.appendingPathComponent("remote").path) {
+            FileManager.default.fileExists(atPath: $0) && RemoteHost.of($0) == nil
+        }
+    }
+
+    /// Where the hidden copy of an agent opens: a folder it already trusts, or it stops at its trust question and `/usage`
+    /// never shows. Folders of the agent's recent sessions come first; a remote project's local folder never counts (its
+    /// sessions run on the host, and the folder here holds nothing). With no trust list to go by, recent folders do.
+    static func probeFolder(used: [String], trusted: [String], remoteRoot: String, usable: (String) -> Bool) -> String? {
+        let local = used.filter { !$0.hasPrefix(remoteRoot + "/") && $0 != remoteRoot }
+        let ordered = trusted.isEmpty ? local : local.filter(trusted.contains) + trusted.sorted()
+        return ordered.first(where: usable)
+    }
+
+    /// Folders the user trusted in Claude Code (read only: `projects[path].hasTrustDialogAccepted` in its config).
+    private static func claudeTrusted() -> [String] {
+        let env = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
+        let f = env.map { URL(fileURLWithPath: $0).appendingPathComponent(".claude.json") }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+        guard let d = try? Data(contentsOf: f), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let projects = o["projects"] as? [String: Any] else { return [] }
+        return projects.compactMap { path, v in (v as? [String: Any])?["hasTrustDialogAccepted"] as? Bool == true ? path : nil }
     }
 
     private func probeArgv(_ agent: String, _ path: String) -> [[String]] {
