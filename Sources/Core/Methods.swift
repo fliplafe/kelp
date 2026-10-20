@@ -50,6 +50,19 @@ public struct SessionContextWindow: RPCMethod {
     public init(id: String) { self.id = id }
 }
 
+/// The project's other git worktrees (agents' `.claude/worktrees/…`, older Kelp workspaces) and the disk each takes,
+/// biggest first: they grow with every build and nothing in the folder itself shows it.
+public struct RepoWorktreeSizes: RPCMethod {
+    public static let name = "repo.worktreeSizes"
+    public struct Item: Codable, Sendable, Equatable {
+        public var path: String, bytes: Int
+        public init(path: String, bytes: Int) { self.path = path; self.bytes = bytes }
+    }
+    public typealias Result = [Item]
+    public var id: String
+    public init(id: String) { self.id = id }
+}
+
 /// The workspace's name.
 public struct WorktreeNote: RPCMethod {
     public static let name = "worktree.note"

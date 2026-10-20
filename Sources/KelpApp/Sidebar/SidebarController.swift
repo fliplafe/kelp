@@ -165,7 +165,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     override func mouseMoved(with e: NSEvent) {
         let row = outline.row(at: outline.convert(e.locationInWindow, from: nil))
-        guard row >= 0, renaming == nil, let n = outline.item(atRow: row) as? Node, !Self.isHeader(n) else { card.hover(nil, rect: .zero, in: outline); return }
+        guard row >= 0, renaming == nil, let n = outline.item(atRow: row) as? Node, !n.key.hasPrefix("s:") else { card.hover(nil, rect: .zero, in: outline); return }
         card.hover(n.key.replacingOccurrences(of: "n:", with: "a:"), rect: outline.rect(ofRow: row), in: outline)
     }
     override func mouseExited(with e: NSEvent) { card.hover(nil, rect: .zero, in: outline) }

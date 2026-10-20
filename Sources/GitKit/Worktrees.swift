@@ -39,6 +39,14 @@ extension Git {
         }
     }
 
+    /// The repo's other checkouts, wherever `git worktree add` put them (an agent's `.claude/worktrees/…`, Kelp's own):
+    /// `git worktree list` without its first entry, the main checkout.
+    public static func linkedWorktrees(_ repo: String) throws -> [String] {
+        try run(["worktree", "list", "--porcelain"], cwd: repo).components(separatedBy: "\n\n").dropFirst().compactMap { b in
+            b.split(separator: "\n").first { $0.hasPrefix("worktree ") }.map { String($0.dropFirst(9)) }
+        }
+    }
+
     public static func renameBranch(_ path: String, from old: String, to new: String) throws {
         try run(["branch", "-m", old, new], cwd: path)
     }

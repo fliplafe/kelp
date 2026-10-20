@@ -53,6 +53,9 @@ final class CardModel {
     let agents: [Agent]
     let workspaceId: String
     let agentOnly: Bool
+    /// A project's card: the disk its other worktrees take (nil while `du` runs).
+    let repo: Repo?
+    var worktrees: [RepoWorktreeSizes.Item]?
     var changes: LineStats?
     var pr: JSONValue?
     var turn: String?
@@ -65,13 +68,16 @@ final class CardModel {
             title = AgentCatalog.displayName(s)
             let w = m.worktree(s.worktreeId)
             subtitle = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
-            agents = [Agent(id: s.id, session: s)]; workspaceId = s.worktreeId ?? ""; agentOnly = true
+            agents = [Agent(id: s.id, session: s)]; workspaceId = s.worktreeId ?? ""; agentOnly = true; repo = nil
+        } else if key.hasPrefix("p:"), let r = m.repo(String(key.dropFirst(2))) {
+            title = r.name; subtitle = (r.path as NSString).abbreviatingWithTildeInPath
+            agents = []; workspaceId = ""; agentOnly = false; repo = r
         } else if key.hasPrefix("w:"), let w = m.worktree(String(key.dropFirst(2))) {
             let r = m.repo(w.repoId)
             title = w.displayName
             subtitle = [r?.name, w.path == r?.path ? nil : "branch \(w.branch)"].compactMap { $0 }.joined(separator: " · ")
             agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }.map { Agent(id: $0.id, session: $0) }
-            workspaceId = w.id; agentOnly = false
+            workspaceId = w.id; agentOnly = false; repo = nil
         } else { return nil }
     }
 
@@ -79,6 +85,7 @@ final class CardModel {
         guard let c = AppModel.shared.client else { return }
         let wid = JSONValue.obj(["id": .string(workspaceId)])
         Task {
+            if let repo { worktrees = (try? await c.call(RepoWorktreeSizes(id: repo.id))) ?? []; return }
             if !agentOnly {
                 changes = try? await c.call("git.lineStats", wid, as: LineStats.self)
                 let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(workspaceId)]))
@@ -109,6 +116,7 @@ struct CardView: View {
                 Text(model.title).font(.headline).lineLimit(2)
                 if !model.subtitle.isEmpty { Text(model.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
             }
+            if let r = model.repo { WorktreeSizes(items: model.worktrees, root: r.path) }
             if let pr = model.pr { PRLine(pr: pr) }
             if let c = model.changes, c.totalAdded + c.totalRemoved > 0 {
                 (Text("Not committed  ") + Text(c.totalAdded > 0 ? "+\(c.totalAdded)" : "").foregroundColor(.green)
@@ -162,6 +170,34 @@ struct PRLine: View {
             }.font(.caption)
         }
     }
+}
+
+/// "Worktrees 20.1 GB" over the biggest ones, named inside the project when they're in it (`.claude/worktrees/…`).
+struct WorktreeSizes: View {
+    let items: [RepoWorktreeSizes.Item]?, root: String
+    var body: some View {
+        if let items, !items.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Worktrees")
+                    Spacer(minLength: 8)
+                    Text(Self.size(items.reduce(0) { $0 + $1.bytes })).monospacedDigit()
+                }.font(.callout)
+                ForEach(items.prefix(8), id: \.path) { w in
+                    HStack(spacing: 6) {
+                        Text(name(w.path)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        Text(Self.size(w.bytes)).monospacedDigit()
+                    }.font(.caption).foregroundStyle(.secondary)
+                }
+                if items.count > 8 { Text("\(items.count - 8) more").font(.caption).foregroundStyle(.tertiary) }
+            }
+        } else {
+            (items == nil ? Text("Measuring worktrees…") : Text("No other git worktrees")).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func name(_ p: String) -> String { p.hasPrefix(root + "/") ? String(p.dropFirst(root.count + 1)) : (p as NSString).abbreviatingWithTildeInPath }
+    static func size(_ b: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .file) }
 }
 
 /// How full the agent's conversation is; amber from three quarters, red from nine tenths.

@@ -248,6 +248,16 @@
         }
       }
     },
+    "%lld more": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё %lld"
+          }
+        }
+      }
+    },
     "%lld need you": {
       "localizations": {
         "ru": {
@@ -3651,6 +3661,16 @@
         }
       }
     },
+    "Measuring worktrees…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Считаю размер worktree…"
+          }
+        }
+      }
+    },
     "Merge": {
       "localizations": {
         "ru": {
@@ -4295,6 +4315,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открытых комментариев нет"
+          }
+        }
+      }
+    },
+    "No other git worktrees": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Других git worktree нет"
           }
         }
       }
@@ -7586,6 +7616,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Рабочая область или агент"
+          }
+        }
+      }
+    },
+    "Worktrees": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree"
           }
         }
       }

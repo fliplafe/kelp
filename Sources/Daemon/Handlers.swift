@@ -28,7 +28,7 @@ extension Handled {
 extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
-                                                          WorktreeNote.self] as [any Handled.Type]).map { ($0.name, $0) })
+                                                          WorktreeNote.self, RepoWorktreeSizes.self] as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
@@ -320,6 +320,21 @@ extension WorktreeNote: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard var w = try d.store.worktree(id) else { throw RPCError.invalidParams("no worktree") }
         w.note = note; try d.store.save(w); d.notify("event.changed", "worktree"); return Done()
+    }
+}
+
+extension RepoWorktreeSizes: Handled {
+    func handle(_ d: Daemon) throws -> [Item] {
+        guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
+        guard RemoteHost.of(r.path) == nil else { return [] }   // their disk is on the host
+        return try Git.linkedWorktrees(r.path).filter { FileManager.default.fileExists(atPath: $0) }
+            .map { Item(path: $0, bytes: Self.du($0)) }.sorted { $0.bytes > $1.bytes }
+    }
+
+    /// Blocks on disk as `du` counts them (16 GB of build products: about a second); unreadable files leave out only themselves.
+    static func du(_ path: String) -> Int {
+        let out = (try? Git.run(["-sk", path], cwd: path, executable: "/usr/bin/du", ok: [0, 1])) ?? ""
+        return (Int(out.prefix { $0.isNumber }) ?? 0) * 1024
     }
 }
 
