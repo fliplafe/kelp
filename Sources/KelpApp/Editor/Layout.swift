@@ -1,11 +1,11 @@
 import Foundation
+import Core
 import WorkbenchKit
 
-/// Each workspace's layout is kept in UserDefaults so a relaunch shows the same arrangement.
+/// Each workspace's layout is kept in the daemon's database (`layout/<id>`, see `UIState`) so a relaunch shows the same arrangement.
 extension WorkspaceLayout {
-    static func load(_ workspace: String) -> WorkspaceLayout {
-        guard let d = UserDefaults.standard.data(forKey: "layout3.\(workspace)"), let l = try? JSONDecoder().decode(WorkspaceLayout.self, from: d) else { return WorkspaceLayout() }
-        return l
+    @MainActor static func load(_ workspace: String) -> WorkspaceLayout {
+        (try? UIState["layout/\(workspace)"]?.decode(WorkspaceLayout.self)) ?? WorkspaceLayout()
     }
-    func save(_ workspace: String) { UserDefaults.standard.set(try? JSONEncoder().encode(self), forKey: "layout3.\(workspace)") }
+    @MainActor func save(_ workspace: String) { UIState["layout/\(workspace)"] = try? .from(self) }
 }

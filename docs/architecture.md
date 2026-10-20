@@ -70,3 +70,7 @@ files change.
 The app talks to the daemon only through JSON-RPC. IDE actions requested by agents go
 `kelp` → daemon `ui.*` → `event.ui` to the app. The app publishes what it shows with
 `ui.publish` so agents can ask (`ui.state`).
+What it restores that names the daemon's records — each workspace's layout (`layout/<id>`), the sidebar's order, pins
+and folds, the last workspace — is in the daemon's database (`state.get` / `state.set`, the app's `UIState`), like Zed's
+workspace DB: each `KELP_HOME` has its own, and removing a workspace removes its layout. Per-Mac view preferences
+(panel sizes, inline diffs…) stay in UserDefaults.

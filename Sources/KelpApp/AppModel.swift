@@ -32,9 +32,7 @@ final class AppModel {
     var projects: [Repo] { ordered(repos.filter { !ScratchWindow.isScratch($0) }) }
 
     /// Project and workspace ids in the order they were dragged into in the sidebar; ones never moved follow them.
-    var order = UserDefaults.standard.stringArray(forKey: "sidebar.order") ?? [] {
-        didSet { UserDefaults.standard.set(order, forKey: "sidebar.order") }
-    }
+    var order: [String] = [] { didSet { UIState["sidebar.order"] = try? .from(order) } }
     /// Puts these (siblings) in this order.
     func reorder(_ ids: [String]) { order = ids + order.filter { !ids.contains($0) } }
     private func ordered<T: Identifiable>(_ xs: [T]) -> [T] where T.ID == String {
@@ -78,6 +76,8 @@ final class AppModel {
         c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } }
         c.onClose = { [weak self] in Task { @MainActor in self?.client = nil; self?.connected = false; self?.reconnectSoon() } }
         connected = true
+        await UIState.load(c)
+        if UIState.strings("sidebar.order") != order { order = UIState.strings("sidebar.order") }
         await SettingsStore.shared.load()
         await refresh()
         publishUIState()

@@ -40,7 +40,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private let outline = NSOutlineView()
     private var roots: [Node] = []
     private var shape: [String] = []
-    private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsed") ?? [])
+    private var collapsed: Set<String> {
+        get { Set(UIState.strings("sidebar.collapsed")) }
+        set { UIState["sidebar.collapsed"] = try? .from(newValue.sorted()) }
+    }
     private var syncing = false
     private var renaming: String?
     private let empty = NSStackView()
@@ -51,8 +54,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     enum Filter: String, CaseIterable { case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request" }
     private var filter = Filter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
     static var pinned: [String] {
-        get { UserDefaults.standard.stringArray(forKey: "sidebar.pinned") ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: "sidebar.pinned") }
+        get { UIState.strings("sidebar.pinned") }
+        set { UIState["sidebar.pinned"] = try? .from(newValue) }
     }
     private let noMatch = NSStackView()
 
@@ -318,7 +321,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private func remember(_ n: Notification, collapsed c: Bool) {
         guard !syncing, let node = n.userInfo?["NSObject"] as? Node, case .workspace = node.kind else { return }
         if c { collapsed.insert(node.key) } else { collapsed.remove(node.key) }
-        UserDefaults.standard.set(Array(collapsed), forKey: "sidebar.collapsed")
         refreshCell(node.key)   // collapsed, the workspace shows its agents' state itself
     }
 

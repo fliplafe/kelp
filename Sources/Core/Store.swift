@@ -58,6 +58,11 @@ public final class Store: @unchecked Sendable {
         m.registerMigration("v5") { db in
             try db.alter(table: "session") { t in t.add(column: "statusAt", .datetime) }
         }
+        m.registerMigration("v6") { db in
+            try db.create(table: "uiState") { t in t.primaryKey("key", .text); t.column("value", .text).notNull() }
+            // A workspace's layout goes with it, however it's removed (its project's removal cascades here too).
+            try db.execute(sql: "CREATE TRIGGER uiStateLayout AFTER DELETE ON worktree BEGIN DELETE FROM uiState WHERE key = 'layout/' || OLD.id; END")
+        }
         try m.migrate(db)
     }
 
@@ -77,5 +82,23 @@ public final class Store: @unchecked Sendable {
     public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) } }
     public func comments(worktree: String) throws -> [DiffComment] {
         try db.read { try DiffComment.filter(Column("worktreeId") == worktree).fetchAll($0) }
+    }
+
+    /// The app's UI state (`state.*`): JSON by key, e.g. `layout/<workspace>`, `sidebar.order`. Every key with this prefix.
+    public func uiState(prefix: String) throws -> [String: JSONValue] {
+        try db.read { d in
+            try Row.fetchAll(d, sql: "SELECT key, value FROM uiState WHERE instr(key, ?) = 1", arguments: [prefix]).reduce(into: [:]) { out, r in
+                let text: String = r["value"]
+                out[r["key"]] = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+            }
+        }
+    }
+    /// No value deletes the key.
+    public func setUIState(_ key: String, _ value: JSONValue?) throws {
+        let text = try value.flatMap { String(bytes: try JSONEncoder().encode($0), encoding: .utf8) }
+        try db.write { d in
+            if let text { try d.execute(sql: "INSERT OR REPLACE INTO uiState (key, value) VALUES (?, ?)", arguments: [key, text]) }
+            else { try d.execute(sql: "DELETE FROM uiState WHERE key = ?", arguments: [key]) }
+        }
     }
 }

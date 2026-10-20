@@ -1,12 +1,13 @@
 import Foundation
 import Observation
+import Core
 
 /// What's on screen: the selected workspace and what has focus in it.
 @MainActor
 @Observable
 final class Workbench {
     static let shared = Workbench()
-    var workspaceId: String? { didSet { if workspaceId != oldValue { UserDefaults.standard.set(workspaceId, forKey: "lastWorkspace") } } }
+    var workspaceId: String? { didSet { UIState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
     var focusedSession: String?
     var focusedFile: String?
     var inspectorPanel: String = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_INSPECTOR"]
