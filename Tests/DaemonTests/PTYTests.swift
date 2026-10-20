@@ -109,3 +109,49 @@ final class Box: @unchecked Sendable {
     for _ in 0..<60 where seen == nil { try await Task.sleep(for: .milliseconds(100)); seen = p.foregroundProgram }
     #expect(seen == "sleep")
 }
+
+@Test func aTerminalThatCantBeOpenedYetIsRetriedButOtherErrorsAreNot() throws {
+    var calls = 0
+    let ok = try PTY.retrying { () throws -> String in
+        calls += 1
+        if calls < 3 { throw PTYError(step: "spawn", code: EIO) }
+        return "started"
+    }
+    #expect(ok == "started" && calls == 3)   // two refusals, then it worked
+    calls = 0
+    #expect(throws: PTYError.self) { try PTY.retrying { () throws -> Int in calls += 1; throw PTYError(step: "spawn", code: ENOENT) } }
+    #expect(calls == 1)                      // a missing program won't appear by trying again
+    calls = 0
+    #expect(throws: PTYError.self) { try PTY.retrying(attempts: 3) { () throws -> Int in calls += 1; throw PTYError(step: "spawn", code: EIO) } }
+    #expect(calls == 3)                      // and it gives up in the end, with the real error
+}
+
+@Test func theErrorSaysWhichStepFailed() {
+    let e = PTYError(step: "openpty", code: EMFILE)
+    #expect(e.description.contains("openpty") && e.description.contains("errno \(EMFILE)"))
+    #expect(e.localizedDescription == e.description)   // what the app shows, not "The operation couldn't be completed"
+}
+
+@Test func theProgramBeingStartedThatDoesntExistFailsWithAClearError() {
+    #expect(throws: PTYError.self) { _ = try PTY(argv: ["/definitely/not/a/program"], cwd: "/tmp", env: [:], trampoline: nil) }
+}
+
+/// `daemon.shutdown` ends the process, so it is tried on a real `kelpd` of its own.
+@Test func shutdownStopsTheDaemonProcessAndRemovesItsSocket() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let kelpd = root.appendingPathComponent(".build/debug/kelpd").path
+    guard FileManager.default.isExecutableFile(atPath: kelpd) else { return }   // `swift build` first
+    let home = tmp()
+    let p = Process(); p.executableURL = URL(fileURLWithPath: kelpd)
+    var env = ProcessInfo.processInfo.environment; env["KELP_HOME"] = home.path; p.environment = env
+    p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+    try p.run()
+    defer { if p.isRunning { p.terminate() } }   // only the daemon this test started
+    let sock = home.appendingPathComponent("kelp.sock").path
+    #expect(try await waitFor(10) { FileManager.default.fileExists(atPath: sock) })
+    let c = try RPCClient(socket: sock)
+    #expect(try await c.call("ping").string == "pong")
+    _ = try await c.call("daemon.shutdown")
+    #expect(try await waitFor(10) { !p.isRunning })
+    #expect(p.terminationStatus == 0)   // a clean exit, not a crash
+}

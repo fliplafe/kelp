@@ -26,6 +26,22 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 
     /// `trampoline`: the `kelp` binary that makes the PTY the child's controlling terminal (nil spawns directly).
     public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32, trampoline: String? = PTY.trampoline) throws {
+        let started = try Self.retrying { try Self.launch(argv: argv, cwd: cwd, env: env, cols: cols, rows: rows, trampoline: trampoline) }
+        self.pid = started.pid; self.primaryFD = started.fd
+    }
+
+    /// A terminal that was freed a moment ago can refuse to open its slave side (EIO) while the kernel is still tearing it
+    /// down; a fresh terminal a few milliseconds later works. Any other failure is returned at once.
+    static func retrying<T>(attempts: Int = 4, _ body: () throws -> T) throws -> T {
+        for attempt in 1..<attempts {
+            do { return try body() }
+            catch let e as PTYError where e.code == EIO { usleep(UInt32(attempt) * 20_000) }
+        }
+        return try body()
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private static func launch(argv: [String], cwd: String, env: [String: String], cols: UInt16, rows: UInt16, trampoline: String?) throws -> (pid: pid_t, fd: Int32) {
         var m: Int32 = 0, s: Int32 = 0
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw PTYError(step: "openpty", code: errno) }
@@ -52,7 +68,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
 
         // Don't leak the environment of whatever started the daemon (e.g. an agent's session markers) into new sessions.
-        var e = ProcessInfo.processInfo.environment.filter { k, _ in !Self.scrubbed.contains { k.hasPrefix($0) } }.merging(env) { $1 }
+        var e = ProcessInfo.processInfo.environment.filter { k, _ in !scrubbed.contains { k.hasPrefix($0) } }.merging(env) { $1 }
         e["TERM"] = "xterm-256color"; e["COLORTERM"] = "truecolor"
         let cargv = (argv.map { strdup($0) } + [nil]) as [UnsafeMutablePointer<CChar>?]
         let cenv = (e.map { strdup("\($0)=\($1)") } + [nil]) as [UnsafeMutablePointer<CChar>?]
@@ -69,7 +85,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         }
         close(s)
         guard rc == 0 else { close(m); throw PTYError(step: "spawn \(trampoline == nil ? argv[0] : "via trampoline") on \(secondaryPath)", code: rc) }
-        self.pid = pid; self.primaryFD = m
+        return (pid, m)
     }
 
     /// Starts reading the output and waiting for the exit. Set `onOutput` / `onExit` first: a program that prints (or

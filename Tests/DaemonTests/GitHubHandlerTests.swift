@@ -22,6 +22,9 @@ private let fakeGh: (log: String, script: String) = {
                   esac;;
       "run list") echo '[{"databaseId":99,"displayTitle":"Add login","workflowName":"CI","status":"completed","conclusion":"failure","event":"push","url":"https://github.com/o/r/actions/runs/99","createdAt":"2026-10-20T10:00:00Z"}]';;
       "run rerun"|"workflow run") ;;
+      "repo view") echo '{"owner":{"id":"O_1","login":"acme"}}';;
+      "project list") echo '{"projects":[{"closed":false,"id":"PVT_1","number":3,"owner":{"login":"acme"},"title":"Roadmap","url":"https://github.com/orgs/acme/projects/3"}],"totalCount":1}';;
+      "project item-list") echo '{"items":[{"content":{"type":"Issue","url":"https://github.com/acme/r/issues/5"},"id":"I1","status":"In Progress","title":"Login"},{"content":{"type":"DraftIssue"},"id":"I2","title":"Idea"}],"totalCount":2}';;
       "pr view") echo '{"reviews":[{"id":"R1","author":{"login":"bob"},"body":"Please rename","state":"CHANGES_REQUESTED"}]}';;
       "api --paginate") echo '[[{"path":"a.swift","line":3,"original_line":3,"body":"nit","user":{"login":"amy"},"html_url":"https://github.com/o/r/pull/7#r1"}]]';;
       "api user") echo ada;;
@@ -118,4 +121,15 @@ private func wtOf(_ r: (d: Daemon, c: RPCClient, repo: Repo), branch: String = "
     let c = try await r.c.call("github.reviewComments", .obj(["repoId": .string(r.repo.id), "pr": 7])).array ?? []
     #expect(c.compactMap { $0["author"]?.string }.sorted() == ["amy", "bob"])
     #expect(c.first { $0["author"]?.string == "amy" }?["path"]?.string == "a.swift")
+}
+
+@Test func projectBoardsAndTheirItemsComeFromGh() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let projects = try await r.c.call("github.projects", .obj(["repoId": .string(r.repo.id)])).array ?? []
+    #expect(projects.first?["number"]?.int == 3 && projects.first?["title"]?.string == "Roadmap")
+    #expect(calls().contains { $0.hasPrefix("project list --owner acme") })   // the owner comes from the repo
+    let items = try await r.c.call("github.projectItems", .obj(["owner": "acme", "number": 3])).array ?? []
+    #expect(items.map { $0["title"]?.string } == ["Login", "Idea"] && items.first?["status"]?.string == "In Progress")
+    #expect(calls().contains { $0.hasPrefix("project item-list 3 --owner acme") })
+    await #expect(throws: (any Error).self) { _ = try await r.c.call("github.projectItems", .obj([:])) }   // the owner is required
 }
