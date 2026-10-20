@@ -4,9 +4,10 @@ import Agents
 import AgentData
 import os
 
-/// The transcripts history.list read last. Its search field asks on every keystroke, and each read parses the head and
-/// tail of every conversation on disk: a search reuses the list read when the window opened (or a minute ago).
-private let historyRead = OSAllocatedUnfairLock<(roots: [URL], at: Date, list: [AgentSessionInfo])?>(initialState: nil)
+/// The transcripts history.list read last, by the folders read. Its search field asks on every keystroke, and each read
+/// parses the head and tail of every conversation on disk: a search reuses the list read when the window opened (or a
+/// minute ago). Keyed by folders, not one slot: daemons in one process (tests) each find their own.
+private let historyRead = OSAllocatedUnfairLock<[[URL]: (at: Date, list: [AgentSessionInfo])]>(initialState: [:])
 
 /// Session history across Claude/Codex (and account profiles), usage and rate limits.
 extension Daemon {
@@ -109,12 +110,12 @@ extension Daemon {
         case "history.list":
             let roots = agentRoots(), key = roots.claude + roots.codex
             var all: [AgentSessionInfo]
-            if p["query"]?.string?.isEmpty == false, let r = historyRead.withLock({ $0 }), r.roots == key, Date().timeIntervalSince(r.at) < 60 {
+            if p["query"]?.string?.isEmpty == false, let r = historyRead.withLock({ $0[key] }), Date().timeIntervalSince(r.at) < 60 {
                 all = r.list
             } else {
                 all = roots.claude.flatMap { ClaudeHistory.sessions(root: $0) } + roots.codex.flatMap { CodexHistory.sessions(root: $0) }
                 all.sort { $0.updated > $1.updated }
-                historyRead.withLock { [all] in $0 = (key, Date(), all) }
+                historyRead.withLock { [all] in $0[key] = (Date(), all) }
             }
             if let q = p["query"]?.string, !q.isEmpty {
                 all = p["fullText"]?.bool == true ? History.fullTextSearch(query: q, in: all, limit: 100) : History.search(all, query: q)
