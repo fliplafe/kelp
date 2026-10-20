@@ -155,3 +155,21 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 @Test func runReadsLongOutput() {
     #expect(Daemon.run(["/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' y"], path: "/bin:/usr/bin", timeout: 5)?.count == 200_000)
 }
+
+/// Eighty requests stuck in slow work (git or ssh against a host that doesn't answer): the daemon still answers the
+/// next one. On the global pool (64 threads, shared with Swift's own tasks) everything stopped.
+@Test func aRequestIsAnsweredWhileManySlowOnesRun() async throws {
+    let release = DispatchSemaphore(value: 0), held = 80
+    let root = tmp()
+    let d = try Daemon(root: root, extra: ["test.slow": { d, _ in try await d.offload { release.wait(); return .null } }])
+    try d.start(); defer { for _ in 0..<held { release.signal() }; d.stop() }
+    let slow = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(slow) }
+    for i in 0..<held { Unix.writeAll(slow, try Wire.line(RPCRequest(id: i, method: "test.slow"))) }
+    try await Task.sleep(for: .milliseconds(500))
+    let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
+    var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    Unix.writeAll(fd, try Wire.line(RPCRequest(id: 1, method: "session.list")))
+    var buf = [UInt8](repeating: 0, count: 4096)
+    let n = read(fd, &buf, buf.count)
+    #expect(n > 0 && String(decoding: buf[0..<max(n, 0)], as: UTF8.self).contains("\"id\":1"))
+}

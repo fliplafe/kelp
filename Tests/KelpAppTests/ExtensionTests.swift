@@ -14,7 +14,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 @MainActor @Test func templatesTakeFieldsAndQuoteThem() {
     let item = JSONValue.object(["name": .string("it's"), "n": .int(3), "pr": .object(["id": .int(7)])])
     #expect(ExtActions.expand("echo ${name}", item: item, quote: false) == "echo it's")
-    #expect(ExtActions.expand("echo ${name}", item: item, quote: true) == "echo 'it'\\''s'")   // one shell word, quote closed and reopened
+    #expect(ExtActions.expand("echo ${name}", item: item, quote: true) == #"KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
     #expect(ExtActions.expand("${pr.id}-${n}-${missing}", item: item, quote: false) == "7-3-")
     #expect(ExtActions.expand("no placeholders $ {x", item: item, quote: false) == "no placeholders $ {x")
 }
@@ -73,21 +73,12 @@ private func folder(_ files: [String: String]) throws -> URL {
     for ok in ["me.icons", "icons", "kelp-git"] { #expect(ExtensionRegistry.isPlainName(ok)) }
 }
 
-/// Whatever quotes the manifest put around a placeholder, the value stays text: a title like $(touch …) never runs.
-@MainActor @Test func aValueNeverRunsWhereverTheTemplatePutsIt() throws {
+/// An action's command takes item fields as variables: a title with $(…) or a newline never runs (all the quoting
+/// cases are in WorkbenchKitTests.aValueInAShellTemplateNeverRuns).
+@MainActor @Test func aFieldNeverRunsInAnActionsCommand() async throws {
     let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
-    let evil = "$(touch \(marker)) `touch \(marker)` \" ' \\ end"
-    let item = JSONValue.object(["title": .string(evil)])
-    let templates = [#"printf %s ${title}"#, #"printf %s "${title}""#, #"printf %s '${title}'"#, #"printf %s "PR: ${title}!""#,
-                     "# don't worry\nprintf %s ${title}",                 // a quote in a comment doesn't change anything
-                     "cat <<EOF\n${title}\nEOF", "cat <<'EOF'\n${title}\nEOF", "cat <<-EOF\n${title}\nEOF"]   // here-documents
-    for template in templates {
-        let cmd = ExtActions.expand(template, item: item, quote: true)
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", cmd]
-        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
-        try p.run(); p.waitUntilExit()
-        let printed = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        #expect(!FileManager.default.fileExists(atPath: marker), "ran from \(template)")
-        #expect(printed.contains(evil), "\(template) printed \(printed.debugDescription)")   // and arrives whole
-    }
+    let evil = "a\ntouch \(marker)\n$(touch \(marker)) end"
+    let cmd = ExtActions.expand(#"printf %s "${title}""#, item: .object(["title": .string(evil)]), quote: true)
+    let r = await Shell.run(cmd, cwd: NSTemporaryDirectory())
+    #expect(!FileManager.default.fileExists(atPath: marker) && r.stdout == evil)
 }

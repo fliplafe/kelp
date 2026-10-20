@@ -11,7 +11,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     let root: URL
     let lock = NSLock()
     var live: [String: LiveSession] = [:]
-    private var conns: [Int: Connection] = [:]
+    var conns: [Int: Connection] = [:]
     private var nextConn = 1
     private var listenFD: Int32 = -1
     private var instanceLock: Int32 = -1   // flock on kelpd.lock: one daemon per KELP_HOME
@@ -90,7 +90,9 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
             _ = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
         }
         listenFD = try Unix.listen(socketPath)
-        let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: .global())
+        // Accept and the ticker have queues of their own (serial queues get a thread even when every pooled one is held
+        // by a slow git or ssh in `offload`), so new connections and status keep going whatever is stuck.
+        let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: DispatchQueue(label: "kelp.accept"))
         let fd = listenFD
         src.setCancelHandler { close(fd) }   // after any accept still running, not under it
         src.setEventHandler { [self] in
@@ -100,7 +102,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         }
         src.resume()
         acceptSource = src
-        let t = DispatchSource.makeTimerSource(queue: .global())
+        let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
         t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
         t.resume(); ticker = t

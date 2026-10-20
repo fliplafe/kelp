@@ -53,9 +53,11 @@ extension Daemon {
 
     /// git, gh and ssh hold their thread until they exit, and Swift's cooperative pool has one thread per core: a few slow
     /// ones (the sidebar asks every folder's PR at once) would stall every other request, a terminal's attach included.
-    /// GCD adds threads when its own are blocked.
+    /// A thread of its own, not GCD's pool: that one stops at 64 threads (concurrent queues Kelp makes draw from it too),
+    /// Swift's tasks run on it as well, and once slow hosts hold them all no request is answered. git, gh and ssh all have
+    /// time limits, so the threads stay bounded by what is actually running.
     func offload<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { c in DispatchQueue.global().async { c.resume(with: Result(catching: work)) } }
+        try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
     }
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {

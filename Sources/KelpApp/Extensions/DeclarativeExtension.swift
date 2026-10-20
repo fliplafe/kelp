@@ -164,76 +164,20 @@ enum ExtActions {
     /// `${Field}`, `${a.b}`, `${setting:key}`, `${workspace.path|branch|name}`, `${project.path}`, `${file}`. `quote` shell-quotes values.
     static func expand(_ template: String, item: JSONValue?, quote: Bool) -> String {
         let ctx = IDEContext.current
-        var out = "", rest = Substring(template), quotes = ShellQuotes()
-        while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
-            out += rest[..<open.lowerBound]
-            quotes.read(rest[..<open.lowerBound])
-            let key = String(rest[open.upperBound..<close])
-            var v: String
+        let value: (String) -> String? = { key in
             switch key {
-            case "workspace.path": v = ctx.workspace?.path ?? ""
-            case "workspace.branch": v = ctx.workspace?.branch ?? ""
-            case "workspace.name": v = ctx.workspace?.displayName ?? ""
-            case "project.path": v = ctx.project?.path ?? ""
-            case "file": v = ctx.focusedFile ?? ""
+            case "workspace.path": return ctx.workspace?.path ?? ""
+            case "workspace.branch": return ctx.workspace?.branch ?? ""
+            case "workspace.name": return ctx.workspace?.displayName ?? ""
+            case "project.path": return ctx.project?.path ?? ""
+            case "file": return ctx.focusedFile ?? ""
             default:
-                if key.hasPrefix("setting:") { v = SettingsStore.shared.value(String(key.dropFirst(8))).map(text) ?? "" }
-                else { v = key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(text) ?? "" }
-            }
-            // Escaped for where the template put it: a manifest writing "${title}" must not let $(…) in a title run.
-            out += quote ? quotes.escape(v) : v
-            rest = rest[rest.index(after: close)...]
-        }
-        return out + rest
-    }
-
-    /// Where a shell would be at this point of a template (inside quotes, a comment, a here-document), so a value is
-    /// escaped for that spot.
-    struct ShellQuotes {
-        var inSingle = false, inDouble = false, inComment = false
-        /// A here-document's end word once `<<WORD` was read; `expands`: unquoted WORD, so $(…) inside it runs.
-        var pendingDoc: (word: String, expands: Bool)?, inDoc: (word: String, expands: Bool)?
-        private var line = "", last: Character = "\n"
-
-        mutating func read(_ s: Substring) {
-            var escaped = false, i = s.startIndex
-            while i < s.endIndex {
-                let c = s[i]; defer { last = c; i = s.index(after: i) }
-                if c == "\n" {
-                    if let d = inDoc, line.trimmingCharacters(in: .whitespaces) == d.word { inDoc = nil }
-                    else if inDoc == nil, let p = pendingDoc { inDoc = p; pendingDoc = nil }
-                    inComment = false; line = ""; escaped = false; continue
-                }
-                line.append(c)
-                if inDoc != nil || inComment { continue }
-                if escaped { escaped = false; continue }
-                if c == "\\", !inSingle { escaped = true; continue }
-                if c == "#", !inSingle, !inDouble, last == " " || last == "\t" || last == "\n" || last == ";" { inComment = true; continue }
-                if c == "'", !inDouble { inSingle.toggle() } else if c == "\"", !inSingle { inDouble.toggle() }
-                if c == "<", !inSingle, !inDouble, s[i...].hasPrefix("<<"), !s[i...].hasPrefix("<<<") {
-                    var rest = s[s.index(i, offsetBy: 2)...].drop { $0 == "-" || $0 == " " }
-                    let quoted = rest.first == "'" || rest.first == "\""
-                    if quoted { rest = rest.dropFirst() }
-                    let word = String(rest.prefix { !" \t\n'\";<>|&".contains($0) })
-                    if !word.isEmpty { pendingDoc = (word, !quoted) }
-                    i = s.index(after: i)   // the second <
-                }
+                if key.hasPrefix("setting:") { return SettingsStore.shared.value(String(key.dropFirst(8))).map(text) ?? "" }
+                return key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(text) ?? ""
             }
         }
-
-        func escape(_ v: String) -> String {
-            if let d = inDoc {   // in a here-document only $, ` and \ mean anything, and only when it expands
-                return d.expands ? v.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "$", with: "\\$")
-                    .replacingOccurrences(of: "`", with: "\\`") : v
-            }
-            if inComment { return v }   // a comment runs nothing
-            if inSingle { return v.replacingOccurrences(of: "'", with: "'\\''") }   // close, a literal ', reopen
-            if inDouble {   // inside "…" these four still mean something
-                return v.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                    .replacingOccurrences(of: "$", with: "\\$").replacingOccurrences(of: "`", with: "\\`")
-            }
-            return IDE.shellWord(v)
-        }
+        // A command gets the values as shell variables, never as text in it: $(…) or a newline in a title can't run.
+        return quote ? ShellTemplate.fill(template, value) : ShellTemplate.substitute(template) { value($0) ?? "" }
     }
 
     static func text(_ v: JSONValue) -> String {

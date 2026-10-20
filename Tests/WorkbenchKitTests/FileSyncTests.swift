@@ -14,4 +14,6 @@ import WorkbenchKit
     #expect(FileSync.diskChanged(buffer: "b", saved: "a", disk: .present("agent")) == .conflict("agent"))
     #expect(FileSync.diskChanged(buffer: "b", saved: "a", disk: .present("a")) == .none)
     #expect(FileSync.diskChanged(buffer: "a", saved: "a", disk: .missing) == .missing)
+    // Rewritten as something that isn't text: ⌘S reports a conflict, so this must ask too, or ⌘S does nothing at all.
+    #expect(FileSync.diskChanged(buffer: "b", saved: "a", disk: .present(nil)) == .conflict(""))
 }

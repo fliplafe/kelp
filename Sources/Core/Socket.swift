@@ -60,6 +60,15 @@ public enum Unix {
         return uid == getuid() || uid == 0
     }
 
+    /// The program on the other end of an accepted connection (its pid as of connecting), resolved: who is asking.
+    public static func peerExecutable(_ fd: Int32) -> String? {
+        var pid: pid_t = 0, len = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len) == 0, pid > 0 else { return nil }
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
+        return URL(fileURLWithPath: String(cString: buf)).resolvingSymlinksInPath().path
+    }
+
     /// Write all bytes, retrying on partial writes. Returns false if the peer is gone.
     @discardableResult
     public static func writeAll(_ fd: Int32, _ data: Data) -> Bool {

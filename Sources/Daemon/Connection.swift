@@ -13,7 +13,10 @@ final class Connection: @unchecked Sendable {   // queued/closing/closed under l
     /// A client this far behind isn't reading: it's hung up on rather than waited for.
     static let backlogLimit = 16 << 20
 
-    init(id: Int, fd: Int32) { self.id = id; self.fd = fd }
+    /// The program that connected (`Unix.peerExecutable`), for what only Kelp's window may do.
+    let peer: String?
+
+    init(id: Int, fd: Int32) { self.id = id; self.fd = fd; peer = Unix.peerExecutable(fd) }
 
     func send(_ d: Data) {
         let ok = lock.withLock { () -> Bool in

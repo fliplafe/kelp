@@ -65,6 +65,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Anything typed into it yet, by the user or by Kelp (a prompt): startup answers are only for what the agent asks
     /// before that. After it, a matching line is something the agent read or wrote, not its own dialog.
     private var typedYet = false
+    /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
+    private var pasteMode = false
     private var inputLine = ""
     private var sawFirstPrompt = false
     /// Agents with hooks report their state themselves; the others may through OSC 7501 (ProgramStatus).
@@ -157,6 +159,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
         if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
+        if let on = text.range(of: "\u{1B}[?2004", options: .backwards), let mode = text[on.upperBound...].first { pasteMode = mode == "h" }
         var answer: String?
         if !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 {
             let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
@@ -271,7 +274,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         lock.unlock()
         if let c { onStatus?(c) }
-        if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }) }
+        if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }, paste: true) }   // a task's text: never keys
     }
 
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
@@ -319,10 +322,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompt = p; promptIsDraft = draft; sawFirstPrompt = true; lock.unlock() }
 
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
-    func send(_ text: String, enter: Bool) {
-        lock.withLock { detector.input(); typedYet = true }
+    /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is
+    /// text, not a mode or command.
+    /// Without it one line is typed, so `kelp send <id> /compact` still runs the command.
+    func send(_ text: String, enter: Bool, paste: Bool = false) {
+        let pasteMode = lock.withLock { detector.input(); typedYet = true; return pasteMode }
         let text = Self.typeable(text)
-        let body = text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
+        // A program that never asked for pastes (a plain line reader) has no modes to trip: it gets the text as is.
+        let body = (paste && pasteMode) || text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         pty.write(Data(body.utf8))
         if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
     }

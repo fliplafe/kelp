@@ -146,10 +146,34 @@ import WorkbenchKit
     let py = try JSONDecoder().decode(LanguageSpec.self, from: Data(json.utf8))
     #expect(py == LanguageSpec(id: "python", extensions: ["py"], run: "python3 ${file}", test: "pytest ${file} -k ${symbol}", format: "ruff format -"))
     #expect(py[command: "test"] == "pytest ${file} -k ${symbol}" && py[command: "lint"] == nil)
-    // Values are one shell word each, spaces and quotes included; unknown names stay for the shell.
+    // Values arrive as one argument each, spaces and quotes included; unknown names stay for the shell.
     let vars = ["file": "/My Code/it's.py", "symbol": "", "line": "12"]
-    #expect(LanguageSpec.expand("python3 ${file} -k ${symbol} # ${line} ${HOME} ${", vars)
-            == #"python3 '/My Code/it'\''s.py' -k '' # '12' ${HOME} ${"#)
+    let cmd = LanguageSpec.expand("printf '<%s>' ${file} -k ${symbol} ${HOME} '${line}' # ${line}", vars)
+    #expect(try sh("/bin/zsh", cmd) == "</My Code/it's.py><-k><><\(NSHomeDirectory())><12>")
+}
+
+private func sh(_ shell: String, _ cmd: String) throws -> String {
+    let p = Process(); p.executableURL = URL(fileURLWithPath: shell); p.arguments = ["-c", cmd]
+    let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+    try p.run(); p.waitUntilExit()
+    return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+}
+
+/// Wherever a template puts a placeholder (bare, in quotes, in $(…), in a comment, in a here-document), a value with
+/// $(…), backticks, quotes or a newline never runs, in zsh (Shell.run) or sh.
+@Test func aValueInAShellTemplateNeverRuns() throws {
+    let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
+    let evil = "x\nEOF\ntouch \(marker)\n$(touch \(marker)) `touch \(marker)`; touch \(marker) \" ' \\ end"
+    let templates = ["printf %s ${v}", "printf %s \"${v}\"", "printf %s '${v}'", "printf %s \"PR: ${v}!\"",
+                     "printf %s \"$(printf %s ${v})\"", "printf %s ${v}#${v}", "# don't\nprintf %s ${v}", "true # ${v}",
+                     "cat <<EOF\n${v}\nEOF", "cat <<'EOF'\n${v}\nEOF", "cat <<-EOF\n${v}\nEOF"]
+    for shell in ["/bin/zsh", "/bin/sh"] {
+        for t in templates {
+            let printed = try sh(shell, ShellTemplate.fill(t) { $0 == "v" ? evil : nil })
+            #expect(!FileManager.default.fileExists(atPath: marker), "\(shell) ran from \(t.debugDescription)")
+            if !t.contains("#"), !t.contains("'EOF'") { #expect(printed.contains(evil), "\(shell) \(t.debugDescription): \(printed.debugDescription)") }
+        }
+    }
 }
 
 @Test func wordAtCursor() {

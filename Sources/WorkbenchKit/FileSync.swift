@@ -34,6 +34,7 @@ public enum FileSync {
         switch disk {
         case .missing: return .missing
         case .present(let text?) where text != saved: return buffer == saved ? .follow(text) : .conflict(text)
+        case .present(nil): return .conflict("")   // no longer text (another encoding, binary): ask, as save does
         case .present: return .none
         }
     }

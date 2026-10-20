@@ -38,6 +38,13 @@ extension Daemon {
         return c.trusted ? c.config : RepoConfig()
     }
 
+    /// KelpApp beside this daemon (one bundle, or one build folder); KELP_APP_EXECUTABLE stands in for it in tests.
+    static var appExecutable: String {
+        if let e = ProcessInfo.processInfo.environment["KELP_APP_EXECUTABLE"] { return URL(fileURLWithPath: e).resolvingSymlinksInPath().path }
+        let me = Bundle.main.executableURL?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        return me.deletingLastPathComponent().appendingPathComponent("KelpApp").resolvingSymlinksInPath().path
+    }
+
     func handleScripts(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
         switch method {
         case "scripts.list":   // {worktreeId} → {scripts: [{name, command}], setup, trusted, file}
@@ -54,11 +61,10 @@ extension Daemon {
             let repo = try store.repo(w.repoId)?.path ?? w.path
             let now = Self.digest(configText(repo))
             // {digest} from scripts.list: the file changed since it was shown (an agent, a pull), so that isn't what was trusted.
-            // Only from Kelp's window (the connection that publishes its UI), with the digest of the text it showed. Agents and
-            // scripts reach this socket too (KELP_SOCKET); this keeps the CLI, an agent's casual call or a repository's
-            // script from trusting a .kelp.yaml nobody looked at. It is not a wall: a process of the same user can still
-            // imitate the app; macOS gives no way to tell them apart over a Unix socket.
-            guard lock.withLock({ appConns.contains(conn) }) else {
+            // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
+            // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
+            // program. (The limit: a process of this user can still drive the app itself, e.g. with synthetic key events.)
+            guard let peer = lock.withLock({ conns[conn]?.peer }), peer == Self.appExecutable else {
                 throw RPCError.invalidParams("Only Kelp's window can trust a project's commands: open the project there and run one.")
             }
             guard let shown = p["digest"]?.string else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
