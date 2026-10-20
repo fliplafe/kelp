@@ -195,11 +195,11 @@ extension Daemon {
             guard let ls = existing(try p.req("id")) else { return .null }
             return .obj(["turn": ls.lastTurn.flatMap { try? JSONValue.from($0) } ?? .null, "hasBase": .bool(ls.turnBase != nil)])
         case "session.contextWindow":   // how full the conversation is (Claude Code transcripts)
-            guard let t = existing(try p.req("id"))?.transcriptPath else { return .null }
-            return Self.contextUsage(transcript: URL(fileURLWithPath: t)).map { .obj(["used": .int($0.used), "window": .int($0.window)]) } ?? .null
+            guard let t = existing(try p.req("id")).flatMap(transcript(of:)), let c = Self.contextUsage(transcript: t) else { return .null }
+            return .obj(["used": .int(c.used), "window": .int(contextWindow(model: c.model, peak: c.peak))])
         case "session.lastReply":   // the agent's last message, from its transcript (Claude Code), for summaries
-            guard let t = existing(try p.req("id"))?.transcriptPath else { return .null }
-            return Self.lastReply(transcript: URL(fileURLWithPath: t)).map { .string($0) } ?? .null
+            guard let t = existing(try p.req("id")).flatMap(transcript(of:)) else { return .null }
+            return Self.lastReply(transcript: t).map { .string($0) } ?? .null
 
         // MARK: git
         case "git.status": return try .from(Git.status(cwd(forWorktree: p.req("id")).path))
@@ -293,21 +293,28 @@ extension Daemon {
 }
 
 extension Daemon {
-    /// Tokens in the context of a Claude Code conversation: the last reply's input (with cache) plus its output.
-    /// Limit: the window is guessed (200k, or 1M once more than 200k is in use); the transcript doesn't name it.
-    static func contextUsage(transcript url: URL) -> (used: Int, window: Int)? {
+    /// Tokens in the context of a Claude Code conversation: the last reply's input (with cache) plus its output, or what a
+    /// newer compaction left. `peak` is the most it held (a compaction's starting size counts), for telling the window.
+    static func contextUsage(transcript url: URL) -> (used: Int, peak: Int, model: String)? {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }
         let size = (try? h.seekToEnd()) ?? 0
-        try? h.seek(toOffset: size > 262_144 ? size - 262_144 : 0)
+        try? h.seek(toOffset: size > 1 << 20 ? size - (1 << 20) : 0)   // a turn's tool results can be hundreds of KB
         guard let data = try? h.readToEnd() else { return nil }
+        var compacted: (pre: Int, post: Int)?
         for line in data.split(separator: 0x0A).reversed() {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["type"] as? String == "assistant",
-                  let u = (o["message"] as? [String: Any])?["usage"] as? [String: Any] else { continue }
+            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["isSidechain"] as? Bool != true else { continue }
+            if compacted == nil, o["subtype"] as? String == "compact_boundary" {
+                // Without postTokens (older Claude Code) what's left is unknown until the next reply.
+                guard let m = o["compactMetadata"] as? [String: Any], let post = m["postTokens"] as? Int else { return nil }
+                compacted = (m["preTokens"] as? Int ?? 0, post); continue
+            }
+            guard o["type"] as? String == "assistant", let m = o["message"] as? [String: Any], let u = m["usage"] as? [String: Any] else { continue }
             let used = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"].reduce(0) { $0 + ((u[$1] as? Int) ?? 0) }
-            return used > 0 ? (used, used > 200_000 ? 1_000_000 : 200_000) : nil
+            guard used > 0 else { continue }   // API errors and other synthetic replies carry no usage
+            return (compacted?.post ?? used, max(used, compacted?.pre ?? 0), m["model"] as? String ?? "")
         }
-        return nil
+        return compacted.map { ($0.post, $0.pre, "") }
     }
 
     /// The text of the last assistant message in a Claude Code transcript (read from the file's tail).

@@ -16,6 +16,36 @@ extension Daemon {
         return (c, x)
     }
 
+    /// Where a Claude Code session writes its conversation: what its hooks said, else the id Kelp started or resumed it
+    /// with (a woken or restarted session has sent no hook yet, but its conversation is already there).
+    func transcript(of ls: LiveSession) -> URL? {
+        if let t = ls.transcriptPath { return URL(fileURLWithPath: t) }
+        let s = ls.snapshot, a = s.argv
+        guard s.agent == "claude", let i = a.lastIndex(where: { $0 == "--session-id" || $0 == "--resume" }), i + 1 < a.count else { return nil }
+        return agentRoots().claude.map { ClaudeHistory.folder(cwd: s.cwd, root: $0).appendingPathComponent(a[i + 1] + ".jsonl") }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Claude Code's window for `model`. Transcripts don't name it, so a model seen past 200k tokens here (in the newest
+    /// transcripts, then in any reading) has 1M and the rest 200k.
+    /// Limit: a 1M model that never went past 200k on this Mac reads as 200k until it does.
+    func contextWindow(model: String, peak: Int) -> Int {
+        var long = lock.withLock { longContextModels } ?? Self.longContextModels(in: agentRoots().claude)
+        if peak > 200_000 { long.insert(model) }
+        lock.withLock { longContextModels = long }
+        return long.contains(model) ? 1_000_000 : 200_000
+    }
+
+    /// Models past 200k tokens at the end of the `count` newest transcripts.
+    static func longContextModels(in roots: [URL], count: Int = 20) -> Set<String> {
+        let key = URLResourceKey.contentModificationDateKey
+        let files = roots.flatMap { (FileManager.default.enumerator(at: $0, includingPropertiesForKeys: [key])?.allObjects as? [URL]) ?? [] }
+            .filter { $0.pathExtension == "jsonl" }
+            .map { ($0, (try? $0.resourceValues(forKeys: [key]).contentModificationDate) ?? .distantPast) }
+        let newest = files.sorted { $0.1 > $1.1 }.prefix(count).map(\.0)
+        return Set(newest.compactMap { contextUsage(transcript: $0) }.filter { $0.peak > 200_000 }.map(\.model))
+    }
+
     static func json(_ b: ClaudeUsage.Block) -> JSONValue {
         .obj(["start": .double(b.start.timeIntervalSince1970), "end": .double(b.end.timeIntervalSince1970),
               "input": .int(b.tokens.input), "output": .int(b.tokens.output), "cacheWrite": .int(b.tokens.cacheWrite), "cacheRead": .int(b.tokens.cacheRead),

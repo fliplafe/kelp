@@ -225,6 +225,22 @@ final class NoteBox: @unchecked Sendable {
     #expect(Daemon.lastReply(transcript: f) == "Fixed the parser tests.")
 }
 
+/// The context ring reads the last real reply, skips subagents and API errors, and drops to what a compaction left.
+@Test func contextUsageFromTranscript() throws {
+    let f = tmp().appendingPathComponent("t.jsonl")
+    try FileManager.default.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true)
+    func write(_ lines: [String]) throws { try (lines.joined(separator: "\n") + "\n").write(to: f, atomically: true, encoding: .utf8) }
+    let reply = #"{"type":"assistant","message":{"model":"m","usage":{"input_tokens":2,"cache_read_input_tokens":250000,"cache_creation_input_tokens":8,"output_tokens":90}}}"#
+    try write([reply,
+               #"{"type":"assistant","isSidechain":true,"message":{"model":"m","usage":{"input_tokens":5}}}"#,
+               #"{"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}"#])
+    let c = try #require(Daemon.contextUsage(transcript: f))
+    #expect(c.used == 250_100 && c.peak == 250_100 && c.model == "m")
+    try write([reply, #"{"type":"system","subtype":"compact_boundary","compactMetadata":{"preTokens":260000,"postTokens":40000}}"#])
+    let after = try #require(Daemon.contextUsage(transcript: f))
+    #expect(after.used == 40_000 && after.peak == 260_000 && after.model == "m")
+}
+
 /// OSC 7501: a hookless agent probes, the daemon answers as the terminal, and its own report sets the status.
 @Test func programStatusFromTheAgent() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }

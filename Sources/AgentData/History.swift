@@ -35,11 +35,15 @@ public enum ClaudeHistory {
     /// Interactive conversations started in `cwd`; Claude names the folder after the real path with every
     /// non-alphanumeric as "-". `claude -p` runs (entrypoint sdk-…) are left out: no terminal owns them.
     public static func sessions(cwd: String, root: URL = defaultRoot) -> [AgentSessionInfo] {
+        ((try? FileManager.default.contentsOfDirectory(at: folder(cwd: cwd, root: root), includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "jsonl" && !isScripted($0) }.compactMap(parse)
+    }
+
+    /// The folder of `cwd`'s conversations under `root`.
+    public static func folder(cwd: String, root: URL = defaultRoot) -> URL {
         // realpath, not resolvingSymlinksInPath: that one strips "/private", and Claude keeps it (/tmp → /private/tmp).
         let real = realpath(cwd, nil).map { p in defer { free(p) }; return String(cString: p) } ?? cwd
-        let dir = root.appendingPathComponent(String(real.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }))
-        return ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.pathExtension == "jsonl" && !isScripted($0) }.compactMap(parse)
+        return root.appendingPathComponent(String(real.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }))
     }
 
     private static func isScripted(_ url: URL) -> Bool {

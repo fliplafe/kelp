@@ -14,7 +14,7 @@ final class AppModel {
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var sessions: [Session] = []
-    /// How full each agent's conversation is (0…1), read when a turn ends (Claude Code transcripts).
+    /// How full each agent's conversation is (0…1), read when its status changes and while it works (Claude Code transcripts).
     var contextShare: [String: Double] = [:]
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
@@ -81,6 +81,7 @@ final class AppModel {
         await SettingsStore.shared.load()
         await refresh()
         publishUIState()
+        watchContext()
     }
 
     private var restartAttempted = false
@@ -150,7 +151,7 @@ final class AppModel {
             NotificationCenter.default.post(name: .kelpSession, object: s.id)
             onSessionStatus.forEach { $0(s, old) }
             onChange.forEach { $0() }
-            if old?.status != s.status, s.status == .done || s.status == .waiting, s.agent != "shell" { readContext(s.id) }
+            if old?.status != s.status, s.agent != "shell" { readContext(s.id) }
         case "event.devserver":
             if let w = p["worktree"]?.string, let u = p["url"]?.string {
                 NotificationCenter.default.post(name: .kelpDevServerURL, object: nil, userInfo: ["worktree": w, "url": u])
@@ -167,14 +168,28 @@ final class AppModel {
         }
     }
 
+    /// No answer (not Claude Code, ended, just compacted by an older Claude Code) takes the ring away.
     private func readContext(_ id: String) {
         Task {
-            guard let u = try? await client?.call("session.contextWindow", .obj(["id": .string(id)])),
-                  let used = u["used"]?.int, let window = u["window"]?.int, window > 0 else { return }
-            let share = Double(used) / Double(window)
-            if abs((contextShare[id] ?? -1) - share) > 0.01 { contextShare[id] = share; onChange.forEach { $0() } }
+            guard let u = try? await client?.call("session.contextWindow", .obj(["id": .string(id)])) else { return }
+            let share = u["used"]?.int.flatMap { used in u["window"]?.int.flatMap { $0 > 0 ? Double(used) / Double($0) : nil } }
+            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share; onChange.forEach { $0() } }
         }
     }
+
+    /// Agents already running when the app opens, and every working one now and then: a long turn fills the context too.
+    private func watchContext() {
+        guard contextWatch == nil else { return }
+        contextWatch = Task { [weak self] in
+            var first = true
+            while !Task.isCancelled, let self {
+                for s in sessions where s.agent != "shell" && s.status != .exited && (first || s.status == .working) { readContext(s.id) }
+                first = false
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+    }
+    @ObservationIgnored private var contextWatch: Task<Void, Never>?
 
     // MARK: calls
 

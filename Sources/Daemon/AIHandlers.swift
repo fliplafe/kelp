@@ -135,7 +135,7 @@ extension Daemon {
     func handoffFile(_ s: Session, full: Bool) throws -> URL {
         let limit = full ? 400_000 : 40_000
         let body: String
-        if let t = existing(s.id)?.transcriptPath, let talk = Self.conversation(transcript: URL(fileURLWithPath: t), limit: limit), !talk.isEmpty {
+        if let t = existing(s.id).flatMap(transcript(of:)), let talk = Self.conversation(transcript: t, limit: limit), !talk.isEmpty {
             body = talk
         } else {
             let d = try liveSessionOrLog(s.id, bytes: limit)

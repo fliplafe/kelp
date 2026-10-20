@@ -201,7 +201,7 @@ private final class TabButton: NSControl, NSDraggingSource {
     func set(_ it: TabStrip.Item, selected: Bool, groupFocused: Bool) {
         item = it; self.selected = selected; self.groupFocused = groupFocused
         title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread
-        meter.share = it.meter.flatMap { $0 >= 0.75 ? $0 : nil }   // only when it's worth a look
+        meter.share = it.meter
         toolTip = it.toolTip ?? it.title
         setAccessibilityLabel(it.title); setAccessibilityValue(selected)
         updateLook()
@@ -248,7 +248,7 @@ private final class TabButton: NSControl, NSDraggingSource {
     nonisolated func draggingSession(_ s: NSDraggingSession, sourceOperationMaskFor c: NSDraggingContext) -> NSDragOperation { .move }
 }
 
-/// A small ring: how full an agent's conversation is (amber from 75 %, red from 90 %).
+/// A small ring: how full an agent's conversation is (gray, amber from 75 %, red from 90 %).
 @MainActor
 final class ContextMeter: NSView {
     private let track = CAShapeLayer(), fill = CAShapeLayer()
@@ -270,7 +270,7 @@ final class ContextMeter: NSView {
         toolTip = String(localized: "Context \(Int(share * 100)) % full")
         effectiveAppearance.performAsCurrentDrawingAppearance {
             track.strokeColor = NSColor.tertiaryLabelColor.cgColor
-            fill.strokeColor = (share >= 0.9 ? NSColor.systemRed : .systemOrange).cgColor
+            fill.strokeColor = (share >= 0.9 ? NSColor.systemRed : share >= 0.75 ? .systemOrange : .secondaryLabelColor).cgColor
         }
         fill.strokeEnd = min(1, share)
     }

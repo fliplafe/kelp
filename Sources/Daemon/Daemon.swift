@@ -22,6 +22,8 @@ public final class Daemon: @unchecked Sendable {
     var sleepAssertion: UInt32 = 0
     var usageCache: (at: Date, value: JSONValue)?
     var prCache: [String: (at: Date, value: JSONValue)] = [:]   // "path@branch" → its PR (github.branchPR)
+    /// Claude models with the 1M context window (contextWindow); nil until first asked.
+    var longContextModels: Set<String>?
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
     let usageIndex: UsageIndex
     var rawConns = Set<Int>()
