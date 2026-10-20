@@ -86,11 +86,11 @@ extension Daemon {
         let exited = DispatchSemaphore(value: 0), read = DispatchSemaphore(value: 0)
         p.terminationHandler = { _ in exited.signal() }
         guard (try? p.run()) != nil else { return nil }
-        nonisolated(unsafe) var data = Data()
-        Thread.detachNewThread { data = out.fileHandleForReading.readDataToEndOfFile(); read.signal() }
+        let data = Locked(Data())
+        Thread.detachNewThread { let d = out.fileHandleForReading.readDataToEndOfFile(); data.withLock { $0 = d }; read.signal() }
         // A child that keeps the pipe open past the exit (a daemon it started) doesn't hold this up either.
         guard exited.wait(timeout: .now() + timeout) == .success, read.wait(timeout: .now() + 1) == .success else { p.terminate(); return nil }
-        return p.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
+        return p.terminationStatus == 0 ? String(decoding: data.current, as: UTF8.self) : nil
     }
 
     /// "claude 2.1.3 (Claude Code)" → "2.1.3".

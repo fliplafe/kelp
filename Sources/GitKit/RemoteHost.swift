@@ -14,25 +14,23 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     /// Under a lock: every `Daemon` sets it when it starts, and tests start several at once (a String written from two
     /// threads at the same time corrupts memory).
     public static var controlDir: String {
-        get { controlLock.withLock { controlPath } }
-        set { controlLock.withLock { controlPath = newValue } }
+        get { controlPath.current }
+        set { controlPath.withLock { $0 = newValue } }
     }
-    private static let controlLock = NSLock()
-    nonisolated(unsafe) private static var controlPath = NSTemporaryDirectory()
+    private static let controlPath = Locked(NSTemporaryDirectory())
     /// `ssh` (tests use a stand-in that runs the command locally).
     public static let ssh = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh"
 
     /// Where Kelp keeps remote projects' folders (`<KELP_HOME>/remote`). A `.kelp-remote` anywhere else — say, committed
     /// to a repository someone clones — is just a file: it must not send that project's git, agents and terminals to
     /// a host it names.
-    nonisolated(unsafe) private static var trusted: Set<String> = []
-    private static let trustedLock = NSLock()
-    public static func trust(_ dir: URL) { trustedLock.withLock { _ = trusted.insert(dir.standardizedFileURL.path) } }
+    private static let trusted = Locked<Set<String>>([])
+    public static func trust(_ dir: URL) { trusted.withLock { _ = $0.insert(dir.standardizedFileURL.path) } }
 
     /// The remote a project folder stands for (its own folder only: a workspace is that folder).
     public static func of(_ dir: String) -> RemoteHost? {
         let path = URL(fileURLWithPath: dir).standardizedFileURL.path
-        let roots = trustedLock.withLock { trusted }.union([Paths.root.appendingPathComponent("remote").standardizedFileURL.path])
+        let roots = trusted.current.union([Paths.root.appendingPathComponent("remote").standardizedFileURL.path])
         guard roots.contains(where: { path.hasPrefix($0 + "/") }), let d = FileManager.default.contents(atPath: path + "/" + marker),
               let r = try? JSONDecoder().decode(RemoteHost.self, from: d), Self.isHost(r.host) else { return nil }
         return r

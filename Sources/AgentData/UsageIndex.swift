@@ -147,9 +147,9 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
     }
 
     static let assistant = Data("\"type\":\"assistant\"".utf8)
-    nonisolated(unsafe) static let iso: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
-    nonisolated(unsafe) static let local: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }()
-    static func parseTime(_ s: String) -> TimeInterval? { (iso.date(from: s) ?? ISO8601DateFormatter().date(from: s))?.timeIntervalSince1970 }
-    static func day(_ t: TimeInterval) -> String { local.string(from: Date(timeIntervalSince1970: t)) }
-    static func day(_ d: Date) -> String { local.string(from: d) }
+    // Format styles are values (Sendable): shared freely, unlike the formatters these replace.
+    static let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    static func parseTime(_ s: String) -> TimeInterval? { ((try? iso.parse(s)) ?? (try? Date.ISO8601FormatStyle().parse(s)))?.timeIntervalSince1970 }
+    static func day(_ t: TimeInterval) -> String { day(Date(timeIntervalSince1970: t)) }
+    static func day(_ d: Date) -> String { Date.ISO8601FormatStyle(timeZone: .current).year().month().day().format(d) }   // local "yyyy-MM-dd"
 }

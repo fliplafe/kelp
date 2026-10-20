@@ -242,3 +242,12 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     #expect(rows.reduce(0) { $0 + $1.tally.tokens.output } == 12)
     #expect(rows.first?.cwd == "/p" && rows.first?.model == "claude-sonnet-4-5")
 }
+
+@Test func timesAndDaysReadTheWayTranscriptsWriteThem() throws {
+    let a = try #require(UsageIndex.parseTime("2026-10-20T10:15:30.250Z")), b = try #require(UsageIndex.parseTime("2026-10-20T10:15:30Z"))
+    #expect(abs(a - b - 0.25) < 0.001)   // with and without fractional seconds
+    #expect(UsageIndex.parseTime("not a time") == nil)
+    var c = Calendar.current; c.timeZone = .current
+    let noon = try #require(c.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 12)))
+    #expect(UsageIndex.day(noon) == "2026-03-07")   // the local day, zero-padded
+}

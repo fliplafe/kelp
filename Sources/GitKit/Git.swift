@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 public struct GitError: Error, CustomStringConvertible, Sendable {
     public var args: [String]; public var status: Int32; public var stderr: String
@@ -61,13 +62,13 @@ public enum Git {
         }
         // Drain both pipes concurrently to avoid deadlock on large output. stderr gets a thread of its own: GCD's global
         // queue gets none while every cooperative thread is blocked (callers on the Swift pool, parallel tests) — a hang.
-        nonisolated(unsafe) var errData = Data()
+        let errBox = Locked(Data())
         let g = DispatchGroup(); g.enter()
-        Thread.detachNewThread { errData = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+        Thread.detachNewThread { let d = err.fileHandleForReading.readDataToEndOfFile(); errBox.withLock { $0 = d }; g.leave() }
         let outData = out.fileHandleForReading.readDataToEndOfFile()
         g.wait(); p.waitUntilExit()
         guard ok.contains(p.terminationStatus) else {
-            throw GitError(args: args, status: p.terminationStatus, stderr: String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+            throw GitError(args: args, status: p.terminationStatus, stderr: String(decoding: errBox.current, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return outData
     }
