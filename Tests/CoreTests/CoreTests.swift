@@ -113,3 +113,15 @@ import Testing
     #expect(Unix.peerIsUs(peer))
     #expect(!Unix.peerIsUs(-1))   // not a connection at all: refused, not trusted
 }
+
+@Test func keychainSetUpdatesInPlaceAndDeleteRemoves() throws {
+    let account = "kelp-test-\(UUID().uuidString)"
+    defer { Keychain.delete(account) }
+    #expect(Keychain.get(account) == nil)
+    try Keychain.set("one", account: account)
+    #expect(Keychain.get(account) == "one")
+    try Keychain.set("two", account: account)   // the second set updates, it doesn't fail on the existing item
+    #expect(Keychain.get(account) == "two")
+    Keychain.delete(account)
+    #expect(Keychain.get(account) == nil)
+}

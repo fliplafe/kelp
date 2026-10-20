@@ -5,12 +5,16 @@ import Security
 public enum Keychain {
     static let service = "dev.krill"   // from when the app was called Krill; kept so saved keys stay readable
 
+    /// Updates in place, so a failure never leaves the account without its old value (delete-then-add would).
     public static func set(_ value: String, account: String) throws {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-        SecItemDelete(q as CFDictionary)
-        var add = q; add[kSecValueData as String] = Data(value.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        let s = SecItemAdd(add as CFDictionary, nil)
+        let data = Data(value.utf8)
+        var s = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
+        if s == errSecItemNotFound {
+            var add = q; add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            s = SecItemAdd(add as CFDictionary, nil)
+        }
         guard s == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(s)) }
     }
 
