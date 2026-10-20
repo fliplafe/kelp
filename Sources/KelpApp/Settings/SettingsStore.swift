@@ -24,9 +24,12 @@ final class SettingsStore {
 
     func apply(_ o: [String: JSONValue]) {
         guard o != values else { return }
+        // The skills only depend on their switches: don't rewrite their files (on main) for every other setting.
+        let skills = { (d: [String: JSONValue]) in d.filter { $0.key.hasPrefix("agents.skills.") } }
+        let skillsChanged = values.isEmpty || skills(o) != skills(values)
         values = o
         ThemeManager.shared.apply()
-        AgentSkills.write()
+        if skillsChanged { AgentSkills.write() }
         if !ExtensionRegistry.shared.extensions.isEmpty, ExtensionRegistry.disabled(o["extensions.disabled"]) != ExtensionRegistry.shared.disabledLoaded {
             ExtensionRegistry.shared.reload()
         }
@@ -60,7 +63,16 @@ final class SettingsStore {
         if local {
             UserDefaults.standard.set(try? JSONEncoder().encode(JSONValue.object(values)), forKey: "settings.local"); return
         }
-        Task { _ = try? await AppModel.shared.client?.call("settings.set", .obj(["key": .string(key), "value": v ?? .null])) }
+        Task {
+            // Not saved: say so and show what settings.json really holds again, instead of a value that reverts later.
+            do {
+                guard let c = AppModel.shared.client else { throw RPCError.internalError(String(localized: "Kelp's background service isn't running.")) }
+                _ = try await c.call("settings.set", .obj(["key": .string(key), "value": v ?? .null]))
+            } catch {
+                Banner.show(String(localized: "Couldn't change “\(key)”: \((error as? RPCError)?.message ?? error.localizedDescription)"), style: .error)
+                await load()
+            }
+        }
     }
 
     /// Preferences the app used to keep in UserDefaults move to settings.json once.

@@ -34,7 +34,7 @@ struct AgentsSettings: View {
                     }
                 }
                 if !updates.isEmpty {
-                    Text(updates.count == 1 ? "1 update available" : String(localized: "\(updates.count) updates available"))
+                    Text(updates.count == 1 ? String(localized: "1 update available") : String(localized: "\(updates.count) updates available"))
                         .font(.caption).foregroundStyle(.orange).padding(8)
                 }
             }
@@ -53,7 +53,7 @@ struct AgentsSettings: View {
                     Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id); reload() } }
                     Spacer()
                     if saved { Text("Saved").foregroundStyle(.secondary) }
-                    Button("Save") { save() }.keyboardShortcut(.defaultAction)
+                    Button("Save") { Task { await save() } }.keyboardShortcut(.defaultAction)
                 }
                 Text("Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.kelp/agents — add a file to add any CLI agent.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -139,7 +139,8 @@ struct AgentsSettings: View {
         env = m.env.map { "\($0)=\($1)" }.sorted().joined(separator: "\n"); saved = false
     }
     private func reload() { agents = AgentManifest.load(); load() }
-    private func save() {
+    /// "Saved" only once it is: a secret the keychain refused, or a file that couldn't be written, says why instead.
+    private func save() async {
         guard var m = current else { return }
         m.command = command; m.args = args.split(separator: " ").map(String.init)
         var pairs = Dictionary(env.split(separator: "\n").compactMap { l -> (String, String)? in
@@ -148,16 +149,17 @@ struct AgentsSettings: View {
         }, uniquingKeysWith: { $1 })
         // Secrets: the daemon puts them in the keychain; the file only says where they are.
         for (k, v) in pairs where AgentManifest.isSecret(k) && v != AgentManifest.keychainValue && !v.isEmpty {
-            let agent = m.id
-            Task { await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(agent), "key": .string(k), "value": .string(v)])) }
+            guard await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(m.id), "key": .string(k), "value": .string(v)])) != nil else { return }
             pairs[k] = AgentManifest.keychainValue
         }
         for k in m.env.keys where pairs[k] == nil && m.env[k] == AgentManifest.keychainValue {
-            let agent = m.id
-            Task { await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(agent), "key": .string(k)])) }   // removed: forget it
+            await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(m.id), "key": .string(k)]))   // removed: forget it
         }
         m.env = pairs.filter { !$0.value.isEmpty }   // a preset's blank line until it's filled in
-        try? AgentManifest.saveOverride(m); reload(); saved = true
+        do { try AgentManifest.saveOverride(m) } catch {
+            Banner.show(String(localized: "Couldn't save \(m.name): \(error.localizedDescription)"), style: .error); return
+        }
+        reload(); saved = true
         AppModel.shared.agents = AgentManifest.load()
         AgentAvailability.shared.refresh(force: true)
     }

@@ -78,13 +78,13 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         log.isEditable = false; log.font = .monospacedSystemFont(ofSize: 10, weight: .regular); log.textContainerInset = NSSize(width: 6, height: 6)
         log.isVerticallyResizable = true; log.autoresizingMask = .width; log.drawsBackground = false
         let logScroll = NSScrollView(); logScroll.documentView = log; logScroll.hasVerticalScroller = true; logScroll.drawsBackground = false
-        let copy = textButton("Copy Log") { [weak self] in
+        let copy = textButton(String(localized: "Copy Log")) { [weak self] in
             guard let self else { return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(shownLog, forType: .string); Banner.show(String(localized: "Log copied"))
         }
-        let fix = textButton("Ask Agent to Fix") { [weak self] in self?.askAgent() }
-        let rerun = textButton("Re-run Failed") { [weak self] in self?.rerun() }
-        let web = textButton("Open in Browser") { [weak self] in if let u = self?.shownJob?.job.url { Workbench.open(u) } }
+        let fix = textButton(String(localized: "Ask Agent to Fix")) { [weak self] in self?.askAgent() }
+        let rerun = textButton(String(localized: "Re-run Failed")) { [weak self] in self?.rerun() }
+        let web = textButton(String(localized: "Open in Browser")) { [weak self] in if let u = self?.shownJob?.job.url { Workbench.open(u) } }
         [copy, fix, rerun, web].forEach { logBar.addArrangedSubview($0) }
         logBar.spacing = 6; logBar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         let bottom = NSStackView(views: [logBar, logScroll]); bottom.orientation = .vertical; bottom.spacing = 0
@@ -105,7 +105,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
-        track { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload() }
     }
 
     private func button(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
@@ -261,7 +261,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     }
     func outlineView(_ o: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         guard let i = item as? Item else { return runs[index] }
-        return i.children?[index] ?? Item(.step(.init(name: "Loading…", status: "queued", conclusion: nil)))
+        return i.children?[index] ?? Item(.step(.init(name: String(localized: "Loading…"), status: "queued", conclusion: nil)))
     }
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool {
         guard let i = item as? Item else { return false }
@@ -347,6 +347,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     static func ago(_ iso: String) -> String {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        return d.map { shortAgo($0) + " ago" } ?? ""
+        guard let d else { return "" }
+        return Date().timeIntervalSince(d) < 60 ? shortAgo(d) : String(localized: "\(shortAgo(d)) ago")   // "now", not "now ago"
     }
 }

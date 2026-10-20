@@ -9,6 +9,7 @@ import Core
 final class NotebookTab: NSViewController {
     let url: URL, path: String, worktreeId: String?
     private let web = WKWebView()
+    private let links = PreviewLinks()
     private let status = NSTextField(labelWithString: "")
     var currentSession: () -> String? = { nil }
 
@@ -27,13 +28,16 @@ final class NotebookTab: NSViewController {
         let bar = NSStackView(views: [b(String(localized: "Run All"), "play.fill", #selector(runAll)), b(String(localized: "Open Kernel"), "server.rack", #selector(openKernel)),
                                       b(String(localized: "Ask Agent"), "text.bubble", #selector(askAgent)), NSView(), status])
         bar.spacing = 6; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        web.navigationDelegate = links
         view = pinned(bar: bar, body: web)
         reload()
     }
 
     func reload() {
         guard let d = FileManager.default.contents(atPath: url.path), let body = NotebookHTML.render(d) else {
-            web.loadHTMLString("<p style='font:13px -apple-system;color:#888;padding:20px'>This notebook can't be read (is it valid nbformat 4 JSON?).</p>", baseURL: nil); return
+            let why = String(localized: "This notebook can't be read (is it valid nbformat 4 JSON?).")
+            web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>", baseURL: nil)
+            return
         }
         let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         web.loadHTMLString(MarkdownHTML.page(body: body, baseURL: url.deletingLastPathComponent(), dark: dark), baseURL: url.deletingLastPathComponent())
@@ -53,9 +57,16 @@ final class NotebookTab: NSViewController {
             p.arguments = ["nbconvert", "--to", "notebook", "--execute", "--inplace", file.path]
             p.currentDirectoryURL = file.deletingLastPathComponent()
             let err = Pipe(); p.standardError = err; p.standardOutput = FileHandle.nullDevice
-            try? p.run(); p.waitUntilExit()
+            do { try p.run() } catch {
+                let why = error.localizedDescription
+                await MainActor.run { self.status.stringValue = String(localized: "Failed: \(why)") }; return
+            }
+            // Read while it runs: a long traceback fills the pipe and would block it before it could exit.
+            let errData = err.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
             let ok = p.terminationStatus == 0
-            let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+            // swiftlint:disable:next optional_data_string_conversion
+            let msg = String(decoding: errData, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
             await MainActor.run { self.status.stringValue = ok ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)"); self.reload() }
         }
     }

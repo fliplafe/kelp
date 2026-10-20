@@ -26,7 +26,6 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         steps.segmentCount = 2; steps.trackingMode = .momentary; steps.controlSize = .small; steps.segmentStyle = .separated
         steps.setImage(.symbol("chevron.up", String(localized: "Previous Match")), forSegment: 0); steps.setImage(.symbol("chevron.down", String(localized: "Next Match")), forSegment: 1)
         steps.setToolTip(String(localized: "Previous Match (⇧⌘G)"), forSegment: 0); steps.setToolTip(String(localized: "Next Match (⌘G)"), forSegment: 1)
-        steps.setToolTip(String(localized: "Previous Match (⇧⌘G)"), forSegment: 0); steps.setToolTip(String(localized: "Next Match (⌘G)"), forSegment: 1)
         steps.target = self; steps.action = #selector(stepped)
         let done = NSButton(title: String(localized: "Done"), target: self, action: #selector(close)); done.controlSize = .small; done.bezelStyle = .rounded
         let row = NSStackView(views: [field, count, steps, done]); row.spacing = 6

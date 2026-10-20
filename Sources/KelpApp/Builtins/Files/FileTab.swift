@@ -25,11 +25,15 @@ final class FileTab: SavableTab {
     private var watcher: FileWatcher?
     private let root: String
     private var pendingLine: Int?
+    /// Closed with Don't Save: deinit's autosave mustn't write it after all.
+    private var discarded = false
+    /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
+    private var gone = false { didSet { if gone != oldValue { onChange?() } } }
 
     var uri: String { TabURI.file(path) }
     var title: String { url.lastPathComponent }
-    var icon: NSImage? { FileIcon.image(url.lastPathComponent) }
-    var toolTip: String? { path }
+    var icon: NSImage? { gone ? .symbol("exclamationmark.triangle", String(localized: "Moved or deleted")) : FileIcon.image(url.lastPathComponent) }
+    var toolTip: String? { gone ? String(localized: "\(path) was moved or deleted. ⌘S asks before writing it there again.") : path }
 
     init(uri: String) {
         let (p, line) = TabURI.filePath(uri)
@@ -78,14 +82,17 @@ final class FileTab: SavableTab {
         }
         e.onChange = { [weak self] t in self?.edited(t) }
         startLSP()
+        // FSEvents reports real paths (/private/tmp…): resolve ours once, not for every path of every event.
+        let real = url.resolvingSymlinksInPath().path
         watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in
-            guard let self, paths.contains(where: { URL(fileURLWithPath: $0).resolvingSymlinksInPath() == self.url.resolvingSymlinksInPath() }) else { return }
-            self.diskChanged()
+            guard paths.contains(where: { $0 == real || $0 == p }) else { return }
+            self?.diskChanged()
         }
         track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
     }
     isolated deinit {
-        if Self.autosave { flush() }
+        // Dropped without close() (its workspace went away): autosave writes what's safe to write, never over a conflict.
+        if Self.autosave, !discarded, let e = editor, FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) == .write { write() }
         let path = path, root = root
         Task { await LSPManager.shared.client(root: root, path: path)?.close(path) }
     }
@@ -97,16 +104,23 @@ final class FileTab: SavableTab {
     func goTo(line: Int) { editor?.goTo(line: line); editor?.focus() }
     var selectedText: String? { editor?.selectedText }
     var selectedLines: ClosedRange<Int>? { editor?.selectedLines }
-    /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab.
+    /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab. With autosave
+    /// it only asks when writing isn't safe: an agent changed the file meanwhile, or it was moved or deleted.
     func close() -> Bool {
-        if Self.autosave { flush(); return true }
-        guard isEdited else { return true }
+        saveTask?.cancel()
+        guard let e = editor, isEdited else { return true }
+        let action = FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
+        if Self.autosave, action == .write, write() { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save the changes you made to “\(title)”?")
-        a.informativeText = String(localized: "Your changes will be lost if you don't save them.")
+        a.informativeText = switch action {
+        case .conflict: String(localized: "An agent changed it on disk meanwhile. Save replaces that version with yours.")
+        case .missing: String(localized: "It was moved or deleted. Save writes it at its old place again.")
+        default: String(localized: "Your changes will be lost if you don't save them.")
+        }
         a.addButton(withTitle: String(localized: "Save")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
         switch runAsSheet(a) {
-        case .alertFirstButtonReturn: return save()
-        case .alertThirdButtonReturn: return true
+        case .alertFirstButtonReturn: return write()
+        case .alertThirdButtonReturn: discarded = true; return true
         default: return false
         }
     }
@@ -118,7 +132,7 @@ final class FileTab: SavableTab {
             saveTask?.cancel()
             saveTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(600))
-                if !Task.isCancelled { self?.save() }
+                if !Task.isCancelled { self?.autosaveNow() }
             }
         }
         editedStateMayHaveChanged()
@@ -132,17 +146,44 @@ final class FileTab: SavableTab {
         }
     }
 
-    /// ⌘S. False when it couldn't be written (or an agent changed the file meanwhile and the user is asked).
+    private var disk: FileSync.Disk {
+        FileManager.default.fileExists(atPath: path) ? .present(try? String(contentsOf: url, encoding: .utf8)) : .missing
+    }
+
+    /// ⌘S. False when it couldn't be written, or the user is asked first (an agent changed the file meanwhile, or it's gone).
     @discardableResult
     func save() -> Bool {
-        guard let e = editor, e.text != lastSaved else { return true }
-        if let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved { diskChanged(); return false }   // don't clobber an agent's edit
-        do { try e.text.write(to: url, atomically: true, encoding: .utf8); lastSaved = e.text }
-        catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)")); return false }
+        guard let e = editor else { return true }
+        switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
+        case .write: return write()
+        case .conflict: diskChanged(); return false   // don't clobber an agent's edit
+        case .missing:   // moved or deleted (git mv, a rename): writing would bring the old file back beside the new one
+            let a = NSAlert(); a.messageText = String(localized: "“\(title)” was moved or deleted")
+            a.informativeText = String(localized: "Save writes it at its old place again.")
+            a.addButton(withTitle: String(localized: "Save Here")); a.addButton(withTitle: String(localized: "Cancel"))
+            return runAsSheet(a) == .alertFirstButtonReturn && write()
+        default: return true
+        }
+    }
+
+    /// Autosave writes only when that's safe; a conflict asks (if the tab is on screen), a missing file waits for ⌘S.
+    private func autosaveNow() {
+        guard let e = editor else { return }
+        switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
+        case .write: write()
+        case .conflict: diskChanged()
+        default: break
+        }
+    }
+
+    @discardableResult
+    private func write() -> Bool {
+        guard let e = editor else { return true }
+        do { try e.text.write(to: url, atomically: true, encoding: .utf8); lastSaved = e.text; gone = false }
+        catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error); return false }
         editedStateMayHaveChanged()
         return true
     }
-    private func flush() { saveTask?.cancel(); save() }
 
     private func editedStateMayHaveChanged() {
         guard isEdited != wasEdited else { return }
@@ -150,16 +191,28 @@ final class FileTab: SavableTab {
     }
 
     private func diskChanged() {
-        guard let e = editor, let disk = try? String(contentsOf: url, encoding: .utf8), disk != lastSaved else { return }
-        if e.text == lastSaved { e.setText(disk); lastSaved = disk; markdown?.textChanged(); editedStateMayHaveChanged(); return }   // no local edits: follow the disk
+        guard let e = editor else { return }
+        let d = disk
+        let wasGone = gone
+        gone = d == .missing
+        switch FileSync.diskChanged(buffer: e.text, saved: lastSaved, disk: d) {
+        case .follow(let text): e.setText(text); lastSaved = text; markdown?.textChanged(); editedStateMayHaveChanged()   // no local edits: follow the disk
+        case .conflict(let text): askKeepMine(disk: text)
+        case .missing where !wasGone && isEdited:
+            Banner.show(String(localized: "\(title) was moved or deleted. ⌘S asks before writing it there again."))
+        default: break
+        }
+    }
+
+    private func askKeepMine(disk: String) {
+        guard let e = editor, let w = view.window, w.attachedSheet == nil else { return }   // asked again on the next change or ⌘S
         let a = NSAlert(); a.messageText = String(localized: "\(title) changed on disk")
         a.informativeText = String(localized: "An agent edited this file while you had unsaved changes.")
         a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: String(localized: "Use Disk Version"))
-        guard let w = view.window else { return }
-        a.beginSheetModal(for: w) { [weak self] r in
+        // Holds the tab until answered: closing it meanwhile mustn't throw away the user's choice (or their edits).
+        a.beginSheetModal(for: w) { r in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                if r == .alertFirstButtonReturn { self.lastSaved = disk; self.save() } else { e.setText(disk); self.lastSaved = disk }
+                if r == .alertFirstButtonReturn { self.lastSaved = disk; self.write() } else { e.setText(disk); self.lastSaved = disk; self.markdown?.textChanged() }
                 self.editedStateMayHaveChanged()
             }
         }

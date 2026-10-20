@@ -21,8 +21,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     override func loadView() {
         source.addItems(withTitles: [String(localized: "Pull Requests"), String(localized: "Issues"), String(localized: "Linear"), String(localized: "Jira"), String(localized: "Projects")])
         source.selectItem(at: 0); source.target = self; source.action = #selector(sourceChanged)
-        filter.target = self; filter.action = #selector(reload)
-        let refresh = NSButton(image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: String(localized: "Refresh"))!, target: self, action: #selector(reload))
+        filter.target = self; filter.action = #selector(filterChanged)
+        let refresh = NSButton(image: .symbol("arrow.clockwise", String(localized: "Refresh")), target: self, action: #selector(reload))
         refresh.bezelStyle = .texturedRounded
         status.textColor = .secondaryLabelColor; status.font = .ui(11)
         status.lineBreakMode = .byWordWrapping; status.maximumNumberOfLines = 3; status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -62,7 +62,12 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     func show(worktree id: String?) {
         let r = AppModel.shared.worktree(id)?.repoId ?? AppModel.shared.repos.first?.id
-        if r != repoId { repoId = r; if isViewLoaded { reload(); nameSources() } }
+        guard r != repoId else { return }
+        repoId = r
+        guard isViewLoaded else { return }
+        // Another project: drop its rows now, or Merge on one before the reload would act on a PR number in this repo.
+        rows = []; table.reloadData(); showDetail(nil)
+        reload(); nameSources()
     }
 
     /// GitLab calls them merge requests.
@@ -77,8 +82,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     @objc private func sourceChanged() {
         filter.removeAllItems()
         switch source.indexOfSelectedItem {
-        case 0: filter.addItems(withTitles: ["Open", String(localized: "Mine"), String(localized: "Review requested")])
-        case 1: filter.addItems(withTitles: ["Open", String(localized: "Assigned to me")])
+        case 0: filter.addItems(withTitles: [String(localized: "All open"), String(localized: "Mine"), String(localized: "Review requested")])
+        case 1: filter.addItems(withTitles: [String(localized: "All open"), String(localized: "Assigned to me")])
         case 3: filter.addItems(withTitles: [String(localized: "My open issues"), String(localized: "Custom JQL…")])
         case 2:
             filter.addItems(withTitles: [String(localized: "My issues")])
@@ -92,12 +97,22 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         reload()
     }
 
+    /// Custom JQL asks for its query when picked, not on every refresh or workspace switch.
+    @objc private func filterChanged() {
+        if source.indexOfSelectedItem == 3, filter.indexOfSelectedItem == 1 {
+            guard let jql = prompt(String(localized: "Jira search"), "JQL", initial: jiraJQL) else { filter.selectItem(at: 0); reload(); return }
+            jiraJQL = jql
+        }
+        reload()
+    }
+
     @objc private func reload() {
         guard let repoId else { rows = []; table.reloadData(); status.stringValue = String(localized: "Select a project"); return }
         let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
         let src = source.indexOfSelectedItem, f = filter.indexOfSelectedItem
         Task {
             defer { slow.cancel() }
+            var rows: [JSONValue] = []
             do {
                 let c = AppModel.shared.client
                 switch src {
@@ -108,9 +123,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                     rows = try await c?.call("linear.issues", team.map { .obj(["teamId": .string($0)]) }).array ?? []
                     if team != nil { rows.sort { ($0["state"]?["name"]?.string ?? "") < ($1["state"]?["name"]?.string ?? "") } }
                 case 3:
-                    var p: [String: JSONValue] = [:]
-                    if f == 1, let jql = prompt(String(localized: "Jira search"), "JQL", initial: jiraJQL) { jiraJQL = jql; p["jql"] = .string(jql) }
-                    rows = try await c?.call("jira.issues", .object(p)).array ?? []
+                    rows = try await c?.call("jira.issues", .object(f == 1 ? ["jql": .string(jiraJQL)] : [:])).array ?? []
                 default:
                     if filter.itemTitles.first == String(localized: "Loading projects…") {
                         let ps = try await c?.call("github.projects", .obj(["repoId": .string(repoId)])).array ?? []
@@ -123,13 +136,17 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                             .sorted { ($0["status"]?.string ?? "~") < ($1["status"]?.string ?? "~") }
                     } else { rows = [] }
                 }
+                // Switched project or list meanwhile: these rows belong to the old one.
+                guard repoId == self.repoId, src == source.indexOfSelectedItem else { return }
+                self.rows = rows
                 // Empty because of the filter isn't the same as empty: say which, and offer the way back.
                 let narrowed = rows.isEmpty && f > 0 && src < 2
-                status.stringValue = rows.isEmpty ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here.")) : "\(rows.count) items"
+                status.stringValue = rows.isEmpty ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here.")) : String(localized: "\(rows.count) items")
                 showAll.isHidden = !narrowed
             } catch {
+                guard repoId == self.repoId, src == source.indexOfSelectedItem else { return }
                 showAll.isHidden = true
-                rows = []; status.stringValue = (error as? RPCError)?.message ?? "\(error)"
+                self.rows = []; status.stringValue = (error as? RPCError)?.message ?? "\(error)"
                 if src == 2 { status.stringValue = String(localized: "Connect Linear in Settings › Integrations") }
                 if src == 3 { status.stringValue = String(localized: "Connect Jira in Settings › Integrations") }
                 if src == 4 { status.stringValue = String(localized: "Projects need `gh auth refresh -s read:project`") }
@@ -146,7 +163,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case 1: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", (r["labels"]?.array ?? []).compactMap(\.string).joined(separator: ", "))
         case 2: ("\(r["identifier"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["state"]?["name"]?.string ?? "") · \(r["team"]?["name"]?.string ?? "")")
         case 3: ("\(r["key"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["status"]?.string ?? "") · \(r["type"]?.string ?? "") · \(r["project"]?.string ?? "")")
-        default: (r["title"]?.string ?? "", "\(r["status"]?.string ?? "No status") · \(r["type"]?.string ?? "")")
+        default: (r["title"]?.string ?? "", "\(r["status"]?.string ?? String(localized: "No status")) · \(r["type"]?.string ?? "")")
         }
         let t1 = NSTextField(labelWithString: title); t1.font = .ui(13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
         let t2 = NSTextField(labelWithString: sub); t2.font = .ui(11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingTail
@@ -181,7 +198,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             let key = r["key"]?.string ?? ""
             detail.addArrangedSubview(label("\(key)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
             detail.addArrangedSubview(jiraTransitions(key, current: r["status"]?.string ?? ""))
-            detail.addArrangedSubview(button(String(localized: "Start Task in New Worktree"), "arrow.triangle.branch") { [weak self] in self?.startTask(r, linear: false, jira: true) })
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: false, jira: true) })
             let body = r["description"]?.string ?? ""
             detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         case 1, 2:
@@ -189,7 +206,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             let ref = linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
             detail.addArrangedSubview(label("\(ref)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
             if linear { detail.addArrangedSubview(statePicker(r)) }
-            detail.addArrangedSubview(button(String(localized: "Start Task in New Worktree"), "arrow.triangle.branch") { [weak self] in self?.startTask(r, linear: linear) })
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: linear) })
             let body = (linear ? r["description"]?.string : r["body"]?.string) ?? ""
             detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         default:
@@ -334,10 +351,10 @@ final class ClosureTarget: NSObject {
 
 struct IntegrationsSettings: View {
     @State private var key = ""
-    @State private var linearStatus = "Checking…"
-    @State private var ghStatus = "Checking…"
+    @State private var linearStatus = String(localized: "Checking…")
+    @State private var ghStatus = String(localized: "Checking…")
     @State private var ghFix: String?
-    @State private var jiraStatus = "Checking…"
+    @State private var jiraStatus = String(localized: "Checking…")
     @State private var jiraSite = ""
     @State private var jiraEmail = ""
     @State private var jiraToken = ""
@@ -365,7 +382,7 @@ struct IntegrationsSettings: View {
                             jiraStatus = String(localized: "Connected as \(r["name"]?.string ?? "")"); jiraToken = ""
                         }
                     } }.disabled(jiraSite.isEmpty || jiraEmail.isEmpty || jiraToken.isEmpty)
-                    Button("Disconnect") { Task { await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])); jiraStatus = "Not connected" } }
+                    Button("Disconnect") { Task { if await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])) != nil { jiraStatus = String(localized: "Not connected") } } }
                 }
                 Text("API token from id.atlassian.com › Security. Stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
             }
@@ -373,7 +390,9 @@ struct IntegrationsSettings: View {
                 Text(bbStatus).foregroundStyle(.secondary)
                 TextField("Username or email", text: $bbUser)
                 SecureField("API token / app password", text: $bbToken)
-                Button("Save") { Task { await AppModel.shared.call("bitbucket.setCredentials", .obj(["user": .string(bbUser), "token": .string(bbToken)])); bbStatus = "Saved"; bbToken = "" } }
+                Button("Save") { Task {
+                    if await AppModel.shared.call("bitbucket.setCredentials", .obj(["user": .string(bbUser), "token": .string(bbToken)])) != nil { bbStatus = String(localized: "Saved"); bbToken = "" }
+                } }
                     .disabled(bbUser.isEmpty || bbToken.isEmpty)
                 Text("Used for pull requests in repos whose origin is on bitbucket.org.").font(.caption).foregroundStyle(.secondary)
             }
@@ -382,7 +401,7 @@ struct IntegrationsSettings: View {
                 SecureField("Personal API key", text: $key)
                 HStack {
                     Button("Connect") { Task { await connect() } }.disabled(key.isEmpty)
-                    Button("Disconnect") { Task { await AppModel.shared.call("linear.setKey", .obj(["key": ""])); linearStatus = "Not connected" } }
+                    Button("Disconnect") { Task { if await AppModel.shared.call("linear.setKey", .obj(["key": ""])) != nil { linearStatus = String(localized: "Not connected") } } }
                 }
                 Text("Create a key in Linear › Settings › Security & access. It's stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
             }
@@ -390,17 +409,18 @@ struct IntegrationsSettings: View {
         .formStyle(.grouped)
         .task {
             let s = await AppModel.shared.call("linear.status")
-            linearStatus = s?["connected"]?.bool == true ? "Connected as \(s?["name"]?.string ?? "")" : "Not connected"
+            let off = String(localized: "Not connected")
+            linearStatus = s?["connected"]?.bool == true ? String(localized: "Connected as \(s?["name"]?.string ?? "")") : off
             let j = await AppModel.shared.call("jira.status")
-            jiraStatus = j?["connected"]?.bool == true ? "Connected to \(j?["site"]?.string ?? "") as \(j?["name"]?.string ?? "")" : "Not connected"
-            bbStatus = (await AppModel.shared.call("bitbucket.status"))?["connected"]?.bool == true ? "Credentials saved" : "Not connected"
+            jiraStatus = j?["connected"]?.bool == true ? String(localized: "Connected to \(j?["site"]?.string ?? "") as \(j?["name"]?.string ?? "")") : off
+            bbStatus = (await AppModel.shared.call("bitbucket.status"))?["connected"]?.bool == true ? String(localized: "Credentials saved") : off
             let gh = await AppModel.shared.call("github.status")
-            if gh?["installed"]?.bool != true { ghStatus = "GitHub CLI isn't installed"; ghFix = "brew install gh" }
-            else if let u = gh?["user"]?.string { ghStatus = "Signed in as \(u)"; ghFix = nil }
-            else { ghStatus = "GitHub CLI isn't signed in (or GitHub can't be reached)"; ghFix = "gh auth login" }
+            if gh?["installed"]?.bool != true { ghStatus = String(localized: "GitHub CLI isn't installed"); ghFix = "brew install gh" }
+            else if let u = gh?["user"]?.string { ghStatus = String(localized: "Signed in as \(u)"); ghFix = nil }
+            else { ghStatus = String(localized: "GitHub CLI isn't signed in (or GitHub can't be reached)"); ghFix = "gh auth login" }
         }
     }
     private func connect() async {
-        if let me = await AppModel.shared.call("linear.setKey", .obj(["key": .string(key)])) { linearStatus = "Connected as \(me["name"]?.string ?? "")"; key = "" }
+        if let me = await AppModel.shared.call("linear.setKey", .obj(["key": .string(key)])) { linearStatus = String(localized: "Connected as \(me["name"]?.string ?? "")"); key = "" }
     }
 }

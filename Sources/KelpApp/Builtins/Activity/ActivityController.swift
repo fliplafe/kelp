@@ -64,7 +64,7 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
         let icon = NSImageView(image: (s.agent == "shell" ? NSImage.symbol("terminal") : AgentCatalog.icon(s.agent)) ?? NSImage())
         let name = NSTextField(labelWithString: s.agent == "shell" ? (s.title.isEmpty ? String(localized: "Terminal") : s.title) : AgentCatalog.displayName(s))
         name.font = .ui(12, weight: .medium); name.lineBreakMode = .byTruncatingTail
-        let place = NSTextField(labelWithString: [m.worktree(s.worktreeId)?.displayName, "\(r.processes) process\(r.processes == 1 ? "" : "es")"]
+        let place = NSTextField(labelWithString: [m.worktree(s.worktreeId)?.displayName, String(localized: "\(r.processes) processes")]
             .compactMap { $0 }.joined(separator: " · "))
         place.font = .ui(11); place.textColor = .secondaryLabelColor; place.lineBreakMode = .byTruncatingTail
         let text = NSStackView(views: [name, place]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1

@@ -191,7 +191,7 @@ enum Builtins {
         var c = Contributions()
         c.panels = [PanelSpec(id: "issues", title: "Issues & PRs", icon: "checklist", extensionId: "kelp.issues") {
             let t = TasksViewController()
-            track { Workbench.shared.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
+            track(owner: t) { Workbench.shared.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
             return t
         }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController() }]
         c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", extensionId: "kelp.issues", specs: [],

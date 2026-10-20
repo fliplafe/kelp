@@ -155,10 +155,7 @@ struct SettingRow: View {
                 .labelsHidden().frame(width: 220)
             }
         default:
-            LabeledContent(loc(spec.title)) {
-                TextField("", text: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) }))
-                    .frame(width: 220)
-            }
+            LabeledContent(loc(spec.title)) { SettingTextField(key: spec.key).frame(width: 220) }
         }
     }
 
@@ -189,6 +186,28 @@ struct SettingRow: View {
     static let monospaced: [String] = NSFontManager.shared.availableFontFamilies.filter { fam in
         NSFont(name: fam, size: 12)?.isFixedPitch == true || fam.contains("Mono") || fam.contains("Code")
     }
+}
+
+/// A text setting is saved when the field is done (↩ or leaving it), like a Mac preference, not on every keystroke;
+/// a change arriving from elsewhere (the CLI, an agent) shows unless the field is being edited.
+private struct SettingTextField: View {
+    let key: String
+    private var store = SettingsStore.shared
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+    init(key: String) { self.key = key }
+
+    var body: some View {
+        TextField("", text: $draft)
+            .focused($editing)
+            .onSubmit(commit)
+            .onAppear { draft = store.string(key) ?? "" }
+            .onDisappear(perform: commit)   // the window closed while typing
+            .onChange(of: editing) { _, now in if !now { commit() } }
+            .onChange(of: store.string(key)) { _, v in if !editing { draft = v ?? "" } }
+    }
+
+    private func commit() { if draft != store.string(key) ?? "" { store.set(key, .string(draft)) } }
 }
 
 /// Color themes as swatch cards: the terminal's background, a sample, and the ANSI colors.

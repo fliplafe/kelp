@@ -10,6 +10,7 @@ final class MarkdownTab: NSViewController {
     let url: URL
     let path: String
     private let web = WKWebView()
+    private let links = PreviewLinks()
     private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")], trackingMode: .selectOne, target: nil, action: nil)
     private let split = NSSplitView()
     private var renderTask: Task<Void, Never>?
@@ -39,6 +40,7 @@ final class MarkdownTab: NSViewController {
         bar.spacing = 4; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         split.isVertical = true; split.dividerStyle = .thin
         web.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        web.navigationDelegate = links
         split.addArrangedSubview(editor.view); split.addArrangedSubview(web)
         editor.view.clipsToBounds = true
         view = pinned(bar: bar, body: split)

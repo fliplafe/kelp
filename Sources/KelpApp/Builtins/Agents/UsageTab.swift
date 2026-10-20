@@ -10,7 +10,7 @@ final class UsageTab: TabContent {
     let uri = "usage:"
     var onChange: (() -> Void)?
     let view: NSView
-    var title: String { "Usage" }
+    var title: String { String(localized: "Usage") }
     var icon: NSImage? { .symbol("chart.bar") }
     init() { view = NSHostingView(rootView: UsageReportView()) }
     func focus() {}

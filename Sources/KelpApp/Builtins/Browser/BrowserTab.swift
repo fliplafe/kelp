@@ -19,7 +19,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     private var watcher: FileWatcher?
     var uri: String { previewFile != nil ? start : web.url?.absoluteString ?? start }
     private let start: String
-    var title: String { previewFile.map { ($0 as NSString).lastPathComponent } ?? web.title.flatMap { $0.isEmpty ? nil : $0 } ?? web.url?.host ?? "New Page" }
+    var title: String { previewFile.map { ($0 as NSString).lastPathComponent } ?? web.title.flatMap { $0.isEmpty ? nil : $0 } ?? web.url?.host ?? String(localized: "New Page") }
     var icon: NSImage? { .symbol(previewFile == nil ? "safari" : "eye") }
     var toolTip: String? { web.url?.absoluteString }
 
@@ -118,8 +118,15 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError e: Error) { showError(e) }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError e: Error) { showError(e) }
     private func showError(_ e: Error) {
-        let msg = (e as NSError).localizedDescription.replacingOccurrences(of: "<", with: "&lt;")
-        web.loadHTMLString("<html><body style='font:14px -apple-system;color:#888;display:flex;height:90vh;align-items:center;justify-content:center;text-align:center'><div><b>Can't open this page</b><br>\(msg)<br><br>Is the dev server running?</div></body></html>", baseURL: nil)
+        let ns = e as NSError
+        // Not failures: a navigation cancelled by the next one (a click or Back while loading), a download handed off.
+        // Showing the error page for those cancelled the navigation the user had just started.
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled || ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
+        let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
+        let title = esc(String(localized: "Can't open this page")), hint = esc(String(localized: "Is the dev server running?"))
+        web.loadHTMLString("<html><head><meta name='color-scheme' content='light dark'></head><body style='font:14px -apple-system;color:-apple-system-secondary-label;"
+            + "display:flex;height:90vh;align-items:center;justify-content:center;text-align:center'><div><b>\(title)</b><br>\(esc(ns.localizedDescription))<br><br>\(hint)</div></body></html>",
+            baseURL: nil)
     }
 
     // MARK: Design Mode
