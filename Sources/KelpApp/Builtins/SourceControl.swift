@@ -196,6 +196,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
                 let changed = ch != changes || br != info
                 changes = ch; info = br; showError(nil)
+                ChangedFiles.shared.report(wid, ch.count)
                 updateHeader(); updateCommitButton()
                 showStats(ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self))
                 if graphStale || commits.isEmpty { await loadGraph() } else if changed { rebuildChanges() }

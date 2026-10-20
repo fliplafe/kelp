@@ -85,7 +85,8 @@ enum Builtins {
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["diff"], extensionId: "kelp.git") { DiffTab(uri: $0) },
                   TabProvider(schemes: ["commit"], extensionId: "kelp.git") { CommitMessageTab(uri: $0) }]
-        c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "kelp.git") { SourceControlController() }]
+        c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "kelp.git",
+                              badge: { ChangedFiles.shared.count }) { SourceControlController() }]
         c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "kelp.git", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", extensionId: "kelp.git", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Kelp names, e.g. “niko/”.")

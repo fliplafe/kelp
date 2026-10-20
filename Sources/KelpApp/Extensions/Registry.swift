@@ -20,6 +20,8 @@ struct IDEContext {
 /// A right-inspector panel.
 struct PanelSpec: Identifiable {
     let id: String, title: String, icon: String, extensionId: String
+    /// A number on the panel's icon (0: none). Read under observation, so it must not build the panel.
+    var badge: (@MainActor () -> Int)?
     let make: @MainActor () -> NSViewController
 }
 
