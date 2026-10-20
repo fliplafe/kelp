@@ -130,7 +130,7 @@ extension Daemon {
         return (try? h.readToEnd()) ?? Data()
     }
 
-    /// Transcript of a session written to ~/.krill/handoff/<id>.md for the next agent to read. Claude Code's own
+    /// Transcript of a session written to ~/.kelp/handoff/<id>.md for the next agent to read. Claude Code's own
     /// conversation (what was asked and answered) when there is one; otherwise the terminal's text.
     func handoffFile(_ s: Session, full: Bool) throws -> URL {
         let limit = full ? 400_000 : 40_000
@@ -176,7 +176,7 @@ extension Daemon {
         let want = mode == "always" || (mode == "agents" && working)
         if want, sleepAssertion == 0 {
             var id: IOPMAssertionID = 0
-            if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Krill agents are working" as CFString, &id) == kIOReturnSuccess { sleepAssertion = id }
+            if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { sleepAssertion = id }
         } else if !want, sleepAssertion != 0 {
             IOPMAssertionRelease(sleepAssertion); sleepAssertion = 0
         }

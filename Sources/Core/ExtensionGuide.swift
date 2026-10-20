@@ -1,15 +1,15 @@
 /// The extension authoring guide: docs/extensions.md verbatim (a CoreTests test keeps them equal).
-/// Written to ~/.krill/extensions/EXTENSIONS.md for agents; the app shows it too.
+/// Written to ~/.kelp/extensions/EXTENSIONS.md for agents; the app shows it too.
 public enum ExtensionGuide {
     public static let markdown = #"""
-    # Writing Krill extensions
+    # Writing Kelp extensions
 
-    An extension is a folder in `~/.krill/extensions/<id>/` with an `extension.json`. No build step:
-    Krill reloads it when the files change. Commands run with `/bin/zsh -lc` in the current workspace
+    An extension is a folder in `~/.kelp/extensions/<id>/` with an `extension.json`. No build step:
+    Kelp reloads it when the files change. Commands run with `/bin/zsh -lc` in the current workspace
     directory, so anything you can do in a terminal you can surface in the IDE.
 
-    Quick start: `krill ext new my-thing` (or "New Extension with AI…" in the command palette).
-    Useful while developing: `krill ext list`, `krill ext reload`, `krill ext disable <id>`.
+    Quick start: `kelp ext new my-thing` (or "New Extension with AI…" in the command palette).
+    Useful while developing: `kelp ext list`, `kelp ext reload`, `kelp ext disable <id>`.
 
     ## extension.json
     ```json
@@ -73,15 +73,15 @@ public enum ExtensionGuide {
     ```json
     { "id": "dashboard", "title": "Emulator", "icon": "iphone", "web": "index.html" }
     ```
-    The page (relative to the extension folder) gets `window.krill`:
+    The page (relative to the extension folder) gets `window.kelp`:
     ```js
-    await krill.exec("adb devices")            // {code, stdout, stderr}, runs in the workspace
-    krill.terminal("emulator -avd Pixel_8")    // opens a terminal tab
-    krill.open("https://localhost:3000")       // URL → browser tab, path → file tab
-    krill.agent("Write a test for the parser") // new agent tab with this prompt
-    await krill.settings.get("my.key"); await krill.settings.set("my.key", 3)
-    krill.workspace                            // {name, path, branch, project}
-    krill.on("settings", s => …); krill.on("workspace", w => …)
+    await kelp.exec("adb devices")            // {code, stdout, stderr}, runs in the workspace
+    kelp.terminal("emulator -avd Pixel_8")    // opens a terminal tab
+    kelp.open("https://localhost:3000")       // URL → browser tab, path → file tab
+    kelp.agent("Write a test for the parser") // new agent tab with this prompt
+    await kelp.settings.get("my.key"); await kelp.settings.set("my.key", 3)
+    kelp.workspace                            // {name, path, branch, project}
+    kelp.on("settings", s => …); kelp.on("workspace", w => …)
     ```
 
     ## Actions (list rows, toolbars, commands)
@@ -105,7 +105,7 @@ public enum ExtensionGuide {
     { "key": "docker.refresh", "title": "Refresh interval", "type": "number", "default": 5, "description": "Seconds" }
     ```
     Types: `boolean`, `number`, `string`, `enum` (with `"options": ["a", "b"]`), `color`. A `number` with `"options": ["0", "15"]` shows as a picker of those values.
-    They appear in Settings under the extension's name and in `~/.krill/settings.json`.
+    They appear in Settings under the extension's name and in `~/.kelp/settings.json`.
 
     ## themes
     ```json
@@ -130,12 +130,12 @@ public enum ExtensionGuide {
     takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). Pick the theme in Settings › Appearance › File Icons.
 
     ## agents
-    Same format as `~/.krill/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
+    Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
 
     ## Tips for agents writing extensions
-    - Start from `krill ext new <id>`; keep everything in that folder.
+    - Start from `kelp ext new <id>`; keep everything in that folder.
     - Test the list `command` in a terminal first: it must print JSON.
-    - `krill ext reload` reloads all extensions; errors show in Settings → Extensions.
+    - `kelp ext reload` reloads all extensions; errors show in Settings → Extensions.
 
     """#
 }

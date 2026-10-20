@@ -3,7 +3,7 @@ import Core
 import Agents
 
 /// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok Build, Antigravity). A hidden copy of
-/// the agent opens that screen now and then and quits: no tokens are spent and Krill never touches their credentials.
+/// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
 extension Daemon {
     struct PlanProbe: Sendable {
         let agent: String, command: String, every: TimeInterval
@@ -64,7 +64,7 @@ extension Daemon {
     }
 
     /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
-    /// per launch: it gets Krill's own folder and always the same session, so its history doesn't fill up.
+    /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up.
     private func probeDir(_ agent: String) -> String? {
         if agent == "grok" {
             let d = root.appendingPathComponent("probe"); try? Paths.ensure(d); return d.path

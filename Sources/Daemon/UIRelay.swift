@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-/// Agents → app: `krill open`, the MCP tools etc. call `ui.*`; the daemon relays them to the app as `event.ui`.
+/// Agents → app: `kelp open`, the MCP tools etc. call `ui.*`; the daemon relays them to the app as `event.ui`.
 /// The app publishes what it shows (`ui.publish`) so agents can read it back (`ui.state`).
 extension Daemon {
     func handleUI(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
@@ -24,7 +24,7 @@ extension Daemon {
 
     private func relay(_ action: String, _ p: JSONValue) throws -> JSONValue {
         let apps = lock.withLock { appConns.subtracting(rawConns) }
-        guard !apps.isEmpty else { throw RPCError.internalError("The Krill app isn't running") }
+        guard !apps.isEmpty else { throw RPCError.internalError("The Kelp app isn't running") }
         var params: [String: JSONValue] = if case .object(let o) = p { o } else { [:] }
         params["action"] = .string(action)
         notify("event.ui", .object(params), to: apps)

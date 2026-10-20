@@ -3,7 +3,7 @@ import Security
 
 /// Secrets (API keys) live in the login keychain, never in config files.
 public enum Keychain {
-    static let service = "dev.krill"
+    static let service = "dev.krill"   // from when the app was called Krill; kept so saved keys stay readable
 
     public static func set(_ value: String, account: String) throws {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]

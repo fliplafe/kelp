@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Krill</string>
+	<string>Kelp</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -33,17 +33,19 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
-	<string>KrillApp</string>
+	<string>KelpApp</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.krill.app</string>
+	<string>dev.kelp.app</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
 		<string>ru</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>Krill</string>
+	<string>Kelp</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -52,10 +54,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>dev.krill.app</string>
+			<string>dev.kelp.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>krill</string>
+				<string>kelp</string>
 			</array>
 		</dict>
 	</array>
@@ -68,12 +70,12 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A program running in a Krill terminal wants to use the microphone.</string>
+	<string>A program running in a Kelp terminal wants to use the microphone.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/krill-app/krill/main/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/kelp-app/kelp/main/appcast.xml</string>
 </dict>
 </plist>

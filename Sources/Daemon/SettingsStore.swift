@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-/// `settings.json` in the Krill home: one flat object with dotted keys (VS Code style).
+/// `settings.json` in the Kelp home: one flat object with dotted keys (VS Code style).
 /// Hand edits are picked up by `reloadIfChanged`; a file that doesn't parse is ignored and the last good settings stay.
 final class SettingsStore: @unchecked Sendable {
     let url: URL

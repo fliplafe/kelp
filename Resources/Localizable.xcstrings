@@ -140,12 +140,12 @@
         }
       }
     },
-    "%@ asks Krill to run these as you, in the workspace's folder. ": {
+    "%@ asks Kelp to run these as you, in the workspace's folder. ": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ просит Krill выполнить эти команды от вашего имени в папке рабочей области. "
+            "value": "%@ просит Kelp выполнить эти команды от вашего имени в папке рабочей области. "
           }
         }
       }
@@ -448,12 +448,12 @@
         }
       }
     },
-    "A VS Code extension (.vsix or its folder) — for its file icon themes — or a Krill extension folder": {
+    "A VS Code extension (.vsix or its folder) — for its file icon themes — or a Kelp extension folder": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Расширение VS Code (.vsix или его папка) — ради тем значков файлов — или папка расширения Krill"
+            "value": "Расширение VS Code (.vsix или его папка) — ради тем значков файлов — или папка расширения Kelp"
           }
         }
       }
@@ -499,13 +499,13 @@
       }
     },
     "Aa  ~ $": {},
-    "About Krill": {
+    "About Kelp": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "О программе Krill"
+            "value": "О программе Kelp"
           }
         }
       }
@@ -531,12 +531,12 @@
         }
       }
     },
-    "Add Markdown files to .krill/templates in the repo or ~/.krill/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.": {
+    "Add Markdown files to .kelp/templates in the repo or ~/.kelp/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Положите Markdown-файлы в .krill/templates в репозитории или в ~/.krill/templates. Подстановки: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}."
+            "value": "Положите Markdown-файлы в .kelp/templates в репозитории или в ~/.kelp/templates. Подстановки: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}."
           }
         }
       }
@@ -591,23 +591,23 @@
         }
       }
     },
-    "Add “%@” to Krill?": {
+    "Add “%@” to Kelp?": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Добавить «%@» в Krill?"
+            "value": "Добавить «%@» в Kelp?"
           }
         }
       }
     },
-    "Added to branches Krill names, e.g. “niko/”.": {
+    "Added to branches Kelp names, e.g. “niko/”.": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Добавляется к веткам, которые называет Krill, например «niko/»."
+            "value": "Добавляется к веткам, которые называет Kelp, например «niko/»."
           }
         }
       }
@@ -2933,13 +2933,13 @@
         }
       }
     },
-    "Hide Krill": {
+    "Hide Kelp": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Скрыть Krill"
+            "value": "Скрыть Kelp"
           }
         }
       }
@@ -2985,13 +2985,13 @@
         }
       }
     },
-    "How Krill Works": {
+    "How Kelp Works": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Как устроен Krill"
+            "value": "Как устроен Kelp"
           }
         }
       }
@@ -3305,83 +3305,83 @@
         }
       }
     },
-    "Krill": {},
-    "Krill can reach you": {
+    "Kelp": {},
+    "Kelp can reach you": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Krill может до вас достучаться"
+            "value": "Kelp может до вас достучаться"
           }
         }
       }
     },
-    "Krill can't find the file in that link.": {
+    "Kelp can't find the file in that link.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Krill не находит файл из этой ссылки."
+            "value": "Kelp не находит файл из этой ссылки."
           }
         }
       }
     },
-    "Krill doesn't know the link %@.": {
+    "Kelp doesn't know the link %@.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Krill не знает ссылку %@."
+            "value": "Kelp не знает ссылку %@."
           }
         }
       }
     },
-    "Krill uses the GitHub CLI and its login. Project boards need `gh auth refresh -s read:project`.": {
+    "Kelp uses the GitHub CLI and its login. Project boards need `gh auth refresh -s read:project`.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Krill использует GitHub CLI и его вход. Для досок проектов нужен `gh auth refresh -s read:project`."
+            "value": "Kelp использует GitHub CLI и его вход. Для досок проектов нужен `gh auth refresh -s read:project`."
           }
         }
       }
     },
-    "Krill was updated": {
+    "Kelp was updated": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Krill обновлён"
+            "value": "Kelp обновлён"
           }
         }
       }
     },
-    "Krill's background service isn't running.": {
+    "Kelp's background service isn't running.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фоновая служба Krill не запущена."
+            "value": "Фоновая служба Kelp не запущена."
           }
         }
       }
     },
-    "Krill's default: %@": {
+    "Kelp's default: %@": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "По умолчанию в Krill: %@"
+            "value": "По умолчанию в Kelp: %@"
           }
         }
       }
     },
-    "Krill's default: none": {
+    "Kelp's default: none": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "По умолчанию в Krill: нет"
+            "value": "По умолчанию в Kelp: нет"
           }
         }
       }
@@ -4149,12 +4149,12 @@
         }
       }
     },
-    "No agent found. Install Claude Code or another agent CLI — Krill picks it up when you come back.": {
+    "No agent found. Install Claude Code or another agent CLI — Kelp picks it up when you come back.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Агент не найден. Установите Claude Code или другой CLI агента — Krill заметит его, когда вы вернётесь."
+            "value": "Агент не найден. Установите Claude Code или другой CLI агента — Kelp заметит его, когда вы вернётесь."
           }
         }
       }
@@ -4370,12 +4370,12 @@
         }
       }
     },
-    "None found yet. Krill runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ": {
+    "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Пока ни одного. Krill запускает CLI агентов — Claude Code, Codex, Gemini: установите один в Терминале, "
+            "value": "Пока ни одного. Kelp запускает CLI агентов — Claude Code, Codex, Gemini: установите один в Терминале, "
           }
         }
       }
@@ -4470,12 +4470,12 @@
         }
       }
     },
-    "Notifications for Krill are turned off in System Settings, so you won't hear when an agent needs you.": {
+    "Notifications for Kelp are turned off in System Settings, so you won't hear when an agent needs you.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Уведомления Krill выключены в Системных настройках, и вы не узнаете, когда агенту что-то нужно."
+            "value": "Уведомления Kelp выключены в Системных настройках, и вы не узнаете, когда агенту что-то нужно."
           }
         }
       }
@@ -5132,13 +5132,13 @@
         }
       }
     },
-    "Quit Krill": {
+    "Quit Kelp": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Завершить Krill"
+            "value": "Завершить Kelp"
           }
         }
       }
@@ -5334,22 +5334,22 @@
         }
       }
     },
-    "Remove from Krill…": {
+    "Remove from Kelp…": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Убрать из Krill…"
+            "value": "Убрать из Kelp…"
           }
         }
       }
     },
-    "Remove “%@” from Krill?": {
+    "Remove “%@” from Kelp?": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Убрать «%@» из Krill?"
+            "value": "Убрать «%@» из Kelp?"
           }
         }
       }
@@ -6172,24 +6172,24 @@
         }
       }
     },
-    "Skill: change Krill settings": {
+    "Skill: change Kelp settings": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навык: менять настройки Krill"
+            "value": "Навык: менять настройки Kelp"
           }
         }
       }
     },
-    "Skill: write Krill extensions": {
+    "Skill: write Kelp extensions": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навык: писать расширения Krill"
+            "value": "Навык: писать расширения Kelp"
           }
         }
       }
@@ -6363,7 +6363,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Создаётся от %@, и Krill переключается на неё."
+            "value": "Создаётся от %@, и Kelp переключается на неё."
           }
         }
       }
@@ -6816,12 +6816,12 @@
         }
       }
     },
-    "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Krill menu.": {
+    "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фоновая служба ещё старой версии. Перезапустите её, чтобы закончить обновление, — сессии агентов завершатся. Это можно сделать и позже из меню Krill."
+            "value": "Фоновая служба ещё старой версии. Перезапустите её, чтобы закончить обновление, — сессии агентов завершатся. Это можно сделать и позже из меню Kelp."
           }
         }
       }
@@ -6877,13 +6877,13 @@
         }
       }
     },
-    "The window, terminal and editor together. Match System switches Krill Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors.": {
+    "The window, terminal and editor together. Match System switches Kelp Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors.": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Окно, терминал и редактор вместе. «Как в системе» переключает Krill Light / Dark вместе с macOS; Ghostty оставляет цвета вашего терминала Ghostty."
+            "value": "Окно, терминал и редактор вместе. «Как в системе» переключает Kelp Light / Dark вместе с macOS; Ghostty оставляет цвета вашего терминала Ghostty."
           }
         }
       }
@@ -6949,18 +6949,18 @@
         }
       }
     },
-    "This project has no “%@” command. Add one to .krill.yaml (%@: the command).": {
+    "This project has no “%@” command. Add one to .kelp.yaml (%@: the command).": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "This project has no “%1$@” command. Add one to .krill.yaml (%2$@: the command)."
+            "value": "This project has no “%1$@” command. Add one to .kelp.yaml (%2$@: the command)."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "У этого проекта нет команды «%@». Добавьте её в .krill.yaml (%@: команда)."
+            "value": "У этого проекта нет команды «%@». Добавьте её в .kelp.yaml (%@: команда)."
           }
         }
       }
@@ -6986,12 +6986,12 @@
         }
       }
     },
-    "Trust it only if you know where this project comes from. Krill asks again if the file changes.": {
+    "Trust it only if you know where this project comes from. Kelp asks again if the file changes.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Доверяйте, только если знаете, откуда этот проект. Krill спросит снова, если файл изменится."
+            "value": "Доверяйте, только если знаете, откуда этот проект. Kelp спросит снова, если файл изменится."
           }
         }
       }
@@ -7006,12 +7006,12 @@
         }
       }
     },
-    "Turned off for Krill in System Settings › Notifications.": {
+    "Turned off for Kelp in System Settings › Notifications.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Выключены для Krill в Системные настройки › Уведомления."
+            "value": "Выключены для Kelp в Системные настройки › Уведомления."
           }
         }
       }
@@ -7220,12 +7220,12 @@
         }
       }
     },
-    "Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.krill/agents — add a file to add any CLI agent.": {
+    "Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.kelp/agents — add a file to add any CLI agent.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Значения *_KEY, *_TOKEN и *_SECRET хранятся в вашей связке ключей, а не в файле агента. Агенты — это JSON-файлы в ~/.krill/agents: добавьте файл, чтобы добавить любой CLI-агент."
+            "value": "Значения *_KEY, *_TOKEN и *_SECRET хранятся в вашей связке ключей, а не в файле агента. Агенты — это JSON-файлы в ~/.kelp/agents: добавьте файл, чтобы добавить любой CLI-агент."
           }
         }
       }
@@ -7292,12 +7292,12 @@
         }
       }
     },
-    "Welcome to Krill": {
+    "Welcome to Kelp": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Добро пожаловать в Krill"
+            "value": "Добро пожаловать в Kelp"
           }
         }
       }
@@ -7638,12 +7638,12 @@
         }
       }
     },
-    "macOS uses this for %@, so Krill won't see it (System Settings › Keyboard › Keyboard Shortcuts).": {
+    "macOS uses this for %@, so Kelp won't see it (System Settings › Keyboard › Keyboard Shortcuts).": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS использует его для %@, и Krill его не получит (Системные настройки › Клавиатура › Сочетания клавиш)."
+            "value": "macOS использует его для %@, и Kelp его не получит (Системные настройки › Клавиатура › Сочетания клавиш)."
           }
         }
       }

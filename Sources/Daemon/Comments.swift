@@ -15,7 +15,7 @@ public enum ReviewMessage {
     }
 }
 
-/// `.krill.yaml`: flat `key: value` lines. Deliberately not full YAML.
+/// `.kelp.yaml`: flat `key: value` lines. Deliberately not full YAML.
 ///   setup: shell command      shared: node_modules, .venv   (symlinked into each worktree)
 ///   tabs: claude, shell   (sessions opened in a new worktree)      issueCommand: prompt template for issue worktrees
 ///   recipe.<action>: prompt template with {stagedPatch} {branch} {diffStat} {error} {linkedIssue}
@@ -53,7 +53,7 @@ public struct RepoConfig: Sendable, Equatable {
         return c
     }
     public static func load(repoPath: String) -> RepoConfig {
-        parse((try? String(contentsOfFile: repoPath + "/.krill.yaml", encoding: .utf8)) ?? "")
+        parse((try? String(contentsOfFile: repoPath + "/.kelp.yaml", encoding: .utf8)) ?? "")
     }
 }
 

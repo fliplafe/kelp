@@ -30,7 +30,7 @@ public enum LoginPath {
     private static func shellPath() -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
-        p.arguments = ["-ilc", "printf '__KRILL__%s__KRILL__' \"$PATH\""]
+        p.arguments = ["-ilc", "printf '__KELP__%s__KELP__' \"$PATH\""]
         let out = Pipe()
         p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return "" }
@@ -38,7 +38,7 @@ public enum LoginPath {
         while p.isRunning, Date() < deadline { usleep(20_000) }
         if p.isRunning { p.terminate(); return "" }
         let s = String(bytes: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        guard let a = s.range(of: "__KRILL__"), let b = s.range(of: "__KRILL__", range: a.upperBound..<s.endIndex) else { return "" }
+        guard let a = s.range(of: "__KELP__"), let b = s.range(of: "__KELP__", range: a.upperBound..<s.endIndex) else { return "" }
         return String(s[a.upperBound..<b.lowerBound])
     }
 }

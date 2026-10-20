@@ -1,6 +1,6 @@
 import Foundation
 
-/// The subset of a Ghostty config Krill honours: colors and font.
+/// The subset of a Ghostty config Kelp honours: colors and font.
 public struct GhosttyConfig: Equatable, Sendable {
     public var background: String?, foreground: String?, fontFamily: String?, fontSize: Double?
     public var palette: [Int: String] = [:]

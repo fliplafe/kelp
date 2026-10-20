@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 GHOSTTY_COMMIT=${GHOSTTY_COMMIT:-189af86eac5e91e1b282bdaf371f369c3863591f}
 ZIG_VERSION=0.16.0
-CACHE="$HOME/Library/Caches/krill-build"
+CACHE="$HOME/Library/Caches/kelp-build"
 ARCH=$(uname -m | sed 's/arm64/aarch64/')
 ZIG="$CACHE/zig-$ARCH-macos-$ZIG_VERSION/zig"
 mkdir -p "$CACHE"

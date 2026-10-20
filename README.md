@@ -1,13 +1,13 @@
-# Krill
+# Kelp
 
 A native macOS app for running many coding agents side by side — each in its own git worktree, with live status,
 notifications, diff review, an editor, a browser with Design Mode, and GitHub/Linear built in. An open-source,
 Swift + AppKit: no Electron, no cloud, no telemetry.
 
 - **Any CLI agent.** Claude Code, Codex, OpenCode, Gemini CLI, Cursor Agent, Pi, Amp — or any command. Agents are JSON files.
-- **Sessions outlive the window.** A background daemon (`krilld`) owns the terminals; quit the app and agents keep working.
+- **Sessions outlive the window.** A background daemon (`kelpd`) owns the terminals; quit the app and agents keep working.
 - **Plain git.** Standard branches and `git worktree`; everything is checkable from a normal terminal.
-- **Everything from the CLI.** `krill` drives the app, so agents can drive it too.
+- **Everything from the CLI.** `kelp` drives the app, so agents can drive it too.
 
 Requires macOS 14+.
 
@@ -16,25 +16,25 @@ Requires macOS 14+.
 ```sh
 swift build                      # everything
 swift test                       # all tests
-scripts/bundle.sh                # dist/Krill.app + dist/Krill.dmg (universal, release)
-SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=krill scripts/bundle.sh   # signed + notarized
+scripts/bundle.sh                # dist/Kelp.app + dist/Kelp.dmg (universal, release)
+SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=kelp scripts/bundle.sh   # signed + notarized
 ```
 
-For quick iteration: `swift build && .build/debug/KrillApp` (the app starts `krilld` next to it if needed).
+For quick iteration: `swift build && .build/debug/KelpApp` (the app starts `kelpd` next to it if needed).
 
 ## CLI
 
 ```sh
-krill status
-krill task "Add a dark mode toggle to settings" --agent claude   # branch + worktree + agent, named from the prompt
-krill worktree create feat/login | list | current | note "half done"
-krill terminal list | read <id> | send <id> "run the tests" | context <id>
-krill fanout "Fix the flaky test" --agents claude,codex
-krill diff | commit "msg" | merge | push
-krill install                                                   # run the daemon as a LaunchAgent
+kelp status
+kelp task "Add a dark mode toggle to settings" --agent claude   # branch + worktree + agent, named from the prompt
+kelp worktree create feat/login | list | current | note "half done"
+kelp terminal list | read <id> | send <id> "run the tests" | context <id>
+kelp fanout "Fix the flaky test" --agents claude,codex
+kelp diff | commit "msg" | merge | push
+kelp install                                                   # run the daemon as a LaunchAgent
 ```
 
-## Per-repo config: `.krill.yaml`
+## Per-repo config: `.kelp.yaml`
 
 ```yaml
 setup: npm install              # runs in every new worktree

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Markdown note templates (`<repo>/.krill/templates`, `~/.krill/templates`) with `{{placeholder}}` expansion.
+/// Markdown note templates (`<repo>/.kelp/templates`, `~/.kelp/templates`) with `{{placeholder}}` expansion.
 public enum Templates {
     /// Built-ins `date` (yyyy-MM-dd), `time` (HH:mm), `datetime`; `vars` (branch, title, repo, …) override them.
     /// Unknown placeholders are left untouched.

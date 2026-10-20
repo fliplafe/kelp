@@ -1,6 +1,6 @@
-# Krill architecture
+# Kelp architecture
 
-Krill is a thin native shell around two things: a **daemon** that owns everything stateful
+Kelp is a thin native shell around two things: a **daemon** that owns everything stateful
 (agent sessions/PTYs, git, integrations, settings) and **extensions** that contribute almost
 everything you see. The app itself only provides the window, the layout, a registry of
 contributions, the command palette and settings.
@@ -33,12 +33,12 @@ contributions, the command palette and settings.
 | panels | right inspector (selector icons) |
 | editors | center tab types, listed in each pane's "+" menu and the empty workspace |
 | commands | command palette (⇧⌘P), menus, key bindings |
-| settings | Settings window (generated forms) and `~/.krill/settings.json` |
+| settings | Settings window (generated forms) and `~/.kelp/settings.json` |
 | themes | Appearance settings; drive terminal + editor colors |
 | agents | agent CLIs offered in the "+" menu and the empty workspace |
 
-Built-ins (Git, Files, Issues, Browser) can be turned off like any other extension. Krill ships no example
-extensions: user extensions live in `~/.krill/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
+Built-ins (Git, Files, Issues, Browser) can be turned off like any other extension. Kelp ships no example
+extensions: user extensions live in `~/.kelp/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
 turned off or removed.
 
 ## Source Control
@@ -49,19 +49,19 @@ Git runs in the daemon (`Daemon/GitHandlers.swift`: `git.branches`, `git.switch`
 `git.discard`, `git.remote`, `git.stash` …), never on the main thread.
 
 ## Settings
-`~/.krill/settings.json`, owned by the daemon (`settings.get` / `settings.set`, `event.settings`
+`~/.kelp/settings.json`, owned by the daemon (`settings.get` / `settings.set`, `event.settings`
 on change, also when the file is edited by hand). Flat dotted keys, VS Code style.
 
 ## AI agents and the IDE: skills
-Every agent session gets `KRILL_SOCKET` and the `krill` CLI on PATH (open files/URLs, settings, extensions,
+Every agent session gets `KELP_SOCKET` and the `kelp` CLI on PATH (open files/URLs, settings, extensions,
 `ui state`). What an agent should *do* with it comes from two skills the app writes as Claude Code plugins in
-`~/.krill/agent-skills/` (`AgentSkills`): **krill-extensions** (this repo's docs/extensions.md: where an extension
-goes, its format, how to reload) and **krill-settings** (every setting key, generated from the registry, and how to
+`~/.kelp/agent-skills/` (`AgentSkills`): **kelp-extensions** (this repo's docs/extensions.md: where an extension
+goes, its format, how to reload) and **kelp-settings** (every setting key, generated from the registry, and how to
 change it). The daemon loads that folder per Claude session with `--plugin-dir`; turning a skill off in
 Settings › Agents removes it. Nothing is written to the agent's own config. The app reloads extensions when their
 files change.
 
 ## UI ↔ daemon
 The app talks to the daemon only through JSON-RPC. IDE actions requested by agents go
-`krill` → daemon `ui.*` → `event.ui` to the app. The app publishes what it shows with
+`kelp` → daemon `ui.*` → `event.ui` to the app. The app publishes what it shows with
 `ui.publish` so agents can ask (`ui.state`).

@@ -7,7 +7,7 @@ extension Git {
     public static func snapshotTree(_ cwd: String) throws -> String {
         let rel = try run(["rev-parse", "--git-path", "index"], cwd: cwd).trimmingCharacters(in: .whitespacesAndNewlines)
         let real = URL(fileURLWithPath: rel, relativeTo: URL(fileURLWithPath: cwd, isDirectory: true)).path
-        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("krill-index-\(UUID().uuidString)").path
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-index-\(UUID().uuidString)").path
         defer { try? FileManager.default.removeItem(atPath: copy) }
         if FileManager.default.fileExists(atPath: real) { try FileManager.default.copyItem(atPath: real, toPath: copy) }
         try run(["add", "-A"], cwd: cwd, env: ["GIT_INDEX_FILE": copy])

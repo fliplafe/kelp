@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-/// An agent is data, not code: adding one means adding a JSON file to ~/.krill/agents.
+/// An agent is data, not code: adding one means adding a JSON file to ~/.kelp/agents.
 /// Only `id`, `name` and `command` are required in a file; everything else has defaults.
 public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public struct AutoAnswer: Codable, Sendable, Equatable {
@@ -56,13 +56,13 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var autoAnswers: [AutoAnswer] = []
     /// Args that resume the latest conversation in this directory (restart / hibernation) when no id was pinned.
     public var resumeArgs: [String] = []
-    /// `--session-id <uuid>` pins a new conversation to the Krill session id; `--resume <uuid>` brings back exactly that one.
+    /// `--session-id <uuid>` pins a new conversation to the Kelp session id; `--resume <uuid>` brings back exactly that one.
     /// Without them, two agents in one folder resume each other's conversations.
     public var sessionIdFlag: String?
     public var resumeIdFlag: String?
-    /// If set, `{pluginDirFlag} <dir>` loads Krill's skills (extensions, settings) for the session only.
+    /// If set, `{pluginDirFlag} <dir>` loads Kelp's skills (extensions, settings) for the session only.
     public var pluginDirFlag: String?
-    /// If set, `{contextFlag} <text>` tells the agent it runs inside Krill and which skills to use for it.
+    /// If set, `{contextFlag} <text>` tells the agent it runs inside Kelp and which skills to use for it.
     public var contextFlag: String?
     /// The agent's own install / update commands (run in a terminal you can watch), and its npm package for
     /// "is there a newer version".
@@ -188,7 +188,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", yoloArgs: ["--force"], modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
         .init(id: "pi", name: "Pi", command: "pi"),
         .init(id: "amp", name: "Amp", command: "amp", yoloArgs: ["--dangerously-allow-all"]),
-        // Others people run; Krill offers whichever of these actually work on this Mac (AgentAvailability).
+        // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy"),
         .init(id: "qwen", name: "Qwen Code", command: "qwen"),
@@ -230,11 +230,11 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum Hooks {
-    /// Claude-style settings file: Stop → done, Notification → waiting (`krill hook` drops the idle reminder),
-    /// AskUserQuestion → waiting until answered. `krill` must be on PATH in the session.
+    /// Claude-style settings file: Stop → done, Notification → waiting (`kelp hook` drops the idle reminder),
+    /// AskUserQuestion → waiting until answered. `kelp` must be on PATH in the session.
     public static func settingsJSON() -> String {
         func hook(_ ev: String, _ matcher: String? = nil) -> String {
-            #"[{\#(matcher.map { #""matcher":"\#($0)","# } ?? "")"hooks":[{"type":"command","command":"krill hook \#(ev)"}]}]"#
+            #"[{\#(matcher.map { #""matcher":"\#($0)","# } ?? "")"hooks":[{"type":"command","command":"kelp hook \#(ev)"}]}]"#
         }
         return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working")),"#
             + #""PreToolUse":\#(hook("waiting", "AskUserQuestion")),"PostToolUse":\#(hook("working", "AskUserQuestion")),"#

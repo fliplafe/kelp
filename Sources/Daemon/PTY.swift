@@ -6,13 +6,13 @@ public final class PTY: @unchecked Sendable {
     public let pid: pid_t
     private let master: Int32
     private var source: DispatchSourceRead?
-    private let q = DispatchQueue(label: "krill.pty")
+    private let q = DispatchQueue(label: "kelp.pty")
     private var exited = false
 
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onExit: (@Sendable (Int32) -> Void)?
 
-    /// `trampoline`: the `krill` binary that makes the PTY the child's controlling terminal (nil spawns directly).
+    /// `trampoline`: the `kelp` binary that makes the PTY the child's controlling terminal (nil spawns directly).
     public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32, trampoline: String? = PTY.trampoline) throws {
         var m: Int32 = 0, s: Int32 = 0
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
@@ -48,7 +48,7 @@ public final class PTY: @unchecked Sendable {
         var pid: pid_t = 0
         let rc: Int32
         if let tramp = trampoline {
-            // krill __ctty: claims the tty as controlling terminal, then execs the agent (PATH from the child env).
+            // kelp __ctty: claims the tty as controlling terminal, then execs the agent (PATH from the child env).
             let targv = ([strdup(tramp), strdup("__ctty")] + cargv.dropLast() + [nil]) as [UnsafeMutablePointer<CChar>?]
             rc = posix_spawn(&pid, tramp, &fa, &attr, targv, cenv)
             free(targv[0]); free(targv[1])
@@ -63,7 +63,7 @@ public final class PTY: @unchecked Sendable {
         src.setEventHandler { [weak self] in self?.drain() }
         src.resume()
         source = src
-        let wq = DispatchQueue(label: "krill.pty.wait")
+        let wq = DispatchQueue(label: "kelp.pty.wait")
         wq.async { [weak self] in
             var st: Int32 = 0
             waitpid(pid, &st, 0)
@@ -99,14 +99,14 @@ public final class PTY: @unchecked Sendable {
     /// waits in exit until its output is read, and nobody reads it any more.
     deinit { hangUp() }
 
-    /// The `krill` CLI next to the daemon binary.
+    /// The `kelp` CLI next to the daemon binary.
     public static let trampoline: String? = {
         let dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
-        let p = dir.appendingPathComponent("krill").path
+        let p = dir.appendingPathComponent("kelp").path
         return FileManager.default.isExecutableFile(atPath: p) ? p : nil
     }()
 
-    static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KRILL_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
+    static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KELP_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
     public func write(_ d: Data) { Unix.writeAll(master, d) }
 

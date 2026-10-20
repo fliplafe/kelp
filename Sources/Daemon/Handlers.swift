@@ -35,7 +35,7 @@ extension Daemon {
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
         case "ping": return "pong"
-        case "daemon.info":   // the app compares this with the krilld it ships to detect updates
+        case "daemon.info":   // the app compares this with the kelpd it ships to detect updates
             let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
             let liveCount = lock.withLock { live.values.filter { $0.snapshot.status != .exited }.count }
             return .obj(["path": .string(exe.resolvingSymlinksInPath().path), "binaryMTime": .double(Self.binaryMTime), "pid": .int(Int(getpid())),
@@ -206,7 +206,7 @@ extension Daemon {
             let src: DiffSource
             switch p["source"]?.string ?? "all" {
             case "turn":   // since the agent's last turn started
-                guard let base = existing(try p.req("session"))?.turnBase else { throw RPCError.invalidParams("That agent hasn't started a turn since Krill launched.") }
+                guard let base = existing(try p.req("session"))?.turnBase else { throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.") }
                 src = .since(tree: base)
             case "unstaged": src = .unstaged
             case "staged": src = .staged

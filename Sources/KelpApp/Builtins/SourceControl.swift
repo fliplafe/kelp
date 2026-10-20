@@ -1,0 +1,876 @@
+import AppKit
+import Core
+import GitKit
+
+/// Source Control, modeled on VS Code's: branch and sync up top, the commit message, merge / staged / unstaged
+/// changes (click → diff), and the history graph. All git work happens in the daemon; this only lays out the answers.
+@MainActor
+final class SourceControlController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+    enum Section: String { case merge = "Merge Changes", staged = "Staged Changes", changes = "Changes", graph = "Graph" }
+
+    final class Node: NSObject {
+        enum Kind { case section(Section), file(FileChange, Section), commit(Int), commitFile(String, FileChange), note(String) }
+        let kind: Kind
+        var children: [Node] = []
+        var files: [FileChange] = []   // a section's, also while it's folded
+        init(_ k: Kind) { kind = k }
+    }
+
+    private let outline = NSOutlineView()
+    private let graphOutline = NSOutlineView()
+    private let graphBar = GraphBar()
+    private var graphHeight: NSLayoutConstraint?, barHeight: NSLayoutConstraint?
+    private let branchButton = NSButton()
+    private let syncButton = NSButton()
+    private let message = CommitTextView()
+    private let placeholder = NSTextField(labelWithString: "")
+    private var messageHeight: NSLayoutConstraint?
+    private var commitButton: NSComboButton?
+    private var moreButton: NSButton?
+    private var commitArea: NSView?, separator: NSView?
+    private let empty = NSTextField(wrappingLabelWithString: "")
+
+    private var worktreeId: String?
+    private var changes: [FileChange] = []
+    private var info: BranchInfo?
+    private var commits: [GraphCommit] = []
+    private var more = false, limit = 200, loadingMore = false
+    private var commitFiles: [String: [FileChange]] = [:]
+    private var openCommits = Set<String>()
+    private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])
+    private var roots: [Node] = [], graphRoots: [Node] = []
+    private var graphWidth: CGFloat = GraphView.width(lanes: 1)
+    private var watcher: FileWatcher?
+    private var pending: DispatchWorkItem?
+    private var busy = false { didSet { updateCommitButton() } }
+    private let stats = NSTextField(labelWithString: "")
+
+    // MARK: view
+
+    override func loadView() {
+        branchButton.isBordered = false; branchButton.imagePosition = .imageLeading; branchButton.imageHugsTitle = true
+        branchButton.image = .symbol("arrow.triangle.branch"); branchButton.font = .ui(12, weight: .semibold)
+        branchButton.lineBreakMode = .byTruncatingMiddle; branchButton.target = self; branchButton.action = #selector(branchMenu)
+        branchButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        branchButton.toolTip = String(localized: "Switch or create a branch")
+        syncButton.isBordered = false; syncButton.imagePosition = .imageLeading; syncButton.font = .uiDigits(11, weight: .regular)
+        syncButton.contentTintColor = .secondaryLabelColor; syncButton.target = self; syncButton.action = #selector(sync)
+        let refresh = iconButton("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reloadAll() }
+        let more = iconButton("ellipsis.circle", String(localized: "More Actions")) { [weak self] in self?.showMoreMenu() }
+        moreButton = more
+        stats.font = .uiDigits(11, weight: .regular); stats.textColor = .secondaryLabelColor
+        stats.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let header = NSStackView(views: [branchButton, syncButton, NSView(), stats, refresh, more])
+        header.spacing = 6; header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 8)
+
+        let box = commitBox(); commitArea = box
+        let scroll = list(outline), graphScroll = list(graphOutline)
+        graphBar.onToggle = { [weak self] in self?.toggle(.graph) }
+        graphBar.onResize = { [weak self] in self?.resizeGraph(by: $0) }
+        graphBar.onRefresh = { [weak self] in Task { await self?.loadGraph() } }
+
+        empty.alignment = .center; empty.textColor = .secondaryLabelColor; empty.isHidden = true
+        let v = NSView()
+        let sep = NSBox(); sep.boxType = .separator; separator = sep
+        for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 0); gh.priority = .defaultHigh; graphHeight = gh
+        let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
+        let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: v.topAnchor), header.heightAnchor.constraint(equalToConstant: 32),
+            header.leadingAnchor.constraint(equalTo: v.leadingAnchor), header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            box.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 2),
+            box.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), box.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
+            sep.topAnchor.constraint(equalTo: box.bottomAnchor, constant: 10),
+            sep.leadingAnchor.constraint(equalTo: v.leadingAnchor), sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            sep.heightAnchor.constraint(equalToConstant: 1),   // unset, a rebuilt panel's layout can stretch it tall (and vertical)
+            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: graphBar.topAnchor), room,
+            scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            graphBar.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphBar.trailingAnchor.constraint(equalTo: v.trailingAnchor), bh,
+            graphScroll.topAnchor.constraint(equalTo: graphBar.bottomAnchor), graphScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor), gh,
+            graphScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40)
+        ])
+        view = v
+        updateHeader()   // NSButton's own "Button" title must not show while the branch loads
+        track { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track { FileIcon.revision } changed: { [weak self] _ in
+            for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
+        }
+    }
+
+    /// A list in the panel: one column, no header, rows drawn by the cells.
+    private func list(_ o: NSOutlineView) -> NSScrollView {
+        let col = NSTableColumn(identifier: .init("scm")); col.resizingMask = .autoresizingMask
+        o.addTableColumn(col); o.outlineTableColumn = col
+        o.headerView = nil; o.style = .plain; o.backgroundColor = .clear
+        o.intercellSpacing = .zero; o.indentationPerLevel = 0; o.rowSizeStyle = .custom
+        o.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        o.dataSource = self; o.delegate = self; o.target = self; o.action = #selector(clicked(_:))
+        let menu = NSMenu(); menu.delegate = self; o.menu = menu
+        let s = NSScrollView(); s.documentView = o; s.hasVerticalScroller = true; s.drawsBackground = false; s.autohidesScrollers = true
+        return s
+    }
+
+    private func iconButton(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
+        let b = ClosureButton(title: "", action: action)
+        b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip; b.contentTintColor = .secondaryLabelColor
+        b.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        return b
+    }
+
+    /// The message field (grows to six lines) and Commit with its split menu.
+    private func commitBox() -> NSView {
+        message.isRichText = false; message.font = .ui(13); message.drawsBackground = false
+        message.textContainerInset = NSSize(width: 4, height: 6); message.allowsUndo = true
+        message.isAutomaticQuoteSubstitutionEnabled = false; message.isAutomaticDashSubstitutionEnabled = false
+        message.isVerticallyResizable = true; message.autoresizingMask = .width
+        message.onCommit = { [weak self] in self?.commit(push: false, amend: false) }
+        message.onChange = { [weak self] in self?.messageChanged() }
+        let s = NSScrollView(); s.documentView = message; s.drawsBackground = false; s.hasVerticalScroller = false
+        placeholder.textColor = .placeholderTextColor; placeholder.font = .ui(13); placeholder.lineBreakMode = .byTruncatingTail
+        let field = FieldBox(); field.wantsLayer = true
+        let m = NSMenu()
+        m.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
+        m.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
+        let cb = NSComboButton(title: String(localized: "Commit"), menu: m, target: self, action: #selector(commitPressed))
+        cb.image = .symbol("checkmark", String(localized: "Commit")); cb.style = .split; cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
+        commitButton = cb
+        let box = NSView()
+        for x in [field, s, placeholder, cb] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
+        let h = s.heightAnchor.constraint(equalToConstant: 30); messageHeight = h
+        NSLayoutConstraint.activate([
+            field.topAnchor.constraint(equalTo: box.topAnchor), field.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            field.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            s.topAnchor.constraint(equalTo: field.topAnchor, constant: 1), s.bottomAnchor.constraint(equalTo: field.bottomAnchor, constant: -1),
+            s.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 2), s.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -2), h,
+            placeholder.leadingAnchor.constraint(equalTo: s.leadingAnchor, constant: 9), placeholder.topAnchor.constraint(equalTo: s.topAnchor, constant: 7),
+            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: s.trailingAnchor, constant: -8),
+            cb.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8), cb.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            cb.leadingAnchor.constraint(equalTo: box.leadingAnchor), cb.trailingAnchor.constraint(equalTo: box.trailingAnchor)
+        ])
+        return box
+    }
+
+    private func messageChanged() {
+        placeholder.isHidden = !message.string.isEmpty
+        if let lm = message.layoutManager, let tc = message.textContainer {
+            lm.ensureLayout(for: tc)
+            let lines = lm.usedRect(for: tc).height + message.textContainerInset.height * 2
+            messageHeight?.constant = min(max(30, ceil(lines)), 6 * 17 + 12)
+        }
+        updateCommitButton()
+    }
+
+    private func updateCommitButton() {
+        let staged = changes.contains { $0.staged && !$0.conflicted }
+        let branch = info?.current ?? "HEAD"
+        placeholder.stringValue = staged || changes.isEmpty ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
+        commitButton?.isEnabled = !busy && !changes.isEmpty   // with no message, Commit opens a page to write one
+    }
+
+    // MARK: data
+
+    func bind(_ wid: String?) {
+        guard wid != worktreeId else { return }
+        worktreeId = wid; changes = []; info = nil; commits = []; commitFiles = [:]; openCommits = []; limit = 200
+        message.string = ""; messageChanged()
+        watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] _ in self?.scheduleReload() } }
+        rebuild(); reloadAll()
+    }
+
+    private func scheduleReload() {
+        pending?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.reloadAll() }
+        pending = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
+    }
+
+    func reloadAll() {
+        guard let wid = worktreeId, let c = AppModel.shared.client else { return }
+        let id = JSONValue.obj(["id": .string(wid)])
+        Task {
+            do {
+                let ch = try await c.call("git.status", id, as: [FileChange].self)
+                let br = try await c.call("git.branches", id, as: BranchInfo.self)
+                let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
+                let changed = ch != changes || br != info
+                changes = ch; info = br; showError(nil)
+                updateHeader(); updateCommitButton()
+                showStats(ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self))
+                if graphStale || commits.isEmpty { await loadGraph() } else if changed { rebuildChanges() }
+            } catch {
+                changes = []; info = nil; commits = []
+                showError((error as? RPCError)?.message ?? "\(error)")
+                updateHeader(); rebuild()
+            }
+            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+        }
+    }
+
+    /// Nothing git can show here: say why instead of an empty commit box.
+    private func showError(_ message: String?) {
+        for v in [commitArea, separator, moreButton] { v?.isHidden = message != nil }
+        outline.enclosingScrollView?.isHidden = message != nil
+        empty.isHidden = message == nil
+        layoutGraph()
+        guard let message else { return }
+        let notRepo = message.contains("not a git repository")
+        let s = NSMutableAttributedString(string: notRepo ? String(localized: "Not a Git Repository") : String(localized: "Git Isn't Available"),
+                                          attributes: [.font: NSFont.ui(13, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor])
+        s.append(NSAttributedString(string: "\n" + (notRepo ? String(localized: "This folder isn't under git version control.") : message),
+                                    attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        if let fix = FixRecipes.fix(for: message) {   // the command that makes git work again, selectable
+            s.append(NSAttributedString(string: String(localized: "\n\nFix it in Terminal:\n") + fix.command,
+                                        attributes: [.font: NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+        }
+        let p = NSMutableParagraphStyle(); p.alignment = .center; p.paragraphSpacing = 4
+        s.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: s.length))
+        empty.attributedStringValue = s
+    }
+
+    private func loadGraph() async {
+        guard let wid = worktreeId, let c = AppModel.shared.client else { return }
+        if let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)])),
+           let list = Perf.measure("graph decode", { try? r["commits"]?.decode([GraphCommit].self) }) {
+            commits = list; more = r["more"]?.bool == true
+            let lanes = list.map { c in ([c.lane] + c.top.flatMap { $0 } + c.bottom.flatMap { $0 }).max() ?? 0 }.max() ?? 0
+            graphWidth = GraphView.width(lanes: min(lanes + 1, GraphView.maxLanes))
+        }
+        loadingMore = false
+        Perf.measure("graph rows") { rebuild() }
+    }
+
+    /// "+120 −30" for everything not committed yet; hovering splits it into code, tests and generated files.
+    private func showStats(_ s: LineStats?) {
+        guard let s, s.totalAdded + s.totalRemoved > 0 else { stats.isHidden = true; return }
+        stats.isHidden = false
+        stats.attributedStringValue = RowBadges.changes(s) ?? NSAttributedString()
+        let names: [LineStats.Kind: String] = [.code: "Code", .tests: String(localized: "Tests"), .generated: String(localized: "Generated")]
+        stats.toolTip = String(localized: "Not committed yet\n") + LineStats.Kind.allCases.compactMap { k in
+            let a = s.added[k] ?? 0, r = s.removed[k] ?? 0
+            return a + r == 0 ? nil : "\(names[k] ?? ""): +\(a) −\(r)"
+        }.joined(separator: "\n")
+    }
+
+    private func updateHeader() {
+        guard let info else { branchButton.title = ""; syncButton.isHidden = true; return }
+        branchButton.title = info.current ?? String(localized: "Detached at \(info.head ?? "?")")
+        if info.merging { branchButton.title += " (Merging)" }
+        if let up = info.upstream {
+            syncButton.isHidden = false; syncButton.image = .symbol("arrow.triangle.2.circlepath", String(localized: "Sync"))
+            syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = String(localized: "Pull from and push to \(up)")
+        } else if info.current != nil, !info.remote.isEmpty {
+            syncButton.isHidden = false; syncButton.image = .symbol("icloud.and.arrow.up", String(localized: "Publish Branch"))
+            syncButton.title = ""; syncButton.toolTip = String(localized: "Publish Branch")
+        } else { syncButton.isHidden = true }
+    }
+
+    // MARK: tree
+
+    private func rebuild() { rebuildChanges(); rebuildGraph() }
+
+    /// Sections fold through `collapsed`, not the outline's own expansion state, which goes stale across reloads
+    /// (a click then "expanded" a section already open).
+    private func rebuildChanges() {
+        var out: [Node] = []
+        func section(_ s: Section, _ files: [FileChange]) {
+            guard !files.isEmpty else { return }
+            let n = Node(.section(s)); n.files = files
+            if !collapsed.contains(s.rawValue) { n.children = files.map { Node(.file($0, s)) } }
+            out.append(n)
+        }
+        section(.merge, changes.filter(\.conflicted))
+        section(.staged, changes.filter { $0.staged && !$0.conflicted })
+        section(.changes, changes.filter { ($0.unstaged || $0.untracked) && !$0.conflicted })
+        if changes.isEmpty, info != nil { out.append(Node(.note("No changes"))) }
+        roots = out
+        outline.reloadData(); outline.expandItem(nil, expandChildren: true)
+    }
+
+    private func rebuildGraph() {
+        graphRoots = commits.indices.map { i in
+            let n = Node(.commit(i)), h = commits[i].hash
+            if openCommits.contains(h) { n.children = (commitFiles[h] ?? []).map { Node(.commitFile(h, $0)) } }
+            return n
+        }
+        graphOutline.reloadData(); graphOutline.expandItem(nil, expandChildren: true)
+        layoutGraph()
+    }
+
+    /// The graph is a pane of its own under the changes, as in VS Code, so a long list of changes never pushes it
+    /// out of sight: its header folds it, dragging the header sizes it.
+    private func layoutGraph() {
+        let has = !commits.isEmpty && empty.isHidden, open = has && !collapsed.contains(Section.graph.rawValue)
+        graphBar.isHidden = !has; graphBar.expanded = open
+        graphOutline.enclosingScrollView?.isHidden = !open
+        barHeight?.constant = has ? GraphBar.height : 0
+        graphHeight?.constant = open ? UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260 : 0
+    }
+
+    private func resizeGraph(by dy: CGFloat) {
+        guard let gh = graphHeight, gh.constant > 0, let changes = outline.enclosingScrollView, let graph = graphOutline.enclosingScrollView else { return }
+        gh.constant = min(max(60, graph.frame.height + dy), changes.frame.height + graph.frame.height - 80)
+        UserDefaults.standard.set(gh.constant, forKey: "scm.graphHeight")
+    }
+
+    private func toggle(_ s: Section) {
+        if collapsed.contains(s.rawValue) { collapsed.remove(s.rawValue) } else { collapsed.insert(s.rawValue) }
+        UserDefaults.standard.set(Array(collapsed), forKey: "scm.collapsed")
+        if s == .graph { layoutGraph() } else { rebuildChanges() }
+    }
+
+    private func roots(of o: NSOutlineView) -> [Node] { o === graphOutline ? graphRoots : roots }
+    func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? Node)?.children.count ?? roots(of: o).count }
+    func outlineView(_ o: NSOutlineView, child i: Int, ofItem item: Any?) -> Any { (item as? Node)?.children[i] ?? roots(of: o)[i] }
+    func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { !((item as? Node)?.children.isEmpty ?? true) }
+    func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { false }
+    func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        switch (item as? Node)?.kind {
+        case .section?, .note?: TextSize.of(26)
+        default: TextSize.of(22)
+        }
+    }
+    func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        if case .note? = (item as? Node)?.kind { return false }
+        return true
+    }
+    func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { HoverRowView() }
+
+    func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
+        guard let n = item as? Node else { return nil }
+        switch n.kind {
+        case .section(let s):
+            return SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n))
+        case .file(let f, let s):
+            return FileCell(f, letter: Self.letter(f, s), indent: 16, actions: fileActions(f, s))
+        case .commit(let i):
+            if more, !loadingMore, i >= commits.count - 30 { loadMore() }
+            let c = commits[i]
+            return CommitCell(c, graphWidth: graphWidth, isHead: c.hash.hasPrefix(info?.head ?? "\u{0}"))
+        case .commitFile(let h, let f):
+            let cell = FileCell(f, letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
+            // The lanes below the commit run on through its expanded files, as in VS Code.
+            let g = GraphView(); g.through = Array(Set(commits.first { $0.hash == h }?.bottom.compactMap(\.last) ?? []))
+            g.frame = NSRect(x: 6, y: 0, width: graphWidth, height: 22); g.autoresizingMask = [.height]
+            cell.addSubview(g)
+            return cell
+        case .note(let t):
+            return NoteCell(t)
+        }
+    }
+
+    private func loadMore() {
+        loadingMore = true; limit += 200
+        DispatchQueue.main.async { Task { [weak self] in await self?.loadGraph() } }
+    }
+
+    // MARK: clicks
+
+    @objc private func clicked(_ o: NSOutlineView) {
+        guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
+        switch n.kind {
+        case .section(let s): toggle(s)
+        case .file(let f, let s): open(f, s)
+        case .commit(let i): toggle(commit: commits[i].hash)
+        case .commitFile(let h, let f): if let w = worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) }
+        case .note: break
+        }
+    }
+
+    private func open(_ f: FileChange, _ s: Section) {
+        guard let w = worktreeId else { return }
+        if s == .merge { openFile(f); return }
+        Workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
+    }
+    private func openFile(_ f: FileChange) {
+        if let w = AppModel.shared.worktree(worktreeId) { Workbench.open(TabURI.file(w.path + "/" + f.path)) }
+    }
+
+    private func toggle(commit hash: String) {
+        if openCommits.contains(hash) { openCommits.remove(hash); rebuildGraph(); return }
+        openCommits.insert(hash)
+        guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
+        Task {
+            commitFiles[hash] = (try? await AppModel.shared.client?.call("git.commitFiles", .obj(["id": .string(wid), "commit": .string(hash)]), as: [FileChange].self)) ?? []
+            rebuildGraph()
+        }
+    }
+
+    // MARK: actions
+
+    private func run(_ method: String, _ extra: [String: JSONValue] = [:], done: String? = nil) {
+        guard let wid = worktreeId else { return }
+        var p = extra; p["id"] = .string(wid)
+        busy = true
+        Task {
+            let r = await AppModel.shared.tryCall(method, .object(p))
+            busy = false
+            if let e = r.error {
+                // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
+                if method == "git.remote", extra["op"]?.string == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
+                else if method == "git.remote", extra["op"]?.string == "pull", e.lowercased().contains("conflict") {
+                    GitFix.offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
+                } else { Banner.show(e, style: .error) }
+            } else if let done { Banner.show(done) }
+            reloadAll()
+        }
+    }
+
+    private func stage(_ files: [FileChange], _ on: Bool) {
+        run(on ? "git.stage" : "git.unstage", ["files": .array(files.map { .string($0.path) })])
+    }
+
+    private func discard(_ files: [FileChange]) {
+        guard !files.isEmpty else { return }
+        let a = NSAlert(); a.alertStyle = .warning
+        let name = (files[0].path as NSString).lastPathComponent
+        if files.count == 1, files[0].untracked {
+            a.messageText = String(localized: "Delete “\(name)”?"); a.informativeText = String(localized: "Git doesn't track this file, so it can't be restored.")
+            a.addButton(withTitle: String(localized: "Delete File")).hasDestructiveAction = true
+        } else {
+            a.messageText = files.count == 1 ? String(localized: "Discard changes in “\(name)”?") : String(localized: "Discard all \(files.count) changes?")
+            a.informativeText = String(localized: "This can't be undone.") + (files.contains(where: \.untracked) ? String(localized: " Untracked files are deleted.") : "")
+            a.addButton(withTitle: files.count == 1 ? String(localized: "Discard Changes") : String(localized: "Discard \(files.count) Changes")).hasDestructiveAction = true
+        }
+        a.addButton(withTitle: String(localized: "Cancel"))
+        guard runAsSheet(a) == .alertFirstButtonReturn else { return }
+        run("git.discard", ["files": .array(files.map { .string($0.path) })])
+    }
+
+    private func sectionActions(_ s: Section, _ n: Node) -> [RowAction] {
+        let files = n.files
+        switch s {
+        case .merge: return [RowAction("plus", "Stage All (Mark Resolved)") { [weak self] in self?.stage(files, true) }]
+        case .staged: return [RowAction("minus", "Unstage All") { [weak self] in self?.stage(files, false) }]
+        case .changes: return [RowAction("arrow.uturn.backward", "Discard All Changes") { [weak self] in self?.discard(files) },
+                               RowAction("plus", "Stage All Changes") { [weak self] in self?.stage(files, true) }]
+        case .graph: return [RowAction("arrow.clockwise", "Refresh") { [weak self] in Task { await self?.loadGraph() } }]
+        }
+    }
+
+    private func fileActions(_ f: FileChange, _ s: Section) -> [RowAction] {
+        var a = [RowAction("doc", "Open File") { [weak self] in self?.openFile(f) }]
+        switch s {
+        case .staged: a.append(RowAction("minus", "Unstage Changes") { [weak self] in self?.stage([f], false) })
+        case .changes:
+            a.append(RowAction("arrow.uturn.backward", "Discard Changes") { [weak self] in self?.discard([f]) })
+            a.append(RowAction("plus", "Stage Changes") { [weak self] in self?.stage([f], true) })
+        case .merge: a.append(RowAction("plus", "Stage (Mark Resolved)") { [weak self] in self?.stage([f], true) })
+        case .graph: break
+        }
+        return a
+    }
+
+    @objc private func commitPressed() { commit(push: false, amend: false) }
+
+    private func commit(push: Bool, amend: Bool) {
+        let text = message.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let wid = worktreeId, !busy, !changes.isEmpty || amend else { NSSound.beep(); return }
+        // No message yet: a page to write it on, as in VS Code (amending starts from the last commit's message).
+        guard !text.isEmpty else {
+            let last = amend ? commits.first { $0.hash.hasPrefix(info?.head ?? "\u{0}") }?.subject : nil
+            Workbench.open(CommitMessageTab.uri(wid, push: push, amend: amend, message: last)); return
+        }
+        busy = true
+        Task {
+            if await GitCommit.run(wid, message: text, push: push, amend: amend) { message.string = ""; messageChanged() }
+            busy = false
+            reloadAll()
+        }
+    }
+
+    @objc private func sync() {
+        guard let info else { return }
+        if info.upstream == nil { run("git.remote", ["op": "push"], done: "Published \(info.current ?? "branch")"); return }
+        guard let wid = worktreeId else { return }
+        busy = true
+        Task {
+            if await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "pull"])) != nil {
+                if (info.ahead ?? 0) > 0 { _ = await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "push"])) }
+            }
+            busy = false; reloadAll()
+        }
+    }
+
+    @objc private func branchMenu() {
+        guard let info else { return }
+        let m = NSMenu()
+        for b in info.local {
+            let i = m.add(b) { [weak self] in self?.run("git.switch", ["branch": .string(b)]) }
+            i.state = b == info.current ? .on : .off
+        }
+        if !info.remote.isEmpty {
+            let sub = NSMenu()
+            for b in info.remote { sub.add(b) { [weak self] in self?.run("git.switch", ["branch": .string(b), "remote": true]) } }
+            m.addItem(.separator())
+            let r = m.addItem(withTitle: String(localized: "Remote Branches"), action: nil, keyEquivalent: ""); r.submenu = sub
+        }
+        m.addItem(.separator())
+        m.add(String(localized: "Create Branch…")) { [weak self] in
+            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")), !name.isEmpty else { return }
+            self?.run("git.switch", ["branch": .string(name), "create": true])
+        }
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: branchButton.bounds.height + 4), in: branchButton)
+    }
+
+    private func showMoreMenu() {
+        guard let wid = worktreeId else { return }
+        let m = NSMenu()
+        m.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
+        m.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
+        m.add(String(localized: "Fetch")) { [weak self] in self?.run("git.remote", ["op": "fetch"]) }
+        m.addItem(.separator())
+        m.add(String(localized: "Stash Changes")) { [weak self] in self?.run("git.stash", done: String(localized: "Changes stashed")) }
+        m.add(String(localized: "Pop Stash")) { [weak self] in self?.run("git.stash", ["pop": true]) }
+        m.addItem(.separator())
+        m.add(String(localized: "Open All Changes")) { Workbench.open(DiffTab.uri(wid)) }
+        m.add(String(localized: "Create Pull Request…")) { PRActions.create(worktree: wid) }
+        if let w = AppModel.shared.worktree(wid), let r = AppModel.shared.repo(w.repoId), w.path != r.path {
+            m.add(String(localized: "Merge into \(r.baseBranch)…")) { [weak self] in self?.mergeIntoBase() }
+        }
+        let anchor: NSView = moreButton ?? view
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+    }
+
+    /// A workspace on its own branch (worktree) into the project's base branch.
+    private func mergeIntoBase() {
+        guard let wid = worktreeId else { return }
+        Task {
+            guard let r = await AppModel.shared.call("git.merge", .obj(["id": .string(wid)])) else { return }
+            if r["merged"]?.bool == true { Banner.show(String(localized: "Merged")); NotificationCenter.default.post(name: .kelpRefresh, object: nil); return }
+            let files = (r["conflicts"]?.array ?? []).compactMap(\.string)
+            let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
+            a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
+            a.addButton(withTitle: "OK")
+            if FileActions.targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
+            if await runSheet(a) == .alertSecondButtonReturn, let w = AppModel.shared.worktree(wid), let repo = AppModel.shared.repo(w.repoId) {
+                GitFix.send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
+            }
+        }
+    }
+
+    // MARK: context menu
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let o = menu === graphOutline.menu ? graphOutline : outline
+        guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
+        switch n.kind {
+        case .file(let f, let s):
+            if s != .merge { menu.add(String(localized: "Open Changes")) { [weak self] in self?.open(f, s) } }
+            menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
+            menu.addItem(.separator())
+            for a in fileActions(f, s).dropFirst() { menu.add(a.title) { a.run() } }
+            menu.addItem(.separator())
+            menu.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(f.path, forType: .string) }
+        case .commit(let i):
+            let c = commits[i]
+            menu.add(String(localized: "Copy Commit Hash")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.hash, forType: .string) }
+            menu.add(String(localized: "Copy Commit Message")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.subject, forType: .string) }
+        case .commitFile(let h, let f):
+            menu.add(String(localized: "Open Changes")) { [weak self] in if let w = self?.worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
+            menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
+        default: break
+        }
+    }
+
+    // MARK: status letters (VS Code's colors)
+
+    static func letter(_ f: FileChange, _ s: Section) -> (String, NSColor) {
+        if s == .merge || f.conflicted { return ("!", .systemRed) }
+        if f.untracked { return ("U", .systemGreen) }
+        switch s == .changes ? f.worktree : f.index {
+        case "A": return ("A", .systemGreen)
+        case "D": return ("D", .systemRed)
+        case "R": return ("R", .systemBlue)
+        case "C": return ("C", .systemBlue)
+        default: return ("M", .systemOrange)
+        }
+    }
+}
+
+// MARK: - cells
+
+struct RowAction {
+    let symbol: String, title: String, run: @MainActor () -> Void
+    init(_ symbol: String, _ title: String, _ run: @escaping @MainActor () -> Void) { self.symbol = symbol; self.title = title; self.run = run }
+}
+
+/// Rows that show buttons while the pointer is over them (VS Code's inline actions).
+@MainActor
+protocol Hoverable: AnyObject { func setHover(_ on: Bool) }
+
+/// Rounded selection inset from the edges, and hover tracking for the cell.
+final class HoverRowView: NSTableRowView {
+    private var area: NSTrackingArea?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        let a = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(a); area = a
+    }
+    override func mouseEntered(with e: NSEvent) { (subviews.first as? Hoverable)?.setHover(true) }
+    override func mouseExited(with e: NSEvent) { (subviews.first as? Hoverable)?.setHover(false) }
+    override func drawSelection(in r: NSRect) {
+        (isEmphasized ? NSColor.selectedContentBackgroundColor : NSColor.unemphasizedSelectedContentBackgroundColor).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 1), xRadius: 5, yRadius: 5).fill()
+    }
+}
+
+private func actionButtons(_ actions: [RowAction]) -> NSStackView {
+    let s = NSStackView(views: actions.map { a in
+        let b = ClosureButton(title: "") { a.run() }
+        b.image = .symbol(a.symbol, a.title); b.isBordered = false; b.toolTip = a.title
+        b.symbolConfiguration = .init(pointSize: 11, weight: .medium); b.contentTintColor = .secondaryLabelColor
+        b.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        return b
+    })
+    s.spacing = 2; s.isHidden = true
+    return s
+}
+
+private func pinRow(_ cell: NSView, _ views: [NSView], leading: CGFloat, trailing: CGFloat = 10) {
+    let row = NSStackView(views: views); row.spacing = 5; row.alignment = .centerY
+    row.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(row)
+    NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: leading),
+                                 row.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -trailing),
+                                 row.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])
+}
+
+final class SectionCell: NSTableCellView, Hoverable {
+    private let chevron = NSImageView()
+    private let actions: NSStackView
+    var expanded = true { didSet { showChevron() } }
+    private func showChevron() { chevron.image = .symbol(expanded ? "chevron.down" : "chevron.right") }
+    init(title: String, count: Int?, expanded: Bool, actions a: [RowAction]) {
+        actions = actionButtons(a)
+        super.init(frame: .zero)
+        chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold); chevron.contentTintColor = .tertiaryLabelColor
+        chevron.widthAnchor.constraint(equalToConstant: 10).isActive = true
+        let t = NSTextField(labelWithString: title); t.font = .ui(11, weight: .semibold); t.textColor = .secondaryLabelColor
+        let c = NSTextField(labelWithString: count.map(String.init) ?? ""); c.font = .uiDigits(10, weight: .medium)
+        c.textColor = .secondaryLabelColor
+        pinRow(self, [chevron, t, NSView(), actions, c], leading: 10)
+        self.expanded = expanded; showChevron()   // didSet doesn't run in init
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func setHover(_ on: Bool) { actions.isHidden = !on }
+}
+
+/// The Graph pane's header: a click folds the pane, a drag sizes it (VS Code's view header and sash in one).
+final class GraphBar: NSView {
+    static let height = TextSize.of(26) + 1
+    var onToggle: (() -> Void)?, onResize: ((CGFloat) -> Void)?, onRefresh: (() -> Void)?
+    var expanded = true { didSet { cell?.expanded = expanded; window?.invalidateCursorRects(for: self) } }
+    private var cell: SectionCell?
+
+    init() {
+        super.init(frame: .zero)
+        let c = SectionCell(title: loc(SourceControlController.Section.graph.rawValue), count: nil, expanded: true,
+                            actions: [RowAction("arrow.clockwise", "Refresh") { [weak self] in self?.onRefresh?() }])
+        let sep = NSBox(); sep.boxType = .separator
+        for v in [sep, c] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        NSLayoutConstraint.activate([
+            sep.topAnchor.constraint(equalTo: topAnchor), sep.heightAnchor.constraint(equalToConstant: 1),
+            sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor),
+            c.topAnchor.constraint(equalTo: sep.bottomAnchor), c.bottomAnchor.constraint(equalTo: bottomAnchor),
+            c.leadingAnchor.constraint(equalTo: leadingAnchor), c.trailingAnchor.constraint(equalTo: trailingAnchor)
+        ])
+        cell = c; clipsToBounds = true
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        setAccessibilityElement(true); setAccessibilityRole(.disclosureTriangle); setAccessibilityLabel("Graph")
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func mouseEntered(with e: NSEvent) { cell?.setHover(true) }
+    override func mouseExited(with e: NSEvent) { cell?.setHover(false) }
+    override func resetCursorRects() { if expanded { addCursorRect(NSRect(x: 0, y: bounds.height - 4, width: bounds.width, height: 4), cursor: .resizeUpDown) } }
+    override func accessibilityPerformPress() -> Bool { onToggle?(); return true }
+    override func accessibilityValue() -> Any? { expanded }
+
+    private var start: CGFloat = 0, last: CGFloat = 0, dragged = false
+    override func mouseDown(with e: NSEvent) { start = e.locationInWindow.y; last = start; dragged = false }
+    override func mouseDragged(with e: NSEvent) {
+        let y = e.locationInWindow.y
+        dragged = dragged || (expanded && abs(y - start) > 3)
+        if dragged { onResize?(y - last); last = y }
+    }
+    override func mouseUp(with e: NSEvent) { if !dragged { onToggle?() } }
+}
+
+final class FileCell: NSTableCellView, Hoverable {
+    private let actions: NSStackView
+    init(_ f: FileChange, letter: (String, NSColor), indent: CGFloat, actions a: [RowAction]) {
+        actions = actionButtons(a)
+        super.init(frame: .zero)
+        let icon = NSImageView(image: FileIcon.image((f.path as NSString).lastPathComponent))
+        icon.imageScaling = .scaleProportionallyDown
+        icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        let name = NSTextField(labelWithString: (f.path as NSString).lastPathComponent); name.font = .ui(12)
+        name.lineBreakMode = .byTruncatingTail
+        if letter.0 == "D" { name.attributedStringValue = NSAttributedString(string: name.stringValue, attributes: [.strikethroughStyle: 1, .font: NSFont.ui(12)]) }
+        let dir = NSTextField(labelWithString: (f.path as NSString).deletingLastPathComponent); dir.font = .ui(11)
+        dir.textColor = .tertiaryLabelColor; dir.lineBreakMode = .byTruncatingHead
+        dir.setContentCompressionResistancePriority(.init(200), for: .horizontal); name.setContentCompressionResistancePriority(.init(400), for: .horizontal)
+        let l = NSTextField(labelWithString: letter.0); l.font = .monospacedSystemFont(ofSize: 11, weight: .semibold); l.textColor = letter.1
+        l.alignment = .center; l.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        pinRow(self, [icon, name, dir, NSView(), actions, l], leading: indent + 10)
+        toolTip = f.path
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func setHover(_ on: Bool) { actions.isHidden = !on }
+}
+
+final class NoteCell: NSTableCellView {
+    init(_ text: String) {
+        super.init(frame: .zero)
+        let t = NSTextField(labelWithString: text); t.font = .ui(12); t.textColor = .tertiaryLabelColor
+        pinRow(self, [t], leading: 26)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+final class CommitCell: NSTableCellView {
+    init(_ c: GraphCommit, graphWidth: CGFloat, isHead: Bool) {
+        super.init(frame: .zero)
+        let g = GraphView(); g.commit = c; g.isHead = isHead
+        g.translatesAutoresizingMaskIntoConstraints = false; addSubview(g)
+        let subject = NSTextField(labelWithString: c.subject); subject.font = .ui(12, weight: isHead ? .semibold : .regular)
+        subject.lineBreakMode = .byTruncatingTail; subject.setContentCompressionResistancePriority(.init(200), for: .horizontal)
+        let badges = Self.badges(c.refs)
+        let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .tertiaryLabelColor
+        let row = NSStackView(views: [subject] + badges + [NSView(), date]); row.spacing = 5; row.alignment = .centerY
+        row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
+        NSLayoutConstraint.activate([
+            g.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6), g.topAnchor.constraint(equalTo: topAnchor),
+            g.bottomAnchor.constraint(equalTo: bottomAnchor), g.widthAnchor.constraint(equalToConstant: graphWidth),
+            row.leadingAnchor.constraint(equalTo: g.trailingAnchor, constant: 2), row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        let when = Date(timeIntervalSince1970: c.date).formatted(date: .abbreviated, time: .shortened)
+        toolTip = "\(c.subject)\n\n\(c.author) · \(when)\n\(c.hash.prefix(10))" + (c.refs.isEmpty ? "" : "\n" + c.refs.joined(separator: ", "))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// Local branches and tags (HEAD's branch first); a remote ref shows only when no local branch of that name is here.
+    static func badges(_ refs: [String]) -> [NSView] {
+        var out: [(String, NSColor, Bool)] = []
+        let locals = Set(refs.compactMap { r -> String? in
+            if r.hasPrefix("HEAD -> ") { return String(r.dropFirst(8)) }
+            return r.hasPrefix("tag: ") || r.contains("/") || r == "HEAD" ? nil : r
+        })
+        for r in refs {
+            if r.hasPrefix("HEAD -> ") { out.insert((String(r.dropFirst(8)), .controlAccentColor, true), at: 0) }
+            else if r == "HEAD" { out.insert(("HEAD", .controlAccentColor, true), at: 0) }
+            else if r.hasPrefix("tag: ") { out.append((String(r.dropFirst(5)), .systemOrange, false)) }
+            else if r.contains("/") { if !locals.contains(String(r.drop { $0 != "/" }.dropFirst())) { out.append((r, .secondaryLabelColor, false)) } }
+            else { out.append((r, .controlAccentColor, false)) }
+        }
+        var views: [NSView] = out.prefix(2).map { Badge(text: $0.0, color: $0.1, strong: $0.2) }
+        if out.count > 2 { views.append(Badge(text: "+\(out.count - 2)", color: .secondaryLabelColor, strong: false)) }
+        return views
+    }
+
+    static func relative(_ t: Double) -> String {
+        let s = Date().timeIntervalSince1970 - t
+        switch s {
+        case ..<(86400 * 7): return shortAgo(Date(timeIntervalSince1970: t))   // "now", "4m", "2h", "3d" in the user's language
+        default:
+            let d = Date(timeIntervalSince1970: t)
+            let sameYear = Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year)
+            return sameYear ? d.formatted(.dateTime.month(.abbreviated).day()) : d.formatted(.dateTime.month(.abbreviated).day().year())
+        }
+    }
+}
+
+/// A small rounded label for a branch or tag.
+final class Badge: NSView {
+    private let text: NSAttributedString
+    private let color: NSColor
+    init(text: String, color: NSColor, strong: Bool) {
+        self.color = color
+        self.text = NSAttributedString(string: text, attributes: [.font: NSFont.ui(10, weight: strong ? .semibold : .medium),
+                                                                   .foregroundColor: color])
+        super.init(frame: .zero)
+        setContentCompressionResistancePriority(.init(300), for: .horizontal)
+        toolTip = text
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var intrinsicContentSize: NSSize { NSSize(width: min(ceil(text.size().width) + 10, 110), height: 16) }
+    override func draw(_ r: NSRect) {
+        color.withAlphaComponent(0.15).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        let w = bounds.width - 10
+        text.draw(with: NSRect(x: 5, y: (bounds.height - text.size().height) / 2, width: w, height: text.size().height),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
+
+/// One row of the history graph: lines from the row above to the dot, from the dot to the row below.
+final class GraphView: NSView {
+    static let maxLanes = 6
+    static let step: CGFloat = 11, inset: CGFloat = 7
+    static let colors: [NSColor] = [.systemBlue, .systemPurple, .systemOrange, .systemTeal, .systemPink, .systemGreen, .systemIndigo, .systemBrown]
+    static func width(lanes: Int) -> CGFloat { inset * 2 + CGFloat(max(lanes, 1) - 1) * step }
+    static func x(_ lane: Int) -> CGFloat { inset + CGFloat(lane) * step }
+    static func color(_ lane: Int) -> NSColor { colors[lane % colors.count] }
+
+    var commit: GraphCommit?
+    var isHead = false
+    /// Under an expanded commit: just these lanes, straight down.
+    var through: [Int]?
+    override var isFlipped: Bool { true }
+
+    override func draw(_ r: NSRect) {
+        if let through {
+            for l in through {
+                let p = NSBezierPath(); p.move(to: NSPoint(x: Self.x(l), y: 0)); p.line(to: NSPoint(x: Self.x(l), y: bounds.height))
+                p.lineWidth = 1.5; Self.color(l).setStroke(); p.stroke()
+            }
+            return
+        }
+        guard let c = commit else { return }
+        let mid = bounds.height / 2
+        func segment(_ l: [Int], from y0: CGFloat, to y1: CGFloat, color: NSColor) {
+            guard l.count == 2 else { return }
+            let x0 = Self.x(l[0]), x1 = Self.x(l[1]), p = NSBezierPath()
+            p.move(to: NSPoint(x: x0, y: y0))
+            if x0 == x1 { p.line(to: NSPoint(x: x1, y: y1)) }
+            else { p.curve(to: NSPoint(x: x1, y: y1), controlPoint1: NSPoint(x: x0, y: (y0 + y1) / 2), controlPoint2: NSPoint(x: x1, y: (y0 + y1) / 2)) }
+            p.lineWidth = 1.5; color.setStroke(); p.stroke()
+        }
+        for l in c.top { segment(l, from: 0, to: mid, color: Self.color(l[0])) }
+        for l in c.bottom { segment(l, from: mid, to: bounds.height, color: Self.color(l.count == 2 ? l[1] : c.lane)) }
+        let x = Self.x(c.lane), col = Self.color(c.lane)
+        if isHead {
+            let ring = NSBezierPath(ovalIn: NSRect(x: x - 4.5, y: mid - 4.5, width: 9, height: 9))
+            NSColor.windowBackgroundColor.setFill(); ring.fill()
+            ring.lineWidth = 2; col.setStroke(); ring.stroke()
+        } else {
+            col.setFill(); NSBezierPath(ovalIn: NSRect(x: x - 3.5, y: mid - 3.5, width: 7, height: 7)).fill()
+        }
+    }
+}
+
+/// The commit message: ⌘↩ commits, like VS Code.
+final class CommitTextView: NSTextView {
+    var onCommit: (() -> Void)?
+    var onChange: (() -> Void)?
+    private func isCommitKey(_ e: NSEvent) -> Bool { (e.keyCode == 36 || e.keyCode == 76) && e.modifierFlags.contains(.command) }
+    override func performKeyEquivalent(with e: NSEvent) -> Bool {
+        if window?.firstResponder === self, isCommitKey(e) { onCommit?(); return true }
+        return super.performKeyEquivalent(with: e)
+    }
+    override func keyDown(with e: NSEvent) { if isCommitKey(e) { onCommit?() } else { super.keyDown(with: e) } }
+    override func didChangeText() { super.didChangeText(); onChange?() }
+}
+
+/// The message field's rounded border; AppKit calls `updateLayer` again on every light / dark change.
+private final class FieldBox: NSView {
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.cornerRadius = 6; layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.cgColor; layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+    }
+}

@@ -25,10 +25,10 @@ final class Box: @unchecked Sendable {
 /// Agents must own the PTY as controlling terminal, or resizes (SIGWINCH) never reach them.
 @Test func resizeReachesChild() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let krill = root.appendingPathComponent(".build/debug/krill").path
-    guard FileManager.default.isExecutableFile(atPath: krill) else { return }   // `swift build` first
+    let kelp = root.appendingPathComponent(".build/debug/kelp").path
+    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
     let box = Box()
-    let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: krill)
+    let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: kelp)
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
     // Wait for the child rather than a fixed time: a busy machine (parallel builds) starts it late.
     for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
@@ -44,7 +44,7 @@ final class Box: @unchecked Sendable {
 /// Agents are found on the login-shell PATH even when the daemon itself started with a bare one (from Finder).
 @Test func loginPathFindsToolsAndExplainsMisses() throws {
     #expect(try LoginPath.resolve("git").hasSuffix("/git"))
-    #expect(throws: RPCError.self) { try LoginPath.resolve("krill-no-such-agent-cli") }
+    #expect(throws: RPCError.self) { try LoginPath.resolve("kelp-no-such-agent-cli") }
 }
 
 /// The limits probe drops its PTY right after signalling the agent, which still writes as it quits. As the terminal's
@@ -52,13 +52,13 @@ final class Box: @unchecked Sendable {
 /// for good, each one holding a PTY until the daemon ran out of file descriptors.
 @Test func droppedPTYLetsItsProgramExit() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let krill = root.appendingPathComponent(".build/debug/krill").path
-    guard FileManager.default.isExecutableFile(atPath: krill) else { return }   // `swift build` first
+    let kelp = root.appendingPathComponent(".build/debug/kelp").path
+    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
     let pid: pid_t
     do {
         let box = Box()
         let p = try PTY(argv: ["/bin/sh", "-c", "trap 'echo bye; exit 0' TERM HUP; echo ready; while :; do sleep 0.1; done"],
-                        cwd: "/tmp", env: [:], trampoline: krill)
+                        cwd: "/tmp", env: [:], trampoline: kelp)
         p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
         for _ in 0..<50 where !box.text.contains("ready") { try await Task.sleep(for: .milliseconds(100)) }
         pid = p.pid

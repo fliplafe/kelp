@@ -32,7 +32,7 @@ public final class CodeEditor: NSObject {
             appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),
             peripherals: .init(showMinimap: Self.showMinimap && !big,
-                               showFoldingRibbon: ProcessInfo.processInfo.environment["KRILL_NO_FOLD"] == nil)
+                               showFoldingRibbon: ProcessInfo.processInfo.environment["KELP_NO_FOLD"] == nil)
         )
         // A big file: empty first, the text once the view sits in its scroll view. A text view outside one lays out
         // every line (a 50k-line file was 24 s of main thread); inside, only what's on screen. (The minimap would keep
@@ -41,7 +41,7 @@ public final class CodeEditor: NSObject {
         super.init()
         relay.owner = self
         if big { _ = controller.view; suppress = true; controller.setText(text); suppress = false }
-        if ProcessInfo.processInfo.environment["KRILL_EDITOR_TIMING"] != nil { print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms") }
+        if ProcessInfo.processInfo.environment["KELP_EDITOR_TIMING"] != nil { print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms") }
     }
 
     public var view: NSView { controller.view }

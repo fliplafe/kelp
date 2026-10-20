@@ -37,8 +37,8 @@ public final class Daemon: @unchecked Sendable {
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {
         self.root = root
         try Paths.ensure(root)
-        self.store = try store ?? Store(path: root.appendingPathComponent("krill.sqlite").path)
-        self.socketPath = root.appendingPathComponent("krill.sock").path
+        self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
+        self.socketPath = root.appendingPathComponent("kelp.sock").path
         self.extra = extra
         self.settings = SettingsStore(root: root)
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
@@ -52,12 +52,12 @@ public final class Daemon: @unchecked Sendable {
         }
     }
 
-    /// `krill` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
+    /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
     var childPath: String {
         [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", LoginPath.value].filter { !$0.isEmpty }.joined(separator: ":")
     }
 
-    /// When this binary was built; the app compares it with the krilld it ships to spot a stale daemon after an update.
+    /// When this binary was built; the app compares it with the kelpd it ships to spot a stale daemon after an update.
     static let binaryMTime: Double = {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
@@ -110,7 +110,7 @@ public final class Daemon: @unchecked Sendable {
                         if let sid = req.params?["id"]?.string, let b = req.params?["base64"]?.string, let d = Data(base64Encoded: b) { existing(sid)?.userInput(d) }
                         continue
                     }
-                    if req.method == "session.stream" {   // this connection becomes a raw byte pipe (krill attach)
+                    if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)
                         stream(fd: fd, conn: id, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
                         break reading
                     }
@@ -125,14 +125,14 @@ public final class Daemon: @unchecked Sendable {
         }
     }
 
-    /// Raw attach (`krill attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
+    /// Raw attach (`kelp attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
     /// writes is the user's typing. Terminal replies (DA, kitty keyboard) flow back the same way, so the agent sees a real terminal.
     /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
     private func stream(fd: Int32, conn: Int, session: String, size: JSONValue?, leftover: Data) {
         lock.withLock { _ = rawConns.insert(conn) }   // before waking: its status events must not land in the byte stream
         let cols = UInt16(clamping: size?["cols"]?.int ?? 120), rows = UInt16(clamping: size?["rows"]?.int ?? 32)
         guard let ls = try? liveSession(session, cols: cols > 0 ? cols : 120, rows: rows > 0 ? rows : 32) else {
-            _ = Unix.writeAll(fd, Data("krill: no such session\r\n".utf8)); lock.withLock { _ = rawConns.remove(conn) }; return
+            _ = Unix.writeAll(fd, Data("kelp: no such session\r\n".utf8)); lock.withLock { _ = rawConns.remove(conn) }; return
         }
         let history = ls.attach(conn)
         Unix.writeAll(fd, history)
@@ -205,7 +205,7 @@ public final class Daemon: @unchecked Sendable {
         var argv = o.argv ?? manifest.argv(yolo: o.yolo, model: o.model, effort: o.effort, resume: o.resume)
         var rec = Session(worktreeId: worktreeId, cwd: cwd, command: argv.joined(separator: " "), agent: manifest.id,
                           title: o.title ?? "", titleManual: o.title != nil, argv: argv)
-        // A remote project's sessions run on its host. Krill's hooks and skills are files on this Mac, so they stay
+        // A remote project's sessions run on its host. Kelp's hooks and skills are files on this Mac, so they stay
         // out: status comes from what the screen shows.
         if let remote = RemoteHost.of(cwd) {
             argv = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : argv)]
@@ -216,11 +216,11 @@ public final class Daemon: @unchecked Sendable {
             argv += [flag, f.path]
             rec.argv = argv
         }
-        // Krill's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
+        // Kelp's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
         if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
             argv += [flag, Paths.agentSkills.path]
             // Without a word of context, "add a panel" reads as a request for the agent's own UI.
-            if let ctx = manifest.contextFlag, let text = Self.krillContext(Paths.agentSkills) { argv += [ctx, text] }
+            if let ctx = manifest.contextFlag, let text = Self.kelpContext(Paths.agentSkills) { argv += [ctx, text] }
             rec.argv = argv
         }
         if o.argv == nil, RemoteHost.of(cwd) == nil, let flag = manifest.sessionIdFlag, !manifest.resumes(argv) {
@@ -229,7 +229,7 @@ public final class Daemon: @unchecked Sendable {
         }
         var env = manifest.resolvedEnv
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
-        env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
+        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
         let ls = try LiveSession(record: rec, manifest: manifest, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
@@ -250,12 +250,12 @@ public final class Daemon: @unchecked Sendable {
     }
 
     /// One sentence naming the skills that are turned on (their folders exist).
-    static func krillContext(_ dir: URL) -> String? {
-        let on = ["krill-extensions", "krill-settings"].filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
+    static func kelpContext(_ dir: URL) -> String? {
+        let on = ["kelp-extensions", "kelp-settings"].filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
         guard !on.isEmpty else { return nil }
-        return "This Claude Code session runs inside Krill, a macOS IDE; the user sees Krill's window, not Claude Code's UI. Any request to add "
-            + "or change a panel, tab, list, command, setting or theme means Krill: follow the \(on.joined(separator: " / ")) skill. "
-            + "Never create Claude Code mods, plugins, hooks or MCP servers for such requests — Krill doesn't load them."
+        return "This Claude Code session runs inside Kelp, a macOS IDE; the user sees Kelp's window, not Claude Code's UI. Any request to add "
+            + "or change a panel, tab, list, command, setting or theme means Kelp: follow the \(on.joined(separator: " / ")) skill. "
+            + "Never create Claude Code mods, plugins, hooks or MCP servers for such requests — Kelp doesn't load them."
     }
 
     static func hasPlugins(_ dir: URL) -> Bool {
@@ -291,8 +291,8 @@ public final class Daemon: @unchecked Sendable {
     }
 
     /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
-    /// KRILL_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
-    static let debugWake = ProcessInfo.processInfo.environment["KRILL_DEBUG_WAKE"] != nil
+    /// KELP_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
+    static let debugWake = ProcessInfo.processInfo.environment["KELP_DEBUG_WAKE"] != nil
 
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
         if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
@@ -301,7 +301,7 @@ public final class Daemon: @unchecked Sendable {
         let argv = resumeArgv(rec, m)
         rec.argv = argv   // the conversation it found is this session's from now on
         var env = m.resolvedEnv
-        env["KRILL_SESSION"] = rec.id; env["KRILL_SOCKET"] = socketPath; env["KRILL_HOME"] = root.path
+        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
         rec.status = .idle
         let ls = try LiveSession(record: rec, manifest: m, argv: [try LoginPath.resolve(argv[0])] + argv.dropFirst(), env: env, historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)

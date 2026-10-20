@@ -3,7 +3,7 @@ import Testing
 @testable import GitKit
 
 func tempRepo() throws -> String {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("krill-\(UUID().uuidString)").path
+    let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
     try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
     try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
@@ -106,7 +106,7 @@ func tempRepo() throws -> String {
 }
 
 @Test func fuzzyPrefersFileNames() {
-    let a = ProjectFiles.fuzzyScore("Sources/KrillApp/AppDelegate.swift", "appdel")!
+    let a = ProjectFiles.fuzzyScore("Sources/KelpApp/AppDelegate.swift", "appdel")!
     let b = ProjectFiles.fuzzyScore("Sources/a/p/p/d/e/l.swift", "appdel")!
     #expect(a > b)
     #expect(ProjectFiles.fuzzyScore("abc", "abd") == nil)

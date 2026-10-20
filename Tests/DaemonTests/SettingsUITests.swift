@@ -14,7 +14,7 @@ final class EventBox: @unchecked Sendable {
     try #"{"hibernateMinutes":5,"keepAwake":"off","profiles":[{"name":"Work","agent":"claude","dir":"/x"}],"other":1}"#
         .write(to: root.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
     let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let box = EventBox(); c.onNotification = { box.add($0, $1) }
 
     let s0 = try await c.call("settings.get")
@@ -40,10 +40,10 @@ final class EventBox: @unchecked Sendable {
 
 @Test func uiRelayReachesTheApp() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let sock = root.appendingPathComponent("krill.sock").path
+    let sock = root.appendingPathComponent("kelp.sock").path
     let agent = try RPCClient(socket: sock)
     #expect(try await agent.call("ui.state") == .object([:]))
-    await #expect(throws: RPCError.internalError("The Krill app isn't running")) { try await agent.call("ui.open", .obj(["uri": "/a.swift"])) }
+    await #expect(throws: RPCError.internalError("The Kelp app isn't running")) { try await agent.call("ui.open", .obj(["uri": "/a.swift"])) }
 
     let app = try RPCClient(socket: sock)
     let box = EventBox(); app.onNotification = { box.add($0, $1) }

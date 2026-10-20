@@ -2,7 +2,7 @@ import Foundation
 
 /// Links to a file on the repository's website (GitHub, GitLab, Bitbucket) at the commit checked out now.
 extension Git {
-    /// `path` absolute; `lines` 1-based. Fails when origin isn't on a website Krill knows how to link to.
+    /// `path` absolute; `lines` 1-based. Fails when origin isn't on a website Kelp knows how to link to.
     public static func webURL(path: String, lines: ClosedRange<Int>?) throws -> String {
         let dir = (path as NSString).deletingLastPathComponent
         let top = try run(["rev-parse", "--show-toplevel"], cwd: dir).trimmingCharacters(in: .whitespacesAndNewlines)

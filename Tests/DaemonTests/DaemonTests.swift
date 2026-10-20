@@ -17,7 +17,7 @@ func makeRepo() throws -> String {
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
     try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
     try "hello\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)
-    try "setup: touch SETUP_RAN\n".write(toFile: d + "/.krill.yaml", atomically: true, encoding: .utf8)
+    try "setup: touch SETUP_RAN\n".write(toFile: d + "/.kelp.yaml", atomically: true, encoding: .utf8)
     try "SETUP_RAN\n".write(toFile: d + "/.gitignore", atomically: true, encoding: .utf8)
     try Git.run(["add", "."], cwd: d); try Git.run(["commit", "-qm", "init"], cwd: d)
     return d
@@ -33,19 +33,19 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     let root = tmp()
     let d = try Daemon(root: root)
     try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     #expect(try await c.call("ping").string == "pong")
 
     let repoPath = try makeRepo()
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(repoPath)]), as: Repo.self)
-    // .krill.yaml's setup waits for the user to trust the file
+    // .kelp.yaml's setup waits for the user to trust the file
     let first = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/zero"]))
     #expect(first["setupNeedsTrust"]?.bool == true)
     _ = try await c.call("scripts.trust", .obj(["worktreeId": first["id"] ?? .null]))
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/one"]), as: Worktree.self)
     #expect(FileManager.default.fileExists(atPath: wt.path))
     #expect(!FileManager.default.fileExists(atPath: (first["path"]?.string ?? "") + "/SETUP_RAN"))
-    // .krill.yaml setup script ran in the new worktree
+    // .kelp.yaml setup script ran in the new worktree
     #expect(try await waitFor { FileManager.default.fileExists(atPath: wt.path + "/SETUP_RAN") })
 
     // session: output, history on re-attach, hook status, send
@@ -56,7 +56,7 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     _ = try await c.call("session.send", .obj(["id": .string(s.id), "text": "ping-pong"]))
     #expect(try await waitFor { notes.output(s.id).contains("ping-pong") })
 
-    let c2 = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)   // a "restarted UI"
+    let c2 = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)   // a "restarted UI"
     let h = try await c2.call("session.attach", .obj(["id": .string(s.id)]))
     let hist = String(decoding: Data(base64Encoded: h["history"]!.string!)!, as: UTF8.self)
     #expect(hist.contains("ready") && hist.contains("ping-pong"))
@@ -83,7 +83,7 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
 
 @Test func reviewCommentsReachAgent() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "r", "setup": false]), as: Worktree.self)
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
@@ -99,7 +99,7 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
 
 @Test func fanoutStart() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     // fake agents: custom commands can't be passed as agent ids, so create worktrees via fan-out with the shell agent
     let r = try await c.call("fanout.start", .obj(["repoId": .string(repo.id), "prompt": "true", "agents": .array(["shell", "shell"]), "delay": 1]))
@@ -131,10 +131,10 @@ final class NoteBox: @unchecked Sendable {
     try "SECRET=1\n".write(toFile: repoPath + "/.env.secret", atomically: true, encoding: .utf8)
     try ".env.*\n".write(toFile: repoPath + "/.worktreeinclude", atomically: true, encoding: .utf8)
     try FileManager.default.createDirectory(atPath: repoPath + "/node_modules/x", withIntermediateDirectories: true)
-    try "shared: node_modules\n".write(toFile: repoPath + "/.krill.yaml", atomically: true, encoding: .utf8)
+    try "shared: node_modules\n".write(toFile: repoPath + "/.kelp.yaml", atomically: true, encoding: .utf8)
     try Git.run(["add", "."], cwd: repoPath); try Git.run(["commit", "-qm", "cfg"], cwd: repoPath)
 
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(repoPath)]), as: Repo.self)
     let r = try await c.call("task.create", .obj(["repoId": .string(repo.id), "prompt": "Add a dark mode toggle to settings", "agent": "fake"]))
@@ -168,7 +168,7 @@ final class NoteBox: @unchecked Sendable {
     // A resumable fake agent: prints whether it was resumed.
     try JSONEncoder().encode(AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", #"echo "STARTED $*"; sleep 30"#, "x"], resumeArgs: ["--resume"]))
         .write(to: root.appendingPathComponent("agents/sleepy.json"))
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "h", "setup": false]), as: Worktree.self)
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
@@ -185,7 +185,7 @@ final class NoteBox: @unchecked Sendable {
 /// Every project has a main workspace on the repo itself; "+" makes "Workspace N" instantly; the main one can't be deleted.
 @Test func workspacesMainAndInstant() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let list: [Worktree] = try await c.call("worktree.list", .obj(["repoId": .string(repo.id)]), as: [Worktree].self)
     let main = list.first { $0.path == repo.path }
@@ -198,7 +198,7 @@ final class NoteBox: @unchecked Sendable {
 /// A workspace is a desk in the project folder: no branch, no checkout; closing one leaves the files, the last stays.
 @Test func desksShareTheProjectFolder() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let desk: Worktree = try await c.call("workspace.create", .obj(["repoId": .string(repo.id)]), as: Worktree.self)   // before any list
     let first = try #require(try await c.call("worktree.list", .obj(["repoId": .string(repo.id)]), as: [Worktree].self).first { $0.id != desk.id })
@@ -232,7 +232,7 @@ final class NoteBox: @unchecked Sendable {
     let script = #"stty -icanon -echo; printf '\033]7501;?\033\\'; IFS= read -r -t 5 -d '\' reply; [[ $reply == *states=idle* ]] && printf '\033]7501;state=blocked:kind=permission:msg=QWxsb3cgcm0/\033\\'; sleep 30"#
     try JSONEncoder().encode(AgentManifest(id: "osc", name: "OSC", command: "/bin/bash", args: ["-c", script]))
         .write(to: root.appendingPathComponent("agents/osc.json"))
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "agent": "osc"]), as: Session.self)
@@ -247,7 +247,7 @@ final class NoteBox: @unchecked Sendable {
     let script = #"stty -icanon -echo; printf 'Do you want to proceed?\n\xe2\x9d\xaf 1. Yes\n  2. Yes, and do not ask again\n  3. No\n'; IFS= read -rsn1 k; [[ -z "$k" ]] && echo ALLOWED; sleep 30"#
     try JSONEncoder().encode(AgentManifest(id: "menu", name: "Menu", command: "/bin/bash", args: ["-c", script]))
         .write(to: root.appendingPathComponent("agents/menu.json"))
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "agent": "menu"]), as: Session.self)
@@ -274,7 +274,7 @@ final class NoteBox: @unchecked Sendable {
 /// A server a workspace's terminal started shows up as that workspace's port, and only there.
 @Test func workspacePorts() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let server = #"python3 -c "import socket,time;s=socket.socket();s.bind(('127.0.0.1',0));s.listen();print('PORT',s.getsockname()[1],flush=True);time.sleep(30)""#
@@ -292,7 +292,7 @@ final class NoteBox: @unchecked Sendable {
 /// Clone a repo by its path, refuse a taken name, remove what a failed clone left, and start an empty project.
 @Test func cloneAndCreateProjects() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let src = try makeRepo(), parent = tmp().path
     try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
     #expect(Daemon.repoName("git@github.com:me/app.git") == "app" && Daemon.repoName("https://gitlab.com/me/tool/") == "tool")
@@ -309,7 +309,7 @@ final class NoteBox: @unchecked Sendable {
 /// A busy session's CPU and memory come back as its own, summed over what runs under it.
 @Test func sessionUsage() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "yes > /dev/null"]), as: Session.self)
@@ -320,12 +320,12 @@ final class NoteBox: @unchecked Sendable {
     })
 }
 
-/// The Run menu's commands come from .krill.yaml and run only after Trust; editing the file asks again.
+/// The Run menu's commands come from .kelp.yaml and run only after Trust; editing the file asks again.
 @Test func projectScriptsNeedTrust() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let path = try makeRepo()
-    try "test: touch TESTED\nscript.hello: echo hi\n".write(toFile: path + "/.krill.yaml", atomically: true, encoding: .utf8)
+    try "test: touch TESTED\nscript.hello: echo hi\n".write(toFile: path + "/.kelp.yaml", atomically: true, encoding: .utf8)
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(path)]), as: Repo.self)
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let id = JSONValue.obj(["worktreeId": .string(w.id)])
@@ -335,7 +335,7 @@ final class NoteBox: @unchecked Sendable {
     _ = try await c.call("scripts.trust", id)
     _ = try await c.call("scripts.run", .obj(["worktreeId": .string(w.id), "name": "test"]))
     #expect(try await waitFor { FileManager.default.fileExists(atPath: w.path + "/TESTED") })
-    try "test: false\n".write(toFile: path + "/.krill.yaml", atomically: true, encoding: .utf8)
+    try "test: false\n".write(toFile: path + "/.kelp.yaml", atomically: true, encoding: .utf8)
     #expect(try await c.call("scripts.list", id)["trusted"]?.bool == false)
 }
 
@@ -345,7 +345,7 @@ final class NoteBox: @unchecked Sendable {
 }
 
 /// A project on another machine: git, the file list, a file and a session all happen "there" (an ssh stand-in that
-/// runs the command locally), while Krill keeps only a placeholder folder.
+/// runs the command locally), while Kelp keeps only a placeholder folder.
 @Test func remoteProjectOverSSH() async throws {
     let shim = tmp().appendingPathComponent("ssh")
     try FileManager.default.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -355,11 +355,11 @@ final class NoteBox: @unchecked Sendable {
     exec /bin/sh -c "$1"
     """.write(to: shim, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
-    setenv("KRILL_SSH", shim.path, 1)
+    setenv("KELP_SSH", shim.path, 1)
     #expect(RemoteHost.ssh == shim.path)
 
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("krill.sock").path)
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
     let there = try makeRepo()
     try "changed\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
     let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)

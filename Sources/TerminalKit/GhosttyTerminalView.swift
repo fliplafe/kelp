@@ -59,7 +59,7 @@ public final class GhosttyRuntime {
     private static func makeConfig() -> ghostty_config_t? {
         let cfg = ghostty_config_new()
         if appearance.useGhosttyConfig { ghostty_config_load_default_files(cfg) }   // the user's Ghostty theme, font, cursor…
-        let f = FileManager.default.temporaryDirectory.appendingPathComponent("krill-ghostty-\(getpid()).conf")
+        let f = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-ghostty-\(getpid()).conf")
         try? (overrides + "\n" + appearance.configText).write(to: f, atomically: true, encoding: .utf8)
         ghostty_config_load_file(cfg, f.path)
         ghostty_config_finalize(cfg)
@@ -73,7 +73,7 @@ public final class GhosttyRuntime {
         setUp(cfg)
     }
 
-    // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Krill; Ghostty keeps only terminal ones.
+    // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Kelp; Ghostty keeps only terminal ones.
     // ⇧↩ types a line feed: a new line in agent prompts (Claude Code, Codex) instead of sending the message.
     private static let overrides = """
         keybind = clear

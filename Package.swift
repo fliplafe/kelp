@@ -6,17 +6,17 @@ import Foundation
 let ghosttyLinks: [LinkerSetting] = [.linkedFramework("Metal"), .linkedFramework("MetalKit"), .linkedFramework("QuartzCore"), .linkedFramework("CoreText"),
                                       .linkedFramework("CoreGraphics"), .linkedFramework("IOSurface"), .linkedFramework("Carbon"),
                                       .linkedFramework("UniformTypeIdentifiers"), .linkedLibrary("c++")]
-/// KRILL_NO_GHOSTTY=1 leaves them out (release builds: the probe isn't shipped and libghostty is arm64-only).
+/// KELP_NO_GHOSTTY=1 leaves them out (release builds: the probe isn't shipped and libghostty is arm64-only).
 let hasGhostty = FileManager.default.fileExists(atPath: Context.packageDirectory + "/Vendor/GhosttyKit.xcframework")
-    && Context.environment["KRILL_NO_GHOSTTY"] == nil
+    && Context.environment["KELP_NO_GHOSTTY"] == nil
 
 let package = Package(
-    name: "Krill",
+    name: "Kelp",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "krill", targets: ["krill"]),
-        .executable(name: "krilld", targets: ["krilld"]),
-        .executable(name: "KrillApp", targets: ["KrillApp"]),
+        .executable(name: "kelp", targets: ["kelp"]),
+        .executable(name: "kelpd", targets: ["kelpd"]),
+        .executable(name: "KelpApp", targets: ["KelpApp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
@@ -32,14 +32,14 @@ let package = Package(
         .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData"]),
         .target(name: "TerminalKit", dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm"), "Core"] + (hasGhostty ? ["GhosttyKit"] : []),
                 linkerSettings: hasGhostty ? ghosttyLinks : []),
-        .executableTarget(name: "krilld", dependencies: ["Daemon"]),
-        .executableTarget(name: "krill", dependencies: ["Core"]),
+        .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
+        .executableTarget(name: "kelp", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
         .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.4.1, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
-            name: "KrillApp",
+            name: "KelpApp",
             dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", .product(name: "Sparkle", package: "Sparkle")]
                 + (hasGhostty ? ["GhosttyKit"] : []),
             swiftSettings: [.swiftLanguageMode(.v5)],

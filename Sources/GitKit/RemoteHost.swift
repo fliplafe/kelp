@@ -1,6 +1,6 @@
 import Foundation
 
-/// A project on another machine, over SSH. Krill keeps a local folder for it that holds only `.krill-remote`
+/// A project on another machine, over SSH. Kelp keeps a local folder for it that holds only `.kelp-remote`
 /// (`{"host", "path"}`); git in that folder runs on the host instead (so the git and file panels work as they are),
 /// and so do its agents and terminals. All of it shares one SSH connection per host (ControlMaster), kept for ten
 /// minutes after the last use; a dropped connection ends the sessions, and Restart connects again.
@@ -8,11 +8,11 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     public var host: String, path: String
     public init(host: String, path: String) { self.host = host; self.path = path }
 
-    public static let marker = ".krill-remote"
-    /// Where the shared connections' sockets live; the daemon points it at KRILL_HOME/ssh once, at start.
+    public static let marker = ".kelp-remote"
+    /// Where the shared connections' sockets live; the daemon points it at KELP_HOME/ssh once, at start.
     nonisolated(unsafe) public static var controlDir = NSTemporaryDirectory()
     /// `ssh` (tests use a stand-in that runs the command locally).
-    public static let ssh = ProcessInfo.processInfo.environment["KRILL_SSH"] ?? "/usr/bin/ssh"
+    public static let ssh = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh"
 
     /// The remote a project folder stands for (its own folder only: a workspace is that folder).
     public static func of(_ dir: String) -> RemoteHost? {

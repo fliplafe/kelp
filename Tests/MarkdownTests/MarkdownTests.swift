@@ -115,8 +115,8 @@ private func r(_ md: String) -> String { MarkdownHTML.render(md) }
 @Test func templateExpansion() throws {
     let now = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 5, hour: 9, minute: 7)))
     let out = Templates.expand("{{date}} {{time}} {{ datetime }} {{branch}}/{{repo}}: {{title}} {{who}} {{unknown}}",
-                               vars: ["branch": "feat", "repo": "krill", "title": "Plan", "who": "me"], now: now)
-    #expect(out == "2026-03-05 09:07 2026-03-05 09:07 feat/krill: Plan me {{unknown}}")
+                               vars: ["branch": "feat", "repo": "kelp", "title": "Plan", "who": "me"], now: now)
+    #expect(out == "2026-03-05 09:07 2026-03-05 09:07 feat/kelp: Plan me {{unknown}}")
 }
 
 @Test func templateListing() throws {

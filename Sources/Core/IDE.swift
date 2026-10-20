@@ -1,6 +1,6 @@
 import Foundation
 
-/// The IDE verbs `krill` and its MCP server share: how agents drive the app (through the daemon's `ui.*` / `settings.*`).
+/// The IDE verbs `kelp` and its MCP server share: how agents drive the app (through the daemon's `ui.*` / `settings.*`).
 public enum IDE {
     /// A daemon RPC: method, params → result.
     public typealias Call = @Sendable (String, JSONValue) async throws -> JSONValue
@@ -25,7 +25,7 @@ public enum IDE {
     }
 
     /// Opens `target` in the editor area of the workspace that contains `cwd` (when there is one).
-    /// `focus`: bring Krill to the front and switch to that workspace (otherwise the tab waits there quietly).
+    /// `focus`: bring Kelp to the front and switch to that workspace (otherwise the tab waits there quietly).
     public static func open(_ target: String, split: String?, cwd: String, focus: Bool = false, call: Call) async throws -> JSONValue {
         var p: [String: JSONValue] = ["uri": .string(uri(for: target, cwd: cwd))]
         if let split { p["split"] = .string(split) }
@@ -140,12 +140,12 @@ public enum IDE {
         """
         # \(name)
 
-        \(description.isEmpty ? "A Krill extension." : description)
+        \(description.isEmpty ? "A Kelp extension." : description)
 
         This starter adds a "\(name)" panel to the right inspector: the files at the top of the workspace,
         refreshed every 10 seconds; double-click one to open it.
 
-        Edit `extension.json` — Krill reloads it when it changes (or run `krill ext reload`).
+        Edit `extension.json` — Kelp reloads it when it changes (or run `kelp ext reload`).
         The format is described in `../EXTENSIONS.md`.
 
         """

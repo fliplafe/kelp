@@ -1,6 +1,6 @@
 import Foundation
 
-/// Errors Krill recognizes, with the exact command that fixes them: an error banner offers "Copy Fix" instead of
+/// Errors Kelp recognizes, with the exact command that fixes them: an error banner offers "Copy Fix" instead of
 /// leaving you to search. `blocking`: git itself doesn't work (Xcode's license, no developer tools), so nothing
 /// git-related will until it's fixed; that banner stays until it's closed.
 public enum FixRecipes {
