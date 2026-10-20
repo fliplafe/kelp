@@ -22,7 +22,8 @@ Useful while developing: `kelp ext list`, `kelp ext reload`, `kelp ext disable <
     "settings": [],
     "themes":   [],
     "iconThemes": [],
-    "agents":   []
+    "agents":   [],
+    "languages": []
   }
 }
 ```
@@ -129,6 +130,20 @@ takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). P
 
 ## agents
 Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
+
+## languages
+Which files a language covers and the language server that gives them errors, completion and jump to definition:
+```json
+{
+  "id": "python",
+  "extensions": ["py"],
+  "server": { "command": "pyright-langserver", "args": ["--stdio"], "install": "npm i -g pyright" }
+}
+```
+`id` is the LSP language id. `extensions` match in any case; `"fileNames": ["Dockerfile"]` matches whole names.
+Kelp's own are swift, typescript, typescriptreact, javascript, javascriptreact, python, go and rust; a language with
+the same `id` replaces one. When `command` isn't on PATH, opening a file says so, with a button that runs `install`
+in a terminal.
 
 ## Tips for agents writing extensions
 - Start from `kelp ext new <id>`; keep everything in that folder.

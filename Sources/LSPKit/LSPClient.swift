@@ -32,25 +32,6 @@ public struct Diagnostic: Sendable, Equatable {
 
 public struct Location: Sendable, Equatable { public var path: String; public var line: Int; public var column: Int }
 
-/// Which server handles which file extension. Servers missing from PATH are simply skipped.
-public enum LSPServers {
-    public static let byExtension: [String: (id: String, argv: [String])] = [
-        "swift": ("swift", ["xcrun", "sourcekit-lsp"]),
-        "ts": ("ts", ["typescript-language-server", "--stdio"]), "tsx": ("ts", ["typescript-language-server", "--stdio"]),
-        "js": ("ts", ["typescript-language-server", "--stdio"]), "jsx": ("ts", ["typescript-language-server", "--stdio"]),
-        "py": ("py", ["pyright-langserver", "--stdio"]),
-        "go": ("go", ["gopls"]),
-        "rs": ("rs", ["rust-analyzer"]),
-    ]
-    public static let languageId = ["swift": "swift", "ts": "typescript", "tsx": "typescriptreact", "js": "javascript", "jsx": "javascriptreact", "py": "python", "go": "go", "rs": "rust"]
-
-    static func resolve(_ cmd: String) -> String? {
-        if cmd.hasPrefix("/") { return cmd }
-        let path = (ProcessInfo.processInfo.environment["PATH"] ?? "") + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin"
-        return path.split(separator: ":").map { "\($0)/\(cmd)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-}
-
 /// One language server process for one workspace root.
 public final class LSPClient: @unchecked Sendable {
     private let proc = Process()
@@ -62,17 +43,17 @@ public final class LSPClient: @unchecked Sendable {
     public let root: String
     public var onDiagnostics: (@Sendable (String, [Diagnostic]) -> Void)?
 
+    /// `argv[0]` is looked up on the login-shell PATH, which the server gets too (npm servers need `node`).
     public init?(argv: [String], root: String) {
-        guard let exe = LSPServers.resolve(argv[0]) else { return nil }
-        if argv[0] == "xcrun", (try? Self.which("sourcekit-lsp")) == nil, !FileManager.default.fileExists(atPath: "/usr/bin/xcrun") { return nil }
+        guard let cmd = argv.first, let exe = try? LoginPath.resolve(cmd) else { return nil }
         self.root = root
         proc.executableURL = URL(fileURLWithPath: exe); proc.arguments = Array(argv.dropFirst())
+        var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value; proc.environment = env
         proc.currentDirectoryURL = URL(fileURLWithPath: root)
         proc.standardInput = input; proc.standardOutput = output; proc.standardError = FileHandle.nullDevice
         do { try proc.run() } catch { return nil }
         Thread.detachNewThread { [self] in readLoop() }
     }
-    static func which(_ c: String) throws -> String? { LSPServers.resolve(c) }
 
     deinit { if proc.isRunning { proc.terminate() } }
 
@@ -133,10 +114,10 @@ public final class LSPClient: @unchecked Sendable {
     static func uri(_ path: String) -> JSONValue { .string(URL(fileURLWithPath: path).absoluteString) }
     static func pos(_ line: Int, _ col: Int) -> JSONValue { .obj(["line": .int(line - 1), "character": .int(col - 1)]) }
 
-    public func open(_ path: String, text: String) {
+    /// One server can serve several languages (typescript, javascriptreact…), so each file says which it is.
+    public func open(_ path: String, text: String, languageId: String) {
         lock.lock(); versions[path] = 1; lock.unlock()
-        let ext = (path as NSString).pathExtension
-        notify("textDocument/didOpen", .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(LSPServers.languageId[ext] ?? ext), "version": 1, "text": .string(text)])]))
+        notify("textDocument/didOpen", .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(languageId), "version": 1, "text": .string(text)])]))
     }
     public func change(_ path: String, text: String) {
         lock.lock(); let v = (versions[path] ?? 1) + 1; versions[path] = v; lock.unlock()

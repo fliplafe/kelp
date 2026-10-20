@@ -37,6 +37,7 @@ contributions, the command palette and settings.
 | settings | Settings window (generated forms) and `~/.kelp/settings.json` |
 | themes | Appearance settings; drive terminal + editor colors |
 | agents | agent CLIs offered in the "+" menu and the empty workspace |
+| languages | file tabs: errors, completion and jump to definition from the language server (built in: Swift, TS/JS, Python, Go, Rust) |
 
 Every action of the app is a command with an id (`workbench.toggleSidebar`, `editor.saveAll`, `agents.new`…), as in
 VS Code and Zed: the menu bar is laid out by id (`AppDelegate.buildMenu`), settings.json `keys` rebinds by id, and agents

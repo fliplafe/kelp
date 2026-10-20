@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Core
 import Agents
+import WorkbenchKit
 
 /// A built-in extension: same contribution points as an extension.json folder, implemented in Swift.
 @MainActor
@@ -91,6 +92,15 @@ enum Builtins {
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
             s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
         ])]
+        let ts = LanguageSpec.Server(command: "typescript-language-server", args: ["--stdio"], install: "npm i -g typescript-language-server typescript")
+        c.languages = [
+            LanguageSpec(id: "swift", extensions: ["swift"], server: .init(command: "xcrun", args: ["sourcekit-lsp"])),
+            LanguageSpec(id: "typescript", extensions: ["ts"], server: ts), LanguageSpec(id: "typescriptreact", extensions: ["tsx"], server: ts),
+            LanguageSpec(id: "javascript", extensions: ["js"], server: ts), LanguageSpec(id: "javascriptreact", extensions: ["jsx"], server: ts),
+            LanguageSpec(id: "python", extensions: ["py"], server: .init(command: "pyright-langserver", args: ["--stdio"], install: "npm i -g pyright")),
+            LanguageSpec(id: "go", extensions: ["go"], server: .init(command: "gopls", install: "go install golang.org/x/tools/gopls@latest")),
+            LanguageSpec(id: "rust", extensions: ["rs"], server: .init(command: "rust-analyzer", install: "rustup component add rust-analyzer"))
+        ]
         let f = "kelp.files"
         c.commands = [cmd(f, "files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
                       cmd(f, "files.new", "New File", "opt+cmd+n") { Workbench.open(UntitledTab.next()) },

@@ -10,6 +10,7 @@ struct ExtManifest: Decodable {
     struct Contrib: Decodable {
         var panels: [ViewDef]?, editors: [ViewDef]?, commands: [ActionDef]?
         var settings: [SettingSpec]?, themes: [Theme]?, iconThemes: [IconThemeRef]?, agents: [AgentManifest]?
+        var languages: [LanguageSpec]?
     }
     /// VS Code's own shape: the theme file is in VS Code's file icon theme format.
     struct IconThemeRef: Decodable { var id: String; var label: String?; var path: String }
@@ -107,6 +108,7 @@ enum DeclarativeExtension {
             IconThemeSpec(id: $0.id, label: $0.label ?? $0.id, file: folder.appendingPathComponent($0.path).standardizedFileURL)
         }
         c.agents = x?.agents ?? []
+        c.languages = x?.languages ?? []
         return c
     }
 

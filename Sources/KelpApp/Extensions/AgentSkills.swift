@@ -10,7 +10,7 @@ enum AgentSkills {
         let s = SettingsStore.shared
         put("kelp-extensions", on: s.bool("agents.skills.extensions") != false,
             description: "Use when the user wants something added to or changed in Kelp, the IDE this session runs in: a panel, list, tab, command, "
-                + "setting or theme — e.g. “add a Kelp panel with my Docker containers”, “show Android emulators in Kelp”. Kelp extensions are "
+                + "setting, theme or language server — e.g. “add a Kelp panel with my Docker containers”, “show Android emulators in Kelp”. Kelp extensions are "
                 + "extension.json folders in $KELP_HOME/extensions; they are not Claude Code plugins, mods, hooks or MCP servers.",
             body: extensionsSteps(ExtensionRegistry.userDir.path) + ExtensionGuide.markdown)
         put("kelp-settings", on: s.bool("agents.skills.settings") != false,

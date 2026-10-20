@@ -3088,6 +3088,16 @@
         }
       }
     },
+    "Install": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установить"
+          }
+        }
+      }
+    },
     "Install %@": {
       "localizations": {
         "ru": {
@@ -3382,6 +3392,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "По умолчанию в Kelp: нет"
+          }
+        }
+      }
+    },
+    "Language server %@ isn't installed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Языковой сервер %@ не установлен."
           }
         }
       }

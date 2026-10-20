@@ -87,6 +87,8 @@ struct Contributions {
     var iconThemes: [IconThemeSpec] = []
     var agents: [AgentManifest] = []
     var tabs: [TabProvider] = []
+    /// In load order: `LanguageSpec.find` lets a later one replace an earlier one with the same id.
+    var languages: [LanguageSpec] = []
 }
 
 struct ExtensionInfo: Identifiable {
@@ -133,6 +135,7 @@ final class ExtensionRegistry {
             guard info.enabled else { return }
             merged.panels += c.panels; merged.editors += c.editors; merged.commands += c.commands
             merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
+            merged.languages += c.languages
         }
         for b in Builtins.all { take(b.info, b.contribute()) }
         // Requirement checks need the login-shell PATH; until it's read (in the background) assume tools are there.

@@ -12,7 +12,6 @@ import Testing
 }
 
 @Test func sourcekitDiagnosticsAndDefinition() async throws {
-    guard LSPServers.resolve("xcrun") != nil else { return }
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lsp-\(UUID().uuidString.prefix(6))").path
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     let file = dir + "/main.swift"
@@ -22,7 +21,7 @@ import Testing
     let got = DiagBox()
     c.onDiagnostics = { p, d in got.set(p, d) }
     try await c.initialize()
-    c.open(file, text: text)
+    c.open(file, text: text, languageId: "swift")
     let loc = try await c.definition(file, line: 2, column: 18)
     #expect(loc?.line == 1)
     for _ in 0..<100 where got.count == 0 { try await Task.sleep(for: .milliseconds(100)) }

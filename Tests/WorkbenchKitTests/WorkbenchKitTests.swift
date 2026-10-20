@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import WorkbenchKit
 
@@ -119,4 +120,23 @@ import WorkbenchKit
     #expect(l.splitKeys == ["a,b", "b,c"])
     #expect(LayoutNode.pane("a").splitKeys.isEmpty)
     #expect(l.removing("c")?.splitKeys == ["a,b"])
+}
+
+@Test func languageForAPath() throws {
+    let json = #"""
+    [{ "id": "python", "extensions": ["py"],
+       "server": { "command": "pyright-langserver", "args": ["--stdio"], "install": "npm i -g pyright" } },
+     { "id": "dockerfile", "extensions": [], "fileNames": ["Dockerfile"] }]
+    """#
+    let specs = try JSONDecoder().decode([LanguageSpec].self, from: Data(json.utf8))
+    #expect(specs[0] == LanguageSpec(id: "python", extensions: ["py"],
+                                     server: .init(command: "pyright-langserver", args: ["--stdio"], install: "npm i -g pyright")))
+    #expect(LanguageSpec.find("/a/b/main.PY", in: specs)?.id == "python")
+    #expect(LanguageSpec.find("/a/Dockerfile", in: specs)?.id == "dockerfile")
+    #expect(LanguageSpec.find("/a/b/main.rb", in: specs) == nil)
+    #expect(LanguageSpec.find("/a/b/Makefile", in: specs) == nil)
+    // A later language with the same id replaces the earlier one, files and server.
+    let mine = LanguageSpec(id: "python", extensions: ["pyi"], server: .init(command: "pylsp"))
+    #expect(LanguageSpec.find("x.pyi", in: specs + [mine])?.server?.command == "pylsp")
+    #expect(LanguageSpec.find("x.py", in: specs + [mine]) == nil)
 }
