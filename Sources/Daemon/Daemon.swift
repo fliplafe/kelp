@@ -391,11 +391,21 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         let candidates = idle.filter { ls in manifests.first { $0.id == ls.snapshot.agent }?.resumeArgs.isEmpty == false }
+        // Under wakeLock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
+        // log. Taken out of `live` only if nobody attached since the check above.
         for ls in candidates {
-            let s = ls.markHibernated()
-            ls.pty.kill()
-            lock.withLock { live[s.id] = nil }
-            publish(s)
+            wakeLock.withLock {
+                let id = ls.snapshot.id
+                let taken = lock.withLock { () -> Bool in
+                    guard live[id] === ls, !ls.isAttached else { return false }
+                    live[id] = nil; return true
+                }
+                guard taken else { return }
+                let s = ls.markHibernated(), pid = ls.pty.pid
+                ls.pty.kill()
+                Self.waitGone([pid])
+                publish(s)
+            }
         }
     }
 
