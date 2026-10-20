@@ -187,18 +187,46 @@ enum ExtActions {
         return out + rest
     }
 
-    /// Which quotes a shell would be inside at this point of a template, so a value is escaped for that spot.
+    /// Where a shell would be at this point of a template (inside quotes, a comment, a here-document), so a value is
+    /// escaped for that spot.
     struct ShellQuotes {
-        var inSingle = false, inDouble = false
+        var inSingle = false, inDouble = false, inComment = false
+        /// A here-document's end word once `<<WORD` was read; `expands`: unquoted WORD, so $(…) inside it runs.
+        var pendingDoc: (word: String, expands: Bool)?, inDoc: (word: String, expands: Bool)?
+        private var line = "", last: Character = "\n"
+
         mutating func read(_ s: Substring) {
-            var escaped = false
-            for c in s {
+            var escaped = false, i = s.startIndex
+            while i < s.endIndex {
+                let c = s[i]; defer { last = c; i = s.index(after: i) }
+                if c == "\n" {
+                    if let d = inDoc, line.trimmingCharacters(in: .whitespaces) == d.word { inDoc = nil }
+                    else if inDoc == nil, let p = pendingDoc { inDoc = p; pendingDoc = nil }
+                    inComment = false; line = ""; escaped = false; continue
+                }
+                line.append(c)
+                if inDoc != nil || inComment { continue }
                 if escaped { escaped = false; continue }
                 if c == "\\", !inSingle { escaped = true; continue }
+                if c == "#", !inSingle, !inDouble, last == " " || last == "\t" || last == "\n" || last == ";" { inComment = true; continue }
                 if c == "'", !inDouble { inSingle.toggle() } else if c == "\"", !inSingle { inDouble.toggle() }
+                if c == "<", !inSingle, !inDouble, s[i...].hasPrefix("<<"), !s[i...].hasPrefix("<<<") {
+                    var rest = s[s.index(i, offsetBy: 2)...].drop { $0 == "-" || $0 == " " }
+                    let quoted = rest.first == "'" || rest.first == "\""
+                    if quoted { rest = rest.dropFirst() }
+                    let word = String(rest.prefix { !" \t\n'\";<>|&".contains($0) })
+                    if !word.isEmpty { pendingDoc = (word, !quoted) }
+                    i = s.index(after: i)   // the second <
+                }
             }
         }
+
         func escape(_ v: String) -> String {
+            if let d = inDoc {   // in a here-document only $, ` and \ mean anything, and only when it expands
+                return d.expands ? v.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "$", with: "\\$")
+                    .replacingOccurrences(of: "`", with: "\\`") : v
+            }
+            if inComment { return v }   // a comment runs nothing
             if inSingle { return v.replacingOccurrences(of: "'", with: "'\\''") }   // close, a literal ', reopen
             if inDouble {   // inside "…" these four still mean something
                 return v.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")

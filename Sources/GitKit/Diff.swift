@@ -165,6 +165,11 @@ extension Git {
             let full = (path as NSString).appendingPathComponent(f.path)
             let hdr = "diff --git a/\(f.path) b/\(f.path)\nnew file mode 100644\n--- /dev/null\n+++ b/\(f.path)"
             let asBinary = FileDiff(path: f.path, header: hdr, hunks: [], binary: true)
+            // A symlink is shown as git stores it, its target path; following it could read /dev/zero or a huge file.
+            if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: full) {
+                let h = Hunk(header: "@@ -0,0 +1 @@", oldStart: 0, newStart: 1, lines: [DiffLine(kind: .add, text: target, oldLine: nil, newLine: 1, noNewline: true)])
+                return FileDiff(path: f.path, header: hdr.replacingOccurrences(of: "new file mode 100644", with: "new file mode 120000"), hunks: [h], binary: false)
+            }
             guard let size = (try? FileManager.default.attributesOfItem(atPath: full))?[.size] as? Int else { return nil }
             guard size <= 1_000_000 else { return asBinary }   // a log, a dataset, a folder that should be ignored: not read
             guard let data = FileManager.default.contents(atPath: full) else { return nil }

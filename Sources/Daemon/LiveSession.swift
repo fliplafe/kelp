@@ -321,9 +321,18 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
     func send(_ text: String, enter: Bool) {
         lock.withLock { detector.input(); typedYet = true }
+        let text = Self.typeable(text)
         let body = text.contains("\n") ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         pty.write(Data(body.utf8))
         if enter { DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.pty.write(Data("\r".utf8)) } }
+    }
+
+    /// Text from elsewhere (an issue, a recipe, a review comment) as plain text: no escape sequences and no control keys but
+    /// newlines and tabs. An issue body with ESC[201~ would end the paste, then Return, Shift-Tab or "!cmd" would act as keys.
+    static func typeable(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.filter { c in
+            c == "\n" || c == "\t" || !(c.value < 0x20 || c.value == 0x7F || (0x80...0x9F).contains(c.value))
+        }))
     }
 
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.

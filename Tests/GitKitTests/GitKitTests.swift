@@ -473,3 +473,10 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(throws: (any Error).self) { try Git.runData(["-c", "sleep 30 & sleep 30; wait"], cwd: "/tmp", executable: "/bin/sh", timeLimit: 0.5) }
     #expect(Date().timeIntervalSince(t) < 5)
 }
+
+@Test func anUntrackedSymlinkIsShownNotFollowed() throws {
+    let repo = try tempRepo()
+    try FileManager.default.createSymbolicLink(atPath: repo + "/zero", withDestinationPath: "/dev/zero")
+    let d = try #require(try Git.diff(repo, source: .unstaged, file: "zero").first)   // returns at once: /dev/zero isn't read
+    #expect(d.hunks.first?.lines.map(\.text) == ["/dev/zero"] && d.header.contains("120000"))
+}

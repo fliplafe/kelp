@@ -78,7 +78,10 @@ private func folder(_ files: [String: String]) throws -> URL {
     let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
     let evil = "$(touch \(marker)) `touch \(marker)` \" ' \\ end"
     let item = JSONValue.object(["title": .string(evil)])
-    for template in [#"printf %s ${title}"#, #"printf %s "${title}""#, #"printf %s '${title}'"#, #"printf %s "PR: ${title}!""#] {
+    let templates = [#"printf %s ${title}"#, #"printf %s "${title}""#, #"printf %s '${title}'"#, #"printf %s "PR: ${title}!""#,
+                     "# don't worry\nprintf %s ${title}",                 // a quote in a comment doesn't change anything
+                     "cat <<EOF\n${title}\nEOF", "cat <<'EOF'\n${title}\nEOF", "cat <<-EOF\n${title}\nEOF"]   // here-documents
+    for template in templates {
         let cmd = ExtActions.expand(template, item: item, quote: true)
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", cmd]
         let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice

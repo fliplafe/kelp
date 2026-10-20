@@ -54,8 +54,13 @@ extension Daemon {
             let repo = try store.repo(w.repoId)?.path ?? w.path
             let now = Self.digest(configText(repo))
             // {digest} from scripts.list: the file changed since it was shown (an agent, a pull), so that isn't what was trusted.
-            // Required: trust is given to text someone was shown (scripts.list's digest). Without one an agent or a script in
-            // a session (they have KELP_SOCKET) could trust a .kelp.yaml nobody looked at.
+            // Only from Kelp's window (the connection that publishes its UI), with the digest of the text it showed. Agents and
+            // scripts reach this socket too (KELP_SOCKET); this keeps the CLI, an agent's casual call or a repository's
+            // script from trusting a .kelp.yaml nobody looked at. It is not a wall: a process of the same user can still
+            // imitate the app; macOS gives no way to tell them apart over a Unix socket.
+            guard lock.withLock({ appConns.contains(conn) }) else {
+                throw RPCError.invalidParams("Only Kelp's window can trust a project's commands: open the project there and run one.")
+            }
             guard let shown = p["digest"]?.string else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
             if shown != now {
                 throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.")

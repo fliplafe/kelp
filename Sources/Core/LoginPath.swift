@@ -33,13 +33,18 @@ public enum LoginPath {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
         p.arguments = ["-ilc", "printf '__KELP__%s__KELP__' \"$PATH\""]
-        let out = Pipe()
+        // A file, not a pipe: a profile that starts something in the background (nohup … &) keeps a pipe open forever, and
+        // reading it to the end would never return; a file is read as it is once the shell has exited.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-path-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard FileManager.default.createFile(atPath: file.path, contents: nil), let out = try? FileHandle(forWritingTo: file) else { return "" }
+        defer { try? out.close() }
         p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return "" }
         let deadline = Date().addingTimeInterval(8)   // a slow or prompting profile must not hold up agents
         while p.isRunning, Date() < deadline { usleep(20_000) }
         if p.isRunning { p.terminate(); return "" }
-        let s = String(bytes: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let s = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
         guard let a = s.range(of: "__KELP__"), let b = s.range(of: "__KELP__", range: a.upperBound..<s.endIndex) else { return "" }
         return String(s[a.upperBound..<b.lowerBound])
     }

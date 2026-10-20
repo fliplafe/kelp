@@ -102,8 +102,10 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     try await Task.sleep(for: .milliseconds(100))   // and a little longer: nothing else may run after the last call
     #expect(ran == [3])
     d.after(0.05) { ran.append(4) }; d.cancel()
-    try await Task.sleep(for: .milliseconds(300))   // a negative check needs a window: six times the delay
-    #expect(ran == [3])
+    let later = Debounce(); var control = false
+    later.after(0.1) { control = true }   // scheduled after the cancelled one, with a longer delay: once it ran, the other would have
+    for _ in 0..<100 where !control { try await Task.sleep(for: .milliseconds(50)) }
+    #expect(control && ran == [3])
 }
 
 @MainActor @Test func theTrustSheetShowsEverythingTrustAllows() throws {

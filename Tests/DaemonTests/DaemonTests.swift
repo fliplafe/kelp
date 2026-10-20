@@ -56,6 +56,7 @@ func tmp() -> URL {
 
 /// What the app does: show the .kelp.yaml (scripts.list), then trust the digest of what was shown.
 func trustAsShown(_ c: RPCClient, _ worktreeId: JSONValue) async throws -> JSONValue {
+    c.notify("ui.publish", .obj(["state": .obj([:])]))   // as Kelp's window: only it may trust
     let shown = try await c.call("scripts.list", .obj(["worktreeId": worktreeId]))
     return try await c.call("scripts.trust", .obj(["worktreeId": worktreeId, "digest": shown["digest"] ?? .null]))
 }
