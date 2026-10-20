@@ -63,6 +63,9 @@ final class StatusMark: NSView {
     var unread = true { didSet { if unread != oldValue { update() } } }
     /// Working on shrinking its conversation (Claude's compaction): a slow pulse, not the spin.
     var compacting = false { didSet { if compacting != oldValue { update() } } }
+    /// How far it got (0…1), when it says: a pie filling a circle, as Finder's and Safari's progress, not the spinning ring.
+    var progress: Double? { didSet { if progress != oldValue { update() } } }
+    private let track = CAShapeLayer(), bar = CAShapeLayer()
 
     init(size: CGFloat = 12) {
         self.size = size
@@ -75,6 +78,11 @@ final class StatusMark: NSView {
         ring.path = CGPath(ellipseIn: CGRect(x: inset, y: inset, width: size - 2 * inset, height: size - 2 * inset), transform: nil)
         ring.strokeEnd = 0.75
         layer?.addSublayer(ring)
+        // The pie is a stroke as wide as its radius around half of it, so strokeEnd fills it from the top, clockwise.
+        let pie = (size / 2 - inset) - 1.5, arc = CGMutablePath()
+        arc.addArc(center: CGPoint(x: size / 2, y: size / 2), radius: pie / 2, startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi, clockwise: true)
+        track.path = ring.path; track.lineWidth = 1; bar.path = arc; bar.lineWidth = pie
+        for l in [track, bar] { l.frame = ring.frame; l.fillColor = nil; layer?.addSublayer(l) }
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size),
@@ -89,11 +97,21 @@ final class StatusMark: NSView {
 
     private func update() {
         let s = status == .idle ? nil : status
+        let filling = s == .working ? progress : nil
         isHidden = s == nil
-        toolTip = s?.words
+        toolTip = filling.map { "\(s?.words ?? "") · \(Int($0 * 100)) %" } ?? s?.words
         // VoiceOver reads the state (the spinning ring is only a layer): the same words as the tooltip.
         setAccessibilityElement(s != nil); setAccessibilityRole(.image)
-        setAccessibilityLabel(compacting && s == .working ? String(localized: "Compacting its conversation") : s?.words)
+        setAccessibilityLabel(compacting && s == .working ? String(localized: "Compacting its conversation") : toolTip)
+        track.isHidden = filling == nil; bar.isHidden = filling == nil
+        if let filling {
+            ring.isHidden = true; image.isHidden = true; ring.removeAllAnimations()
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                track.strokeColor = NSColor.secondaryLabelColor.cgColor; bar.strokeColor = NSColor.secondaryLabelColor.cgColor
+            }
+            bar.strokeEnd = min(1, max(0, filling))
+            return
+        }
         // Motion means state: spinning = working, pulsing = compacting, filled = waiting for you. With Reduce Motion a
         // still symbol says "working" instead: a ring that stopped spinning looks stuck.
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -141,6 +159,10 @@ struct StatusIcon: View {
 extension Session {
     /// Ended on its own with a non-zero exit code (the daemon says so in the summary): shown red, not grey.
     var endedWithError: Bool { status == .exited && summary.hasPrefix("Ended with an error") }
+    /// What its mark shows: a terminal or a command (not an agent) works while a program in it shows how far it got.
+    var markStatus: AgentStatus { progress != nil && (agent == "shell" || agent == "custom") ? .working : status }
+    /// "Working · 40 %" when it says how far it got.
+    var statusWords: String { let s = markStatus; return s == .working ? progress.map { "\(s.words) · \($0) %" } ?? s.words : s.words }
     /// "Works in .claude/worktrees/fix-login" when the agent went out of the folder it started in.
     var workingElsewhere: String? {
         guard let d = workDir else { return nil }

@@ -15,6 +15,8 @@ protocol TabContent: AnyObject {
     var toolTip: String? { get }
     /// How full an agent's conversation is (0…1); the tab shows a ring from 75 %.
     var meter: Double? { get }
+    /// How far what runs in it got (0…1), when it says: its status mark fills.
+    var progress: Double? { get }
     /// Unsaved changes: the tab shows a dot, closing it asks first.
     var isEdited: Bool { get }
     /// Called when title / icon / status / edited state change.
@@ -36,6 +38,7 @@ extension TabContent {
     var unread: Bool { false }
     var toolTip: String? { nil }
     var meter: Double? { nil }
+    var progress: Double? { nil }
     var isEdited: Bool { false }
     func close() -> Bool { true }
 }

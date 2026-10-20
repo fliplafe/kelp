@@ -16,6 +16,8 @@ usage: kelp <command>
   terminal context <session>          bounded transcript (for pasting elsewhere)
   attach <session>                     make this terminal the session's terminal (detach: close it)
   hook <working|waiting|done>          (called by agent hooks inside a session)
+  report <working|blocked|done|error|idle|clear> [message] [--progress 0-100] [--kind permission|question|auth]
+                                       inside a session: what you're doing, on your row and tab
   install | uninstall                  launchd agent for the daemon
   github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
   linear login <key> | tasks | start <ENG-123>
@@ -184,6 +186,10 @@ func plist() -> String {
             else { fail("not inside a Kelp project: run it in a project's folder or pass --worktree <id> (see `kelp status`)") }
             show(try await c.call("session.create", .object(p)))
         case ("session", "list"), ("terminal", "list"): show(try await c.call("session.list"))
+        case ("report", let state?):   // inside a session: what this program is doing, on its row and tab
+            guard let id = ProcessInfo.processInfo.environment["KELP_SESSION"] else { fail("report: run it inside a Kelp session") }
+            let progress = flag("--progress").flatMap { Int($0) }, kind = flag("--kind"), msg = args.joined(separator: " ")
+            _ = try await c.call(SessionReport(id: id, state: state, message: msg.isEmpty ? nil : msg, progress: progress, kind: kind))
         case ("terminal", "read"):
             show(try await c.call("session.read", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")), "bytes": .int(args.dropFirst().first.flatMap(Int.init) ?? 8192)])))
         case ("terminal", "send"):

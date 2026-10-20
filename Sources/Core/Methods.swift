@@ -110,3 +110,14 @@ public struct RemoteListFolders: RPCMethod {
     public var host: String, path: String
     public init(host: String, path: String) { self.host = host; self.path = path }
 }
+
+/// What a program in the session says it's doing (`kelp report`; the same as writing OSC 7501 itself): `state` is idle,
+/// working, blocked, done, error or clear; `message` shows on its row's card, `progress` (0–100) on its mark while it works.
+public struct SessionReport: RPCMethod {
+    public static let name = "session.report"
+    public typealias Result = Done
+    public var id: String, state: String, message: String?, progress: Int?, kind: String?
+    public init(id: String, state: String, message: String? = nil, progress: Int? = nil, kind: String? = nil) {
+        self.id = id; self.state = state; self.message = message; self.progress = progress; self.kind = kind
+    }
+}

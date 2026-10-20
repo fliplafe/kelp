@@ -14,6 +14,7 @@ final class TabStrip: NSView {
         let id: String; var title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
         var meter: Double?
+        var progress: Double?
     }
 
     var onSelect: ((String) -> Void)?
@@ -211,7 +212,7 @@ private final class TabButton: NSControl, NSDraggingSource {
 
     func set(_ it: TabStrip.Item, selected: Bool, groupFocused: Bool) {
         item = it; self.selected = selected; self.groupFocused = groupFocused
-        title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread
+        title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread; mark.progress = it.progress
         meter.share = it.meter
         toolTip = it.toolTip ?? it.title
         // VoiceOver hears the agent's state too ("Claude Code, Needs your input"): on screen it replaces the icon.

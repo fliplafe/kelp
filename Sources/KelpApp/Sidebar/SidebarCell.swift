@@ -129,6 +129,7 @@ final class SidebarCell: NSTableCellView {
             let w = m.worktree(s.worktreeId)
             count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
             mark.status = s.endedWithError ? .error : s.status; mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
+            mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt)
             showState(s)
         case .workspace(let id):
@@ -152,6 +153,7 @@ final class SidebarCell: NSTableCellView {
             title.stringValue = AgentCatalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
+            mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
             showState(s)
         }
@@ -174,7 +176,7 @@ final class SidebarCell: NSTableCellView {
     }
 
     /// A paused agent's row is dimmed, but what it finished and you haven't read keeps its bright mark.
-    static func shownStatus(_ s: Session) -> AgentStatus { s.status == .hibernated && s.unread ? .done : s.status }
+    static func shownStatus(_ s: Session) -> AgentStatus { s.status == .hibernated && s.unread ? .done : s.markStatus }
 
     /// Something to look at: finished or asking, and not opened since (bold, like unread mail).
     static func isNews(_ s: Session) -> Bool { s.unread && (s.status == .done || s.status == .waiting || s.status == .error) }

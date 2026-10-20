@@ -142,6 +142,18 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     #expect(try await sessions(r).first { $0.id == s.id }?.workDir == nil)
 }
 
+@Test func whatAProgramReportsShowsUntilItSaysSomethingElse() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "printf '\\033]9;4;1;42\\007'; cat")   // ConEmu's progress bar, as cargo writes it
+    #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }?.progress == 42 })
+    _ = try await r.c.call(SessionReport(id: s.id, state: "working", message: "Migrating the database", progress: 70))
+    let working = try #require(try await sessions(r).first { $0.id == s.id })
+    #expect(working.status == .working && working.summary == "Migrating the database" && working.progress == 70)
+    _ = try await r.c.call(SessionReport(id: s.id, state: "done", message: "Deployed to staging"))
+    #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }.map { $0.status == .done && $0.progress == nil } == true })
+    await #expect(throws: (any Error).self) { _ = try await r.c.call(SessionReport(id: s.id, state: "sleeping")) }
+}
+
 @Test func aSessionWithNoTurnYetHasNoTurnAndNoReply() async throws {
     let r = try await rig(); defer { r.d.stop() }
     let s = try await session(r, "cat")

@@ -29,7 +29,9 @@ final class SessionTab: TabContent {
         session.map(AgentCatalog.displayName) ?? String(localized: "Session")
     }
     var icon: NSImage? { AgentCatalog.icon(session?.agent) }
-    var status: AgentStatus? { session.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status } }
+    /// A terminal shows a state only while a program in it says how far it got (a build).
+    var status: AgentStatus? { session.flatMap { $0.agent == "shell" ? ($0.progress == nil ? nil : .working) : $0.endedWithError ? .error : $0.markStatus } }
+    var progress: Double? { session?.progress.map { Double($0) / 100 } }
     /// The ring around its pane: it asks (orange), failed (red), or finished and wasn't looked at yet (accent).
     var attention: NSColor? {
         guard let s = session, s.agent != "shell" else { return nil }
@@ -40,7 +42,7 @@ final class SessionTab: TabContent {
     var unread: Bool { session?.unread ?? false }
     var meter: Double? { AppModel.shared.contextShare[sessionId] }
     var toolTip: String? {
-        session.map { "\(title) — \($0.status.words)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") + ($0.workingElsewhere.map { "\n\($0)" } ?? "") }
+        session.map { "\(title) — \($0.statusWords)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") + ($0.workingElsewhere.map { "\n\($0)" } ?? "") }
     }
     func focus() { pane.focus() }
 

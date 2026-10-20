@@ -121,17 +121,17 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if logSize > Self.logLimit { trimLog(ring) }
         let text = String(decoding: d, as: UTF8.self)
         var probe = false
+        let said = (record.summary, record.progress)
         if !hooked, text.contains(ProgramStatus.prefix) || !oscCarry.isEmpty {
             for m in ProgramStatus.scan(text, carry: &oscCarry) {
                 switch m {
                 case .query: probe = true
-                case .report(let r) where r.id == nil:   // children (subagents) aren't shown
-                    detector.program(r.state); lastHookAt = Date()
-                    if r.state == "blocked" || r.state == "error", let msg = r.msg, !msg.isEmpty { record.summary = msg }
+                case .report(let r) where r.id == nil: apply(r)   // children (subagents) aren't shown
                 default: break
                 }
             }
         }
+        if text.contains(ProgramStatus.conEmuPrefix), let p = ProgramStatus.conEmuProgress(text).last { record.progress = p }
         var topic: String?
         if onTopic != nil, text.contains("\u{1B}]") || !titleCarry.isEmpty,
            let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic {
@@ -163,7 +163,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             if !found.isEmpty, found != lastLimits { lastLimits = found; limits = found }
         }
         let subs = attached
-        let changed = sync()
+        let changed = sync() ?? (said != (record.summary, record.progress) ? record : nil)
         lock.unlock()
         if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !limits.isEmpty { onLimits?(limits) }
@@ -180,10 +180,26 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         detector.exited()
         let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure
         if exitCode != 0, record.agent != "shell" { record.summary = "Ended with an error (exit code \(exitCode))" }
+        record.progress = nil
         let changed = sync()
         try? log?.close()
         lock.unlock()
         if let changed { onStatus?(changed) }
+    }
+
+    /// What the program says about itself (OSC 7501 or `kelp report`): its state, a message for its row, how far it got.
+    /// Caller holds the lock.
+    private func apply(_ r: ProgramStatus.Report) {
+        detector.program(r.state); lastHookAt = Date()
+        if let msg = r.msg, !msg.isEmpty { record.summary = msg } else if r.state == "idle" || r.state == "clear" { record.summary = "" }
+        record.progress = r.progress
+    }
+
+    /// `kelp report`: the record to publish when only what it says changed (a new state goes out through onStatus).
+    func report(_ r: ProgramStatus.Report) -> Session? {
+        lock.lock(); apply(r); let c = sync(), rec = record; lock.unlock()
+        if let c { onStatus?(c); return nil }
+        return rec
     }
 
     /// Copy detector status into the record. Caller holds the lock. Returns the record if it changed.

@@ -129,9 +129,9 @@ struct CardView: View {
             ForEach(model.agents) { a in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        StatusIcon(status: a.session.status).font(.caption)
-                        Text(model.agentOnly ? a.session.status.words : AgentCatalog.displayName(a.session)).font(.callout).lineLimit(1)
-                        if !model.agentOnly { Text(a.session.status.words).font(.caption).foregroundStyle(.secondary) }
+                        StatusIcon(status: a.session.markStatus).font(.caption)
+                        Text(model.agentOnly ? a.session.statusWords : AgentCatalog.displayName(a.session)).font(.callout).lineLimit(1)
+                        if !model.agentOnly { Text(a.session.statusWords).font(.caption).foregroundStyle(.secondary) }
                         Spacer(minLength: 8)
                         Text(shortAgo(a.session.statusAt ?? a.session.createdAt)).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
                     }

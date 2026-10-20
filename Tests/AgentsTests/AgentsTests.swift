@@ -206,6 +206,11 @@ import Core
     #expect(next == [.report(.init(id: "sub/1", state: "working", kind: nil, msg: nil))])
     #expect(carry.isEmpty)
     #expect(ProgramStatus.parse("state=sleeping") == nil)
+    #expect(ProgramStatus.parse("state=working:progress=140") == .report(.init(state: "working", progress: 100)))
+    #expect(ProgramStatus.parse("state=done:progress=40") == .report(.init(state: "done")))   // only work in progress has one
+    // ConEmu's bar: a percent, gone (0), indeterminate (3); one cut off at the end of a read is left out.
+    #expect(ProgramStatus.conEmuProgress("a\u{1B}]9;4;1;42\u{07}b\u{1B}]9;4;0;0\u{1B}\\c\u{1B}]9;4;3;\u{07}\u{1B}]9;4;1;5") == [42, nil, nil])
+    #expect(ProgramStatus.conEmuProgress("\u{1B}]9;notify me\u{07}").isEmpty)
     var d = StatusDetector(manifest: AgentManifest(id: "x", name: "X", command: "x"))
     d.program("blocked"); #expect(d.status == .waiting)
     d.program("error"); #expect(d.status == .error)
