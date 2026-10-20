@@ -70,7 +70,12 @@ final class FileTab: SavableTab {
             let md = MarkdownTab(editor: e, url: url, path: p)
             md.startInPreview = p == Help.location.path   // the help is for reading
             markdown = md; view = md.view
-        } else { view = e.view }
+        } else {
+            let bar = EditorStatusBar(url: url, text: text)
+            bar.show(cursor: e.cursor)
+            e.onSelection = { [weak bar, weak e] in bar?.show(cursor: e?.cursor) }
+            view = EditorStatusBar.wrap(e.view, bar: bar)
+        }
         e.onChange = { [weak self] t in self?.edited(t) }
         startLSP()
         watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in

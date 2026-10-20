@@ -160,3 +160,10 @@ import WorkbenchKit
     #expect(LanguageSpec.word(in: text, line: 9, column: 1) == "")
     #expect(LanguageSpec.word(in: "é_1 b", line: 1, column: 2) == "é_1")
 }
+
+@Test func indentationOfAFile() {
+    #expect(Indentation.detect("a {\n    b {\n        c\n    }\n    // d\n}\n") == .spaces(4))
+    #expect(Indentation.detect("a:\n  b:\n    c\n  d\n") == .spaces(2))
+    #expect(Indentation.detect("func f() {\n\tx\n\t\ty\n}\n") == .tabs)
+    #expect(Indentation.detect("one\ntwo\n") == nil)
+}
