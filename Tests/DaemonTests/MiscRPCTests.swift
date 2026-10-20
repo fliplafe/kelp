@@ -125,3 +125,46 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     try "theirs".write(toFile: parent + "/file", atomically: true, encoding: .utf8)
     #expect(!Daemon.claim(parent + "/file"))    // a file in the way counts too
 }
+
+/// `ssh` that runs the command here (the host is this Mac), shared with remoteProjectOverSSH: RemoteHost reads it once.
+private let localSSH: String = {
+    if let have = ProcessInfo.processInfo.environment["KELP_SSH"] { return have }
+    let shim = tmp().appendingPathComponent("ssh")
+    try? """
+    #!/bin/sh
+    while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
+    exec /bin/sh -c "$1"
+    """.write(to: shim, atomically: true, encoding: .utf8)
+    chmod(shim.path, 0o755)
+    setenv("KELP_SSH", shim.path, 1)
+    return shim.path
+}()
+
+@Test func twoRemoteFoldersWithTheSameNameAreTwoProjects() async throws {
+    _ = localSSH
+    try #require(RemoteHost.ssh == localSSH)
+    let w = try await world(); defer { w.d.stop() }
+    let a = tmp().path + "/app", b = tmp().path + "/app"
+    for p in [a, b] { try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true); try Git.run(["init", "-q"], cwd: p) }
+    let ra = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(a)]), as: Repo.self)
+    let rb = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(b)]), as: Repo.self)
+    #expect(ra.id != rb.id && ra.path != rb.path)                             // not the first project again
+    #expect(RemoteHost.of(rb.path)?.path.hasSuffix(String(b.dropFirst(4))) == true)   // its agents run in its own folder
+    let again = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(a)]), as: Repo.self)
+    #expect(again.id == ra.id)                                                // adding the same one twice is still one project
+}
+
+@Test func aFailedRemoteAddRemovesOnlyItsOwnFolder() async throws {
+    _ = localSSH
+    try #require(RemoteHost.ssh == localSSH)
+    let w = try await world(); defer { w.d.stop() }
+    let good = tmp().path + "/svc"
+    try FileManager.default.createDirectory(atPath: good, withIntermediateDirectories: true); try Git.run(["init", "-q"], cwd: good)
+    let kept = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(good)]), as: Repo.self)
+    // "/x/.." used to name the remote folder itself; a failure then deleted every remote project's folder.
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": "/nonexistent/.."])) }
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": "/nonexistent/svc"])) }
+    #expect(FileManager.default.fileExists(atPath: kept.path + "/" + RemoteHost.marker))   // the project that worked is untouched
+    #expect(Daemon.remoteFolderName("/x/..") == "project" && Daemon.remoteFolderName("/") == "project" && Daemon.remoteFolderName("~") == "project")
+    #expect(Daemon.remoteFolderName("/srv/app/") == "app")
+}

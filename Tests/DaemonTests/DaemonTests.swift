@@ -433,8 +433,8 @@ final class NoteBox: @unchecked Sendable {
     exec /bin/sh -c "$1"
     """.write(to: shim, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
-    setenv("KELP_SSH", shim.path, 1)
-    #expect(RemoteHost.ssh == shim.path)
+    if getenv("KELP_SSH") == nil { setenv("KELP_SSH", shim.path, 1) }   // RemoteHost reads it once; another test's shim works the same
+    #expect(RemoteHost.ssh == String(cString: getenv("KELP_SSH")))
 
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)

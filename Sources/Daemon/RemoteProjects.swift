@@ -10,10 +10,26 @@ extension Daemon {
             let host = try p.req("host").trimmingCharacters(in: .whitespaces), path = try p.req("path").trimmingCharacters(in: .whitespaces)
             guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
             guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
-            let name = (path as NSString).lastPathComponent
-            let folder = root.appendingPathComponent("remote/\(host.replacingOccurrences(of: "/", with: "_"))/\(name)")
-            if let r = try store.repos().first(where: { $0.path == folder.path }) { return try .from(r) }
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            // Already added (the folder's marker names this host and path): that project, whatever its folder is called.
+            // The marker keeps git's answer for the top folder (symlinks resolved, ~ expanded): match the path as typed, the
+            // same path resolved where that's possible here (the "host" can be this Mac), and ~/… by its tail.
+            let real = realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) }
+            func same(_ m: RemoteHost) -> Bool {
+                m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
+            }
+            if let r = try store.repos().first(where: { RemoteHost.of($0.path).map(same) ?? false }) {
+                return try .from(r)
+            }
+            let name = Self.remoteFolderName(path)
+            let hostDir = root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
+            try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
+            // A folder of its own, made here: /a/app and /b/app on one host don't share one, and a failure below removes
+            // only this folder, never another project's.
+            var folder = hostDir.appendingPathComponent(name), n = 2
+            while !Self.claim(folder.path) {
+                guard n < 100 else { throw RPCError.internalError("No free folder for \(name) in \(hostDir.path)") }
+                folder = hostDir.appendingPathComponent("\(name)-\(n)"); n += 1
+            }
             func mark(_ r: RemoteHost) throws { try JSONEncoder().encode(r).write(to: folder.appendingPathComponent(RemoteHost.marker)) }
             // ~ as the host's shell spells it: ask git there where the repository's top is.
             try mark(RemoteHost(host: host, path: path))
@@ -29,7 +45,7 @@ extension Daemon {
                 throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
             }
             try mark(RemoteHost(host: host, path: top))
-            let r = Repo(name: name, path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
+            let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Self.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
             try store.save(r); try syncMainWorkspaces(); notify("event.changed", "repo")
             return try .from(r)
         case "files.readRemote":   // {path} in a remote project's folder → the file's text, read on the host
@@ -37,6 +53,13 @@ extension Daemon {
             return .string(try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh))
         default: return nil
         }
+    }
+
+    /// The local folder's name for a path on a host: its last component, or "project" when that isn't a usable name
+    /// ("/", "~", "..", "."), so the folder always lands inside the host's folder.
+    static func remoteFolderName(_ path: String) -> String {
+        let last = (path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) as NSString).lastPathComponent
+        return ["", ".", "..", "~"].contains(last) || last.hasPrefix(".") || last.contains("/") ? "project" : last
     }
 }
 
