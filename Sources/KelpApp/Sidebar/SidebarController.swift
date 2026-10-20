@@ -228,10 +228,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // workspaces you pinned (moved up, not copied).
         let needs = AttentionQueue.sessions.filter { s in m.worktree(s.worktreeId) != nil && hit(s.title, s.agent ?? "", s.summary) }
         if !needs.isEmpty, filter == .all || filter == .needsYou, m.worktrees.filter({ !$0.archived }).count > 2 {
-            let n = Node(.section(String(localized: "Needs You"))); n.children = stableOrder(needs.map(\.id)).map { Node(.needs($0)) }; out.append(n)
+            let n = Node(.section("Needs You")); n.children = stableOrder(needs.map(\.id)).map { Node(.needs($0)) }; out.append(n)
         }
         let pinnedNodes = pins.compactMap { id in m.worktree(id).flatMap { w in m.repo(w.repoId).flatMap { workspace(w, $0) } } }
-        if !pinnedNodes.isEmpty { let n = Node(.section(String(localized: "Pinned"))); n.children = pinnedNodes; out.append(n) }
+        if !pinnedNodes.isEmpty { let n = Node(.section("Pinned")); n.children = pinnedNodes; out.append(n) }
         out += m.projects.compactMap { r in
             let p = Node(.project(r.id))
             p.children = m.workspaces(of: r).filter { !pins.contains($0.id) }.compactMap { workspace($0, r) }
@@ -646,7 +646,8 @@ final class SidebarCell: NSTableCellView {
         case .section(let name):
             let needs = name == "Needs You"
             icon.image = .symbol(needs ? "bell.fill" : "pin.fill"); icon.contentTintColor = needs ? .systemOrange : .secondaryLabelColor
-            title.stringValue = name; count.stringValue = "\(node.children.count)"; toolTip = nil
+            title.stringValue = needs ? String(localized: "Needs You") : String(localized: "Pinned")   // the kind stays English, the title is shown translated
+            count.stringValue = "\(node.children.count)"; toolTip = nil
         case .needs(let sid):
             guard let s = m.session(sid) else { return }
             icon.image = AgentCatalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor

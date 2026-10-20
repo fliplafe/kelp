@@ -8485,6 +8485,303 @@
           }
         }
       }
+    },
+    "%lld working": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld working"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld working"
+                }
+              }
+            }
+          }
+        },
+        "ru": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld работает"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld работают"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld работают"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld работают"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Commit %lld Files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Commit %lld File"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Commit %lld Files"
+                }
+              }
+            }
+          }
+        },
+        "ru": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Закоммитить %lld файл"
+                }
+              },
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Закоммитить %lld файла"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Закоммитить %lld файлов"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Закоммитить %lld файла"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ goes back to the committed lines here: %lld added lines go, %lld removed lines come back. This can't be undone.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ вернётся к закоммиченным строкам: добавленных строк уйдёт — %2$lld, удалённых вернётся — %3$lld. Это нельзя отменить."
+          }
+        }
+      }
+    },
+    "A file, an agent or a command: ⌘P": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл, агент или команда: ⌘P"
+          }
+        }
+      }
+    },
+    "Commit & Push, Amend…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить и отправить, исправить…"
+          }
+        }
+      }
+    },
+    "Discard": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбросить"
+          }
+        }
+      }
+    },
+    "Discard this change?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбросить это изменение?"
+          }
+        }
+      }
+    },
+    "Discard…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбросить…"
+          }
+        }
+      }
+    },
+    "First task for %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Первая задача для %@"
+          }
+        }
+      }
+    },
+    "Installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлены"
+          }
+        }
+      }
+    },
+    "Not Installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не установлены"
+          }
+        }
+      }
+    },
+    "Line %lld, Column %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Строка %1$lld, столбец %2$lld"
+          }
+        }
+      }
+    },
+    "More Commit Actions": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другие действия коммита"
+          }
+        }
+      }
+    },
+    "Show the next agent that needs you (⇧⌘U)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать следующего агента, который ждёт вас (⇧⌘U)"
+          }
+        }
+      }
+    },
+    "Spaces: %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пробелы: %lld"
+          }
+        }
+      }
+    },
+    "Tab Indentation": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Табуляция"
+          }
+        }
+      }
+    },
+    "What should %@ do? Return starts it": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что сделать %@? Return — запустить"
+          }
+        }
+      }
+    },
+    "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↑↓ Выбрать    ↩ Открыть    ⇧↩ Открыть справа    # Pull requests"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команды"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "Workspaces": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рабочие области"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "Tabs": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки"
+          }
+        }
+      },
+      "extractionState": "manual"
     }
   },
   "version": "1.0"

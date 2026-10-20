@@ -12,7 +12,7 @@ final class EditorStatusBar: NSView {
         super.init(frame: .zero)
         let kind = NSTextField(labelWithString: UTType(filenameExtension: url.pathExtension)?.localizedDescription ?? url.pathExtension.uppercased())
         let indent: String = switch Indentation.detect(text) {
-        case .tabs?: String(localized: "Tabs")
+        case .tabs?: String(localized: "Tab Indentation")
         case .spaces(let n)?: String(localized: "Spaces: \(n)")
         case nil: ""
         }
