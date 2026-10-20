@@ -67,6 +67,13 @@ extension Git {
     /// other branch or remote unless `force` or `dropCommits` (they'd be gone for good). Both checks come first: on
     /// refusal nothing has been removed.
     public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false) throws {
+        try checkRemovable(repo: repo, path: path, branch: branch, force: force, dropCommits: dropCommits)
+        try run(["worktree", "remove", "--force", path], cwd: repo)
+        if let branch { try run(["branch", "-D", branch], cwd: repo) }
+    }
+
+    /// What `removeWorktree` would refuse, without removing anything.
+    public static func checkRemovable(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false) throws {
         if !force, try isDirty(path) {
             throw GitError(args: ["worktree", "remove"], status: 1, stderr: "worktree has uncommitted changes")
         }
@@ -74,8 +81,6 @@ extension Git {
             throw GitError(args: ["branch", "-D", branch], status: 1,
                            stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
         }
-        try run(["worktree", "remove", "--force", path], cwd: repo)
-        if let branch { try run(["branch", "-D", branch], cwd: repo) }
     }
 
     /// Commits on `branch` that no other local branch and no remote branch has: what deleting it would lose.

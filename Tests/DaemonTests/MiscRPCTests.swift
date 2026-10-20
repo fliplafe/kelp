@@ -300,3 +300,24 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     _ = try await w.c.call("scripts.trust", .obj(["worktreeId": .string(wt.id), "digest": again["digest"] ?? .null]))
     #expect(try await w.c.call("recipe.render", .obj(["id": .string(wt.id), "name": "commit"])).string == "something else entirely")
 }
+
+/// An agent still writing when its workspace is removed: it's stopped first, and what it wrote stops the removal.
+@Test func removingAWorkspaceStopsItsAgentsBeforeLookingAndLosesNothing() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "busy-agent")
+    // Writes one last file as it's told to stop, the way an agent saves its work on the way out.
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id),
+        "command": "trap 'echo saved > last-words.txt; exit 0' HUP TERM; echo ready; while :; do sleep 0.1; done"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id)])) }
+    #expect(FileManager.default.fileExists(atPath: wt.path + "/last-words.txt"))   // refused, and the work is still there
+}
+
+@Test func archivingAWorkspacePausesItsAgentsSoTheyResume() async throws {
+    let sleepy = AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo up; sleep 30", "x"], autoAnswers: [], resumeArgs: ["--resume"])
+    let w = try await world(agents: [sleepy]); defer { w.d.stop() }
+    let wt = try await desk(w, "to-archive")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)   // paused, not ended
+}

@@ -146,12 +146,16 @@ extension Daemon {
                 if method == "worktree.archive" { try archiveDesk(w, r) } else { try removeDesk(w, r) }
                 return .null
             }
-            let remove = method == "worktree.remove"
+            let remove = method == "worktree.remove", force = p["force"]?.bool == true, drop = p["dropCommits"]?.bool == true
+            let branch = remove ? w.branch : nil
             if FileManager.default.fileExists(atPath: w.path) {
-                try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true,
-                                       dropCommits: p["dropCommits"]?.bool == true)
-            }
-            for s in (try store.sessions()) where s.worktreeId == w.id { if remove { discard(s) } else { existing(s.id)?.pty.kill() } }
+                // Refuse before anything stops; then stop its agents (paused when archiving, so they resume) and only then
+                // remove, checking again: an agent still writing can't have its work deleted under it.
+                try Git.checkRemovable(repo: r.path, path: w.path, branch: branch, force: force, dropCommits: drop)
+                try pauseSessions(of: w.id)
+                try Git.removeWorktree(repo: r.path, path: w.path, branch: branch, force: force, dropCommits: drop)
+            } else { try pauseSessions(of: w.id) }
+            if remove { for s in (try store.sessions()) where s.worktreeId == w.id { discard(s) } }
             if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
             notify("event.changed", "worktree"); return .null
         case "worktree.unarchive":

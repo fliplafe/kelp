@@ -41,17 +41,32 @@ extension Daemon {
 
     /// Closing a desk ends its agents and forgets its layout; the folder is untouched. The last one stays.
     /// Out of sight, nothing lost: its agents pause (they resume their conversations when it comes back), its tabs stay.
-    func archiveDesk(_ w: Worktree, _ r: Repo) throws {
-        guard try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count > 1 else {
-            throw RPCError.invalidParams("A project keeps at least one workspace.")
-        }
+    /// A workspace going out of sight: agents that can resume their conversation pause (they come back with it), the
+    /// rest stop. Returns once their programs are gone, so nothing writes into the folder after this.
+    func pauseSessions(of wid: String) throws {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        for s in try store.sessions() where s.worktreeId == w.id {
+        var pids: [pid_t] = []
+        for s in try store.sessions() where s.worktreeId == wid {
             guard let ls = existing(s.id) else { continue }
+            pids.append(ls.pty.pid)
             if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
                 let paused = ls.markHibernated(); ls.pty.kill(); lock.withLock { live[s.id] = nil }; publish(paused)
             } else { ls.pty.kill() }
         }
+        Self.waitGone(pids)
+    }
+
+    /// Until these processes have exited (or 3 s, for one that ignores the hangup).
+    static func waitGone(_ pids: [pid_t]) {
+        let end = Date().addingTimeInterval(3)
+        while Date() < end, pids.contains(where: { kill($0, 0) == 0 }) { usleep(20_000) }
+    }
+
+    func archiveDesk(_ w: Worktree, _ r: Repo) throws {
+        guard try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count > 1 else {
+            throw RPCError.invalidParams("A project keeps at least one workspace.")
+        }
+        try pauseSessions(of: w.id)
         var a = w; a.archived = true; try store.save(a)
         notify("event.changed", "worktree")
     }
