@@ -244,3 +244,17 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     try JSONEncoder().encode(agent("claude", menu)).write(to: w.root.appendingPathComponent("agents/claude.json"))
     #expect(try await !output(p, send: "go", until: "APPROVED-BY-KELP").contains("APPROVED-BY-KELP"))
 }
+
+@Test func mergeGoesOnlyIntoTheBaseBranch() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "feat/m")
+    try "m\n".write(toFile: wt.path + "/m.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "m.txt"], cwd: wt.path); try Git.run(["commit", "-qm", "m"], cwd: wt.path)
+    // The main checkout was switched to another branch: merging there would land on the wrong branch.
+    try Git.run(["switch", "-q", "-c", "elsewhere"], cwd: w.repo.path)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.merge", .obj(["id": .string(wt.id)])) }
+    #expect(!FileManager.default.fileExists(atPath: w.repo.path + "/m.txt"))   // nothing merged into "elsewhere"
+    try Git.run(["switch", "-q", "main"], cwd: w.repo.path)
+    #expect(try await w.c.call("git.merge", .obj(["id": .string(wt.id)]))["merged"]?.bool == true)
+    #expect(FileManager.default.fileExists(atPath: w.repo.path + "/m.txt"))
+}

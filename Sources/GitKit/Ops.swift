@@ -32,7 +32,15 @@ extension Git {
 
     /// Merge `branch` into the branch checked out in `target` (usually the main checkout). Aborts on conflict
     /// unless `keepConflicts`, so the caller can show them and hand them to an agent.
-    public static func merge(branch: String, into target: String, keepConflicts: Bool = false) throws -> MergeResult {
+    /// `onto`: the branch `target` must have checked out (the base); anything else is refused rather than merged into.
+    public static func merge(branch: String, into target: String, onto: String? = nil, keepConflicts: Bool = false) throws -> MergeResult {
+        if let onto {
+            let here = try currentBranch(target)
+            guard here == onto else {
+                throw GitError(args: ["merge", branch], status: 1, stderr: "the main checkout is on \(here), not \(onto): switch it back to \(onto) first")
+            }
+            guard branch != onto else { throw GitError(args: ["merge", branch], status: 1, stderr: "\(branch) is the branch being merged into") }
+        }
         do {
             try run(["merge", "--no-edit", branch], cwd: target)
             return MergeResult(merged: true, conflicts: [])

@@ -278,7 +278,9 @@ extension Daemon {
             let w = try cwd(forWorktree: p.req("id"))
             guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
             if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
-            let res = try Git.merge(branch: w.branch, into: r.path, keepConflicts: p["keepConflicts"]?.bool == true)
+            // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
+            let branch = (try? Git.currentBranch(w.path)) ?? w.branch
+            let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: p["keepConflicts"]?.bool == true)
             return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
 
         // MARK: files
