@@ -96,3 +96,14 @@ private func home() throws -> URL {
     #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: d.appendingPathComponent("settings.json").path)) != nil)   // still a link
     #expect(try String(contentsOf: real, encoding: .utf8).contains("nord"))   // and the file it points at has the change
 }
+
+@Test func aHandEditThroughTheLinkIsPickedUp() throws {
+    let d = try home(), dotfiles = try home()
+    let real = dotfiles.appendingPathComponent("kelp-settings.json")
+    try "{}".write(to: real, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: d.appendingPathComponent("settings.json"), withDestinationURL: real)
+    let s = SettingsStore(root: d)
+    try #"{"theme":"edited by hand"}"#.write(to: real, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: real.path)
+    #expect(s.reloadIfChanged() && s["theme"] == .string("edited by hand"))   // the file changed, not the link
+}

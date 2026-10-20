@@ -77,7 +77,8 @@ extension Git {
         if !force, try isDirty(path) {
             throw GitError(args: ["worktree", "remove"], status: 1, stderr: "worktree has uncommitted changes")
         }
-        if let branch, !force, !dropCommits, case let n = try onlyOnBranch(repo: repo, branch), n > 0 {
+        // `force` is about uncommitted changes; commits are lost only when asked for by name (dropCommits).
+        if let branch, !dropCommits, case let n = try onlyOnBranch(repo: repo, branch), n > 0 {
             throw GitError(args: ["branch", "-D", branch], status: 1,
                            stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
         }

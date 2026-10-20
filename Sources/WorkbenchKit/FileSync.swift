@@ -24,6 +24,7 @@ public enum FileSync {
         switch disk {
         case .missing: return .missing
         case .present(let text?) where text != saved: return .conflict(text)
+        case .present(nil): return .conflict("")   // not readable as text: someone wrote it another way; never written over unasked
         case .present: return .write
         }
     }

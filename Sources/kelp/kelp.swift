@@ -6,7 +6,7 @@ let usage = """
 usage: kelp <command>
   status                               repos, worktrees and sessions at a glance
   repo add [path] | repo list
-  worktree create <branch> [--repo id] [--base b] | list | current | note <text> | remove <id> [--force] | archive <id>
+  worktree create <branch> [--repo id] [--base b] | list | current | note <text> | remove <id> [--force] [--drop-commits] | archive <id>
   agent list                           (use `kelp session new --agent <id>`)
   session new [--agent id] [--worktree id] [--cmd "..."] [--split right|down] [--wait] | list
                                        --split opens its tab beside yours; --wait prints its id, then exits with
@@ -177,8 +177,9 @@ func plist() -> String {
         case ("worktree", "note"):
             _ = try await c.call(WorktreeNote(id: try await currentWorktree(c)["id"]?.string ?? "", note: args.joined(separator: " ")))
         case ("worktree", "remove"), ("worktree", "archive"):
-            let force = has("--force")
-            show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")), "force": .bool(force)])))
+            let force = has("--force"), drop = has("--drop-commits")   // two separate losses, each asked for by name
+            show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")),
+                                                                   "force": .bool(force), "dropCommits": .bool(drop)])))
         case ("session", "new"):
             let wait = has("--wait"), split = flag("--split")
             var p: [String: JSONValue] = [:]

@@ -54,6 +54,12 @@ func tmp() -> URL {
     return u
 }
 
+/// What the app does: show the .kelp.yaml (scripts.list), then trust the digest of what was shown.
+func trustAsShown(_ c: RPCClient, _ worktreeId: JSONValue) async throws -> JSONValue {
+    let shown = try await c.call("scripts.list", .obj(["worktreeId": worktreeId]))
+    return try await c.call("scripts.trust", .obj(["worktreeId": worktreeId, "digest": shown["digest"] ?? .null]))
+}
+
 func makeRepo() throws -> String {
     let d = tmp().path
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
@@ -83,7 +89,7 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     // .kelp.yaml's setup waits for the user to trust the file
     let first = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/zero"]))
     #expect(first["setupNeedsTrust"]?.bool == true)
-    _ = try await c.call("scripts.trust", .obj(["worktreeId": first["id"] ?? .null]))
+    _ = try await trustAsShown(c, first["id"] ?? .null)
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/one"]), as: Worktree.self)
     #expect(FileManager.default.fileExists(atPath: wt.path))
     #expect(!FileManager.default.fileExists(atPath: (first["path"]?.string ?? "") + "/SETUP_RAN"))
@@ -199,7 +205,7 @@ final class NoteBox: @unchecked Sendable {
     let first = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "first"]))
     #expect(first["setupNeedsTrust"]?.bool == true)
     #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: (first["path"]?.string ?? "") + "/node_modules")) == nil)
-    _ = try await c.call("scripts.trust", .obj(["worktreeId": first["id"] ?? .null]))
+    _ = try await trustAsShown(c, first["id"] ?? .null)
     let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "dark-mode", "setup": false]), as: Worktree.self)
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "fake", "prompt": "Add a dark mode toggle to settings"]),
                                       as: Session.self)
@@ -445,7 +451,7 @@ final class NoteBox: @unchecked Sendable {
     let list = try await c.call("scripts.list", id)
     #expect(list["trusted"]?.bool == false && list["scripts"]?.array?.compactMap { $0["name"]?.string } == ["test", "hello"])
     await #expect(throws: (any Error).self) { try await c.call("scripts.run", .obj(["worktreeId": .string(w.id), "name": "test"])) }
-    _ = try await c.call("scripts.trust", id)
+    _ = try await trustAsShown(c, id["worktreeId"] ?? .null)
     _ = try await c.call("scripts.run", .obj(["worktreeId": .string(w.id), "name": "test"]))
     #expect(try await waitFor { FileManager.default.fileExists(atPath: w.path + "/TESTED") })
     try "test: false\n".write(toFile: path + "/.kelp.yaml", atomically: true, encoding: .utf8)

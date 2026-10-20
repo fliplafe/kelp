@@ -336,11 +336,15 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     }
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.
+    /// Under wakeLock, as a wake is: a paused session being opened at this moment can't come back after its record and log
+    /// are gone (it would restart an agent for a deleted project and save the record again).
     func discard(_ s: Session) {
-        let ls = lock.withLock { live.removeValue(forKey: s.id) }
-        ls?.discard()
-        try? store.delete(s)
-        try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
+        wakeLock.withLock {
+            let ls = lock.withLock { live.removeValue(forKey: s.id) }
+            ls?.discard()
+            try? store.delete(s)
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
+        }
     }
 
     /// One sentence naming the skills that are turned on (their folders exist).
@@ -425,7 +429,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         // out in it.)
         var project: String?
         if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId),
-           AgentTrust.normal(cwd) == AgentTrust.normal(w.path) || AgentTrust.normal(cwd).hasPrefix(AgentTrust.normal(w.path) + "/") {
+           AgentTrust.normal(cwd) == AgentTrust.normal(w.path) || AgentTrust.normal(cwd).hasPrefix(AgentTrust.normal(w.path) + "/"),
+           !Self.changesAgentConfig(w.path, base: r.baseBranch) {
             project = r.path
         }
         let expectedAndSettled = RemoteHost.of(cwd) == nil && !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
@@ -434,6 +439,15 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         var out = m
         out.autoAnswers.removeAll { $0 == AgentManifest.trust }
         return out
+    }
+
+    /// What a trusted folder lets an agent run on its own: hooks, MCP servers, its settings. A branch (someone else's PR)
+    /// that changes these against the base asks the user, though the project is trusted; so does one Kelp can't compare.
+    static let agentConfig = [".claude", ".mcp.json", ".codex", ".gemini", ".cursor"]
+    static func changesAgentConfig(_ path: String, base: String) -> Bool {
+        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfig, cwd: path)) == nil   // exit 1: differs
+        let pending = (try? Git.run(["status", "--porcelain", "--"] + agentConfig, cwd: path))?.isEmpty != true
+        return committed || pending
     }
 
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {

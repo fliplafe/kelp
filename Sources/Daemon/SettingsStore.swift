@@ -44,7 +44,7 @@ final class SettingsStore: @unchecked Sendable {   // values and mtime under loc
     /// true when the file changed on disk and parsed.
     func reloadIfChanged() -> Bool {
         lock.withLock {
-            let m = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            let m = (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
             guard m != mtime else { return false }
             mtime = m
             guard let d = try? Data(contentsOf: url), case .object(let o)? = try? JSONDecoder().decode(JSONValue.self, from: d) else { return false }
@@ -58,7 +58,7 @@ final class SettingsStore: @unchecked Sendable {   // values and mtime under loc
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         // To where a symlink points (settings.json kept in a dotfiles repo): an atomic write would replace the link itself.
         try (e.encode(JSONValue.object(values)) + Data("\n".utf8)).write(to: url.resolvingSymlinksInPath(), options: .atomic)
-        mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date   // our own write isn't a hand edit
+        mtime = (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date   // our own write isn't a hand edit
     }
 }
 

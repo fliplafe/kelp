@@ -54,7 +54,10 @@ extension Daemon {
             let repo = try store.repo(w.repoId)?.path ?? w.path
             let now = Self.digest(configText(repo))
             // {digest} from scripts.list: the file changed since it was shown (an agent, a pull), so that isn't what was trusted.
-            if let shown = p["digest"]?.string, shown != now {
+            // Required: trust is given to text someone was shown (scripts.list's digest). Without one an agent or a script in
+            // a session (they have KELP_SOCKET) could trust a .kelp.yaml nobody looked at.
+            guard let shown = p["digest"]?.string else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
+            if shown != now {
                 throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.")
             }
             try trustLock.withLock {
