@@ -420,8 +420,14 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// has never seen or one on a remote host, is the user's to answer.
     func trustAnswered(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
         guard m.autoAnswers.contains(AgentManifest.trust) else { return m }
+        // The project only counts for its own workspace's folder: any other cwd passed with its worktreeId is just a folder.
+        // (A workspace on another branch of a trusted project is trusted the way Claude trusts a folder, whatever is checked
+        // out in it.)
         var project: String?
-        if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId) { project = r.path }
+        if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId),
+           AgentTrust.normal(cwd) == AgentTrust.normal(w.path) || AgentTrust.normal(cwd).hasPrefix(AgentTrust.normal(w.path) + "/") {
+            project = r.path
+        }
         let expectedAndSettled = RemoteHost.of(cwd) == nil && !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
             && project.map { AgentTrust.trusts(agent: m.id, folders: [$0], env: env) } == true
         guard !expectedAndSettled else { return m }

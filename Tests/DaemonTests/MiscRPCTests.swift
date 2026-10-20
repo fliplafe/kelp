@@ -227,18 +227,20 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
         return m
     }
     let w = try await world(agents: [agent("claude", trust)]); defer { w.d.stop() }
-    let wt = try await desk(w, "d1")
-    let outside = tmp().path   // a session folder outside the project: its own trust question will come
+    let wt = try await desk(w, "d1")   // a worktree outside the project's folder: its own trust question will come
+    let elsewhere = tmp().path
     func output(_ p: [String: JSONValue], send: String? = nil, until marker: String) async throws -> String {
         let s: Session = try await w.c.call("session.create", .object(p), as: Session.self)
         if let send { _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": .string(send)])) }
         _ = try await waitFor(6) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains(marker) == true }
         return try await w.c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
     }
-    let p: [String: JSONValue] = ["worktreeId": .string(wt.id), "agent": "claude", "cwd": .string(outside)]
+    let p: [String: JSONValue] = ["worktreeId": .string(wt.id), "agent": "claude"]
     #expect(try await !output(p, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))   // the project isn't trusted: the user is asked
     try #"{"projects":{"\#(w.repo.path)":{"hasTrustDialogAccepted":true}}}"#.write(toFile: config + "/.claude.json", atomically: true, encoding: .utf8)
-    #expect(try await output(p, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))     // trusted project, new folder: answered
+    #expect(try await output(p, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))     // trusted project, its new worktree: answered
+    // Any other folder passed along with that worktree's id is just a folder: the user is asked.
+    #expect(try await !output(p.merging(["cwd": .string(elsewhere)]) { $1 }, until: "TRUSTED-BY-KELP").contains("TRUSTED-BY-KELP"))
 
     // A permission menu after the user's prompt, with the question's words in what the agent read.
     try JSONEncoder().encode(agent("claude", menu)).write(to: w.root.appendingPathComponent("agents/claude.json"))

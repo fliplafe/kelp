@@ -51,7 +51,7 @@ public enum AgentTrust {
     }
 
     /// Symlinks resolved where the folder exists (/tmp is /private/tmp), no trailing slash.
-    static func normal(_ p: String) -> String {
+    public static func normal(_ p: String) -> String {
         let real = realpath(p, nil).map { r in defer { free(r) }; return String(cString: r) } ?? p
         return real.count > 1 && real.hasSuffix("/") ? String(real.dropLast()) : real
     }
