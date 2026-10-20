@@ -105,7 +105,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Quitting: a peeking panel goes and focus mode's panels come back first, or the split's autosave would start the next launch wrong.
     func leaveFocusMode() {
-        peeking?.isCollapsed = true; peeking = nil
+        peeking?.isCollapsed = true; stopPeek()
         guard let was = focusMode else { return }
         focusMode = nil
         sidebarItem.isCollapsed = was.sidebar; inspectorItem.isCollapsed = was.inspector
@@ -114,10 +114,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func toggleFocusMode() {
         if let was = focusMode {
-            focusMode = nil; peeking = nil
+            focusMode = nil; stopPeek()
             sidebarItem.animator().isCollapsed = was.sidebar; inspectorItem.animator().isCollapsed = was.inspector
         } else {
-            peeking = nil
+            stopPeek()
             focusMode = (sidebarItem.isCollapsed || autoHide.sidebar, inspectorItem.isCollapsed || autoHide.inspector)
             sidebarItem.animator().isCollapsed = true; inspectorItem.animator().isCollapsed = true
         }
@@ -131,7 +131,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard on != (sidebar ? autoHide.sidebar : autoHide.inspector) else { return }   // the first, unloaded read keeps the saved layout
         if sidebar { autoHide.sidebar = on; focusMode?.sidebar = on } else { autoHide.inspector = on; focusMode?.inspector = on }
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
-        if peeking === item { peeking = nil }
+        if peeking === item { stopPeek() }
         if focusMode == nil {
             item.animator().isCollapsed = on
             if !sidebar { UserDefaults.standard.set(on, forKey: "inspector.collapsed") }
@@ -152,7 +152,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func peek(sidebar: Bool) {
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
         guard hides(item), item.isCollapsed else { return }
-        endPeek(); peeking = item; peekedAt = Date(); peekReached = false; item.animator().isCollapsed = false
+        endPeek(); peeking = item; peekedAt = Date(); peekReached = false
+        editors.hold(from: sidebar ? .minX : .maxX)   // over the editor area, not squeezing it
+        item.animator().isCollapsed = false
         window?.acceptsMouseMovedEvents = true
         peekMoves = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] e in self?.pointerMoved(e); return e }
     }
@@ -167,7 +169,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func endPeek() {
         if let m = peekMoves { NSEvent.removeMonitor(m); peekMoves = nil }
         guard let p = peeking else { return }
-        peeking = nil; p.animator().isCollapsed = true
+        peeking = nil
+        // The editor area fills its place again once the panel is gone (unless another one came in meanwhile).
+        NSAnimationContext.runAnimationGroup { _ in p.animator().isCollapsed = true } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.peeking == nil else { return }
+                self.window?.contentView?.layoutSubtreeIfNeeded()   // the split at its final widths first, or a terminal sees the narrow one
+                self.editors.hold(from: nil)
+            }
+        }
+    }
+    /// The panels change for good (focus mode, auto-hide switched): no peek, and the editor area fills its place.
+    private func stopPeek() {
+        if let m = peekMoves { NSEvent.removeMonitor(m); peekMoves = nil }
+        peeking = nil; editors.hold(from: nil)
     }
     private func togglePeek(_ item: NSSplitViewItem) { if peeking === item { endPeek() } else { peek(sidebar: item === sidebarItem) } }
 
@@ -201,6 +216,23 @@ final class EdgeTrigger: NSView {
 /// Holds one editor area per recently used workspace, so switching back is instant (terminals stay attached).
 @MainActor
 final class EditorHost: NSViewController {
+    /// The editor area fills this view; while a panel peeks in over it, it keeps its width instead (`hold`).
+    private var fill: [NSLayoutConstraint] = [], held: [NSLayoutConstraint] = []
+
+    /// While a panel peeks in (auto-hide, focus mode) the editor area keeps its size and the panel covers its side
+    /// (`edge`: where the panel comes from), as a panel over the window would: terminals aren't resized (their agents
+    /// redraw everything at a new width) and nothing reflows. Nil lets it fill the view again.
+    func hold(from edge: NSRectEdge?) {
+        guard let area = current?.view else { return }
+        NSLayoutConstraint.deactivate(held); held = []
+        guard let edge else { NSLayoutConstraint.activate(fill); return }
+        NSLayoutConstraint.deactivate(fill)
+        held = [area.widthAnchor.constraint(equalToConstant: area.frame.width),
+                edge == .minX ? area.trailingAnchor.constraint(equalTo: view.trailingAnchor) : area.leadingAnchor.constraint(equalTo: view.leadingAnchor)]
+        NSLayoutConstraint.activate(held)
+        view.clipsToBounds = true
+    }
+
     private var areas: [String: EditorArea] = [:]
     private var recent: [String] = []
     private(set) var current: EditorArea?
@@ -232,9 +264,10 @@ final class EditorHost: NSViewController {
         area.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(area.view)
         // Under the window bar, which lies over this view's top (the split view is the window's full height).
+        fill = [area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)]
+        held = []
         NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height),
-                                     area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                                     area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
+                                     area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)] + fill)
         area.reconcile()
         area.focusSelected()
     }
