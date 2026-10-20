@@ -54,7 +54,8 @@ public enum GitHub {
     static let prFields = "number,title,url,author,headRefName,isDraft,state,reviewDecision,statusCheckRollup"
 
     /// Where the user's shell finds it (MacPorts, nix, mise… too), not only in the daemon's own PATH.
-    static let ghPath = try? LoginPath.resolve("gh")
+    /// `KELP_GH` names another program (tests use a stand-in that answers with canned JSON), like `KELP_SSH`.
+    static let ghPath = ProcessInfo.processInfo.environment["KELP_GH"] ?? (try? LoginPath.resolve("gh"))
 
     @discardableResult
     static func gh(_ args: [String], cwd: String) throws -> Data {
