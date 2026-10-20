@@ -168,3 +168,28 @@ private let localSSH: String = {
     #expect(Daemon.remoteFolderName("/x/..") == "project" && Daemon.remoteFolderName("/") == "project" && Daemon.remoteFolderName("~") == "project")
     #expect(Daemon.remoteFolderName("/srv/app/") == "app")
 }
+
+@Test func deletingAWorkspaceNeverDropsCommitsWithoutBeingTold() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "feat/work")
+    try "new\n".write(toFile: wt.path + "/n.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "n.txt"], cwd: wt.path); try Git.run(["commit", "-qm", "only here"], cwd: wt.path)
+    #expect(try await w.c.call("worktree.unmerged", .obj(["id": .string(wt.id)])).int == 1)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id)])) }
+    #expect(FileManager.default.fileExists(atPath: wt.path + "/n.txt") && Git.branchExists(w.repo.path, "feat/work"))   // nothing was removed
+    _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id), "dropCommits": true]))                        // the user said so
+    #expect(!FileManager.default.fileExists(atPath: wt.path) && !Git.branchExists(w.repo.path, "feat/work"))
+}
+
+@Test func aBranchWhoseCommitsArePushedIsSafeToDelete() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "feat/pushed")
+    try "x\n".write(toFile: wt.path + "/x.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "x.txt"], cwd: wt.path); try Git.run(["commit", "-qm", "x"], cwd: wt.path)
+    let bare = tmp().path
+    try Git.run(["init", "-q", "--bare", bare], cwd: bare)
+    try Git.run(["remote", "add", "origin", bare], cwd: wt.path); try Git.run(["push", "-q", "-u", "origin", "feat/pushed"], cwd: wt.path)
+    #expect(try await w.c.call("worktree.unmerged", .obj(["id": .string(wt.id)])).int == 0)   // on the remote: nothing would be lost
+    _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id)]))
+    #expect(!Git.branchExists(w.repo.path, "feat/pushed"))
+}

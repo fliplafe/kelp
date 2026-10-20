@@ -142,7 +142,8 @@ extension Daemon {
             }
             let remove = method == "worktree.remove"
             if FileManager.default.fileExists(atPath: w.path) {
-                try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true)
+                try Git.removeWorktree(repo: r.path, path: w.path, branch: remove ? w.branch : nil, force: p["force"]?.bool == true,
+                                       dropCommits: p["dropCommits"]?.bool == true)
             }
             for s in (try store.sessions()) where s.worktreeId == w.id { if remove { discard(s) } else { existing(s.id)?.pty.kill() } }
             if remove { try store.delete(w) } else { w.archived = true; try store.save(w) }
@@ -150,6 +151,10 @@ extension Daemon {
         case "worktree.unarchive":
             guard var w = try store.worktree(p.req("id")) else { throw RPCError.invalidParams("no worktree") }
             w.archived = false; try store.save(w); notify("event.changed", "worktree"); return .null
+        case "worktree.unmerged":   // {id} → commits on its branch that no other branch or remote has (lost if it's deleted)
+            let w = try cwd(forWorktree: p.req("id"))
+            guard let r = try store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return .int(0) }
+            return .int(try Git.onlyOnBranch(repo: r.path, w.branch))
         case "worktree.dirty":
             return .bool(try Git.isDirty(cwd(forWorktree: p.req("id")).path))
 

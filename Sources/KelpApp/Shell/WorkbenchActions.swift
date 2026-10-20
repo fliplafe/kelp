@@ -218,15 +218,20 @@ enum WorkspaceActions {
     static func delete(_ w: Worktree) {
         Task {
             let dirty = await AppModel.shared.call("worktree.dirty", .obj(["id": .string(w.id)]))?.bool ?? false
+            let commits = await AppModel.shared.call("worktree.unmerged", .obj(["id": .string(w.id)]))?.int ?? 0
             let a = NSAlert(); a.messageText = String(localized: "Delete “\(w.displayName)” and its branch?")
-            a.informativeText = dirty ? String(localized: "It has uncommitted changes that will be lost.") : String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.")
-            a.addButton(withTitle: dirty ? String(localized: "Delete and Lose Changes") : String(localized: "Delete Workspace and Branch")).hasDestructiveAction = true
-            a.addButton(withTitle: String(localized: "Cancel")); a.alertStyle = dirty ? .critical : .warning
+            var lost: [String] = []
+            if dirty { lost.append(String(localized: "It has uncommitted changes that will be lost.")) }
+            if commits > 0 { lost.append(commits == 1 ? String(localized: "1 commit on \(w.branch) isn't on any other branch or remote and will be lost.")
+                                                      : String(localized: "\(commits) commits on \(w.branch) aren't on any other branch or remote and will be lost.")) }
+            a.informativeText = lost.isEmpty ? String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.") : lost.joined(separator: " ")
+            a.addButton(withTitle: lost.isEmpty ? String(localized: "Delete Workspace and Branch") : String(localized: "Delete and Lose Changes")).hasDestructiveAction = true
+            a.addButton(withTitle: String(localized: "Cancel")); a.alertStyle = lost.isEmpty ? .warning : .critical
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             if Workbench.shared.workspaceId == w.id, let main = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
                 Workbench.show(workspace: main.id)
             }
-            await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id), "force": .bool(dirty)]))
+            await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id), "force": .bool(dirty), "dropCommits": .bool(commits > 0)]))
         }
     }
 

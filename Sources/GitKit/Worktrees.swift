@@ -62,12 +62,25 @@ extension Git {
         !(try run(["status", "--porcelain"], cwd: path)).isEmpty
     }
 
-    /// Remove worktree and its branch. Refuses dirty worktrees unless `force`.
-    public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool) throws {
+    /// Remove worktree and its branch. Refuses dirty worktrees unless `force`, and a branch with commits that are on no
+    /// other branch or remote unless `force` or `dropCommits` (they'd be gone for good). Both checks come first: on
+    /// refusal nothing has been removed.
+    public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false) throws {
         if !force, try isDirty(path) {
             throw GitError(args: ["worktree", "remove"], status: 1, stderr: "worktree has uncommitted changes")
         }
+        if let branch, !force, !dropCommits, case let n = try onlyOnBranch(repo: repo, branch), n > 0 {
+            throw GitError(args: ["branch", "-D", branch], status: 1,
+                           stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
+        }
         try run(["worktree", "remove", "--force", path], cwd: repo)
         if let branch { try run(["branch", "-D", branch], cwd: repo) }
+    }
+
+    /// Commits on `branch` that no other local branch and no remote branch has: what deleting it would lose.
+    public static func onlyOnBranch(repo: String, _ branch: String) throws -> Int {
+        // --exclude before --branches takes the branch's name without refs/heads/ (with it, nothing is excluded).
+        let out = try run(["rev-list", "--count", "refs/heads/" + branch, "--not", "--exclude=" + branch, "--branches", "--remotes"], cwd: repo)
+        return Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 }
