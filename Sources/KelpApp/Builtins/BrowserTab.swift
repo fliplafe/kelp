@@ -130,7 +130,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-        guard let d = m.body as? [String: Any] else { return }
+        // Any site can post to this handler: only a click made while the user has Design Mode on counts.
+        guard designOn, m.frameInfo.isMainFrame, let d = m.body as? [String: Any] else { return }
         let r = d["rect"] as? [String: Double] ?? [:]
         let rect = CGRect(x: r["x"] ?? 0, y: r["y"] ?? 0, width: max(1, r["w"] ?? 1), height: max(1, r["h"] ?? 1)).insetBy(dx: -8, dy: -8)
         let cfg = WKSnapshotConfiguration(); cfg.rect = rect.intersection(web.bounds)

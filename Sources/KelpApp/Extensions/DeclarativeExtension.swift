@@ -377,6 +377,9 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
     }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        // The handler is visible to every frame, whatever it loaded: only the extension's own page may run commands.
+        guard m.frameInfo.isMainFrame, let u = m.frameInfo.request.url, u.isFileURL,
+              u.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") else { return }
         guard let d = m.body as? [String: Any], let op = d["op"] as? String else { return }
         let id = d["id"] as? Int ?? 0, arg = d["arg"] as? String ?? ""
         let ctx = IDEContext.current
