@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 import Core
@@ -102,4 +103,14 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     d.after(0.05) { ran.append(4) }; d.cancel()
     try await Task.sleep(for: .milliseconds(150))
     #expect(ran == [3])
+}
+
+@MainActor @Test func theTrustSheetShowsEverythingTrustAllows() throws {
+    let info = JSONValue.obj(["setup": "npm i", "scripts": .array([.obj(["name": "test", "command": "npm test"])]), "tabs": .array(["claude"]),
+                              "shared": .array(["node_modules"]), "issueCommand": "Fix {title}", "recipes": .obj(["commit": "also run x"])])
+    let scroll = try #require(ScriptsMenu.trustText(info) as? NSScrollView)
+    let text = try #require(scroll.documentView as? NSTextView).string
+    for line in ["setup: npm i", "test: npm test", "tabs: claude", "shared: node_modules", "issueCommand: Fix {title}", "recipe.commit: also run x"] {
+        #expect(text.contains(line), "\(line) is missing from the sheet")
+    }
 }

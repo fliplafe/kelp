@@ -235,7 +235,7 @@ extension Daemon {
                 guard var w = try store.worktree(try wv.req("id")) else { throw RPCError.internalError("worktree vanished") }
                 w.issue = ref; w.issueURL = url; w.linearIssueId = p["linearId"]?.string ?? ""
                 try store.save(w)
-                let cfg = RepoConfig.load(repoPath: r.path)
+                let cfg = trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
                 let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
                 var prompt = cfg.issueCommand.map { t in vars.reduce(t) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) } }
                     ?? Recipes.render("issue", config: cfg, vars: vars)

@@ -39,7 +39,7 @@ extension Daemon {
 
         case "recipe.render":   // agent prompt for an action, with the repo's override if any
             let w = try cwd(forWorktree: p.req("id"))
-            let cfg = RepoConfig.load(repoPath: try store.repo(w.repoId)?.path ?? w.path)
+            let cfg = trustedConfig(try store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
             var vars: [String: String] = ["branch": w.branch, "base": try store.repo(w.repoId)?.baseBranch ?? "main"]
             if case .object(let o) = p["vars"] ?? .null { for (k, v) in o { vars[k] = v.string ?? "" } }
             if vars["stagedPatch"] == nil { vars["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path)) ?? "").prefix(4000)) }

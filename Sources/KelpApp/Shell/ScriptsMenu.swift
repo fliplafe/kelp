@@ -64,8 +64,9 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                 return
             }
             if info["trusted"]?.bool != true {
-                guard await askTrust(scripts, setup: setupCommand[wid], file: info["file"]?.string ?? ".kelp.yaml") else { return }
-                guard await AppModel.shared.call("scripts.trust", .obj(["worktreeId": .string(wid)])) != nil else { return }
+                guard await askTrust(info, file: info["file"]?.string ?? ".kelp.yaml") else { return }
+                // The digest of the text shown: a file changed since (an agent, a pull) isn't trusted unseen.
+                guard await AppModel.shared.call("scripts.trust", .obj(["worktreeId": .string(wid), "digest": info["digest"] ?? .null])) != nil else { return }
             }
             await start(wid, name, "scripts.run", ["worktreeId": .string(wid), "name": .string(name)])
         }
@@ -105,18 +106,34 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         }
     }
 
-    /// The first time a project's commands would run: what they are, and whose they are.
-    private func askTrust(_ scripts: [Script], setup: String?, file: String) async -> Bool {
+    /// The first time a project's commands would run: everything trusting the file allows (commands, the agents and links
+    /// a new workspace gets, the prompts it puts in agents' mouths), and whose it is.
+    private func askTrust(_ info: JSONValue, file: String) async -> Bool {
         let a = NSAlert()
         a.messageText = String(localized: "Run this project's commands?")
         a.informativeText = String(localized: "\((file as NSString).abbreviatingWithTildeInPath) asks Kelp to run these as you, in the workspace's folder. ")
             + String(localized: "Trust it only if you know where this project comes from. Kelp asks again if the file changes.")
-        let lines = (setup.map { ["setup: \($0)"] } ?? []) + scripts.map { "\($0.name): \($0.command)" }
-        let text = NSTextField(wrappingLabelWithString: lines.joined(separator: "\n"))
-        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular); text.preferredMaxLayoutWidth = 320; text.isSelectable = true
-        a.accessoryView = text
+        a.accessoryView = Self.trustText(info)
         a.addButton(withTitle: String(localized: "Trust and Run")); a.addButton(withTitle: String(localized: "Cancel"))
         return await runSheet(a) == .alertFirstButtonReturn
+    }
+
+    /// The file's effects as the file spells them, scrollable when long.
+    static func trustText(_ info: JSONValue) -> NSView {
+        var lines: [String] = []
+        if let s = info["setup"]?.string { lines.append("setup: \(s)") }
+        for s in (try? info["scripts"]?.decode([Script].self)) ?? [] { lines.append("\(s.name): \(s.command)") }
+        if let t = info["tabs"]?.array?.compactMap(\.string), !t.isEmpty { lines.append("tabs: " + t.joined(separator: ", ")) }
+        if let t = info["shared"]?.array?.compactMap(\.string), !t.isEmpty { lines.append("shared: " + t.joined(separator: ", ")) }
+        if let c = info["issueCommand"]?.string { lines.append("issueCommand: \(c)") }
+        if case .object(let r)? = info["recipes"] { for (k, v) in r.sorted(by: { $0.key < $1.key }) { lines.append("recipe.\(k): \(v.string ?? "")") } }
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 10))
+        text.string = lines.joined(separator: "\n"); text.isEditable = false; text.drawsBackground = false
+        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        text.isVerticallyResizable = true; text.textContainer?.widthTracksTextView = true
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 360, height: min(220, CGFloat(max(lines.count, 1)) * 16 + 8)))
+        scroll.documentView = text; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        return scroll
     }
 
     /// How a run ended, said once: failed (with its output a click away) or finished.

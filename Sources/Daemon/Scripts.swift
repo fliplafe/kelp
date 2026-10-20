@@ -13,9 +13,20 @@ extension Daemon {
     /// Nothing to run counts as trusted.
     func trusted(repoPath: String) -> Bool {
         let text = configText(repoPath), cfg = RepoConfig.parse(text)
-        guard cfg.setup != nil || !cfg.scripts.isEmpty || !cfg.tabs.isEmpty || !cfg.shared.isEmpty else { return true }   // nothing it could run or link
+        guard !Self.asksNothing(cfg) else { return true }
         let known = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: trustFile))) ?? [:]
         return known[repoPath] == Self.digest(text)
+    }
+
+    /// Nothing in it runs, links, or speaks to an agent for the user: a file like that needs no trust.
+    static func asksNothing(_ c: RepoConfig) -> Bool {
+        c.setup == nil && c.scripts.isEmpty && c.tabs.isEmpty && c.shared.isEmpty && c.recipes.isEmpty && c.issueCommand == nil
+    }
+
+    /// The project's .kelp.yaml if the user trusts it as it is now, else nothing of it: a cloned repository's prompts
+    /// (recipe.*, issueCommand) reach an agent as the user's own words, so they wait for trust like its commands.
+    func trustedConfig(_ repoPath: String) -> RepoConfig {
+        trusted(repoPath: repoPath) ? RepoConfig.load(repoPath: repoPath) : RepoConfig()
     }
 
     func handleScripts(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
@@ -23,13 +34,22 @@ extension Daemon {
         case "scripts.list":   // {worktreeId} → {scripts: [{name, command}], setup, trusted, file}
             let w = try cwd(forWorktree: p.req("worktreeId"))
             let repo = try store.repo(w.repoId)?.path ?? w.path, cfg = RepoConfig.load(repoPath: repo)
+            // Everything trusting it would allow, and the digest of exactly this text: trust is given to what was shown.
             return .obj(["scripts": try .from(cfg.scripts), "setup": cfg.setup.map { .string($0) } ?? .null,
+                         "tabs": try .from(cfg.tabs), "shared": try .from(cfg.shared), "recipes": try .from(cfg.recipes),
+                         "issueCommand": cfg.issueCommand.map { .string($0) } ?? .null,
+                         "digest": .string(Self.digest(configText(repo))),
                          "trusted": .bool(trusted(repoPath: repo)), "file": .string(repo + "/.kelp.yaml")])
         case "scripts.trust":   // {worktreeId}: the project's .kelp.yaml as it is now may run
             let w = try cwd(forWorktree: p.req("worktreeId"))
             let repo = try store.repo(w.repoId)?.path ?? w.path
+            let now = Self.digest(configText(repo))
+            // {digest} from scripts.list: the file changed since it was shown (an agent, a pull), so that isn't what was trusted.
+            if let shown = p["digest"]?.string, shown != now {
+                throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.")
+            }
             var known = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: trustFile))) ?? [:]
-            known[repo] = Self.digest(configText(repo))
+            known[repo] = now
             try JSONEncoder().encode(known).write(to: trustFile, options: .atomic)
             return .null
         case "scripts.run":   // {worktreeId, name} → the session running it (in the workspace's folder)
