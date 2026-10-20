@@ -50,6 +50,8 @@ public struct JiraClient: Sendable {
 
     func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Data {
         guard let url = URL(string: site + path) else { throw JiraError(description: "bad Jira site URL") }
+        // The request carries the email and API token: never over plain http.
+        guard url.scheme?.lowercased() == "https" else { throw JiraError(description: "Jira needs an https:// address") }
         var r = URLRequest(url: url); r.httpMethod = method
         r.setValue("Basic " + Data("\(email):\(token)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Accept")

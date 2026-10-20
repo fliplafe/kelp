@@ -34,9 +34,11 @@ public final class RPCClient: @unchecked Sendable {   // mutable state (nextID, 
 
     deinit { close() }
 
+    /// Shuts the connection; the reader thread closes the fd when its read returns. Closing it here could let that read
+    /// land on a number already reused by a newer connection, and take its replies.
     public func close() {
         lock.lock(); let was = closed; closed = true; lock.unlock()
-        if !was { shutdown(fd, SHUT_RDWR); writeLock.withLock { _ = Darwin.close(fd) } }
+        if !was { shutdown(fd, SHUT_RDWR) }
     }
 
     private func readLoop() {
@@ -56,6 +58,7 @@ public final class RPCClient: @unchecked Sendable {   // mutable state (nextID, 
             }
         }
         lock.lock(); let all = pending; pending = [:]; closed = true; readerDone = true; let done = closeHandler; lock.unlock()
+        writeLock.withLock { _ = Darwin.close(fd) }   // the only close: no read or write of ours can follow it
         for (_, c) in all { c.resume(throwing: RPCError.internalError("connection closed")) }
         done?()
     }

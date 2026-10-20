@@ -121,3 +121,11 @@ private func basic(_ user: String, _ pass: String) -> String { "Basic " + Data("
         await #expect(throws: BitbucketError.self) { _ = try await BitbucketClient(user: "u", token: "t").createPR(workspace: "w", repo: "r", title: "", body: "", source: "a", destination: "b") }
     }
 }
+
+@Test func jiraCredentialsNeverGoOverPlainHttp() async throws {
+    let host = "jira-\(UUID().uuidString.prefix(6).lowercased()).test"
+    StubURL.serve(host) { _ in (200, #"{"displayName":"Ada"}"#) }
+    await #expect(throws: JiraError.self) { _ = try await JiraClient(site: "http://\(host)", email: "a@b.c", token: "secret").myself() }
+    #expect(StubURL.sent(host).isEmpty)   // nothing was sent at all
+    #expect(try await JiraClient(site: host, email: "a@b.c", token: "secret").myself() == "Ada")   // a bare host means https
+}

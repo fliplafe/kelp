@@ -170,7 +170,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             let found = ClaudeLimits.parse(StatusDetector.stripANSI(String(decoding: ring.suffix(1200), as: UTF8.self)))
             if !found.isEmpty, found != lastLimits { lastLimits = found; limits = found }
         }
-        let subs = attached
+        let subs = attached, sid = record.id   // read under the lock: other threads write `record`
         let changed = sync() ?? (said != (record.summary, record.progress) ? record : nil)
         lock.unlock()
         if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
@@ -178,7 +178,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if let url { onLocalURL?(url) }
         if let topic { onTopic?(topic) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
-        onOutput?(record.id, d, subs)
+        onOutput?(sid, d, subs)
         if let changed { onStatus?(changed) }
     }
 

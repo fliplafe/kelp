@@ -195,3 +195,21 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     for _ in 0..<4 where !failed { failed = !Unix.writeAll(fd, big) }
     #expect(failed)                      // the write reports it; we're still here
 }
+
+/// A client closed while its reader waits must not read the next connection's replies (closing the fd under the reader
+/// let the number be reused). Many rounds of close-then-reconnect: every new connection gets its own answer.
+@Test func aClosedClientNeverReadsTheNextConnectionsReplies() async throws {
+    let path = NSTemporaryDirectory() + "kelp-reuse-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    for round in 0..<50 {
+        let old = try RPCClient(socket: path)
+        let oldPeer = accept(server, nil, nil)
+        old.close()
+        let fresh = try RPCClient(socket: path)
+        let peer = accept(server, nil, nil)
+        DispatchQueue.global().async { Unix.writeAll(peer, (try? Wire.line(RPCResponse(id: 1, result: .string("r\(round)")))) ?? Data()) }
+        #expect(try await fresh.call("ping", timeout: 5).string == "r\(round)")
+        fresh.close(); close(peer); close(oldPeer)
+    }
+}
