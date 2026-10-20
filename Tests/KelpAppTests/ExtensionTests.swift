@@ -4,6 +4,7 @@ import Core
 @testable import KelpApp
 
 private func folder(_ files: [String: String]) throws -> URL {
+    _ = testHome
     let d = FileManager.default.temporaryDirectory.appendingPathComponent("kx-\(UUID().uuidString.prefix(8))")
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     for (name, text) in files { try text.write(to: d.appendingPathComponent(name), atomically: true, encoding: .utf8) }

@@ -5,15 +5,13 @@ import Testing
 
 @Test func ptyKillReportsExit() async throws {
     let box = Box()
-    let p = try PTY(argv: ["/bin/zsh", "-lc", "echo ready; cat"], cwd: "/tmp", env: [:])
+    let p = try PTY(argv: ["/bin/sh", "-c", "echo ready; cat"], cwd: "/tmp", env: [:])   // not a login shell: no profile of the user's runs
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
     p.onExit = { box.exit($0) }
     p.start()
-    try await Task.sleep(for: .milliseconds(500))
-    #expect(box.text.contains("ready"))
+    #expect(try await waitFor(10) { box.text.contains("ready") })
     p.kill()
-    try await Task.sleep(for: .seconds(1))
-    #expect(box.code != nil)
+    #expect(try await waitFor(10) { box.code != nil })
 }
 final class Box: @unchecked Sendable {
     let l = NSLock(); var t = ""; var c: Int32?
@@ -27,7 +25,7 @@ final class Box: @unchecked Sendable {
 @Test func resizeReachesChild() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let kelp = root.appendingPathComponent(".build/debug/kelp").path
-    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
+    try #require(FileManager.default.isExecutableFile(atPath: kelp), "build the kelp CLI first: swift build")
     let box = Box()
     let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: kelp)
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
@@ -55,7 +53,7 @@ final class Box: @unchecked Sendable {
 @Test func droppedPTYLetsItsProgramExit() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let kelp = root.appendingPathComponent(".build/debug/kelp").path
-    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
+    try #require(FileManager.default.isExecutableFile(atPath: kelp), "build the kelp CLI first: swift build")
     let pid: pid_t
     do {
         let box = Box()
@@ -98,11 +96,13 @@ final class Box: @unchecked Sendable {
 @Test func aShellRunningAProgramReportsItAsForeground() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let kelp = root.appendingPathComponent(".build/debug/kelp").path
-    guard FileManager.default.isExecutableFile(atPath: kelp) else { return }   // `swift build` first
+    try #require(FileManager.default.isExecutableFile(atPath: kelp), "build the kelp CLI first: swift build")
+    let box = Box()
     let p = try PTY(argv: ["/bin/zsh", "-f", "-i"], cwd: "/tmp", env: [:], trampoline: kelp)   // job control needs the controlling terminal
+    p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
     p.start()
     defer { p.kill() }
-    try await Task.sleep(for: .seconds(1))
+    #expect(try await waitFor(10) { box.text.contains("%") })   // its prompt is drawn
     #expect(p.foregroundProgram == nil)   // at the prompt
     p.write(Data("sleep 30\n".utf8))
     var seen: String?
@@ -140,7 +140,7 @@ final class Box: @unchecked Sendable {
 @Test func shutdownStopsTheDaemonProcessAndRemovesItsSocket() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let kelpd = root.appendingPathComponent(".build/debug/kelpd").path
-    guard FileManager.default.isExecutableFile(atPath: kelpd) else { return }   // `swift build` first
+    try #require(FileManager.default.isExecutableFile(atPath: kelpd), "build kelpd first: swift build")
     let home = tmp()
     let p = Process(); p.executableURL = URL(fileURLWithPath: kelpd)
     var env = ProcessInfo.processInfo.environment; env["KELP_HOME"] = home.path; p.environment = env

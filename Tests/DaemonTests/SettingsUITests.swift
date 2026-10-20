@@ -34,7 +34,8 @@ final class EventBox: @unchecked Sendable {
     #expect(try await waitFor { box.last("event.settings")?["settings"] == .obj(["theme": "dark"]) })
     #expect(try await c.call("settings.get") == .obj(["theme": "dark"]))
     try "{ not json".write(to: file, atomically: true, encoding: .utf8)
-    try await Task.sleep(for: .seconds(1))
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: file.path)
+    d.pollSettings()   // what the ticker does: the daemon has now seen the broken file
     #expect(try await c.call("settings.get") == .obj(["theme": "dark"]))   // a broken file keeps the last good settings
 }
 

@@ -36,7 +36,8 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     let (d, c, w, root) = try await project(); defer { d.stop() }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "sleep 30"]), as: Session.self)
     let r: Session = try await c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
-    try await Task.sleep(for: .seconds(1))
+    #expect(try await waitFor(10) { kill(s.pid, 0) != 0 })   // the old program is gone
+    try await Task.sleep(for: .milliseconds(300))           // a window for its exit to be handled: this checks that nothing comes back
     let ids = try await c.call("session.list", as: [Session].self).map(\.id)
     #expect(ids.contains(r.id) && !ids.contains(s.id))
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("history/\(s.id).log").path))

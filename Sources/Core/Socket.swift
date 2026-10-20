@@ -19,7 +19,15 @@ public enum Unix {
         var a = try addr(path)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
         guard r == 0 else { let e = errno; close(fd); throw SocketError.connect(e) }
+        noSigPipe(fd)
         return fd
+    }
+
+    /// Writing to a peer that hung up fails with EPIPE instead of killing the process (the app and the tests don't
+    /// ignore SIGPIPE the way kelpd does; a daemon that went away mid-write must not take the app down with it).
+    public static func noSigPipe(_ fd: Int32) {
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
     }
 
     /// A socket file someone still answers on is theirs: only a stale one (its owner gone) is replaced.

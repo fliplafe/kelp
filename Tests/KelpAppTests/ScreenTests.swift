@@ -25,6 +25,7 @@ private func texts(_ v: NSView) -> [String] {
 }
 
 @MainActor private func withSidebar(repos: [Repo], worktrees: [Worktree], sessions: [Session], _ check: (SidebarController, NSOutlineView) throws -> Void) throws {
+    _ = testHome
     let m = AppModel.shared
     let saved = (m.repos, m.worktrees, m.sessions)
     defer { (m.repos, m.worktrees, m.sessions) = saved }

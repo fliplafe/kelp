@@ -5,20 +5,31 @@ import GitKit
 @testable import Daemon
 import Agents
 
-/// Every test that starts a daemon goes through `tmp()`, so its keys (Jira, Linear, agent secrets) live in a keychain service
-/// of their own, never the real one: a test must not read or overwrite what the app saved, nor wait on a keychain prompt.
+/// Every test that starts a daemon goes through `tmp()`, which isolates the whole test process first:
+/// - keys (Jira, Linear, agent secrets) go to a keychain service of their own, never the real one, so a test can't read
+///   or overwrite what the app saved, nor wait on a keychain prompt;
+/// - KELP_HOME is a throwaway folder, so code that falls back to `Paths.root` never touches ~/.kelp (nor moves ~/.krill).
+/// Whichever test target gets here first names them, and the others keep them.
 let isolatedKeychain: String = {
-    // One service for the whole test process: whichever test target gets here first names it, and the others keep it.
+    if getenv("KELP_HOME") == nil { setenv("KELP_HOME", testRoot + "/home", 1) }
     if let have = getenv("KELP_KEYCHAIN_SERVICE") { return String(cString: have) }
     let s = "dev.kelp.tests.\(UUID().uuidString)"
     setenv("KELP_KEYCHAIN_SERVICE", s, 1)
     return s
 }()
 
+/// One folder per test process, removed when it exits: the many small homes and repos tests make don't pile up in /tmp.
+/// Short, since a Unix socket path inside it has to fit in 104 bytes.
+let testRoot: String = {
+    let r = "/tmp/kr-\(UUID().uuidString.prefix(6))"
+    try? FileManager.default.createDirectory(atPath: r, withIntermediateDirectories: true)
+    atexit { try? FileManager.default.removeItem(atPath: testRoot) }
+    return r
+}()
+
 func tmp() -> URL {
     _ = isolatedKeychain
-    // short path: unix socket paths are limited to ~104 bytes
-    let u = URL(fileURLWithPath: "/tmp/kr-\(UUID().uuidString.prefix(8))")
+    let u = URL(fileURLWithPath: testRoot + "/" + UUID().uuidString.prefix(8))
     try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
     return u
 }

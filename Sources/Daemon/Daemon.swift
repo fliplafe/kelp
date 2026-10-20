@@ -93,7 +93,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         src.setEventHandler { [self] in
             let fd = accept(listenFD, nil, nil)
             guard fd >= 0 else { return }
-            if Unix.peerIsUs(fd) { serve(fd) } else { close(fd) }
+            if Unix.peerIsUs(fd) { Unix.noSigPipe(fd); serve(fd) } else { close(fd) }
         }
         src.resume()
         acceptSource = src

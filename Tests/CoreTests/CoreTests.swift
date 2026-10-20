@@ -160,3 +160,19 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     func set() { lock.withLock { on = true } }
     var value: Bool { lock.withLock { on } }
 }
+
+/// The app doesn't ignore SIGPIPE: writing to a daemon that went away must fail, not kill the process (the test would die).
+@Test func writingToAGoneDaemonFailsInsteadOfKillingTheProcess() throws {
+    let path = NSTemporaryDirectory() + "kelp-pipe-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let old = signal(SIGPIPE, SIG_DFL)   // as in the app: SIGPIPE would end the process
+    defer { signal(SIGPIPE, old) }
+    let fd = try Unix.connect(path)
+    defer { close(fd) }
+    close(accept(server, nil, nil))      // the daemon side goes away
+    let big = Data(repeating: 0x41, count: 1 << 20)
+    var failed = false
+    for _ in 0..<4 where !failed { failed = !Unix.writeAll(fd, big) }
+    #expect(failed)                      // the write reports it; we're still here
+}
