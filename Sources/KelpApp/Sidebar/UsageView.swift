@@ -1,7 +1,8 @@
 import SwiftUI
 import Core
 
-/// How much of each agent's plan is used: a ring per agent that reports it (the fullest limit), the details on hover.
+/// How much of each agent's plan is used: a line per agent that reports it — name, a bar and the percentage of its
+/// fullest limit — and the details (each limit, when it resets) on hover.
 /// The numbers come from the agents' own /usage screens (Claude Code, Grok, Antigravity — the daemon reads them) and
 /// Codex's session logs; agents that don't report limits aren't listed.
 struct UsageView: View {
@@ -22,7 +23,7 @@ struct UsageView: View {
         VStack(alignment: .leading, spacing: 0) {
             if !rows.isEmpty {
                 Divider()
-                rings.padding(.horizontal, 12).padding(.vertical, 9)
+                bars.padding(.horizontal, 14).padding(.vertical, 10)
             }
         }
         .onChange(of: AgentAvailability.shared.ids) { Task { await load() } }
@@ -39,12 +40,14 @@ struct UsageView: View {
         }
     }
 
-    private var rings: some View {
-        HStack(spacing: 14) {
+    private var bars: some View {
+        VStack(alignment: .leading, spacing: 5) {
             ForEach(rows) { r in
-                HStack(spacing: 5) {
-                    Ring(used: r.used)
-                    Text(r.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(r.name).font(.caption).lineLimit(1).frame(width: 64, alignment: .leading)
+                    Bar(used: r.used)
+                    Text("\(Int((r.used * 100).rounded()))%").font(.caption).monospacedDigit()
+                        .foregroundStyle(UsageView.tint(r.used)).frame(width: 34, alignment: .trailing)
                 }
                 .opacity(r.stale ? 0.45 : 1)
                 .contentShape(Rectangle())
@@ -57,31 +60,20 @@ struct UsageView: View {
                 .accessibilityLabel(r.lines.map { String(localized: "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used") }.joined(separator: ", "))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)   // a Spacer here would squeeze the names
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// How full the fullest limit is, as a filled wedge in a ring (a gauge: an arc alone would read as the
-    /// "working" spinner); orange from 70 %, red from 90 %.
-    private struct Ring: View {
+    /// How full the fullest limit is (a bar can't be mistaken for the "working" spinner); orange from 70 %, red from 90 %.
+    private struct Bar: View {
         let used: Double
         var body: some View {
-            ZStack {
-                Circle().stroke(Color.secondary.opacity(0.6), lineWidth: 1)
-                Wedge(fraction: max(0.03, used)).fill(UsageView.tint(used)).padding(2.5)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(UsageView.tint(used)).frame(width: max(4, g.size.width * min(used, 1)))
+                }
             }
-            .frame(width: 13, height: 13)
-        }
-    }
-
-    private struct Wedge: Shape {
-        let fraction: Double
-        func path(in r: CGRect) -> Path {
-            let c = CGPoint(x: r.midX, y: r.midY)
-            var p = Path()
-            p.move(to: c)
-            p.addArc(center: c, radius: r.width / 2, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * min(fraction, 1)), clockwise: false)
-            p.closeSubpath()
-            return p
+            .frame(height: 4)
         }
     }
 

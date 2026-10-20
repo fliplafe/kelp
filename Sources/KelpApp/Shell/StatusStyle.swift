@@ -21,7 +21,8 @@ extension AgentStatus {
         case .working: .secondaryLabelColor
         case .waiting: .systemOrange
         case .done: .labelColor
-        case .idle, .hibernated: .tertiaryLabelColor   // nothing to look at: they stay quiet
+        case .idle: .tertiaryLabelColor   // nothing to look at: it stays quiet
+        case .hibernated: .secondaryLabelColor   // quiet, but a mark must still read (tertiary is about 2:1)
         case .exited: .secondaryLabelColor
         case .error: .systemRed
         }
@@ -119,7 +120,7 @@ final class StatusMark: NSView {
         let seen = s == .done && !unread
         image.image = .symbol(seen ? "checkmark" : s.symbol, s.words)
         image.symbolConfiguration = .init(pointSize: seen ? size - 3 : size - 1, weight: seen ? .semibold : .regular)
-        image.contentTintColor = seen ? .tertiaryLabelColor : s.nsColor
+        image.contentTintColor = seen ? .secondaryLabelColor : s.nsColor
     }
 }
 

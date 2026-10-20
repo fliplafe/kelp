@@ -59,6 +59,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         set { UIState["sidebar.pinned"] = try? .from(newValue) }
     }
     private let noMatch = NSStackView()
+    private let summary = AgentSummary()
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
@@ -88,13 +89,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // Beside the search, over the projects it adds to, where people look for it.
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project folder (⌘O)"))
         add.identifier = .init("workspace.addProject"); add.target = NSApp.delegate; add.action = #selector(AppDelegate.runCommand(_:))
-        for x in [add, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [add, search, summary, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
             // Under the traffic lights, in the window's second row: level with the tab strips and the inspector's panel icons.
             search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
             add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
-            scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 8), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14),
+            summary.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -10),
+            scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: v.bottomAnchor),
@@ -107,7 +110,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         view = v
         track { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
         track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
+        track { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
         track { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
         track { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
         track { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
@@ -304,8 +307,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     // One line per row, like Mail's mailbox list; section headers a little taller for air above them, and an agent
     // with news two lines (what it asks or did under its name).
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if let n = item as? Node, Self.isTall(n) { return TextSize.of(42) }
-        return TextSize.of(Self.isHeader(item) ? 28 : 26)
+        if let n = item as? Node, Self.isTall(n) { return TextSize.of(44) }
+        return TextSize.of(Self.isHeader(item) ? 32 : 28)
     }
 
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
@@ -539,16 +542,17 @@ final class SidebarCell: NSTableCellView {
         textField = title
         switch node.kind {
         case .project(let id):
-            title.font = .ui(11, weight: .semibold); title.textColor = .secondaryLabelColor
-            count.font = .ui(11); count.textColor = .secondaryLabelColor
-            trailing.font = .ui(11, weight: .medium); trailing.textColor = .systemOrange
+            // A name, not a section label: what's under it is the project's. On the right only what needs doing.
+            // Not the cell's textField: the source list would restyle it as a grey group heading.
+            textField = nil; title.font = .ui(13, weight: .semibold); title.textColor = .labelColor
+            trailing.font = .ui(11, weight: .semibold); trailing.textColor = .systemOrange
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", String(localized: "New Workspace")); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
             b.toolTip = String(localized: "New workspace (⌘N)"); b.isHidden = true; add = b   // on hover, like Finder's sidebar
             addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
             icon.imageScaling = .scaleProportionallyUpOrDown
-            icon.widthAnchor.constraint(equalToConstant: 14).isActive = true; icon.heightAnchor.constraint(equalToConstant: 14).isActive = true
-            layout(row: [icon, title, count, NSView(), changes, pr, trailing, b])
+            icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            layout(row: [icon, title, NSView(), changes, pr, trailing, b])
         case .section:
             title.font = .ui(11, weight: .semibold); title.textColor = .secondaryLabelColor
             count.font = .ui(11); count.textColor = .secondaryLabelColor
@@ -637,7 +641,6 @@ final class SidebarCell: NSTableCellView {
             icon.contentTintColor = .secondaryLabelColor
             title.stringValue = r?.name ?? ""
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
-            count.stringValue = node.children.isEmpty ? "" : "\(node.children.count)"
             let waiting = m.worktrees.filter { $0.repoId == id }.flatMap { live($0.id) }.filter(Self.wantsYou).count
             trailing.stringValue = missing ? String(localized: "Folder missing") : waiting == 0 ? "" : waiting == 1 ? String(localized: "1 needs you") : String(localized: "\(waiting) need you")
         case .section(let name):
