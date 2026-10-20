@@ -1,0 +1,175 @@
+import AppKit
+import Core
+import WorkbenchKit
+
+/// Opening, selecting, cycling, splitting and closing tabs.
+extension EditorArea {
+    // MARK: tabs
+
+    /// `focus: false` shows the tab but leaves the keys where they are (a click in the Files tree).
+    func select(_ tab: String, focus: Bool = true) {
+        let old = layout.focused
+        layout.select(tab)
+        if let old, old != layout.focused { refreshGroup(old) }
+        if let gid = layout.group(of: tab) { refreshGroup(gid) }
+        if focus { focusSelected() }
+        publishFocus(); scheduleSave()
+    }
+
+    /// Opens a URI in the focused group (or a new group to the right / below). Reuses a tab already showing it.
+    func open(_ uri: String, split: SplitDirection? = nil, focus: Bool = true) {
+        switch TabURI.scheme(uri) {
+        case "agent":
+            let q = URLComponents(string: uri)
+            newAgent(q?.path.isEmpty == false ? q?.path : nil, prompt: q?.queryItems?.first { $0.name == "prompt" }?.value, split: split); return
+        case "terminal":
+            let q = URLComponents(string: uri)
+            run(command: q?.queryItems?.first { $0.name == "cmd" }?.value, title: q?.queryItems?.first { $0.name == "title" }?.value, split: split); return
+        default: break
+        }
+        // A file already open (at another line): that tab, moved to the line asked for.
+        if layout.tab(uri: uri) == nil, let t = layout.fileTab(sameFileAs: uri) {
+            select(t.id, focus: focus)
+            if let l = TabURI.filePath(uri).line { (contents[t.id] as? FileTab)?.goTo(line: l) }
+            return
+        }
+        if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
+            if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); render() }
+            select(t.id, focus: focus); return
+        }
+        if TabURI.scheme(uri) != "session", ExtensionRegistry.shared.tabProvider(for: uri) == nil {
+            if let u = URL(string: uri), u.scheme?.hasPrefix("http") == true { NSWorkspace.shared.open(u); return }   // browser extension off
+        }
+        var target: String? = layout.focusedGroup?.id
+        if let split, let f = target { target = layout.newGroup(beside: f, vertical: split == .right); zoomed = nil }
+        let t = layout.add(uri, to: target)
+        render()
+        select(t.id, focus: focus)
+    }
+
+    func closeTab(_ id: String) {
+        let uri = layout.allTabs.first { $0.id == id }?.uri ?? ""
+        let sid = TabURI.scheme(uri) == "session" ? TabURI.body(uri) : nil
+        // A tab not built yet (in the background since launch) ends its session all the same.
+        if let c = contents[id] { guard c.close() else { return } } else if let sid, !SessionTab.close(session: sid) { return }
+        if let sid { closed.insert(sid) }
+        contents[id] = nil
+        layout.remove(id)
+        if layout.allTabs.isEmpty { layout = WorkspaceLayout() }
+        render(); focusSelected()
+    }
+
+    /// Sessions whose tab is on screen right now (the selected tab of each pane shown).
+    var visibleSessions: [String] {
+        let groups = zoomed.map { [$0] } ?? layout.root?.sessions ?? []
+        return groups.compactMap { layout.groups[$0]?.selectedTab?.uri }.filter { TabURI.scheme($0) == "session" }.map(TabURI.body)
+    }
+
+    var focusedContent: TabContent? { layout.focusedGroup?.selectedTab.flatMap { contents[$0.id] } }
+
+    func closeFocusedTab() { if let t = layout.focusedGroup?.selectedTab { closeTab(t.id) } }
+
+    func selectTab(index: Int) {
+        guard let g = layout.focusedGroup, g.tabs.indices.contains(index) else { return }
+        select(g.tabs[index].id)
+    }
+    func cycleTab(_ offset: Int) { if let id = layout.tab(cycling: offset) { select(id) } }
+    /// ⇧⌘↩: the focused group fills the editor area, or every pane comes back (like zooming a split in Terminal or Ghostty).
+    func toggleZoom() {
+        guard let g = layout.focusedGroup, (layout.root?.sessions.count ?? 0) > 1 else { NSSound.beep(); return }
+        zoomed = zoomed == nil ? g.id : nil
+        render(); focusSelected()
+    }
+
+    func focusGroup(_ offset: Int) {
+        zoomed = nil
+        if let id = layout.tabInGroup(cycling: offset) { select(id) }
+    }
+    /// ⌥⌘ arrows: the pane on that side of the focused one, the nearest by center (Ghostty's goto_split).
+    func focusGroup(toward edge: NSRectEdge) {
+        guard let cur = layout.focusedGroup?.id, let from = groupViews[cur], from.window != nil else { return }
+        var others: [String: CGRect] = [:]
+        for (id, v) in groupViews where id != cur && v.window != nil { others[id] = v.convert(v.bounds, to: nil) }
+        let side: PaneEdge = switch edge {
+        case .minX: .left
+        case .maxX: .right
+        case .minY: .down
+        default: .up
+        }
+        guard let gid = WorkspaceLayout.nearestPane(from: from.convert(from.bounds, to: nil), among: others, toward: side),
+              let t = layout.groups[gid]?.selectedTab else { NSSound.beep(); return }
+        select(t.id)
+    }
+
+    /// Moves the focused tab into a new group to the right / below.
+    func splitFocused(_ dir: SplitDirection) {
+        zoomed = nil
+        guard let g = layout.focusedGroup, let t = g.selectedTab else { return }
+        if g.tabs.count == 1 { newTerminal(split: dir); return }   // nothing to move: open a terminal there, like a terminal app
+        layout.split(t.id, from: g.id, vertical: dir == .right, before: false)
+        render(); focusSelected()
+    }
+
+    func tabMenu(_ id: String) -> NSMenu {
+        let m = NSMenu()
+        m.add(String(localized: "Split Right")) { [weak self] in self?.select(id); self?.splitFocused(.right) }
+        m.add(String(localized: "Split Down")) { [weak self] in self?.select(id); self?.splitFocused(.down) }
+        m.addItem(.separator())
+        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "session" {
+            let sid = TabURI.body(uri)
+            m.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
+            m.add(String(localized: "Restart")) { AgentActions.restart(sid) }
+            m.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
+            m.setSubmenu(AgentActions.handoffMenu(sid), for: m.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
+            m.add(String(localized: "Changes in Its Last Turn")) { [weak self] in
+                guard let self else { return }
+                Workbench.shared.focusedSession = sid
+                open(DiffTab.uri(workspaceId, source: "turn"), split: .right)
+            }
+            m.addItem(.separator())
+        }
+        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "file" {
+            let path = TabURI.filePath(uri).path
+            m.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+            m.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
+            m.add(String(localized: "Copy Web Link")) { FileActions.copyWebLink(path) }
+            m.add(String(localized: "Send to Agent")) { FileActions.sendToAgent(path) }
+            if ["html", "htm"].contains((path as NSString).pathExtension.lowercased()) {
+                m.add(String(localized: "Open Preview to the Side")) { [weak self] in self?.open("preview:" + path, split: .right) }
+            }
+            m.addItem(.separator())
+        }
+        m.add(String(localized: "Close Tab")) { [weak self] in self?.closeTab(id) }
+        m.add(String(localized: "Close Other Tabs")) { [weak self] in
+            guard let self, let gid = layout.group(of: id) else { return }
+            for t in layout.groups[gid]?.tabs ?? [] where t.id != id { closeTab(t.id) }
+        }
+        return m
+    }
+
+    /// "+" menu: agents, terminal, then whatever extensions offer (browser, chat, extension views…).
+    func newTabMenu(group: String?) -> NSMenu {
+        let m = NSMenu()
+        let agents = AgentCatalog.installed(AgentCatalog.all)
+        for a in agents {
+            let item = m.add(a.name) { [weak self] in
+                if let group { self?.layout.focused = group }
+                self?.newAgent(a.id)
+            }
+            item.image = AgentCatalog.icon(a.id)
+        }
+        if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
+        m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
+        let ctx = IDEContext.current
+        let editors = ExtensionRegistry.shared.all.editors
+        if !editors.isEmpty { m.addItem(.separator()) }
+        for e in editors {
+            m.add(e.title, symbol: e.icon) { [weak self] in
+                if let group { self?.layout.focused = group }
+                e.open(ctx)
+            }
+        }
+        return m
+    }
+
+}

@@ -1,0 +1,114 @@
+import AppKit
+import SwiftUI
+import WebKit
+import Core
+import Agents
+import WorkbenchKit
+
+// MARK: list views
+
+struct ExtListView: View {
+    let def: ExtManifest.ListDef
+    let folder: URL
+    @State private var items: [JSONValue] = []
+    @State private var error: String?
+    @State private var loading = false   // the spinner, after a second
+    @State private var running = false   // the command hasn't answered yet (no "empty" meanwhile)
+    @State private var selection: Int?
+    private var bench = Workbench.shared
+
+    init(def: ExtManifest.ListDef, folder: URL) { self.def = def; self.folder = folder }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                ForEach(Array((def.toolbar ?? []).enumerated()), id: \.offset) { _, a in
+                    Button { ExtActions.perform(a, item: nil, folder: folder) { reload() } } label: {
+                        Label(a.title, systemImage: a.icon ?? "play")
+                    }
+                    .buttonStyle(.borderless).help(a.title)
+                }
+                Spacer()
+                if loading { ProgressView().controlSize(.small) }
+                Button { reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("Refresh")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            Divider()
+            if let error {
+                ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: { Text(error).font(.caption).textSelection(.enabled) }
+                    .frame(maxHeight: .infinity)
+            } else if items.isEmpty, !running {
+                ContentUnavailableView(def.empty ?? String(localized: "Nothing here"), systemImage: def.icon ?? "tray")
+                    .frame(maxHeight: .infinity)
+            } else {
+                List(selection: $selection) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { i, item in
+                        row(item).tag(i)
+                            .contextMenu {
+                                ForEach(Array((def.actions ?? []).enumerated()), id: \.offset) { _, a in
+                                    Button { ExtActions.perform(a, item: item, folder: folder) { reload() } } label: { Label(a.title, systemImage: a.icon ?? "circle") }
+                                }
+                            }
+                    }
+                }
+                .listStyle(.sidebar)
+                .contextMenu(forSelectionType: Int.self) { _ in } primaryAction: { sel in
+                    if let i = sel.first, items.indices.contains(i), let a = def.actions?.first { ExtActions.perform(a, item: items[i], folder: folder) { reload() } }
+                }
+            }
+        }
+        .task(id: bench.workspaceId) {
+            while !Task.isCancelled {
+                reload()
+                guard let r = def.refresh, r > 0 else { break }
+                try? await Task.sleep(for: .seconds(max(r, 1)))
+            }
+        }
+    }
+
+    private func row(_ item: JSONValue) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: def.icon.map { ExtActions.expand($0, item: item, quote: false) } ?? "circle.fill").foregroundStyle(.secondary).frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(ExtActions.expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
+                if let s = def.subtitle { Text(ExtActions.expand(s, item: item, quote: false)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            Spacer(minLength: 4)
+            if let st = status(item) { StatusIcon(status: st) }
+        }
+    }
+
+    private func status(_ item: JSONValue) -> AgentStatus? {
+        guard let s = def.status, let v = item[s.field].map(ExtActions.text), let mapped = s.map[v] ?? s.map[v.lowercased()] else { return nil }
+        switch mapped {
+        case "working": return .working
+        case "waiting": return .waiting
+        case "done": return .done
+        case "idle": return .idle
+        default: return .exited
+        }
+    }
+
+    private func reload() {
+        let cmd = ExtActions.expand(def.command, item: nil, quote: true)
+        let cwd = IDEContext.current.workspace?.path ?? folder.path
+        let slow = whileSlow { loading = true }   // a spinner only for a wait you'd notice
+        running = true
+        Task {
+            let r = await Shell.run(cmd, cwd: cwd)
+            slow.cancel(); loading = false; running = false
+            if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? String(localized: "Exit code \(r.code)") : String(r.stderr.suffix(600)); return }
+            error = nil
+            items = Self.parse(r.stdout)
+        }
+    }
+
+    /// A JSON array, or one JSON object per line.
+    static func parse(_ s: String) -> [JSONValue] {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("["), let d = t.data(using: .utf8), case .array(let a)? = try? JSONDecoder().decode(JSONValue.self, from: d) { return a }
+        return t.split(whereSeparator: \.isNewline).compactMap { line in
+            line.data(using: .utf8).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+        }
+    }
+}
