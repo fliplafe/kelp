@@ -72,10 +72,13 @@ public struct WorkspaceLayout: Codable, Equatable {
     }
 
     /// Moves a tab into another group (index nil = end), or into a new group split off `target` (edge).
+    /// `index` is a gap between the target's tabs as they are now, the moved tab included (where the drop bar shows).
     public mutating func move(_ tab: String, to target: String, index: Int? = nil) {
         guard let from = group(of: tab), let t = groups[from]?.tabs.first(where: { $0.id == tab }) else { return }
         if from == target, var g = groups[from], let i = g.tabs.firstIndex(of: t) {
-            g.tabs.remove(at: i); g.tabs.insert(t, at: min(index ?? g.tabs.count, g.tabs.count)); g.selected = t.id
+            g.tabs.remove(at: i)
+            let at = index.map { $0 > i ? $0 - 1 : $0 } ?? g.tabs.count   // the gaps after it moved left by one
+            g.tabs.insert(t, at: min(at, g.tabs.count)); g.selected = t.id
             groups[from] = g; focused = from; return
         }
         remove(tab)

@@ -12,6 +12,38 @@ import Core
     #expect(out.map { String(decoding: $0, as: UTF8.self) } == [#"{"a":1}"#, #"{"b":2}"#])
 }
 
+@Test func framerSkipsBadLengths() {
+    var f = LSPFramer()
+    let bad = Data("Content-Length: -5\r\n\r\n".utf8) + LSPFramer.frame(Data(#"{"a":1}"#.utf8))
+    #expect(f.append(bad).map { String(bytes: $0, encoding: .utf8) } == [#"{"a":1}"#])
+}
+
+@Test func requestsFailOnceTheServerExited() async throws {
+    let c = try #require(LSPClient(argv: ["/usr/bin/true"], root: NSTemporaryDirectory()))
+    for _ in 0..<100 where c.isRunning { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(!c.isRunning)
+    await #expect(throws: RPCError.self) { _ = try await c.request("initialize", .null) }
+}
+
+@Test func silentServerTimesOut() async throws {
+    let c = try #require(LSPClient(argv: ["/bin/sleep", "30"], root: NSTemporaryDirectory()))
+    await #expect(throws: RPCError.self) { _ = try await c.request("initialize", .null, timeout: 0.2) }
+    c.terminate()
+}
+
+@Test func documentsAreSharedByTabs() throws {
+    let c = try #require(LSPClient(argv: ["/bin/cat"], root: NSTemporaryDirectory()))
+    let idle = DiagBox()
+    c.onIdle = { idle.set("", [Diagnostic(line: 1, column: 1, severity: 1, message: "")]) }
+    c.open("/x.swift", text: "", languageId: "swift"); c.open("/x.swift", text: "", languageId: "swift")
+    c.close("/x.swift")
+    #expect(c.openDocuments == ["/x.swift": 1] && idle.count == 0)
+    c.close("/x.swift")
+    #expect(c.isIdle && idle.count == 1)
+    c.close("/x.swift")   // not open: nothing to close
+    c.terminate()
+}
+
 @Test func sourcekitDiagnosticsAndDefinition() async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lsp-\(UUID().uuidString.prefix(6))").path
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

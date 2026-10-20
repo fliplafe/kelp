@@ -143,7 +143,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public static let defaultWaiting = [
         #"(?i)\[y/n\]"#, #"(?i)\(y/n\)"#, #"(?i)do you want to"#, #"(?i)press enter"#,
-        #"(?i)allow .* to"#, #"(?i)approve"#, #"❯ ?1\."#
+        #"(?i)allow .* to"#, #"(?im)\bapprove\b.*\?\s*$"#, #"(?im)^\W*(\d+[.)]\s*)?approve\b"#, #"❯ ?1\."#   // approve: a question or an option, not prose
     ]
 
     public var commandLine: [String] { [command] + args }

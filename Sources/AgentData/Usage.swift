@@ -51,17 +51,8 @@ public struct Pricing: Sendable, Equatable {
     public static func cost(model: String, tokens: TokenCounts) -> Double { forModel(model)?.cost(tokens) ?? 0 }
 }
 
-/// Claude Code token usage from `message.usage` of assistant lines in transcripts.
-public struct ClaudeUsage: Sendable {
-    public struct Entry: Sendable, Equatable {
-        public var timestamp: Date, model: String, tokens: TokenCounts
-        /// The folder the conversation ran in ("" when the transcript doesn't say).
-        public var cwd = ""
-        public init(timestamp: Date, model: String, tokens: TokenCounts, cwd: String = "") {
-            self.timestamp = timestamp; self.model = model; self.tokens = tokens; self.cwd = cwd
-        }
-    }
-
+/// Claude Code's usage over a stretch of time; the numbers come from `UsageIndex`.
+public enum ClaudeUsage {
     /// Usage over `start..<end`. For a billing block `end` is when the 5-hour limit resets.
     public struct Block: Sendable, Equatable {
         public var start: Date, end: Date
@@ -74,89 +65,6 @@ public struct ClaudeUsage: Sendable {
     }
 
     public static let blockLength: TimeInterval = 5 * 3600
-
-    /// Sorted by timestamp, deduplicated.
-    public let entries: [Entry]
-
-    public init(entries: [Entry]) { self.entries = entries.sorted { $0.timestamp < $1.timestamp } }
-
-    /// Reads every `*.jsonl` under `root` (subagents included) modified since `since`.
-    // Limit: history before `since` is ignored, so a block chain with no 5h gap for 8+ days could start at a different hour than ccusage's.
-    public init(root: URL = ClaudeHistory.defaultRoot, since: Date = Date().addingTimeInterval(-8 * 86400)) {
-        self.init(entries: Self.load(root: root, since: since))
-    }
-
-    /// ccusage's algorithm: a block starts at its first message floored to the UTC hour and lasts 5h;
-    /// the first message past that starts the next block (this also covers ccusage's "gap > 5h" rule).
-    public func blocks(until now: Date = .distantFuture) -> [Block] {
-        var out: [Block] = [], current: [Entry] = [], start = Date.distantPast
-        for e in entries where e.timestamp <= now {
-            if !current.isEmpty, e.timestamp.timeIntervalSince(start) <= Self.blockLength {
-                current.append(e)
-                continue
-            }
-            if !current.isEmpty { out.append(Self.summarize(start, start + Self.blockLength, current)) }
-            start = Date(timeIntervalSince1970: (e.timestamp.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
-            current = [e]
-        }
-        if !current.isEmpty { out.append(Self.summarize(start, start + Self.blockLength, current)) }
-        return out
-    }
-
-    /// The block `now` falls in, or nil if the last one already reset.
-    public func currentBlock(now: Date = Date()) -> Block? {
-        guard let b = blocks(until: now).last, now < b.end else { return nil }
-        return b
-    }
-
-    public func totals(from: Date, to: Date) -> Block {
-        Self.summarize(from, to, entries.filter { $0.timestamp >= from && $0.timestamp < to })
-    }
-
-    /// The local calendar day containing `now`.
-    public func today(now: Date = Date(), calendar: Calendar = .current) -> Block { days(1, now, calendar) }
-
-    /// Today plus the six calendar days before it.
-    public func last7Days(now: Date = Date(), calendar: Calendar = .current) -> Block { days(7, now, calendar) }
-
-    func days(_ n: Int, _ now: Date, _ cal: Calendar) -> Block {
-        let today = cal.startOfDay(for: now)
-        func shift(_ d: Int) -> Date { cal.date(byAdding: .day, value: d, to: today) ?? today }
-        return totals(from: shift(1 - n), to: shift(1))
-    }
-
-    static func summarize(_ start: Date, _ end: Date, _ es: [Entry]) -> Block {
-        Block(start: start, end: end, tokens: es.reduce(TokenCounts()) { $0 + $1.tokens },
-              estimatedCostUSD: es.reduce(0) { $0 + Pricing.cost(model: $1.model, tokens: $1.tokens) },
-              models: Set(es.map(\.model)).sorted())
-    }
-
-    /// One entry per API response: Claude Code writes a line per content block (and resumed sessions copy history),
-    /// so lines are deduplicated by `message.id` + `requestId`.
-    static func load(root: URL, since: Date) -> [Entry] {
-        let key: Set<URLResourceKey> = [.contentModificationDateKey]
-        let files = (FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(key))?.allObjects as? [URL] ?? [])
-            .filter { $0.pathExtension == "jsonl" && ((try? $0.resourceValues(forKeys: key).contentModificationDate) ?? .distantPast) >= since }
-        let marker = Data("\"output_tokens\"".utf8)
-        var seen = Set<String>(), out: [Entry] = []
-        for f in files {
-            guard let data = try? Data(contentsOf: f, options: .mappedIfSafe) else { continue }
-            for line in JSONL.lines(data) where line.range(of: marker) != nil {
-                guard let o = JSONL.object(line), o["type"] as? String == "assistant",
-                      let m = o["message"] as? [String: Any], let u = m["usage"] as? [String: Any],
-                      let t = JSONL.date(o["timestamp"]), t >= since else { continue }
-                let model = m["model"] as? String ?? "unknown"
-                guard model != "<synthetic>" else { continue }
-                let mid = m["id"] as? String, rid = o["requestId"] as? String
-                if mid != nil || rid != nil, !seen.insert("\(mid ?? ""):\(rid ?? "")").inserted { continue }
-                func n(_ k: String) -> Int { (u[k] as? NSNumber)?.intValue ?? 0 }
-                out.append(Entry(timestamp: t, model: model, tokens: TokenCounts(
-                    input: n("input_tokens"), output: n("output_tokens"),
-                    cacheWrite: n("cache_creation_input_tokens"), cacheRead: n("cache_read_input_tokens")), cwd: o["cwd"] as? String ?? ""))
-            }
-        }
-        return out
-    }
 }
 
 public struct CodexLimits: Sendable, Equatable {

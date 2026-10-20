@@ -448,7 +448,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
         let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
         guard cw > 0, ch > 0, s.columns > 0 else { return nil }
-        let padX = 6.0, padY = 4.0   // window-padding in the overrides above
+        let padX = 12.0, padY = 8.0   // window-padding in the overrides above
         let col = Int((p.x - padX) / cw), row = Int((bounds.height - p.y - padY) / ch)
         guard row >= 0, row < Int(s.rows), col >= 0, col < Int(s.columns) else { return nil }
         var t = ghostty_text_s()
@@ -458,7 +458,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         guard ghostty_surface_read_text(surface, sel, &t) else { return nil }
         defer { ghostty_surface_free_text(surface, &t) }
         guard let r = TerminalCopy.word(in: String(cString: t.text), at: col) else { return nil }
-        let rect = NSRect(x: padX + Double(r.start) * cw, y: bounds.height - padY - Double(row + 1) * ch, width: Double(r.text.count) * cw, height: ch)
+        let rect = NSRect(x: padX + Double(r.start) * cw, y: bounds.height - padY - Double(row + 1) * ch, width: Double(r.width) * cw, height: ch)
         return (r.text, rect)
     }
     public override func mouseDragged(with e: NSEvent) { mouseMoved(with: e) }
@@ -649,13 +649,18 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
 
     func readClipboard(state: UnsafeMutableRawPointer?, mimes: UnsafePointer<UnsafePointer<CChar>?>?, count: Int) -> ghostty_clipboard_read_result_e {
         guard let surface, let text = NSPasteboard.general.string(forType: .string) else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
-        let mime = strdup("text/plain;charset=utf-8"), data = strdup(text)
-        defer { free(mime); free(data) }
-        var content = ghostty_clipboard_content_s(mime: mime, data: data, len: text.utf8.count)
-        withUnsafePointer(to: &content) { cp in
-            var done = ghostty_clipboard_complete_s()
-            done.contents = cp; done.contents_len = 1; done.confirmed = true
-            ghostty_surface_complete_clipboard_request(surface, &done, state)
+        let data = text.utf8CString   // its length goes along: a NUL inside the text must not cut it short
+        data.withUnsafeBufferPointer { d in
+            "text/plain;charset=utf-8".withCString { mime in
+                var content = ghostty_clipboard_content_s(mime: mime, data: d.baseAddress, len: d.count - 1)
+                withUnsafePointer(to: &content) { cp in
+                    var done = ghostty_clipboard_complete_s()
+                    // Not confirmed: Ghostty applies its policy (`clipboard-read = ask` for OSC 52 / Kitty reads) and
+                    // asks confirm_read_clipboard_cb, which denies. A paste goes through (paste protection is off).
+                    done.contents = cp; done.contents_len = 1; done.confirmed = false
+                    ghostty_surface_complete_clipboard_request(surface, &done, state)
+                }
+            }
         }
         return GHOSTTY_CLIPBOARD_READ_STARTED
     }

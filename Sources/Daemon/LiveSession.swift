@@ -262,7 +262,7 @@ final class LiveSession: @unchecked Sendable {
         pty.write(d)
         lock.lock()
         guard !TerminalReplies.isReply(d) else { lock.unlock(); return }   // the terminal answering the agent, not the user typing
-        detector.input()
+        detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
         var read: Session?
         if record.unread { record.unread = false; read = record }   // typing into it is having read it
         if hooked {

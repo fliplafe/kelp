@@ -218,6 +218,14 @@ private func sel(_ t: String, _ s: String) -> NSRange { (t as NSString).range(of
     #expect(NotebookHTML.summary(Data(nb.utf8)) == .init(cells: 2, language: "python"))
 }
 
+/// What a cloned repo's notebook holds can't leave its text or attribute: no markup, no handlers.
+@Test func hostileNotebookStaysInert() throws {
+    let nb = #"{"metadata":{"language_info":{"name":"x\"><img src=x onerror=alert(1)>"}},"cells":[{"cell_type":"code","source":"1","outputs":[{"output_type":"display_data","data":{"image/png":"\" onerror=\"alert(2)"}}]}]}"#
+    let html = try #require(NotebookHTML.render(Data(nb.utf8)))
+    #expect(!html.contains("onerror=") && !html.contains("<img src=x"))
+    #expect(html.contains("class=\"language-ximgsrcxonerroralert1\""))
+}
+
 @Test func mermaidOnlyWhenThereIsADiagram() {
     #expect(MarkdownHTML.mermaid(for: "# Plain\n\n```swift\nlet x = 1\n```", dark: false) == nil)
     let page = MarkdownHTML.mermaid(for: "```mermaid\ngraph LR\n  A --> B\n```", dark: true)

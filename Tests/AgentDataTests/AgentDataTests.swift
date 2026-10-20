@@ -81,42 +81,47 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     #expect((200...400).contains(s.messageCount))
 }
 
-@Test func claudeUsageDedupes() throws {
+@Test func hugeLastLineIsStillRead() throws {
+    let root = try tmp(), p = root.appendingPathComponent("-work-huge")
+    let pad = String(repeating: "x", count: 1000)
+    var lines: [Any] = [user("huge task", "2026-10-18T08:00:00.000Z")]
+    for i in 0..<100 { lines.append(assistant("m\(i)", "r\(i)", "2026-10-18T09:00:00.000Z", text: pad)) }
+    lines.append(assistant("big", "big", "2026-10-18T12:00:00.000Z", text: String(repeating: "y", count: 300_000)))   // a big tool result
+    lines.append(["type": "custom-title", "customTitle": "Named at the end", "sessionId": "s1"])
+    try write(p, "s1.jsonl", lines)
+    let s = try #require(ClaudeHistory.sessions(root: root).first)
+    #expect(s.updated == date("2026-10-18T12:00:00.000Z"))
+    #expect(s.title == "Named at the end")
+}
+
+@Test func usageIndexDedupesAcrossReads() throws {
     let root = try tmp(), p = root.appendingPathComponent("-work-demo")
-    let a = assistant("m1", "r1", "2026-10-18T10:00:00.000Z")
-    try write(p, "s1.jsonl", [a, a, assistant("m2", "r2", "2026-10-18T10:01:00.000Z", model: "claude-sonnet-5-5"),
-                              assistant("m3", "r3", "2026-10-18T10:02:00.000Z", model: "<synthetic>"), user("hi", "2026-10-18T10:00:00.000Z")])
-    try write(p, "s1/subagents/agent-a.jsonl", [a, assistant("m4", "r4", "2026-10-18T10:03:00.000Z")])
-    let u = ClaudeUsage(root: root, since: date("2026-10-01T00:00:00Z"))
-    #expect(u.entries.count == 3)
-    #expect(u.entries.reduce(TokenCounts()) { $0 + $1.tokens } == TokenCounts(input: 30, output: 60, cacheWrite: 90, cacheRead: 120))
-    #expect(ClaudeUsage(root: root, since: date("2026-10-18T10:00:30Z")).entries.count == 2)
+    let now = ISO8601DateFormatter().string(from: Date())
+    let f = try write(p, "s1.jsonl", [assistant("m1", "r1", now), assistant("m1", "r1", now), assistant("m2", "r2", now, model: "<synthetic>")])
+    try write(p, "s1/subagents/agent-a.jsonl", [assistant("m3", "r3", now)])
+    let idx = UsageIndex(cache: root.appendingPathComponent("cache.json"))
+    let since = Date().addingTimeInterval(-86400)
+    func output() -> Int { idx.rows(roots: [root], since: since).reduce(0) { $0 + $1.tally.tokens.output } }
+    #expect(output() == 40)
+    // The same response's next line lands after that read: still one response.
+    let h = try FileHandle(forWritingTo: f); try h.seekToEnd()
+    try h.write(contentsOf: JSONSerialization.data(withJSONObject: assistant("m1", "r1", now)) + Data("\n".utf8)); try h.close()
+    #expect(output() == 40)
+    #expect(idx.currentBlock(roots: [root])?.tokens.output == 40)
 }
 
 @Test func fiveHourBlocks() throws {
-    let t = TokenCounts(input: 1_000_000)
-    func e(_ s: String, _ m: String = "claude-opus-5-5") -> ClaudeUsage.Entry { .init(timestamp: date(s), model: m, tokens: t) }
-    let u = ClaudeUsage(entries: [
-        e("2026-10-08T12:00:00Z"), e("2026-10-15T09:00:00Z"),
-        e("2026-10-18T11:00:00Z"), e("2026-10-18T10:20:00Z", "claude-sonnet-5-5"), e("2026-10-18T14:30:00Z"),
-        e("2026-10-18T15:10:00Z"), e("2026-10-18T22:00:00Z"),
-    ])
-    let blocks = u.blocks().suffix(3)
-    #expect(blocks.map(\.start) == ["2026-10-18T10:00:00Z", "2026-10-18T15:00:00Z", "2026-10-18T22:00:00Z"].map(date))
-    let first = try #require(blocks.first)
-    #expect(first.end == date("2026-10-18T15:00:00Z") && first.tokens.input == 3_000_000)
-    #expect(first.models == ["claude-opus-5-5", "claude-sonnet-5-5"])
-    #expect(abs(first.estimatedCostUSD - (4 + 4 + 2)) < 1e-9)
-
-    let b = try #require(u.currentBlock(now: date("2026-10-18T16:00:00Z")))
+    let t = UsageIndex.Tally(tokens: TokenCounts(input: 1_000_000), cost: 4)
+    func h(_ s: String, _ m: String = "claude-opus-5-5") -> UsageIndex.Hour { .init(start: date(s), model: m, tally: t) }
+    let hours = [h("2026-10-18T10:00:00Z", "claude-sonnet-5-5"), h("2026-10-18T11:00:00Z"), h("2026-10-18T14:00:00Z"),
+                 h("2026-10-18T15:00:00Z"), h("2026-10-18T22:00:00Z")]
+    let first = try #require(UsageIndex.block(hours, now: date("2026-10-18T14:45:00Z")))
+    #expect(first.start == date("2026-10-18T10:00:00Z") && first.end == date("2026-10-18T15:00:00Z") && first.tokens.input == 3_000_000)
+    #expect(first.models == ["claude-opus-5-5", "claude-sonnet-5-5"] && first.estimatedCostUSD == 12)
+    let b = try #require(UsageIndex.block(hours, now: date("2026-10-18T16:00:00Z")))
     #expect(b.start == date("2026-10-18T15:00:00Z") && b.end == date("2026-10-18T20:00:00Z") && b.tokens.input == 1_000_000)
-    #expect(u.currentBlock(now: date("2026-10-18T21:00:00Z")) == nil)
-    #expect(u.currentBlock(now: date("2026-10-18T22:30:00Z"))?.end == date("2026-10-19T03:00:00Z"))
-
-    var utc = Calendar(identifier: .gregorian)
-    utc.timeZone = try #require(TimeZone(identifier: "UTC"))
-    #expect(u.today(now: date("2026-10-18T23:00:00Z"), calendar: utc).tokens.input == 5_000_000)
-    #expect(u.last7Days(now: date("2026-10-18T23:00:00Z"), calendar: utc).tokens.input == 6_000_000)
+    #expect(UsageIndex.block(hours, now: date("2026-10-18T21:00:00Z")) == nil)
+    #expect(UsageIndex.block(hours, now: date("2026-10-18T22:30:00Z"))?.end == date("2026-10-19T03:00:00Z"))
 }
 
 @Test func pricingMath() {
@@ -200,7 +205,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     let nowhere = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")
     #expect(ClaudeHistory.sessions(root: nowhere).isEmpty)
     #expect(CodexHistory.sessions(root: nowhere).isEmpty)
-    #expect(ClaudeUsage(root: nowhere).entries.isEmpty)
+    #expect(UsageIndex(cache: nowhere.appendingPathComponent("c.json")).rows(roots: [nowhere], since: .distantPast).isEmpty)
     #expect(CodexUsage.latest(root: nowhere) == nil)
 }
 

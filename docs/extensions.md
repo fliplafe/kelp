@@ -132,7 +132,7 @@ takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). P
 Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
 
 ## languages
-Which files a language covers, the language server that gives them errors, completion and jump to definition, and the
+Which files a language covers, the language server that gives them completion and jump to definition, and the
 commands that run, test and format them:
 ```json
 {

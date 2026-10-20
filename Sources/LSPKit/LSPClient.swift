@@ -4,6 +4,7 @@ import Core
 /// `Content-Length` framed JSON-RPC, as LSP speaks over stdio.
 public struct LSPFramer: Sendable {
     private var buf = Data()
+    static let maxBody = 256 << 20
     public init() {}
     public static func frame(_ body: Data) -> Data { Data("Content-Length: \(body.count)\r\n\r\n".utf8) + body }
     public mutating func append(_ d: Data) -> [Data] {
@@ -12,9 +13,10 @@ public struct LSPFramer: Sendable {
         let sep = Data("\r\n\r\n".utf8)
         while let r = buf.range(of: sep) {
             let header = String(decoding: buf[buf.startIndex..<r.lowerBound], as: UTF8.self)
+            // A missing, negative or absurd length is a broken header: skip it rather than trap or wait forever.
             guard let len = header.split(separator: "\r\n").compactMap({ l -> Int? in
                 let p = l.split(separator: ":", maxSplits: 1); return p.count == 2 && p[0].lowercased() == "content-length" ? Int(p[1].trimmingCharacters(in: .whitespaces)) : nil
-            }).first else { buf.removeSubrange(buf.startIndex..<r.upperBound); continue }
+            }).first, (0...Self.maxBody).contains(len) else { buf.removeSubrange(buf.startIndex..<r.upperBound); continue }
             guard buf.distance(from: r.upperBound, to: buf.endIndex) >= len else { break }
             let end = buf.index(r.upperBound, offsetBy: len)
             out.append(Data(buf[r.upperBound..<end]))
@@ -32,16 +34,23 @@ public struct Diagnostic: Sendable, Equatable {
 
 public struct Location: Sendable, Equatable { public var path: String; public var line: Int; public var column: Int }
 
-/// One language server process for one workspace root.
+/// One language server process for one workspace root. Once the process has exited every request fails at once
+/// (the manager starts a new client); a request the server never answers fails after its timeout.
 public final class LSPClient: @unchecked Sendable {
     private let proc = Process()
     private let input = Pipe(), output = Pipe()
     private let lock = NSLock()
+    /// stdin writes, in order and off the caller's thread: a server that stops reading must not block the UI.
+    private let writes = DispatchQueue(label: "kelp.lsp.stdin")
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var versions: [String: Int] = [:]
+    private var opened: [String: Int] = [:]   // path -> how many tabs have it open (didOpen once, didClose after the last)
+    private var exited = false
     public let root: String
     public var onDiagnostics: (@Sendable (String, [Diagnostic]) -> Void)?
+    /// The last open document was closed.
+    public var onIdle: (@Sendable () -> Void)?
 
     /// `argv[0]` is looked up on the login-shell PATH, which the server gets too (npm servers need `node`).
     public init?(argv: [String], root: String) {
@@ -53,51 +62,71 @@ public final class LSPClient: @unchecked Sendable {
         proc.standardInput = input; proc.standardOutput = output; proc.standardError = FileHandle.nullDevice
         do { try proc.run() } catch { return nil }
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)   // a server that died fails the write, not the app
-        Thread.detachNewThread { [self] in readLoop() }
-    }
-
-    deinit { if proc.isRunning { proc.terminate() } }
-
-    private func readLoop() {
-        var framer = LSPFramer()
+        // Weak: the reader must not keep the client (and so the server) alive; deinit terminates the server, which ends the loop.
         let h = output.fileHandleForReading
-        while true {
-            let d = h.availableData
-            if d.isEmpty { break }
-            for body in framer.append(d) { handle(body) }
+        Thread.detachNewThread { [weak self] in
+            var framer = LSPFramer()
+            while case let d = h.availableData, !d.isEmpty { for body in framer.append(d) { self?.handle(body) } }
+            self?.fail(RPCError.internalError("language server exited"))
         }
-        lock.lock(); let all = pending; pending = [:]; lock.unlock()
-        all.values.forEach { $0.resume(throwing: RPCError.internalError("language server exited")) }
     }
 
+    deinit {
+        terminate()
+        pending.values.forEach { $0.resume(throwing: RPCError.internalError("language server stopped")) }
+    }
+
+    public func terminate() { if proc.isRunning { proc.terminate() } }
+    public var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return !exited }
+    public var isIdle: Bool { lock.lock(); defer { lock.unlock() }; return opened.isEmpty }
+    /// Open documents and how many tabs hold each (to open them again in a restarted server).
+    public var openDocuments: [String: Int] { lock.lock(); defer { lock.unlock() }; return opened }
+
+    private func fail(_ e: RPCError) {
+        lock.lock(); exited = true; let all = pending; pending = [:]; lock.unlock()
+        all.values.forEach { $0.resume(throwing: e) }
+    }
+
+    /// Decoded as plain JSON: ids may be numbers or strings.
     private func handle(_ body: Data) {
-        guard let m = try? JSONDecoder().decode(RPCMessage.self, from: body) else { return }
-        if let method = m.method {
-            if method == "textDocument/publishDiagnostics", let p = m.params, let uri = p["uri"]?.string, let path = URL(string: uri)?.path {
+        guard let m = try? JSONDecoder().decode(JSONValue.self, from: body) else { return }
+        let id = m["id"].flatMap { $0 == .null ? nil : $0 }
+        if let method = m["method"]?.string {
+            if method == "textDocument/publishDiagnostics", let p = m["params"], let uri = p["uri"]?.string, let path = URL(string: uri)?.path {
                 let ds = (p["diagnostics"]?.array ?? []).map { d in
                     Diagnostic(line: (d["range"]?["start"]?["line"]?.int ?? 0) + 1, column: (d["range"]?["start"]?["character"]?.int ?? 0) + 1,
                                severity: d["severity"]?.int ?? 1, message: d["message"]?.string ?? "")
                 }
                 onDiagnostics?(path, ds)
-            } else if let id = m.id {   // server → client request (e.g. workspace/configuration): answer null
-                send(["jsonrpc": "2.0", "id": .int(id), "result": .null])
+            } else if let id {   // server → client request (e.g. workspace/configuration): answer null
+                send(["jsonrpc": "2.0", "id": id, "result": .null])
             }
             return
         }
-        guard let id = m.id else { return }
+        guard let id = id?.int else { return }
         lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
-        if let e = m.error { c?.resume(throwing: e) } else { c?.resume(returning: m.result ?? .null) }
+        if let e = m["error"], e != .null {
+            c?.resume(throwing: RPCError(code: e["code"]?.int ?? -32603, message: e["message"]?.string ?? "language server error"))
+        } else { c?.resume(returning: m["result"] ?? .null) }
     }
 
     private func send(_ o: [String: JSONValue]) {
         guard let d = try? JSONEncoder().encode(JSONValue.object(o)) else { return }
-        try? input.fileHandleForWriting.write(contentsOf: LSPFramer.frame(d))
+        let h = input.fileHandleForWriting   // not self: a blocked write must not keep the client alive
+        writes.async { try? h.write(contentsOf: LSPFramer.frame(d)) }
     }
 
-    public func request(_ method: String, _ params: JSONValue) async throws -> JSONValue {
+    public func request(_ method: String, _ params: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
         try await withCheckedThrowingContinuation { c in
-            lock.lock(); let id = nextID; nextID += 1; pending[id] = c; lock.unlock()
+            lock.lock()
+            if exited { lock.unlock(); c.resume(throwing: RPCError.internalError("language server exited")); return }
+            let id = nextID; nextID += 1; pending[id] = c; lock.unlock()
             send(["jsonrpc": "2.0", "id": .int(id), "method": .string(method), "params": params])
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard let self else { return }
+                lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
+                c?.resume(throwing: RPCError.internalError("no answer to \(method) from the language server in \(Int(timeout)) s"))
+            }
         }
     }
     public func notify(_ method: String, _ params: JSONValue) { send(["jsonrpc": "2.0", "method": .string(method), "params": params]) }
@@ -117,15 +146,23 @@ public final class LSPClient: @unchecked Sendable {
     static func pos(_ line: Int, _ col: Int) -> JSONValue { .obj(["line": .int(line - 1), "character": .int(col - 1)]) }
 
     /// One server can serve several languages (typescript, javascriptreact…), so each file says which it is.
+    /// Two tabs of one file share the document: didOpen goes out for the first, didClose after the last.
     public func open(_ path: String, text: String, languageId: String) {
-        lock.lock(); versions[path] = 1; lock.unlock()
+        lock.lock(); let n = opened[path, default: 0]; opened[path] = n + 1; if n == 0 { versions[path] = 1 }; lock.unlock()
+        guard n == 0 else { return }
         notify("textDocument/didOpen", .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(languageId), "version": 1, "text": .string(text)])]))
     }
     public func change(_ path: String, text: String) {
-        lock.lock(); let v = (versions[path] ?? 1) + 1; versions[path] = v; lock.unlock()
+        lock.lock(); let v = versions[path].map { $0 + 1 }; if let v { versions[path] = v }; lock.unlock()
+        guard let v else { return }   // not open here (a server started after the tab)
         notify("textDocument/didChange", .obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])]))
     }
-    public func close(_ path: String) { notify("textDocument/didClose", .obj(["textDocument": .obj(["uri": Self.uri(path)])])) }
+    public func close(_ path: String) {
+        lock.lock(); let n = opened[path] ?? 0; opened[path] = n > 1 ? n - 1 : nil; if n == 1 { versions[path] = nil }; let idle = opened.isEmpty; lock.unlock()
+        guard n == 1 else { return }
+        notify("textDocument/didClose", .obj(["textDocument": .obj(["uri": Self.uri(path)])]))
+        if idle { onIdle?() }
+    }
 
     private func at(_ path: String, _ line: Int, _ col: Int) -> JSONValue { .obj(["textDocument": .obj(["uri": Self.uri(path)]), "position": Self.pos(line, col)]) }
 

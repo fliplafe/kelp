@@ -17,3 +17,11 @@ import Testing
     #expect(TerminalCopy.word(in: line, at: 40)?.text == "docs/x.md")
     #expect(TerminalCopy.word(in: line, at: 1) == nil)
 }
+
+@Test func wideCharactersTakeTwoColumns() {
+    let line = "日本 src/a.swift"   // 日本 covers columns 0-3, the path starts at 5
+    #expect(TerminalCopy.word(in: line, at: 6)?.text == "src/a.swift")
+    #expect(TerminalCopy.word(in: line, at: 6)?.start == 5)
+    #expect(TerminalCopy.word(in: line, at: 1)?.width == 4)
+    #expect(TerminalCopy.word(in: line, at: 4) == nil)
+}

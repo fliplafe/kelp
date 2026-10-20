@@ -12,7 +12,7 @@ public enum NotebookHTML {
 
     public static func render(_ data: Data) -> String? {
         guard let nb = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let cells = nb["cells"] as? [[String: Any]] else { return nil }
-        let lang = language(nb)
+        let lang = escape(language(nb).filter { $0.isLetter || $0.isNumber || "+#._-".contains($0) })   // a class name
         var html = ""
         for (i, c) in cells.enumerated() {
             let src = text(c["source"])
@@ -42,7 +42,8 @@ public enum NotebookHTML {
         case "execute_result", "display_data":
             let d = o["data"] as? [String: Any] ?? [:]
             for (mime, tag) in [("image/png", "png"), ("image/jpeg", "jpeg")] {
-                if let b = d[mime] { return "<img class=\"nb-img\" src=\"data:image/\(tag);base64,\(text(b).replacingOccurrences(of: "\n", with: ""))\">" }
+                // Decoded and encoded again: only base64 reaches the attribute, whatever the file holds.
+                if let b = d[mime] { return "<img class=\"nb-img\" src=\"data:image/\(tag);base64,\(Data(base64Encoded: text(b), options: .ignoreUnknownCharacters)?.base64EncodedString() ?? "")\">" }
             }
             if let svg = d["image/svg+xml"] {   // inline SVG would run scripts; show it as an image instead
                 let b64 = Data(text(svg).utf8).base64EncodedString()
@@ -67,8 +68,10 @@ public enum NotebookHTML {
         return ""
     }
 
+    /// Safe in text and in quoted attributes.
     static func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;")
     }
     static func stripANSI(_ s: String) -> String { s.replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression) }
 

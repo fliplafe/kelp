@@ -1,13 +1,11 @@
 import Foundation
+import Core
 import GitKit
 
 /// GitLab through the `glab` CLI and its login (`glab auth login`), the way GitHub goes through `gh`: merge requests,
 /// issues and pipelines in GitHub's shapes, so the panels show either. Self-managed hosts work as glab knows them.
 public enum GitLab {
-    static let glabPath: String? = {
-        let path = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
-        return (["/opt/homebrew/bin", "/usr/local/bin"] + path).map { $0 + "/glab" }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
+    static let glabPath = try? LoginPath.resolve("glab")
 
     /// The checkout's origin is a GitLab (gitlab.com or a host with "gitlab" in its name).
     public static func isGitLab(cwd: String) -> Bool {

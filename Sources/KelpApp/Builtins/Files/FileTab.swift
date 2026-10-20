@@ -223,8 +223,9 @@ final class FileTab: SavableTab {
         Task { [weak self] in
             guard let c = await LSPManager.shared.client(root: r, path: p), let e = self?.editor, let lang = LSPManager.shared.language(p) else { return }
             c.open(p, text: e.text, languageId: lang.id)
-            e.completionProvider = { line, col in
-                ((try? await c.completion(p, line: line, column: col)) ?? []).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
+            e.completionProvider = { line, col in   // the current client: a server that died is replaced
+                guard let c = await LSPManager.shared.client(root: r, path: p) else { return [] }
+                return ((try? await c.completion(p, line: line, column: col)) ?? []).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
             }
         }
     }

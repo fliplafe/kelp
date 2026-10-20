@@ -30,18 +30,32 @@ public enum TerminalCopy {
     }
 
     /// The word around column `col` of a screen row: up to blanks, quotes and brackets, without sentence punctuation
-    /// at its end. `start` is its first column.
-    public static func word(in line: String, at col: Int) -> (text: String, start: Int)? {
+    /// at its end. `start` is its first column and `width` the columns it covers (a wide character takes two).
+    public static func word(in line: String, at col: Int) -> (text: String, start: Int, width: Int)? {
         let chars = Array(line)
-        guard chars.indices.contains(col) else { return nil }
+        var columns: [Int] = [], c = 0   // the column each character starts at
+        for ch in chars { columns.append(c); c += cells(ch) }
+        guard let i = columns.lastIndex(where: { $0 <= col }), col < c else { return nil }
         let stops: Set<Character> = [" ", "\t", "\"", "'", "`", "(", ")", "[", "]", "{", "}", "<", ">", "|", "│", ","]
-        guard !stops.contains(chars[col]) else { return nil }
-        var a = col, b = col
+        guard !stops.contains(chars[i]) else { return nil }
+        var a = i, b = i
         while a > 0, !stops.contains(chars[a - 1]) { a -= 1 }
         while b + 1 < chars.count, !stops.contains(chars[b + 1]) { b += 1 }
         var w = String(chars[a...b])
         while let last = w.last, ".:;!?".contains(last) { w.removeLast() }
-        return w.isEmpty ? nil : (w, a)
+        return w.isEmpty ? nil : (w, columns[a], w.reduce(0) { $0 + cells($1) })
+    }
+
+    /// Terminal columns a character takes: two for East Asian wide characters and emoji, else one.
+    /// Limit: a range table, not full UAX #11; ambiguous-width characters count as one.
+    static func cells(_ c: Character) -> Int {
+        guard let s = c.unicodeScalars.first else { return 1 }
+        if s.properties.isEmojiPresentation || c.unicodeScalars.contains("\u{FE0F}") { return 2 }
+        switch s.value {
+        case 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xA000...0xA4CF, 0xAC00...0xD7A3,
+             0xF900...0xFAFF, 0xFE30...0xFE4F, 0xFF00...0xFF60, 0xFFE0...0xFFE6, 0x20000...0x3FFFD: return 2
+        default: return 1
+        }
     }
 }
 

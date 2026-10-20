@@ -42,7 +42,7 @@ public struct LanguageSpec: Codable, Equatable, Sendable {
 
     /// The word (letters, digits, `_`) at a 1-based line and UTF-16 column: `${symbol}` when no language server names one.
     public static func word(in text: String, line: Int, column: Int) -> String {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)   // CRLF files too
         guard lines.indices.contains(line - 1) else { return "" }
         let s = lines[line - 1], at = s.utf16.index(s.startIndex, offsetBy: min(max(column - 1, 0), s.utf16.count))
         let isWord = { (c: Character) in c.isLetter || c.isNumber || c == "_" }

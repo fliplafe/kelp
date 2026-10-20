@@ -225,3 +225,30 @@ import Core
     #expect(TerminalTitle.topic("grok", names: ["grok", "Grok", "Kelp"]) == nil)
     #expect(TerminalTitle.topic("crush ~/projects/shop", names: ["crush", "Crush", "shop"]) == nil)
 }
+
+/// A TUI redraws its input line on every key: that echo isn't work, and a pause to think isn't a finished turn.
+@Test func typingIsNotWork() throws {
+    let t0 = Date()
+    let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })
+    var d = StatusDetector(manifest: codex)
+    d.input(typing: true, at: t0)
+    d.output("› fix the login", at: t0.addingTimeInterval(0.1))
+    #expect(d.status == .idle)
+    #expect(d.tick(at: t0.addingTimeInterval(5)) == .idle)
+    d.input(at: t0.addingTimeInterval(6))   // Return: now it works
+    d.output("Reading the login form", at: t0.addingTimeInterval(6.2))
+    #expect(d.status == .working)
+}
+
+@Test func approveInProseIsNotAQuestion() throws {
+    let t0 = Date()
+    let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })
+    var d = StatusDetector(manifest: codex)
+    d.input(at: t0.addingTimeInterval(-10))
+    d.output("I updated the approve button and its tests.\n", at: t0)
+    #expect(d.tick(at: t0.addingTimeInterval(5)) == .done)
+    var e = StatusDetector(manifest: codex)
+    e.input(at: t0.addingTimeInterval(-10))
+    e.output("Approve this change?\n", at: t0)
+    #expect(e.tick(at: t0.addingTimeInterval(5)) == .waiting)
+}

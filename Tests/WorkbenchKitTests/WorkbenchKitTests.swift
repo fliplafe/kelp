@@ -166,4 +166,18 @@ import WorkbenchKit
     #expect(Indentation.detect("a:\n  b:\n    c\n  d\n") == .spaces(2))
     #expect(Indentation.detect("func f() {\n\tx\n\t\ty\n}\n") == .tabs)
     #expect(Indentation.detect("one\ntwo\n") == nil)
+    #expect(Indentation.detect("a {\r\n    b\r\n    c\r\n}\r\n") == .spaces(4))   // Windows line endings
+    #expect(LanguageSpec.word(in: "x\r\ndef test_a():\r\n", line: 2, column: 6) == "test_a")
+}
+
+@Test func reorderingInsideAGroupDropsWhereTheBarShows() throws {
+    var l = WorkspaceLayout()
+    let a = l.add("session:a"), b = l.add("session:b"), c = l.add("session:c")
+    let g = try #require(l.focused)
+    l.move(a.id, to: g, index: 2)   // the gap before c, counted with a still in place
+    #expect(l.groups[g]?.tabs == [b, a, c])
+    l.move(c.id, to: g, index: 0)
+    #expect(l.groups[g]?.tabs == [c, b, a])
+    l.move(c.id, to: g)             // no index: the end
+    #expect(l.groups[g]?.tabs == [b, a, c])
 }

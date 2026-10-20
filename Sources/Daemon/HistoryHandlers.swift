@@ -63,14 +63,14 @@ extension Daemon {
             var claude: [JSONValue] = [], codex: [JSONValue] = []
             let names = ["Default"] + (settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
             for (i, r) in roots.claude.enumerated() where FileManager.default.fileExists(atPath: r.path) {
-                // Today and the week from the index (read incrementally); the 5-hour block from the last hours' files only.
+                // Today, the week and the 5-hour block from the index (read incrementally).
                 let cal = Calendar.current, today = cal.startOfDay(for: Date()), now = Date()
                 let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
                 let rows = usageIndex.rows(roots: [r], since: weekStart)
                 var o: [String: JSONValue] = ["account": .string(i == 0 ? "Default" : names[min(i, names.count - 1)]),
                                               "today": Self.json(UsageIndex.block(rows, from: today, to: now)),
                                               "week": Self.json(UsageIndex.block(rows, from: weekStart, to: now))]
-                if let b = ClaudeUsage(root: r, since: now.addingTimeInterval(-10 * 3600)).currentBlock() { o["block"] = Self.json(b) }
+                if let b = usageIndex.currentBlock(roots: [r], now: now) { o["block"] = Self.json(b) }
                 claude.append(.object(o))
             }
             for r in roots.codex where FileManager.default.fileExists(atPath: r.path) {

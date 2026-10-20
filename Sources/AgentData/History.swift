@@ -166,10 +166,17 @@ enum JSONL {
         guard let size = try? h.seekToEnd(), size > 0, (try? h.seek(toOffset: 0)) != nil else { return nil }
         if size <= UInt64(chunk * 2) { return (lines((try? h.readToEnd()) ?? Data()), 1) }
         let head = (try? h.read(upToCount: chunk)) ?? Data()
-        guard (try? h.seek(toOffset: size - UInt64(chunk))) != nil else { return nil }
-        let tail = (try? h.readToEnd()) ?? Data()
+        // The last lines can be huge (a tool result, an image): read further back until a few whole lines are in.
+        let limit = min(size - UInt64(chunk), 16 << 20)
+        var back = UInt64(chunk), tail = Data()
+        while true {
+            guard (try? h.seek(toOffset: size - back)) != nil else { return nil }
+            tail = (try? h.readToEnd()) ?? Data()
+            if lines(tail).count > 4 || back >= limit { break }
+            back = min(back * 4, limit)
+        }
         let headLines = head.last == 10 ? lines(head) : Array(lines(head).dropLast())
-        return (headLines + lines(tail).dropFirst(), Double(chunk * 2) / Double(size))
+        return (headLines + lines(tail).dropFirst(), Double(UInt64(chunk) + back) / Double(size))
     }
 
     /// Non-empty lines as slices of `d`. memchr, because `Data.split` is ~10x slower on gigabytes of transcripts.

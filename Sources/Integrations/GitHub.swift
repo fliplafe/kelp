@@ -1,4 +1,5 @@
 import Foundation
+import Core
 import GitKit
 
 public struct GitHubError: Error, CustomStringConvertible, Sendable {
@@ -52,10 +53,8 @@ public enum GitHub {
 
     static let prFields = "number,title,url,author,headRefName,isDraft,state,reviewDecision,statusCheckRollup"
 
-    static let ghPath: String? = {
-        let path = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
-        return (["/opt/homebrew/bin", "/usr/local/bin"] + path).map { $0 + "/gh" }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
+    /// Where the user's shell finds it (MacPorts, nix, mise… too), not only in the daemon's own PATH.
+    static let ghPath = try? LoginPath.resolve("gh")
 
     @discardableResult
     static func gh(_ args: [String], cwd: String) throws -> Data {

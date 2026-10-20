@@ -37,7 +37,7 @@ let package = Package(
         .target(name: "LSPKit", dependencies: ["Core"]),
         .target(name: "WorkbenchKit"),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
-        .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.4.1, MIT
+        .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.17.2, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",

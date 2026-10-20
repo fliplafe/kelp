@@ -8,7 +8,7 @@ public enum Indentation: Equatable, Sendable {
     /// that nine in ten of the indented lines are a multiple of. Nil when nothing is indented.
     public static func detect(_ text: String) -> Indentation? {
         var tabs = 0, widths: [Int] = []
-        for line in text.split(separator: "\n").prefix(2000) {
+        for line in text.split(whereSeparator: \.isNewline).prefix(2000) {   // "\r\n" is one Character, not "\n"
             if line.hasPrefix("\t") { tabs += 1; continue }
             let n = line.prefix { $0 == " " }.count
             if n > 0, n < line.count { widths.append(n) }
