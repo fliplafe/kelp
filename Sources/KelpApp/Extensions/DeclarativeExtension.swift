@@ -164,9 +164,10 @@ enum ExtActions {
     /// `${Field}`, `${a.b}`, `${setting:key}`, `${workspace.path|branch|name}`, `${project.path}`, `${file}`. `quote` shell-quotes values.
     static func expand(_ template: String, item: JSONValue?, quote: Bool) -> String {
         let ctx = IDEContext.current
-        var out = "", rest = Substring(template)
+        var out = "", rest = Substring(template), quotes = ShellQuotes()
         while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
             out += rest[..<open.lowerBound]
+            quotes.read(rest[..<open.lowerBound])
             let key = String(rest[open.upperBound..<close])
             var v: String
             switch key {
@@ -179,10 +180,32 @@ enum ExtActions {
                 if key.hasPrefix("setting:") { v = SettingsStore.shared.value(String(key.dropFirst(8))).map(text) ?? "" }
                 else { v = key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(text) ?? "" }
             }
-            out += quote ? IDE.shellWord(v) : v
+            // Escaped for where the template put it: a manifest writing "${title}" must not let $(…) in a title run.
+            out += quote ? quotes.escape(v) : v
             rest = rest[rest.index(after: close)...]
         }
         return out + rest
+    }
+
+    /// Which quotes a shell would be inside at this point of a template, so a value is escaped for that spot.
+    struct ShellQuotes {
+        var inSingle = false, inDouble = false
+        mutating func read(_ s: Substring) {
+            var escaped = false
+            for c in s {
+                if escaped { escaped = false; continue }
+                if c == "\\", !inSingle { escaped = true; continue }
+                if c == "'", !inDouble { inSingle.toggle() } else if c == "\"", !inSingle { inDouble.toggle() }
+            }
+        }
+        func escape(_ v: String) -> String {
+            if inSingle { return v.replacingOccurrences(of: "'", with: "'\\''") }   // close, a literal ', reopen
+            if inDouble {   // inside "…" these four still mean something
+                return v.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                    .replacingOccurrences(of: "$", with: "\\$").replacingOccurrences(of: "`", with: "\\`")
+            }
+            return IDE.shellWord(v)
+        }
     }
 
     static func text(_ v: JSONValue) -> String {

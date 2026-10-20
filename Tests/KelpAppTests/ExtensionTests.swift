@@ -72,3 +72,19 @@ private func folder(_ files: [String: String]) throws -> URL {
     for bad in ["..", ".", "", "a/b", "../x", ".hidden"] { #expect(!ExtensionRegistry.isPlainName(bad), "\(bad.debugDescription)") }
     for ok in ["me.icons", "icons", "kelp-git"] { #expect(ExtensionRegistry.isPlainName(ok)) }
 }
+
+/// Whatever quotes the manifest put around a placeholder, the value stays text: a title like $(touch …) never runs.
+@MainActor @Test func aValueNeverRunsWhereverTheTemplatePutsIt() throws {
+    let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
+    let evil = "$(touch \(marker)) `touch \(marker)` \" ' \\ end"
+    let item = JSONValue.object(["title": .string(evil)])
+    for template in [#"printf %s ${title}"#, #"printf %s "${title}""#, #"printf %s '${title}'"#, #"printf %s "PR: ${title}!""#] {
+        let cmd = ExtActions.expand(template, item: item, quote: true)
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", cmd]
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        try p.run(); p.waitUntilExit()
+        let printed = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        #expect(!FileManager.default.fileExists(atPath: marker), "ran from \(template)")
+        #expect(printed.contains(evil), "\(template) printed \(printed.debugDescription)")   // and arrives whole
+    }
+}
