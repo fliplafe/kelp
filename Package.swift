@@ -35,7 +35,7 @@ let package = Package(
         .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
         .executableTarget(name: "kelp", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
-        .target(name: "WorkbenchKit"),
+        .target(name: "WorkbenchKit", dependencies: ["Core"]),
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
         .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.17.2, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
@@ -58,7 +58,7 @@ let package = Package(
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
         .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
-        .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit"]),
+        .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
         .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]

@@ -104,3 +104,8 @@ public struct DiffComment: Codable, Sendable, Equatable, FetchableRecord, Persis
     }
     public static let databaseTableName = "diffComment"
 }
+
+extension Worktree {
+    /// The name people see: their own, or the branch.
+    public var displayName: String { note.isEmpty ? branch : note }
+}

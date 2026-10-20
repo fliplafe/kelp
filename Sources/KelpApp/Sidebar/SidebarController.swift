@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Core
 import GitKit
+import WorkbenchKit
 
 /// Projects → workspaces → agents in a source-list outline (like Finder and Xcode).
 /// Status changes update the visible cells in place; the outline reloads only when the tree's shape changes.
@@ -52,7 +53,17 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private var query = ""
     private let card = HoverCard()
     /// The search field's menu (its magnifier): which workspaces to show. The one on screen always stays.
-    enum Filter: String, CaseIterable { case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request" }
+    enum Filter: String, CaseIterable {
+        case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request"
+        var tree: SidebarFilter {
+            switch self {
+            case .all: .all
+            case .working: .working
+            case .needsYou: .needsYou
+            case .withPR: .withPR
+            }
+        }
+    }
     private var filter = Filter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
     static var pinned: [String] {
         get { UIState.strings("sidebar.pinned") }
@@ -175,58 +186,31 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     // MARK: model → tree
 
-    /// Rows don't jump under the pointer: what needs you keeps its place, new ones join at the end, and the list is put
-    /// back in the queue's order (questions first, oldest first) only every few minutes.
-    private var needsOrder: [String] = [], needsSortedAt = Date.distantPast
-    private func stableOrder(_ fresh: [String]) -> [String] {
-        if Date().timeIntervalSince(needsSortedAt) > 180 { needsOrder = fresh; needsSortedAt = Date(); return fresh }
-        needsOrder = needsOrder.filter(fresh.contains) + fresh.filter { !needsOrder.contains($0) }
-        return needsOrder
-    }
+    private var needsOrder = StableOrder()
 
     private func build() -> [Node] {
         let m = AppModel.shared
-        let q = query.lowercased()
-        let narrowed = !q.isEmpty || filter != .all
-        let pins = Self.pinned
-        func hit(_ text: String...) -> Bool { q.isEmpty || text.contains { $0.lowercased().contains(q) } }
-        func passes(_ w: Worktree, _ agents: [Session]) -> Bool {
-            if w.id == Workbench.shared.workspaceId { return true }   // the one on screen never vanishes from the list
-            switch filter {
-            case .all: return true
-            case .working: return agents.contains { $0.status == .working }
-            case .needsYou: return agents.contains { [.waiting, .error].contains($0.status) || ($0.status == .done && $0.unread) }
-            case .withPR:
-                let folder = RowBadges.folder(workspace: w.id) ?? RowBadges.folder(project: w.repoId)
-                return folder.map { RowBadges.shared.prs[$0.id] != nil } ?? false
+        var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue.sessions)
+        tree.pinned = Self.pinned
+        tree.query = query
+        tree.filter = filter.tree
+        tree.current = Workbench.shared.workspaceId
+        tree.statusLabel = { $0.label }
+        tree.hasPR = { w in (RowBadges.folder(workspace: w.id) ?? RowBadges.folder(project: w.repoId)).map { RowBadges.shared.prs[$0.id] != nil } ?? false }
+        tree.stableOrder = { [unowned self] in needsOrder($0) }
+        func node(_ i: SidebarItem) -> Node {
+            let n: Node
+            switch i.kind {
+            case .project(let id): n = Node(.project(id))
+            case .workspace(let id): n = Node(.workspace(id))
+            case .agent(let id): n = Node(.agent(id))
+            case .section(let s): n = Node(.section(s))
+            case .needs(let id): n = Node(.needs(id))
             }
-        }
-        func workspace(_ w: Worktree, _ r: Repo) -> Node? {
-            // Agents only: terminals are tabs, not something to keep an eye on.
-            let agents = m.sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.agent != "shell" }
-            guard passes(w, agents) else { return nil }
-            let whole = hit(w.displayName, w.branch, r.name)
-            let kept = whole ? agents : agents.filter { hit($0.title, $0.agent ?? "", $0.summary, $0.status.label) }   // "needs", "working", "done" act as filters
-            guard whole || !kept.isEmpty else { return nil }
-            let n = Node(.workspace(w.id))
-            n.children = kept.map { Node(.agent($0.id)) }
+            n.children = i.children.map(node)
             return n
         }
-        var out: [Node] = []
-        // Over the projects: what needs you, from all of them (with more than a couple of workspaces), then the
-        // workspaces you pinned (moved up, not copied).
-        let needs = AttentionQueue.sessions.filter { s in m.worktree(s.worktreeId) != nil && hit(s.title, s.agent ?? "", s.summary) }
-        if !needs.isEmpty, filter == .all || filter == .needsYou, m.worktrees.filter({ !$0.archived }).count > 2 {
-            let n = Node(.section("Needs You")); n.children = stableOrder(needs.map(\.id)).map { Node(.needs($0)) }; out.append(n)
-        }
-        let pinnedNodes = pins.compactMap { id in m.worktree(id).flatMap { w in m.repo(w.repoId).flatMap { workspace(w, $0) } } }
-        if !pinnedNodes.isEmpty { let n = Node(.section("Pinned")); n.children = pinnedNodes; out.append(n) }
-        out += m.projects.compactMap { r in
-            let p = Node(.project(r.id))
-            p.children = m.workspaces(of: r).filter { !pins.contains($0.id) }.compactMap { workspace($0, r) }
-            return p.children.isEmpty && narrowed ? nil : p
-        }
-        return out
+        return tree.build().map(node)
     }
 
     /// The ways in, as File shows them: a folder (new or existing), a clone, a project over SSH.

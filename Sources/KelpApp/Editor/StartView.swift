@@ -218,8 +218,3 @@ private final class StartRow: NSView {
         return s + k.key.uppercased()
     }
 }
-
-extension Worktree {
-    /// The name people see: their own, or the branch.
-    var displayName: String { note.isEmpty ? branch : note }
-}
