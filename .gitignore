@@ -5,3 +5,5 @@ xcuserdata/
 dist/
 .claude/
 Vendor/
+.DS_Store
+skills-lock.json
