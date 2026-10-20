@@ -121,9 +121,11 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     private func handleOutput(_ d: Data) {
         lock.lock()
         ring.append(d)
-        if ring.count > Self.ringLimit { ring.removeFirst(ring.count - Self.ringLimit) }
+        // A copy, at twice the limit: removeFirst on Data only re-slices, and the storage kept every byte the session
+        // ever printed (300 MB of output held 300 MB). The slack makes the copy rare.
+        if ring.count > 2 * Self.ringLimit { ring = Data(ring.suffix(Self.ringLimit)) }
         try? log?.write(contentsOf: d); logSize += d.count
-        if logSize > Self.logLimit { trimLog(ring) }
+        if logSize > Self.logLimit { trimLog(ring.suffix(Self.ringLimit)) }
         let text = String(decoding: d, as: UTF8.self)
         var probe = false
         let said = (record.summary, record.progress)
@@ -142,7 +144,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
            let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic {
             lastTopic = t; topic = t
         }
-        if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + StatusDetector.stripANSI(text)).suffix(4000))) }
+        // The chunk without escapes, once, for the two readers that want it.
+        let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
+        if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
         var answer: String?
         if !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 {
@@ -157,7 +161,6 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         var url: String?
         if !sawURL, onLocalURL != nil {
-            let plain = StatusDetector.stripANSI(text)
             if let m = Self.urlRegex.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)), let r = Range(m.range, in: plain) {
                 sawURL = true; url = String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
             }
@@ -404,14 +407,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         record.unread = true; return record
     }
 
-    func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(max(0, n)) }
+    func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(min(max(0, n), Self.ringLimit)) }
     /// The history, `conn` gets the output from here on. `send` runs under the lock with that history, so it goes out
     /// before any of the live output that follows.
     @discardableResult
     func attach(_ conn: Int, send: (Data) -> Void = { _ in }) -> Data {
         lock.lock(); defer { lock.unlock() }
         attached.insert(conn)
-        let history = TerminalReplies.withoutQueries(ring); send(history); return history
+        let history = TerminalReplies.withoutQueries(ring.suffix(Self.ringLimit)); send(history); return history
     }
     func detach(_ conn: Int) { lock.lock(); attached.remove(conn); lock.unlock() }
     var snapshot: Session { lock.lock(); defer { lock.unlock() }; return record }
