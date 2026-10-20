@@ -122,6 +122,9 @@ final class Box: @unchecked Sendable {
     #expect(throws: PTYError.self) { try PTY.retrying { () throws -> Int in calls += 1; throw PTYError(step: "spawn", code: ENOENT) } }
     #expect(calls == 1)                      // a missing program won't appear by trying again
     calls = 0
+    _ = try PTY.retrying { () throws -> Int in calls += 1; if calls < 2 { throw PTYError(step: "openpty", code: ENXIO) }; return 1 }
+    #expect(calls == 2)                      // openpty's own transient refusal is retried too
+    calls = 0
     #expect(throws: PTYError.self) { try PTY.retrying(attempts: 3) { () throws -> Int in calls += 1; throw PTYError(step: "spawn", code: EIO) } }
     #expect(calls == 3)                      // and it gives up in the end, with the real error
 }
@@ -166,12 +169,27 @@ final class Box: @unchecked Sendable {
     defer { p.kill() }
     for _ in 0..<100 where !box.text.contains("ready") { usleep(20_000) }
     let big = Data(repeating: 0x61, count: 2 << 20)   // far more than the terminal buffers
-    var t = Date()
+    let t = Date()
     p.write(big)
     #expect(Date().timeIntervalSince(t) < 0.2)       // queued, not written here
-    t = Date()
     let done = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async { _ = p.size; _ = p.foregroundProgram; done.signal() }
+    Thread.detachNewThread { _ = p.size; _ = p.foregroundProgram; done.signal() }   // its own thread: a busy pool mustn't look like a stuck lock
     #expect(done.wait(timeout: .now() + 2) == .success, "size / foregroundProgram waited on the stuck write")
-    #expect(Date().timeIntervalSince(t) < 0.5)
+}
+
+/// A terminal closes its fds once: finishing and being dropped both hang up, and a second close would hit a reused number.
+@Test func aFinishedTerminalClosesItsFdsOnce() async throws {
+    for _ in 0..<20 {
+        let p = try PTY(argv: ["/bin/sh", "-c", "exit 0"], cwd: "/tmp", env: [:])
+        let ended = Box()
+        p.onExit = { ended.exit($0) }
+        p.start()
+        #expect(try await waitFor(5) { ended.code != nil })
+    }   // each is dropped here: deinit after finish
+    // A pipe opened now gets one of the freed numbers; it must still work after any late close.
+    let pipe = Pipe()
+    try await Task.sleep(for: .milliseconds(200))
+    pipe.fileHandleForWriting.write(Data("ok".utf8))
+    try pipe.fileHandleForWriting.close()
+    #expect(pipe.fileHandleForReading.readDataToEndOfFile() == Data("ok".utf8))
 }

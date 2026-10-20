@@ -38,12 +38,13 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         _ = fcntl(writeFD, F_SETFL, fcntl(writeFD, F_GETFL) | O_NONBLOCK)   // shared with primaryFD: its reads already allow EAGAIN
     }
 
-    /// A terminal that was freed a moment ago can refuse to open its slave side (EIO) while the kernel is still tearing it
-    /// down; a fresh terminal a few milliseconds later works. Any other failure is returned at once.
+    /// A terminal that was freed a moment ago can refuse to open its slave side (EIO, or ENXIO from openpty itself, seen
+    /// with several daemons starting terminals at once) while the kernel is still tearing it down; a fresh terminal a few
+    /// milliseconds later works. Any other failure is returned at once.
     static func retrying<T>(attempts: Int = 4, _ body: () throws -> T) throws -> T {
         for attempt in 1..<attempts {
             do { return try body() }
-            catch let e as PTYError where e.code == EIO { usleep(UInt32(attempt) * 20_000) }
+            catch let e as PTYError where e.code == EIO || e.code == ENXIO { usleep(UInt32(attempt) * 20_000) }   // ENXIO: openpty raced the same
         }
         return try body()
     }
@@ -141,10 +142,13 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     }
 
     private func hangUp() {
-        io.withLock {
-            guard !closed else { return }
+        let first = io.withLock { () -> Bool in
+            guard !closed else { return false }
             closed = true; stopWrites = true; source?.cancel(); source = nil; close(primaryFD)
+            return true
         }
+        // Once only (finish and deinit both get here): a second close would hit whatever reused the number since.
+        guard first else { return }
         let w = writeFD
         writes.async { close(w) }   // after any write still queued has given up
     }
