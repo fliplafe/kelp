@@ -406,3 +406,24 @@ final class NoteBox: @unchecked Sendable {
     d.planUsed("claude")
     #expect(d.plans["claude"]?.at == .distantPast)
 }
+
+/// Twice as many stuck git / gh calls as there are cores still leave the daemon answering (they don't hold the cooperative pool).
+@Test func blockingCallsLeaveTheDaemonAnswering() async throws {
+    let d = try Daemon(root: tmp())
+    let n = ProcessInfo.processInfo.activeProcessorCount * 2
+    let entered = DispatchSemaphore(value: 0), gate = DispatchSemaphore(value: 0), answered = DispatchSemaphore(value: 0)
+    let stuck = (0..<n).map { _ in Task { try await d.offload { entered.signal(); gate.wait() } } }
+    let started = signals(entered, n, by: .now() + 3)
+    let ping = Task { let r = try await d.handle("ping", .null, conn: 0); answered.signal(); return r }
+    let answeredInTime = signals(answered, 1, by: .now() + 2) == 1
+    for _ in 0..<n { gate.signal() }
+    for t in stuck { try await t.value }
+    #expect(started == n && answeredInTime)
+    #expect(try await ping.value.string == "pong")
+}
+
+/// How many of `n` signals came by the deadline. Blocks this thread on purpose: with a broken offload the cooperative
+/// pool is full, and a test that awaited would hang instead of failing.
+private func signals(_ s: DispatchSemaphore, _ n: Int, by deadline: DispatchTime) -> Int {
+    (0..<n).filter { _ in s.wait(timeout: deadline) == .success }.count
+}

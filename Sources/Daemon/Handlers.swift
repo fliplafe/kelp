@@ -20,14 +20,20 @@ extension Daemon {
             if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await handleHistory(method, p) { return r }
             if ["github.", "linear.", "jira.", "bitbucket.", "ci."].contains(where: method.hasPrefix) || method == "task.fromIssue",
                let r = try await handleIntegration(method, p, conn: conn) { return r }
+            return try await offload { [self] in
+                if method.hasPrefix("scripts."), let r = try handleScripts(method, p, conn: conn) { return r }
+                if method == "repo.addRemote" || method == "files.readRemote", let r = try handleRemote(method, p, conn: conn) { return r }
+                return try handleSync(method, p, conn: conn)
+            }
         }
         catch let e as GitError { throw RPCError.internalError(e.message) }
-        if method.hasPrefix("scripts."), let r = try handleScripts(method, p, conn: conn) { return r }
-        if method == "repo.addRemote" || method == "files.readRemote" {
-            do { if let r = try handleRemote(method, p, conn: conn) { return r } } catch let e as GitError { throw RPCError.internalError(e.message) }
-        }
-        do { return try handleSync(method, p, conn: conn) }
-        catch let e as GitError { throw RPCError.internalError(e.message) }
+    }
+
+    /// git, gh and ssh hold their thread until they exit, and Swift's cooperative pool has one thread per core: a few slow
+    /// ones (the sidebar asks every folder's PR at once) would stall every other request, a terminal's attach included.
+    /// GCD adds threads when its own are blocked.
+    func offload<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { c in DispatchQueue.global().async { c.resume(with: Result(catching: work)) } }
     }
 
     private func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {

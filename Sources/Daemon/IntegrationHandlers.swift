@@ -45,14 +45,18 @@ extension Daemon {
     }
 
     func handleIntegration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
-        do { return try await integration(method, p, conn: conn) }
+        do {
+            if let r = try await offload({ [self] in try integrationBlocking(method, p) }) { return r }
+            return try await integration(method, p, conn: conn)
+        }
         catch let e as GitHubError { throw RPCError.internalError(e.description) }
         catch let e as LinearError { throw RPCError.internalError(e.description) }
         catch let e as JiraError { throw RPCError.internalError(e.description) }
         catch let e as BitbucketError { throw RPCError.internalError(e.description) }
     }
 
-    private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+    /// What only runs gh / glab / git (see `offload`).
+    private func integrationBlocking(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
         case "github.branchPR":   // {worktreeId} → the PR of the branch checked out there (cached for two minutes)
             let w = try cwd(forWorktree: p.req("worktreeId"))
@@ -85,15 +89,6 @@ extension Daemon {
         case "github.status":
             let a = GitHub.account()
             return .obj(["installed": .bool(a.installed), "user": a.user.map { .string($0) } ?? .null])
-        case "github.prs":
-            let (_, path) = try repoPath(p)
-            if let slug = BitbucketClient.slug(cwd: path) {
-                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
-                return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
-            }
-            if GitLab.isGitLab(cwd: path) { return try .from(GitLab.mergeRequests(cwd: path, mine: p["filter"]?.string == "mine")) }
-            let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
-            return try .from(GitHub.pullRequests(cwd: path, filter: f))
         case "github.issues":
             let (_, path) = try repoPath(p)
             if GitLab.isGitLab(cwd: path) { return try .from(GitLab.issues(cwd: path, mine: p["filter"]?.string == "mine")) }
@@ -108,6 +103,21 @@ extension Daemon {
             let (_, path) = try repoPath(p); return try .from(GitHub.projects(cwd: path))
         case "github.projectItems":
             return try .from(GitHub.projectItems(owner: p.req("owner"), number: p["number"]?.int ?? 0))
+        default: return nil
+        }
+    }
+
+    private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+        switch method {
+        case "github.prs":
+            let (_, path) = try repoPath(p)
+            if let slug = BitbucketClient.slug(cwd: path) {
+                guard let bb = bitbucket else { throw RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations") }
+                return try .from(await bb.pullRequests(workspace: slug.workspace, repo: slug.repo))
+            }
+            if GitLab.isGitLab(cwd: path) { return try .from(GitLab.mergeRequests(cwd: path, mine: p["filter"]?.string == "mine")) }
+            let f: GitHub.PRFilter = p["filter"]?.string == "mine" ? .mine : p["filter"]?.string == "review" ? .reviewRequested : .open
+            return try .from(GitHub.pullRequests(cwd: path, filter: f))
         case "github.pr-create":   // push, title/body from the commits if not given, open the PR, link it
             guard var w = try store.worktree(p.req("worktreeId")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
             try Git.remote(w.path, .push)   // the branch checked out now
