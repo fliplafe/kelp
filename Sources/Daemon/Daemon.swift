@@ -281,7 +281,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         if let name = o.profile, let prof = profile(name, agent: manifest.id) { env[prof.key] = prof.dir }
         env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
-        let ls = try LiveSession(record: rec, manifest: manifest, argv: try launchArgv(argv, cwd: cwd, manifest: manifest), env: env,
+        let ls = try LiveSession(record: rec, manifest: trustAnswered(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
+                                 argv: try launchArgv(argv, cwd: cwd, manifest: manifest), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
         rec = ls.snapshot
         let sid = rec.id
@@ -385,6 +386,19 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// KELP_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
     static let debugWake = ProcessInfo.processInfo.environment["KELP_DEBUG_WAKE"] != nil
 
+    /// The agent's "trust this folder?" is answered by Kelp only where the agent already trusts the folder, the project's
+    /// main checkout or a folder above them (a new workspace of a project it knows). A repository it has never seen, or one
+    /// on a remote host (whose config isn't here), asks the user.
+    func trustAnswered(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
+        guard m.autoAnswers.contains(AgentManifest.trust) else { return m }
+        var folders = [cwd]
+        if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId) { folders.append(r.path) }
+        guard RemoteHost.of(cwd) != nil || !AgentTrust.trusts(agent: m.id, folders: folders, env: env) else { return m }
+        var out = m
+        out.autoAnswers.removeAll { $0 == AgentManifest.trust }
+        return out
+    }
+
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
         if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
@@ -395,7 +409,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: m, argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
+        let ls = try LiveSession(record: rec, manifest: trustAnswered(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
+                                 argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
         wire(ls)
         lock.withLock { live[rec.id] = ls }

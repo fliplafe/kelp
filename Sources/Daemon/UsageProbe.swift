@@ -86,14 +86,9 @@ extension Daemon {
         return ordered.first(where: usable)
     }
 
-    /// Folders the user trusted in Claude Code (read only: `projects[path].hasTrustDialogAccepted` in its config).
+    /// Folders the user trusted in Claude Code (read only).
     private static func claudeTrusted() -> [String] {
-        let env = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
-        let f = env.map { URL(fileURLWithPath: $0).appendingPathComponent(".claude.json") }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
-        guard let d = try? Data(contentsOf: f), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let projects = o["projects"] as? [String: Any] else { return [] }
-        return projects.compactMap { path, v in (v as? [String: Any])?["hasTrustDialogAccepted"] as? Bool == true ? path : nil }
+        AgentTrust.trustedFolders(agent: "claude", env: ProcessInfo.processInfo.environment, home: NSHomeDirectory())
     }
 
     private func probeArgv(_ agent: String, _ path: String) -> [[String]] {

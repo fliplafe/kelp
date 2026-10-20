@@ -257,3 +257,25 @@ import Core
     e.output("Approve this change?\n", at: t0)
     #expect(e.tick(at: t0.addingTimeInterval(5)) == .waiting)
 }
+
+@Test func agentTrustIsReadFromEachAgentsOwnConfig() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("trust-\(UUID().uuidString.prefix(6))").path
+    let fm = FileManager.default
+    for d in ["/p/known/desk", "/p/other", "/.codex", "/.gemini", "/profile"] { try fm.createDirectory(atPath: home + d, withIntermediateDirectories: true) }
+    try #"{"projects":{"\#(home)/p/known":{"hasTrustDialogAccepted":true},"\#(home)/p/other":{"hasTrustDialogAccepted":false}}}"#
+        .write(toFile: home + "/.claude.json", atomically: true, encoding: .utf8)
+    try "model = \"x\"\n[projects.\"\(home)/p/known\"]\ntrust_level = \"trusted\"\n[projects.\"\(home)/p/other\"]\ntrust_level = \"untrusted\"\n"
+        .write(toFile: home + "/.codex/config.toml", atomically: true, encoding: .utf8)
+    try #"{"\#(home)/p/known/desk":"TRUST_PARENT","\#(home)/p/other":"DO_NOT_TRUST"}"#.write(toFile: home + "/.gemini/trustedFolders.json", atomically: true, encoding: .utf8)
+    for agent in ["claude", "codex", "gemini"] {
+        #expect(AgentTrust.trusts(agent: agent, folders: [home + "/p/known"], home: home), "\(agent)")
+        #expect(AgentTrust.trusts(agent: agent, folders: [home + "/p/known/desk"], home: home), "\(agent): a folder inside a trusted one")
+        #expect(!AgentTrust.trusts(agent: agent, folders: [home + "/p/other"], home: home), "\(agent): explicitly not trusted")
+        #expect(!AgentTrust.trusts(agent: agent, folders: [home + "/p/knownother"], home: home), "\(agent): a name that only starts the same")
+    }
+    #expect(AgentTrust.trusts(agent: "claude", folders: [home + "/p/new", home + "/p/known"], home: home))   // the project's main folder counts
+    #expect(!AgentTrust.trusts(agent: "cursor", folders: [home + "/p/known"], home: home))                  // no way to know: never
+    // An account profile reads its own config.
+    try #"{"projects":{}}"#.write(toFile: home + "/profile/.claude.json", atomically: true, encoding: .utf8)
+    #expect(!AgentTrust.trusts(agent: "claude", folders: [home + "/p/known"], env: ["CLAUDE_CONFIG_DIR": home + "/profile"], home: home))
+}

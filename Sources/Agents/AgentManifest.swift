@@ -171,7 +171,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         return resumes(argv) ? argv : argv + resumeArgs
     }
 
-    static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|one you trust|allow .* to work in this folder)"#, input: "\r",
+    public static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|one you trust|allow .* to work in this folder)"#, input: "\r",
                                   choose: #"(?i)(yes|trust|allow|proceed)"#)
 
     public static let presets: [AgentManifest] = [

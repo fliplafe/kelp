@@ -227,3 +227,22 @@ private let localSSH: String = {
     live.noteTurn(.working); live.noteTurn(.idle)                        // turn 2: over at once, changed nothing
     #expect(try await waitFor(5) { live.lastTurn?.files.isEmpty == true }, "turn 2 reported \(live.lastTurn?.files.map(\.path) ?? [])")
 }
+
+/// Kelp answers an agent's "trust this folder?" only for a project the agent already trusts.
+@Test func theTrustQuestionIsAnsweredOnlyForAFolderTheAgentTrusts() async throws {
+    let script = #"stty -icanon -echo; printf 'Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n'; IFS= read -rsn1 -t 4 k && [[ -z "$k" ]] && echo TRUSTED-BY-KELP; sleep 30"#
+    let config = tmp().path
+    var fake = AgentManifest(id: "claude", name: "Claude Code", command: "/bin/bash", args: ["-c", script], autoAnswers: [AgentManifest.trust], resumeArgs: [])
+    fake.env = ["CLAUDE_CONFIG_DIR": config]   // its own config, not the user's
+    let w = try await world(agents: [fake]); defer { w.d.stop() }
+    func run(_ wt: Worktree) async throws -> String {
+        let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "claude"]), as: Session.self)
+        _ = try await waitFor(8) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("TRUSTED-BY-KELP") == true }
+        return try await w.c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
+    }
+    let unknown = try await desk(w, "never-seen")
+    #expect(try await run(unknown).contains("TRUSTED-BY-KELP") == false)   // a project it never trusted: the user is asked
+    try #"{"projects":{"\#(w.repo.path)":{"hasTrustDialogAccepted":true}}}"#.write(toFile: config + "/.claude.json", atomically: true, encoding: .utf8)
+    let known = try await desk(w, "new-desk")
+    #expect(try await run(known).contains("TRUSTED-BY-KELP"))              // a new workspace of a project it trusts: answered
+}
