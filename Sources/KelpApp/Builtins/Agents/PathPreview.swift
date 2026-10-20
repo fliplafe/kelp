@@ -107,7 +107,7 @@ struct PathPreviewView: View {
                 if model.changed { Text("Changed").font(.caption.weight(.medium)).foregroundStyle(.orange) }
             }
             if let img = model.image {
-                Image(nsImage: img).resizable().aspectRatio(contentMode: .fit).frame(maxWidth: 360, maxHeight: 240)
+                Image(nsImage: img).resizable().scaledToFit().frame(maxWidth: 360, maxHeight: 240)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(model.lines) { l in

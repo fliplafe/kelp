@@ -67,7 +67,7 @@ public enum Recipes {
         "resolveConflicts": "Merge {base} into this branch, resolve all conflicts ({files}), run the tests, and commit.",
         "fixCI": "CI check \"{check}\" failed on this branch. Here is the log tail; fix the cause and push.\n\n{error}",
         "review": "Address these review comments from the pull request:\n\n{comments}",
-        "issue": "{title}\n\n{body}\n\n(Issue: {url})",
+        "issue": "{title}\n\n{body}\n\n(Issue: {url})"
     ]
     public static func render(_ name: String, config: RepoConfig, vars: [String: String]) -> String {
         var t = config.recipes[name] ?? defaults[name] ?? ""

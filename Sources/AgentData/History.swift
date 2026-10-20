@@ -132,8 +132,8 @@ public enum History {
         return sessions.filter { $0.title.localizedCaseInsensitiveContains(q) || $0.cwd.localizedCaseInsensitiveContains(q) }
     }
 
-    /// Sessions whose transcript bytes contain `query` (as typed or lowercased), reading at most `maxBytes` per file.
     // Limit: byte match, so other casings and JSON-escaped text (quotes, newlines) miss; decode + normalize if that bites.
+    /// Sessions whose transcript bytes contain `query` (as typed or lowercased), reading at most `maxBytes` per file.
     public static func fullTextSearch(query: String, in sessions: [AgentSessionInfo], limit: Int = 50, maxBytes: Int = 2 << 20) -> [AgentSessionInfo] {
         let needles = Set([query, query.lowercased()]).filter { !$0.isEmpty }.map { Data($0.utf8) }
         guard !needles.isEmpty else { return [] }

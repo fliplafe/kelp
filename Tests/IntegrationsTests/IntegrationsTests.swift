@@ -75,7 +75,7 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     """
     #expect(try GitHub.parseProjectItems(d(items)) == [
         GitHub.ProjectItem(title: "Login", type: "Issue", status: "In Progress", url: "https://github.com/acme/r/issues/5"),
-        GitHub.ProjectItem(title: "Idea", type: "DraftIssue", status: nil, url: nil),
+        GitHub.ProjectItem(title: "Idea", type: "DraftIssue", status: nil, url: nil)
     ])
 }
 

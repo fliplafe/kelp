@@ -25,10 +25,11 @@ public struct BitbucketClient: Sendable {
         try Self.parsePullRequests(await request("GET", "/repositories/\(workspace)/\(repo)/pullrequests?state=OPEN&pagelen=50"))
     }
 
+    // swiftlint:disable:next function_parameter_count
     public func createPR(workspace: String, repo: String, title: String, body: String, source: String, destination: String) async throws -> String {
         let d = try await request("POST", "/repositories/\(workspace)/\(repo)/pullrequests", body: [
             "title": title, "description": body,
-            "source": ["branch": ["name": source]], "destination": ["branch": ["name": destination]],
+            "source": ["branch": ["name": source]], "destination": ["branch": ["name": destination]]
         ])
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any],
               let html = ((o["links"] as? [String: Any])?["html"] as? [String: Any])?["href"] as? String else { throw BitbucketError(description: "unexpected create response") }

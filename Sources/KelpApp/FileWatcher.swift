@@ -10,7 +10,8 @@ final class FileWatcher {
         self.handler = handler
         var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
-            let me = Unmanaged<FileWatcher>.fromOpaque(info!).takeUnretainedValue()
+            guard let info else { return }
+            let me = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
             let arr = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
             me.handler(Array(arr.prefix(n)))
         }

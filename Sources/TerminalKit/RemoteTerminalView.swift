@@ -19,7 +19,7 @@ public final class RemoteTerminalView: NSView, @preconcurrency TerminalViewDeleg
         addSubview(term)
         NSLayoutConstraint.activate([
             term.leadingAnchor.constraint(equalTo: leadingAnchor), term.trailingAnchor.constraint(equalTo: trailingAnchor),
-            term.topAnchor.constraint(equalTo: topAnchor), term.bottomAnchor.constraint(equalTo: bottomAnchor),
+            term.topAnchor.constraint(equalTo: topAnchor), term.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
     public required init?(coder: NSCoder) { fatalError() }

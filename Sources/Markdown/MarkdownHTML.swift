@@ -136,7 +136,6 @@ private enum Node { case html(String), delim(Delim) }
 final class Renderer {
     var refs: [String: (url: String, title: String?)] = [:]
     var slugs: [String: Int] = [:]
-    typealias M = MarkdownHTML
 
     // MARK: blocks
 
@@ -161,7 +160,7 @@ final class Renderer {
                 var body: [String] = [], j = i
                 while j < ls.count, ls[j].blank || ls[j].indent >= 4 { body.append(String(ls[j].s.dropFirst(4))); j += 1 }
                 while body.last?.allSatisfy(\.isWhitespace) == true { body.removeLast() }
-                out.append("<pre data-line=\"\(l.n)\"><code>\(M.esc(body.joined(separator: "\n")))\n</code></pre>")
+                out.append("<pre data-line=\"\(l.n)\"><code>\(MarkdownHTML.esc(body.joined(separator: "\n")))\n</code></pre>")
                 i = j; continue
             }
             let s = String(l.s.dropFirst(ind))
@@ -172,8 +171,8 @@ final class Renderer {
                     if x.indent < 4, let c = fence(String(x.s.dropFirst(x.indent))), c.ch == f.ch, c.len >= f.len, c.info.isEmpty { j += 1; break }
                     body.append(x.dropping(ind).s); j += 1
                 }
-                let lang = f.info.split(separator: " ").first.map { " class=\"language-\(M.esc(String($0)))\"" } ?? ""
-                let code = body.isEmpty ? "" : M.esc(body.joined(separator: "\n")) + "\n"
+                let lang = f.info.split(separator: " ").first.map { " class=\"language-\(MarkdownHTML.esc(String($0)))\"" } ?? ""
+                let code = body.isEmpty ? "" : MarkdownHTML.esc(body.joined(separator: "\n")) + "\n"
                 out.append("<pre data-line=\"\(l.n)\"><code\(lang)>\(code)</code></pre>")
                 i = j; continue
             }
@@ -229,7 +228,7 @@ final class Renderer {
         let k = slugs[base, default: 0]
         slugs[base] = k + 1
         let id = k == 0 ? base : "\(base)-\(k)"
-        return "<h\(level) id=\"\(M.esc(id))\" data-line=\"\(n)\">\(html)</h\(level)>"
+        return "<h\(level) id=\"\(MarkdownHTML.esc(id))\" data-line=\"\(n)\">\(html)</h\(level)>"
     }
 
     private func list(_ ls: [Line], _ i: Int, _ m0: Marker) -> (String, Int) {
@@ -396,7 +395,7 @@ final class Renderer {
             switch ch {
             case "\\":
                 if i + 1 < c.count, c[i + 1] == "\n" { buf += "<br>\n"; i += 2 }
-                else if i + 1 < c.count, isASCIIPunct(c[i + 1]) { buf += M.esc(String(c[i + 1])); i += 2 }
+                else if i + 1 < c.count, isASCIIPunct(c[i + 1]) { buf += MarkdownHTML.esc(String(c[i + 1])); i += 2 }
                 else { buf += "\\"; i += 1 }
             case "`":
                 var n = 0
@@ -412,7 +411,7 @@ final class Renderer {
                 if let f = close {
                     var code = String(c[(i + n)..<f]).replacingOccurrences(of: "\n", with: " ")
                     if code.count >= 2, code.first == " ", code.last == " ", !code.allSatisfy({ $0 == " " }) { code = String(code.dropFirst().dropLast()) }
-                    buf += "<code>\(M.esc(code))</code>"; i = f + n
+                    buf += "<code>\(MarkdownHTML.esc(code))</code>"; i = f + n
                 } else { buf += String(repeating: "`", count: n); i += n }
             case "*", "_", "~":
                 var e = i
@@ -440,10 +439,10 @@ final class Renderer {
                     let inner = String(c[(i + 1)..<close])
                     if !inner.contains(where: { $0.isWhitespace || $0 == "<" }) {
                         if inner.contains(":"), inner.wholeMatch(of: /[A-Za-z][A-Za-z0-9+.\-]{1,31}:.+/) != nil {
-                            buf += "<a href=\"\(M.esc(safe(inner)))\">\(M.esc(inner))</a>"; i = close + 1; continue
+                            buf += "<a href=\"\(MarkdownHTML.esc(safe(inner)))\">\(MarkdownHTML.esc(inner))</a>"; i = close + 1; continue
                         }
                         if inner.contains("@"), inner.wholeMatch(of: /[^@\s]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+/) != nil {
-                            buf += "<a href=\"mailto:\(M.esc(inner))\">\(M.esc(inner))</a>"; i = close + 1; continue
+                            buf += "<a href=\"mailto:\(MarkdownHTML.esc(inner))\">\(MarkdownHTML.esc(inner))</a>"; i = close + 1; continue
                         }
                     }
                 }
@@ -476,7 +475,7 @@ final class Renderer {
                 }
                 guard e - i > plen else { buf.append(ch); i += 1; continue }
                 let url = String(c[i..<e])
-                buf += "<a href=\"\(M.esc(plen == 4 ? "http://" + url : url))\">\(M.esc(url))</a>"; i = e
+                buf += "<a href=\"\(MarkdownHTML.esc(plen == 4 ? "http://" + url : url))\">\(MarkdownHTML.esc(url))</a>"; i = e
             case ">": buf += "&gt;"; i += 1
             case "\"": buf += "&quot;"; i += 1
             default: buf.append(ch); i += 1
@@ -501,7 +500,7 @@ final class Renderer {
             for j in stride(from: i - 1, through: 0, by: -1) {
                 guard case .delim(let o) = nodes[j], o.ch == c.ch, o.open, o.count > 0 else { continue }
                 if c.ch == "~" { if o.count == c.count { found = j; break } else { continue } }
-                if (o.close || c.open), (o.orig + c.orig) % 3 == 0, !(o.orig % 3 == 0 && c.orig % 3 == 0) { continue }
+                if o.close || c.open, (o.orig + c.orig) % 3 == 0, !(o.orig % 3 == 0 && c.orig % 3 == 0) { continue }
                 found = j; break
             }
             guard let j = found, case .delim(var o) = nodes[j] else { i += 1; continue }
@@ -538,10 +537,10 @@ final class Renderer {
             if let r = refs[norm(label)] { dest = r.url; title = r.title; end = after }
         }
         guard let d = dest else { return nil }
-        let t = title.map { " title=\"\(M.esc($0))\"" } ?? ""
+        let t = title.map { " title=\"\(MarkdownHTML.esc($0))\"" } ?? ""
         let inner = inline(text, links: false)
-        if image { return ("<img src=\"\(M.esc(safe(d, image: true)))\" alt=\"\(stripTags(inner))\"\(t)>", end) }
-        return ("<a href=\"\(M.esc(safe(d)))\"\(t)>\(inner)</a>", end)
+        if image { return ("<img src=\"\(MarkdownHTML.esc(safe(d, image: true)))\" alt=\"\(stripTags(inner))\"\(t)>", end) }
+        return ("<a href=\"\(MarkdownHTML.esc(safe(d)))\"\(t)>\(inner)</a>", end)
     }
 
     private func destination(_ c: [Character], _ start: Int) -> (String, String?, Int)? {

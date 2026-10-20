@@ -29,6 +29,7 @@ public enum Unix {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SocketError.socket(errno) }
         var a = try addr(path)
+        chmod((path as NSString).deletingLastPathComponent, 0o700)   // nobody else can reach the socket between bind and chmod (umask is process-wide, so not that)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
         guard r == 0, Darwin.listen(fd, 16) == 0 else { let e = errno; close(fd); throw SocketError.bind(e) }
         chmod(path, 0o600)   // the socket is the auth boundary locally

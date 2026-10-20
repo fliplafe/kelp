@@ -6,11 +6,11 @@ import Core
 /// another process, so nothing is written to the one or signalled at the other after that.
 public final class PTY: @unchecked Sendable {
     public let pid: pid_t
-    private let master: Int32
+    private let primaryFD: Int32
     private var source: DispatchSourceRead?
     private let q = DispatchQueue(label: "kelp.pty")
     private var exited = false
-    private let io = NSLock()     // `closed`: the master is closed under it, so no write lands in a reused fd
+    private let io = NSLock()     // `closed`: the primaryFD is closed under it, so no write lands in a reused fd
     private let life = NSLock()   // `reaped`: set before the pid is reaped, so no signal reaches a recycled one
     private var closed = false, reaped = false, started = false
 
@@ -24,17 +24,17 @@ public final class PTY: @unchecked Sendable {
         guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
         var nameBuf = [CChar](repeating: 0, count: 128)
         ptsname_r(m, &nameBuf, nameBuf.count)
-        let slavePath = String(cString: nameBuf)
+        let secondaryPath = String(cString: nameBuf)
         // Keep our end of the slave open until the child has it: closing the last fd resets the tty (size becomes 0×0).
 
-        var fa: posix_spawn_file_actions_t? = nil
+        var fa: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&fa)
         defer { posix_spawn_file_actions_destroy(&fa) }
         posix_spawn_file_actions_addchdir_np(&fa, cwd)
-        posix_spawn_file_actions_addopen(&fa, 0, slavePath, O_RDWR, 0)
+        posix_spawn_file_actions_addopen(&fa, 0, secondaryPath, O_RDWR, 0)
         posix_spawn_file_actions_adddup2(&fa, 0, 1)
         posix_spawn_file_actions_adddup2(&fa, 0, 2)
-        var attr: posix_spawnattr_t? = nil
+        var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)
         defer { posix_spawnattr_destroy(&attr) }
         // Reset signal state: the child must not inherit our ignored/blocked signals (SIGHUP/SIGTERM would be no-ops).
@@ -62,7 +62,7 @@ public final class PTY: @unchecked Sendable {
         }
         close(s)
         guard rc == 0 else { close(m); throw POSIXError(.init(rawValue: rc) ?? .ENOENT) }
-        self.pid = pid; self.master = m
+        self.pid = pid; self.primaryFD = m
     }
 
     /// Starts reading the output and waiting for the exit. Set `onOutput` / `onExit` first: a program that prints (or
@@ -73,7 +73,7 @@ public final class PTY: @unchecked Sendable {
             started = true; return true
         }
         guard first else { return }
-        let src = DispatchSource.makeReadSource(fileDescriptor: master, queue: q)
+        let src = DispatchSource.makeReadSource(fileDescriptor: primaryFD, queue: q)
         src.setEventHandler { [weak self] in self?.drain() }
         q.sync { source = src }
         src.resume()
@@ -93,7 +93,7 @@ public final class PTY: @unchecked Sendable {
 
     private func drain() {
         var buf = [UInt8](repeating: 0, count: 65536)
-        let n = read(master, &buf, buf.count)
+        let n = read(primaryFD, &buf, buf.count)
         if n > 0 { onOutput?(Data(buf[0..<n])) }
         else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) { source?.cancel(); source = nil }
     }
@@ -103,8 +103,8 @@ public final class PTY: @unchecked Sendable {
         exited = true
         // Flush anything still buffered in the kernel.
         var buf = [UInt8](repeating: 0, count: 65536)
-        let fl = fcntl(master, F_GETFL); _ = fcntl(master, F_SETFL, fl | O_NONBLOCK)
-        while true { let n = read(master, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
+        let fl = fcntl(primaryFD, F_GETFL); _ = fcntl(primaryFD, F_SETFL, fl | O_NONBLOCK)
+        while true { let n = read(primaryFD, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
         hangUp()
         onExit?(status)
     }
@@ -112,7 +112,7 @@ public final class PTY: @unchecked Sendable {
     private func hangUp() {
         io.withLock {
             guard !closed else { return }
-            closed = true; source?.cancel(); source = nil; close(master)
+            closed = true; source?.cancel(); source = nil; close(primaryFD)
         }
     }
 
@@ -130,18 +130,18 @@ public final class PTY: @unchecked Sendable {
     static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KELP_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
     /// Typing into the program; dropped once it has exited (the fd may be another terminal's by then).
-    public func write(_ d: Data) { io.withLock { if !closed { Unix.writeAll(master, d) } } }
+    public func write(_ d: Data) { io.withLock { if !closed { Unix.writeAll(primaryFD, d) } } }
 
     /// The program in the foreground when it isn't the one the PTY started (a shell running `npm run dev`, vim…).
     public var foregroundProgram: String? {
-        let pg = io.withLock { closed ? -1 : tcgetpgrp(master) }
+        let pg = io.withLock { closed ? -1 : tcgetpgrp(primaryFD) }
         guard pg > 0, pg != pid else { return nil }
         var name = [CChar](repeating: 0, count: 256)
         return proc_name(pg, &name, UInt32(name.count)) > 0 ? String(cString: name) : "a program"
     }
     public func resize(cols: UInt16, rows: UInt16) {
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
-        io.withLock { if !closed { _ = ioctl(master, TIOCSWINSZ, &ws) } }
+        io.withLock { if !closed { _ = ioctl(primaryFD, TIOCSWINSZ, &ws) } }
     }
     public func kill() { signal { Darwin.kill(-$0, SIGHUP); Darwin.kill($0, SIGTERM) } }
 

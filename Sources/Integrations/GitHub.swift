@@ -200,8 +200,8 @@ public enum GitHub {
     }
 
     private struct RawReviews: Decodable {
-        struct R: Decodable { var author: Login?; var body: String }
-        var reviews: [R]
+        struct Review: Decodable { var author: Login?; var body: String }
+        var reviews: [Review]
     }
 
     public static func parseReviews(_ data: Data) throws -> [ReviewComment] {

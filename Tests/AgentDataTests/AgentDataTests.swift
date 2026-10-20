@@ -43,13 +43,13 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
         user("<command-name>/clear</command-name>", "2026-10-18T10:00:01.000Z"),
         user([["type": "text", "text": long]], "2026-10-18T10:00:02.000Z"),
         assistant("m1", "r1", "2026-10-18T10:00:05.000Z"),
-        user([["type": "tool_result", "content": "x"]], "2026-10-18T10:05:00.000Z"),
+        user([["type": "tool_result", "content": "x"]], "2026-10-18T10:05:00.000Z")
     ])
     try write(p, "s2.jsonl", [["type": "summary", "summary": "Summarized work", "leafUuid": "x"], user("hello", "2026-10-17T09:00:00Z", sid: "s2")])
     try write(p, "s3.jsonl", [
         user("first prompt", "2026-10-16T09:00:00.000Z", sid: "s3"),
         ["type": "ai-title", "aiTitle": "AI title", "sessionId": "s3"],
-        ["type": "custom-title", "customTitle": "Named by hand", "sessionId": "s3"],
+        ["type": "custom-title", "customTitle": "Named by hand", "sessionId": "s3"]
     ])
     try write(p, "s4.jsonl", [user("<command-name>/goal</command-name>\n<command-message>goal</command-message>\n<command-args>ship it</command-args>", "2026-10-15T09:00:00Z", sid: "s4")])
     try write(p, "s1/subagents/agent-a.jsonl", [user("sub", "2026-10-18T11:00:00.000Z", sid: "s1")])
@@ -158,12 +158,12 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
         item("assistant", "Done", "2026-10-17T10:01:00.000Z"),
         tokens("2026-10-17T10:01:00.000Z", ["primary": ["used_percent": 12.5, "window_minutes": 300, "resets_at": 1_792_000_000],
                                              "secondary": ["used_percent": 40, "window_minutes": 10080, "resets_at": 1_792_500_000]]),
-        tokens("2026-10-17T10:02:00.000Z", ["primary": NSNull(), "secondary": NSNull(), "credits": NSNull()]),
+        tokens("2026-10-17T10:02:00.000Z", ["primary": NSNull(), "secondary": NSNull(), "credits": NSNull()])
     ])
     try write(root, "2026/10/18/rollout-2026-10-18T09-00-00-\(id2).jsonl", [
         ["timestamp": "2026-10-18T09:00:00.000Z", "type": "session_meta", "payload": ["id": id2, "cwd": "/work/b", "timestamp": "2026-10-18T09:00:00.000Z"]],
         item("user", "Old shape please", "2026-10-18T09:00:01.000Z"),
-        tokens("2026-10-18T09:05:00.000Z", ["primary": ["used_percent": 50, "window_minutes": 300, "resets_in_seconds": 600]]),
+        tokens("2026-10-18T09:05:00.000Z", ["primary": ["used_percent": 50, "window_minutes": 300, "resets_in_seconds": 600]])
     ])
 
     let s = CodexHistory.sessions(root: root)

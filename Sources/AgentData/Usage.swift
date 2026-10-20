@@ -39,7 +39,7 @@ public struct Pricing: Sendable, Equatable {
         ("haiku", .init(input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1)),
         ("-mini", .init(input: 0.25, output: 2, cacheWrite: 0, cacheRead: 0.025)),
         ("gpt-5.2", .init(input: 1.75, output: 14, cacheWrite: 0, cacheRead: 0.175)),
-        ("gpt-5", .init(input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0.125)),
+        ("gpt-5", .init(input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0.125))
     ]
 
     public static func forModel(_ model: String) -> Pricing? {

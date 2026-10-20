@@ -91,7 +91,7 @@ final class OnboardingSheet: NSWindowController {
         if let id = pick.selectedItem?.representedObject as? String { SettingsStore.shared.set("agents.default", .string(id)) }
     }
 
-    private func testNotification() {
+    func testNotification() {
         (NSApp.delegate as? AppDelegate)?.notifier.sendTest { [weak self] ok in
             self?.notifyStatus.stringValue = ok ? String(localized: "Sent. If no banner appeared, check Focus.") : String(localized: "Turned off for Kelp in System Settings › Notifications.")
             self?.notifyStatus.textColor = ok ? .secondaryLabelColor : .systemRed

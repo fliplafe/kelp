@@ -11,7 +11,7 @@ enum Highlighter {
             "py": ["def", "class", "import", "from", "as", "with", "lambda", "yield", "None", "True", "False", "elif", "except", "try", "finally", "raise", "pass", "async", "await", "not", "and", "or", "is", "in"] + c,
             "go": ["func", "package", "import", "var", "type", "interface", "range", "go", "defer", "chan", "map", "select", "fallthrough"] + c,
             "rs": ["fn", "let", "mut", "impl", "trait", "pub", "use", "mod", "match", "loop", "where", "async", "await", "Self", "crate", "move", "ref", "unsafe"] + c,
-            "json": ["true", "false", "null"], "yaml": ["true", "false", "null"],
+            "json": ["true", "false", "null"], "yaml": ["true", "false", "null"]
         ]
     }()
     static let alias = ["tsx": "ts", "jsx": "js", "mjs": "js", "yml": "yaml", "py": "py"]
