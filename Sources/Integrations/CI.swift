@@ -126,7 +126,7 @@ public enum CIRuns {
 
     static func gitlabRuns(cwd: String, branch: String) throws -> [Run] {
         struct RawPipeline: Decodable { var id: Int, status: String, source: String?, web_url: String, created_at: String, ref: String }
-        let b = branch.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? branch
+        let b = GitLab.queryValue(branch)
         return try JSONDecoder().decode([RawPipeline].self, from: GitLab.api("projects/:id/pipelines?ref=\(b)&per_page=20", cwd: cwd)).map {
             let (s, c) = gitlabState($0.status)
             return Run(id: $0.id, title: "Pipeline #\($0.id)", workflow: $0.ref, status: s, conclusion: c, event: $0.source ?? "", url: $0.web_url, createdAt: $0.created_at)

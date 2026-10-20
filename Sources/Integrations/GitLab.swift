@@ -27,6 +27,12 @@ public enum GitLab {
         catch let e as GitError { throw GitHubError(args: e.args, status: e.status, stderr: e.stderr) }
     }
 
+    /// A value for a query string: everything but unreserved characters escaped, so "fix+x" or "a&b=c" stay one value
+    /// (`.urlQueryAllowed` leaves + & = as they are, and "+" reads as a space).
+    static func queryValue(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")) ?? s
+    }
+
     struct RawMR: Decodable {
         struct User: Decodable { var username: String }
         struct Pipeline: Decodable { var status: String }
@@ -53,7 +59,7 @@ public enum GitLab {
 
     /// The newest MR from `branch`, with its pipeline's state.
     public static func mergeRequest(cwd: String, branch: String) throws -> GitHub.PullRequest? {
-        let b = branch.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? branch
+        let b = queryValue(branch)
         guard let m = try JSONDecoder().decode([RawMR].self, from: api("projects/:id/merge_requests?source_branch=\(b)&state=all&per_page=1&order_by=updated_at", cwd: cwd)).first
         else { return nil }
         return pr((try? JSONDecoder().decode(RawMR.self, from: api("projects/:id/merge_requests/\(m.iid)", cwd: cwd))) ?? m)

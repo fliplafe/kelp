@@ -218,3 +218,10 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(!GitLab.isGitLab(remote: "git@github.com:me/gitlab-mirror.git"))
     #expect(!GitLab.isGitLab(remote: ""))
 }
+
+@Test func gitlabBranchNamesStayOneQueryValue() {
+    #expect(GitLab.queryValue("fix+x") == "fix%2Bx")          // "+" would read as a space
+    #expect(GitLab.queryValue("a&b=c") == "a%26b%3Dc")        // & and = would start another parameter
+    #expect(GitLab.queryValue("feat/login") == "feat%2Flogin")
+    #expect(GitLab.queryValue("plain-name_1.2~x") == "plain-name_1.2~x")
+}
