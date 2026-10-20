@@ -12,6 +12,8 @@ final class ChangedFiles {
     @ObservationIgnored private var wid: String?
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var pending: DispatchWorkItem?
+    /// The Source Control panel, once built: while it shows this workspace its own reloads report the count.
+    @ObservationIgnored weak var panel: SourceControlController?
 
     private init() {
         // The path too: on launch the workspace is known before the daemon has listed its folder.
@@ -22,8 +24,7 @@ final class ChangedFiles {
 
     private func bind(_ id: String?, path: String?) {
         wid = id; count = 0
-        // Limit: a second watcher and `git status` beside the open panel's; share one if it shows up in profiles.
-        watcher = path.flatMap { FileWatcher(root: $0) { [weak self] _ in self?.scheduleReload() } }
+        watcher = path.flatMap { FileWatcher(root: $0) { [weak self] in if Git.touchesStatus($0) { self?.scheduleReload() } } }
         reload()
     }
 
@@ -34,7 +35,7 @@ final class ChangedFiles {
     }
 
     private func reload() {
-        guard let wid, let c = AppModel.shared.client else { return }
+        guard let wid, panel?.workspace != wid, let c = AppModel.shared.client else { return }
         Task {
             let ch = try? await c.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)
             report(wid, ch?.count ?? 0)

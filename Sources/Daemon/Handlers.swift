@@ -245,11 +245,14 @@ extension Daemon {
             let files = (p["files"]?.array ?? []).compactMap(\.string)
             if method == "git.stage" { try Git.stage(w.path, files: files) } else { try Git.unstage(w.path, files: files) }
             return .null
-        case "git.hunk":   // stage/unstage one hunk: {id, file, hunk, reverse}
+        case "git.hunk":   // stage/unstage one hunk: {id, file, hunk, reverse, header?}; with its "@@" header, that hunk or none
             let w = try cwd(forWorktree: p.req("id")); let file = try p.req("file")
-            let rev = p["reverse"]?.bool == true
-            guard let d = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first, let i = p["hunk"]?.int, d.hunks.indices.contains(i)
-            else { throw RPCError.invalidParams("no such hunk") }
+            let rev = p["reverse"]?.bool == true, header = p["header"]?.string
+            let d = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first
+            let i = header.map { h in d?.hunks.firstIndex { $0.header == h } ?? -1 } ?? p["hunk"]?.int ?? -1
+            guard let d, d.hunks.indices.contains(i) else {
+                throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
+            }
             try Git.applyHunk(w.path, diff: d, hunk: i, reverse: rev); return .null
         case "git.commit":
             return .string(try Git.commit(cwd(forWorktree: p.req("id")).path, message: p.req("message"), all: p["all"]?.bool == true,

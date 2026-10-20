@@ -1,22 +1,30 @@
 import Foundation
 
 extension Git {
-    public static func stage(_ path: String, files: [String]) throws { try run(["add", "--"] + files, cwd: path) }
-    public static func unstage(_ path: String, files: [String]) throws { try run(["reset", "-q", "HEAD", "--"] + files, cwd: path) }
+    public static func stage(_ path: String, files: [String]) throws { try run(["add", "--"] + literal(files), cwd: path) }
+    public static func unstage(_ path: String, files: [String]) throws { try run(["reset", "-q", "HEAD", "--"] + literal(files), cwd: path) }
 
     /// Stage (or unstage, `reverse`) a single hunk of `diff` via `git apply --cached`.
     public static func applyHunk(_ path: String, diff: FileDiff, hunk: Int, reverse: Bool) throws {
-        try run(["apply", "--cached", "--recount", "--unidiff-zero"] + (reverse ? ["-R"] : []) + ["-"], cwd: path, stdin: diff.patch(hunk: hunk))
+        try runData(["apply", "--cached", "--recount", "--unidiff-zero"] + (reverse ? ["-R"] : []) + ["-"], cwd: path, stdin: diff.patch(hunk: hunk))
     }
 
     /// Throw away one unstaged hunk of `diff` (the working tree's version of `git restore -p`): its reverse, applied to the files.
     public static func discardHunk(_ path: String, diff: FileDiff, hunk: Int) throws {
-        try run(["apply", "--recount", "--unidiff-zero", "-R", "-"], cwd: path, stdin: diff.patch(hunk: hunk))
+        try runData(["apply", "--recount", "--unidiff-zero", "-R", "-"], cwd: path, stdin: diff.patch(hunk: hunk))
     }
 
+    /// `all`: every change, new files too (what "Commit N Files" counts), not just what's staged. Never with unresolved
+    /// conflicts: staging them would commit the conflict markers.
     @discardableResult
     public static func commit(_ path: String, message: String, all: Bool = false, amend: Bool = false) throws -> String {
-        try run(["commit", "-q"] + (all ? ["-a"] : []) + (amend ? ["--amend"] : []) + ["-m", message], cwd: path)
+        if all {
+            if try status(path).contains(where: \.conflicted) {
+                throw GitError(args: ["commit"], status: 1, stderr: "Resolve the merge conflicts before committing.")
+            }
+            try run(["add", "-A"], cwd: path)
+        }
+        try run(["commit", "-q"] + (amend ? ["--amend"] : []) + ["-m", message], cwd: path)
         return try run(["rev-parse", "--short", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

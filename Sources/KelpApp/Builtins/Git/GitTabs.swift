@@ -32,10 +32,12 @@ final class DiffTab: TabContent {
         _ = controller.view
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
-        NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
+        observer = NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
             MainActor.assumeIsolated { if (n.object as? String) == self?.worktreeId, self?.commit == nil { self?.controller.reload() } }
         }
     }
+    private var observer: NSObjectProtocol?
+    isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
     func focus() { controller.view.window?.makeFirstResponder(controller.view) }
 
@@ -113,7 +115,7 @@ final class CommitMessageTab: TabContent {
         let changes = (try? await c?.call("git.status", id, as: [FileChange].self)) ?? []
         let branch = (try? await c?.call("git.branches", id, as: BranchInfo.self))?.current
         let staged = changes.filter { $0.staged && !$0.conflicted }
-        let files = staged.isEmpty ? changes.filter { !$0.conflicted && !$0.untracked } : staged
+        let files = staged.isEmpty ? changes.filter { !$0.conflicted } : staged
         var lines = [message, ""]
         lines.append(files.isEmpty ? "# No changes to commit." : (staged.isEmpty ? "# All changes" : "# Staged changes") + (branch.map { String(localized: " on “\($0)”") } ?? "") + ":")
         lines += files.map { "#\t" + SourceControlController.letter($0, staged.isEmpty ? .changes : .staged).0 + "  " + $0.path }
@@ -149,7 +151,7 @@ final class CommitMessageTab: TabContent {
     func focus() { text.window?.makeFirstResponder(text) }
 }
 
-/// Commits what's staged, or every tracked change when nothing is (as VS Code does), then pushes if asked.
+/// Commits what's staged, or every change, new files too, when nothing is (VS Code's smart commit), then pushes if asked.
 /// Failures go to the banner, where an agent can be asked to fix them.
 @MainActor
 enum GitCommit {

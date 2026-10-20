@@ -112,8 +112,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         ])
         view = v
         updateHeader()   // NSButton's own "Button" title must not show while the branch loads
-        track { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
-        track { FileIcon.revision } changed: { [weak self] _ in
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track(owner: self) { FileIcon.revision } changed: { [weak self] _ in
             for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
         }
     }
@@ -235,9 +235,13 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         worktreeId = wid; changes = []; info = nil; commits = []; unpushed = []; commitFiles = [:]; openCommits = []; limit = 200
         ciPoll?.cancel(); ciRuns = []; ciAwaiting = nil; ciRow.show([], failure: nil)
         message.string = ""; messageChanged()
-        watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] _ in self?.scheduleReload() } }
+        watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] in if Git.touchesStatus($0) { self?.scheduleReload() } } }
+        ChangedFiles.shared.panel = self
         rebuild(); reloadAll()
     }
+
+    /// The workspace this panel shows (and keeps the Source Control badge of).
+    var workspace: String? { worktreeId }
 
     private func scheduleReload() {
         pending?.cancel()
@@ -252,6 +256,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             do {
                 let ch = try await c.call("git.status", id, as: [FileChange].self)
                 let br = try await c.call("git.branches", id, as: BranchInfo.self)
+                guard wid == worktreeId else { return }   // another workspace is shown now: its own reload is on its way
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
                     || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
                 let changed = ch != changes || br != info
@@ -262,9 +267,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
                 changes = ch; info = br; showError(nil)
                 ChangedFiles.shared.report(wid, ch.count)
                 updateHeader(); updateCommitButton()
-                showStats(ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self))
+                let stats = ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self)
+                guard wid == worktreeId else { return }
+                showStats(stats)
                 if graphStale || commits.isEmpty { loadCI(); await loadGraph() } else if changed { rebuildChanges() }
             } catch {
+                guard wid == worktreeId else { return }
                 changes = []; info = nil; commits = []
                 showError((error as? RPCError)?.message ?? "\(error)")
                 updateHeader(); rebuild()
@@ -337,8 +345,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     private func loadGraph() async {
         guard let wid = worktreeId, let c = AppModel.shared.client else { return }
-        if let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)])),
-           let list = Perf.measure("graph decode", { try? r["commits"]?.decode([GraphCommit].self) }) {
+        let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)]))
+        guard wid == worktreeId else { return }
+        if let r, let list = Perf.measure("graph decode", { try? r["commits"]?.decode([GraphCommit].self) }) {
             commits = list; more = r["more"]?.bool == true
             let before = unpushed
             unpushed = Git.unpushed(list, remotes: Set(info?.remote ?? []))
@@ -364,7 +373,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let s, s.totalAdded + s.totalRemoved > 0 else { stats.isHidden = true; return }
         stats.isHidden = false
         stats.attributedStringValue = RowBadges.changes(s) ?? NSAttributedString()
-        let names: [LineStats.Kind: String] = [.code: "Code", .tests: String(localized: "Tests"), .generated: String(localized: "Generated")]
+        let names: [LineStats.Kind: String] = [.code: String(localized: "Code"), .tests: String(localized: "Tests"), .generated: String(localized: "Generated")]
         stats.toolTip = String(localized: "Not committed yet\n") + LineStats.Kind.allCases.compactMap { k in
             let a = s.added[k] ?? 0, r = s.removed[k] ?? 0
             return a + r == 0 ? nil : "\(names[k] ?? ""): +\(a) −\(r)"
@@ -374,7 +383,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private func updateHeader() {
         guard let info else { branchButton.title = ""; syncButton.isHidden = true; return }
         branchButton.title = info.current ?? String(localized: "Detached at \(info.head ?? "?")")
-        if info.merging { branchButton.title += " (Merging)" }
+        if info.merging { branchButton.title += String(localized: " (Merging)") }
         if let up = info.upstream {
             syncButton.isHidden = false; syncButton.image = .symbol("arrow.triangle.2.circlepath", String(localized: "Sync"))
             syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = String(localized: "Pull from and push to \(up)")
@@ -513,7 +522,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         openCommits.insert(hash)
         guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
-            commitFiles[hash] = (try? await AppModel.shared.client?.call("git.commitFiles", .obj(["id": .string(wid), "commit": .string(hash)]), as: [FileChange].self)) ?? []
+            let files = (try? await AppModel.shared.client?.call("git.commitFiles", .obj(["id": .string(wid), "commit": .string(hash)]), as: [FileChange].self)) ?? []
+            guard wid == worktreeId else { return }
+            commitFiles[hash] = files
             rebuildGraph()
         }
     }
@@ -607,7 +618,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     @objc private func sync() {
         guard let info else { return }
-        if info.upstream == nil { run("git.remote", ["op": "push"], done: "Published \(info.current ?? "branch")"); return }
+        if info.upstream == nil { run("git.remote", ["op": "push"], done: String(localized: "Published \(info.current ?? "HEAD")")); return }
         guard let wid = worktreeId else { return }
         busy = true; syncing = (String(localized: "Syncing…"), (info.ahead ?? 0) > 0)
         Task {
@@ -663,11 +674,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let wid = worktreeId else { return }
         Task {
             guard let r = await AppModel.shared.call("git.merge", .obj(["id": .string(wid)])) else { return }
-            if r["merged"]?.bool == true { Banner.show(String(localized: "Merged")); NotificationCenter.default.post(name: .kelpRefresh, object: nil); return }
+            if r["merged"]?.bool == true { Banner.show(String(localized: "Merged")); await AppModel.shared.refresh(); return }
             let files = (r["conflicts"]?.array ?? []).compactMap(\.string)
             let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
             a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
-            a.addButton(withTitle: "OK")
+            a.addButton(withTitle: String(localized: "OK"))
             if FileActions.targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
             if await runSheet(a) == .alertSecondButtonReturn, let w = AppModel.shared.worktree(wid), let repo = AppModel.shared.repo(w.repoId) {
                 GitFix.send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
@@ -719,7 +730,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
 struct RowAction {
     let symbol: String, title: String, run: @MainActor () -> Void
-    init(_ symbol: String, _ title: String, _ run: @escaping @MainActor () -> Void) { self.symbol = symbol; self.title = title; self.run = run }
+    /// `title` in English; it shows translated (tooltip, accessibility, context menu).
+    init(_ symbol: String, _ title: String, _ run: @escaping @MainActor () -> Void) { self.symbol = symbol; self.title = loc(title); self.run = run }
 }
 
 /// Rows that show buttons while the pointer is over them (VS Code's inline actions).
@@ -804,7 +816,7 @@ final class GraphBar: NSView {
         ])
         cell = c; clipsToBounds = true
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
-        setAccessibilityElement(true); setAccessibilityRole(.disclosureTriangle); setAccessibilityLabel("Graph")
+        setAccessibilityElement(true); setAccessibilityRole(.disclosureTriangle); setAccessibilityLabel(loc("Graph"))
     }
     required init?(coder: NSCoder) { fatalError() }
 

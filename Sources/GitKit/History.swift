@@ -87,13 +87,18 @@ extension Git {
     }
 
     /// Files a commit changed against its first parent: `[(status letter, path)]`.
+    /// `-z`: "M\0path\0" or, renamed or copied, "R100\0old\0new\0".
     public static func commitFiles(_ path: String, commit: String) throws -> [FileChange] {
-        try run(["show", "--format=", "--name-status", "-M", "--diff-merges=first-parent", commit], cwd: path)
-            .split(separator: "\n").compactMap { l in
-                let f = l.split(separator: "\t").map(String.init)
-                guard f.count >= 2, let s = f[0].first else { return nil }
-                return FileChange(path: f.last ?? f[1], index: String(s), worktree: ".")
-            }
+        var f = try run(["show", "--format=", "--name-status", "-z", "-M", "--diff-merges=first-parent", commit], cwd: path)
+            .split(separator: "\0").map(String.init)[...]
+        var out: [FileChange] = []
+        while let s = f.popFirst()?.first {
+            let n = s == "R" || s == "C" ? 2 : 1
+            guard let p = f.prefix(n).last else { break }
+            f = f.dropFirst(n)
+            out.append(FileChange(path: p, index: String(s), worktree: "."))
+        }
+        return out
     }
 
     public static func branches(_ path: String) throws -> BranchInfo {
@@ -124,8 +129,8 @@ extension Git {
     public static func discard(_ path: String, files: [String]) throws {
         let untracked = Set(try status(path).filter(\.untracked).map(\.path))
         let (u, t) = (files.filter { untracked.contains($0) }, files.filter { !untracked.contains($0) })
-        if !u.isEmpty { try run(["clean", "-f", "-q", "--"] + u, cwd: path) }
-        if !t.isEmpty { try run(["restore", "--worktree", "--"] + t, cwd: path) }
+        if !u.isEmpty { try run(["clean", "-f", "-q", "--"] + literal(u), cwd: path) }
+        if !t.isEmpty { try run(["restore", "--worktree", "--"] + literal(t), cwd: path) }
     }
 
     public enum Remote: String, Sendable { case pull, push, fetch }

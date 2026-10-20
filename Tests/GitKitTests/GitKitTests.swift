@@ -215,3 +215,92 @@ func tempRepo() throws -> String {
     #expect(try Git.status(d).contains { $0.untracked && $0.path == "n.txt" })   // the real index is untouched
     #expect(try Git.diff(d, source: .since(tree: base)).count == 2)
 }
+
+@Test func hunksAtAFileEndWithoutNewlineStageAndDiscard() throws {
+    let repo = try tempRepo()
+    try "a\nb".write(toFile: repo + "/n.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "n.txt"], cwd: repo); try Git.run(["commit", "-qm", "n"], cwd: repo)
+    try "a\nb\nc".write(toFile: repo + "/n.txt", atomically: true, encoding: .utf8)
+    let d = try Git.diff(repo, source: .unstaged, file: "n.txt")
+    #expect(d[0].hunks[0].lines.filter { $0.noNewline == true }.count == 2)   // the old "b" and the new "c"
+    try Git.applyHunk(repo, diff: d[0], hunk: 0, reverse: false)
+    #expect(try Git.diff(repo, source: .unstaged, file: "n.txt").isEmpty)
+    try Git.applyHunk(repo, diff: try Git.diff(repo, source: .staged, file: "n.txt")[0], hunk: 0, reverse: true)
+    try Git.discardHunk(repo, diff: try Git.diff(repo, source: .unstaged, file: "n.txt")[0], hunk: 0)
+    #expect(try String(contentsOfFile: repo + "/n.txt", encoding: .utf8) == "a\nb")
+    // A new file without a final newline is staged as it is: nothing left over.
+    try "x\ny".write(toFile: repo + "/new.txt", atomically: true, encoding: .utf8)
+    try Git.applyHunk(repo, diff: try Git.diff(repo, source: .unstaged, file: "new.txt")[0], hunk: 0, reverse: false)
+    #expect(try Git.diff(repo, source: .unstaged, file: "new.txt").isEmpty)
+}
+
+@Test func hunksOfAFileThatIsntUTF8Apply() throws {
+    let repo = try tempRepo()
+    func cp1251(_ s: String) -> Data { s.data(using: .windowsCP1251) ?? Data() }
+    try cp1251("привет\nмир\n").write(to: URL(fileURLWithPath: repo + "/ru.txt"))
+    try Git.run(["add", "ru.txt"], cwd: repo); try Git.run(["commit", "-qm", "ru"], cwd: repo)
+    try cp1251("привет\nвсем\n").write(to: URL(fileURLWithPath: repo + "/ru.txt"))
+    let d = try Git.diff(repo, source: .unstaged, file: "ru.txt")
+    #expect(d[0].latin1 == true)
+    try Git.applyHunk(repo, diff: d[0], hunk: 0, reverse: false)
+    #expect(try Git.diff(repo, source: .unstaged, file: "ru.txt").isEmpty)
+}
+
+@Test func pathsWithCyrillicSpacesAndQuotesReadAsThemselves() throws {
+    let repo = try tempRepo()
+    let names = ["файл.txt", "a b.txt", "q\"x.txt"]
+    for n in names { try "1\n".write(toFile: repo + "/" + n, atomically: true, encoding: .utf8) }
+    try Git.stage(repo, files: names); try Git.commit(repo, message: "names")
+    for n in names { try "2\n".write(toFile: repo + "/" + n, atomically: true, encoding: .utf8) }
+    #expect(Set(try Git.status(repo).map(\.path)) == Set(names + [".env"]))
+    #expect(Set(try Git.diff(repo, source: .unstaged).map(\.path)) == Set(names + [".env"]))
+    try Git.stage(repo, files: ["файл.txt"])
+    #expect(try Git.status(repo).first { $0.path == "файл.txt" }?.staged == true)
+    let head = try Git.log(repo, limit: 1)[0].hash
+    #expect(Set(try Git.commitFiles(repo, commit: head).map(\.path)) == Set(names))
+}
+
+@Test func fileNamesArentPatterns() throws {
+    let repo = try tempRepo()
+    try FileManager.default.createDirectory(atPath: repo + "/p", withIntermediateDirectories: true)
+    for n in ["p/[id].tsx", "p/d.tsx"] { try "x\n".write(toFile: repo + "/" + n, atomically: true, encoding: .utf8) }
+    try Git.discard(repo, files: ["p/[id].tsx"])
+    #expect(!FileManager.default.fileExists(atPath: repo + "/p/[id].tsx"))
+    #expect(FileManager.default.fileExists(atPath: repo + "/p/d.tsx"))   // "[id]" isn't "i" or "d"
+}
+
+@Test func commitAllTakesNewFilesButNotConflicts() throws {
+    let repo = try tempRepo()
+    try "changed\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+    try "new\n".write(toFile: repo + "/new.txt", atomically: true, encoding: .utf8)
+    try Git.commit(repo, message: "all", all: true)
+    #expect(try Git.status(repo).isEmpty)
+    #expect(Set(try Git.commitFiles(repo, commit: "HEAD").map(\.path)).isSuperset(of: ["f.txt", "new.txt"]))
+
+    let p = try Git.addWorktree(repo: repo, branch: "feat", base: "main", into: URL(fileURLWithPath: repo + "-wt"), copyFiles: [])
+    try "feat\n".write(toFile: p + "/f.txt", atomically: true, encoding: .utf8); try Git.commit(p, message: "feat", all: true)
+    try "main\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8); try Git.commit(repo, message: "main", all: true)
+    _ = try Git.merge(branch: "feat", into: repo, keepConflicts: true)
+    #expect(throws: GitError.self) { try Git.commit(repo, message: "markers", all: true) }
+}
+
+@Test func untrackedBigFilesArentRead() throws {
+    let repo = try tempRepo()
+    try Data(repeating: 0x61, count: 1_200_000).write(to: URL(fileURLWithPath: repo + "/big.log"))
+    let d = try Git.diff(repo, source: .unstaged, file: "big.log")
+    #expect(d.count == 1 && d[0].binary && d[0].hunks.isEmpty)
+}
+
+@Test func onlyEventsThatMoveGitStatusCount() {
+    #expect(Git.touchesStatus(["/r/src/a.swift"]))
+    #expect(Git.touchesStatus(["/r/.git/index", "/r/.git/objects/ab/cd"]))
+    #expect(Git.touchesStatus(["/r/.git/refs/heads/main"]))
+    #expect(!Git.touchesStatus(["/r/.git/index.lock", "/r/.git/objects/ab/cd", "/r/.git/FETCH_HEAD"]))
+}
+
+@Test func diffHeaderPathsUnquote() {
+    #expect(Git.unquoted("\"q\\\"x.txt\"") == "q\"x.txt")
+    #expect(Git.unquoted("\"\\321\\204.txt\"") == "ф.txt")
+    #expect(Git.headerPath("b/a b.txt\t") == "a b.txt")
+    #expect(Git.headerPath("/dev/null") == nil)
+}

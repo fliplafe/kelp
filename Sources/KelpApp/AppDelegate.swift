@@ -26,7 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier.onOpen = { id in Workbench.focus(session: id) }
         ScratchWindow.shared.registerHotKey()
         notifier.start()
-        NotificationCenter.default.addObserver(forName: .kelpRefresh, object: nil, queue: .main) { _ in Task { @MainActor in await AppModel.shared.refresh() } }
         buildMenu()
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }
         track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }

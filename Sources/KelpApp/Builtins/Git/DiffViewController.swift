@@ -114,7 +114,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
              icon("chevron.down", String(localized: "Next Change (⌥↓)"), #selector(nextChange)), layoutToggle].forEach { bar.addArrangedSubview($0) }
         } else {
             func btn(_ t: String, _ a: Selector) -> NSButton { let b = NSButton(title: t, target: self, action: a); b.bezelStyle = .rounded; b.controlSize = .small; return b }
-            [source, layoutToggle, btn(String(localized: "Comment"), #selector(addComment)), btn("Send to Agent", #selector(sendComments)), NSView(), status]
+            [source, layoutToggle, btn(String(localized: "Comment"), #selector(addComment)), btn(String(localized: "Send to Agent"), #selector(sendComments)), NSView(), status]
                 .forEach { bar.addArrangedSubview($0) }
         }
     }
@@ -172,8 +172,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         return .object(p)
     }
 
+    /// Counts loads: an older one that finishes after a newer one (or after the tab moved on) drops its answers.
+    private var loads = 0
+
     func load() async {
         guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
+        loads += 1; let load = loads
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
             let log = (try? await AppModel.shared.client?.call("git.log", .obj(["id": .string(wid), "all": true])))?.array ?? []
             let menu = NSMenu()
@@ -187,16 +191,21 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             diffs = []; files.reloadData(); rebuildRows(); status.stringValue = String(localized: "No agent in this workspace"); return
         }
         let r = await AppModel.shared.tryCall("git.diff", srcParams())
-        diffs = (try? r.value?.decode([FileDiff].self)) ?? []
-        if let e = r.error, single == nil, source.indexOfSelectedItem == 5 { files.reloadData(); rebuildRows(); status.stringValue = e; return }
-        if single == nil {
-            changes = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
-            comments = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
+        let d = (try? r.value?.decode([FileDiff].self)) ?? []
+        var ch: [FileChange] = [], cm: [DiffComment] = []
+        if single == nil, r.error == nil {
+            ch = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
+            cm = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
         }
+        // Rows, cell tags and the hunk buttons index `diffs`: they change together, once every answer is in.
+        guard load == loads, wid == worktreeId else { return }
+        diffs = d; changes = ch; comments = cm
         files.reloadData(); rebuildRows()
+        if let e = r.error, single == nil, source.indexOfSelectedItem == 5 { status.stringValue = e; return }
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
+        let open = comments.filter { $0.state == .open }.count
         status.stringValue = single != nil ? (diffs.isEmpty ? String(localized: "No changes") : RowBadges.changes(added: add, removed: del).string)
-            : "\(diffs.count) files  \(RowBadges.changes(added: add, removed: del).string)  ·  \(comments.filter { $0.state == .open }.count) open comments"
+            : String(localized: "\(diffs.count) files") + "  \(RowBadges.changes(added: add, removed: del).string)  ·  " + String(localized: "\(open) open comments")
     }
 
     private func rebuildRows() {
@@ -276,7 +285,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 let where_ = label(header, font: .monospacedSystemFont(ofSize: 11, weight: .regular), color: .secondaryLabelColor)
                 where_.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                 stack.addArrangedSubview(where_)
-                if canStageHunks {
+                if canStageHunks(f) {
                     // Named buttons at the hunk's end, as in Xcode's and GitHub Desktop's reviews.
                     let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
                     func button(_ title: String, _ a: Selector) -> NSButton {
@@ -307,9 +316,15 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         }
     }
 
-    private var canStageHunks: Bool {
+    /// Hunk buttons only where the hunks shown are the ones git stages: the unstaged or the staged diff, or the uncommitted
+    /// one (against HEAD) for a file with nothing staged, whose hunks are the unstaged diff's.
+    private func canStageHunks(_ f: Int) -> Bool {
         if let s = single { return s.commit == nil }
-        return source.indexOfSelectedItem <= 2
+        switch source.indexOfSelectedItem {
+        case 1, 2: return true
+        case 0: return diffs.indices.contains(f) && changes.first { $0.path == diffs[f].path }?.staged != true
+        default: return false
+        }
     }
 
     private func ext(_ f: Int) -> String { (diffs[f].path as NSString).pathExtension }
@@ -371,22 +386,27 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     // MARK: actions
-    @objc private func hunkAction(_ b: NSButton) {
-        guard let wid = worktreeId else { return }
+    /// The hunk a button stands for, by what identifies it (file and "@@" header), read when it's clicked: indices go
+    /// stale as soon as the diff reloads.
+    private func hunk(_ b: NSButton) -> (path: String, index: Int, hunk: Hunk)? {
         let f = b.tag / 10000, h = b.tag % 10000
+        guard diffs.indices.contains(f), diffs[f].hunks.indices.contains(h) else { return nil }
+        return (diffs[f].path, h, diffs[f].hunks[h])
+    }
+
+    @objc private func hunkAction(_ b: NSButton) {
+        guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
         let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
         Task {
-            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(diffs[f].path), "hunk": .int(h), "reverse": .bool(staged)]))
+            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header), "reverse": .bool(staged)]))
             await load()
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
     }
     /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
     @objc private func discardHunk(_ b: NSButton) {
-        guard let wid = worktreeId, let window = view.window else { return }
-        let f = b.tag / 10000, h = b.tag % 10000
-        guard diffs.indices.contains(f), diffs[f].hunks.indices.contains(h) else { return }
-        let lines = diffs[f].hunks[h].lines, file = (diffs[f].path as NSString).lastPathComponent, header = diffs[f].hunks[h].header
+        guard let wid = worktreeId, let window = view.window, let (path, h, shown) = hunk(b) else { return }
+        let lines = shown.lines, file = (path as NSString).lastPathComponent, header = shown.header
         let added = lines.filter { $0.kind == .add }.count, removed = lines.filter { $0.kind == .del }.count
         let a = NSAlert()
         a.messageText = String(localized: "Discard this change?")
@@ -396,14 +416,17 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         a.beginSheetModal(for: window) { [weak self] r in
             guard r == .alertFirstButtonReturn, let self else { return }
             Task {
-                let p: JSONValue = .obj(["id": .string(wid), "file": .string(self.diffs[f].path), "hunk": .int(h), "header": .string(header)])
+                let p: JSONValue = .obj(["id": .string(wid), "file": .string(path), "hunk": .int(h), "header": .string(header)])
                 if let e = await AppModel.shared.tryCall(GitDiscardHunk.name, p).error { Banner.show(e, style: .error) }
                 await self.load()
                 NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
             }
         }
     }
-    private func selectedFilePath() -> String? { files.clickedRow >= 0 ? diffs[files.clickedRow].path : (files.selectedRow >= 0 ? diffs[files.selectedRow].path : nil) }
+    private func selectedFilePath() -> String? {
+        let r = files.clickedRow >= 0 ? files.clickedRow : files.selectedRow
+        return diffs.indices.contains(r) ? diffs[r].path : nil
+    }
     @objc private func stageFile() { fileOp("git.stage") }
     @objc private func unstageFile() { fileOp("git.unstage") }
     private func fileOp(_ m: String) {
@@ -458,8 +481,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 }
-
-extension Notification.Name { static let kelpRefresh = Notification.Name("kelp.refresh") }
 
 /// A toolbar row over a body that fills the rest. Used by every mode view.
 @MainActor

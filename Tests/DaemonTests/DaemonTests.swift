@@ -97,6 +97,19 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
     #expect(comments.first?.state == .sent)
 }
 
+@Test func stageHunkByItsHeader() async throws {
+    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
+    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "s", "setup": false]), as: Worktree.self)
+    try "hello\nagain\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    let header = try #require(try await c.call("git.diff", .obj(["id": .string(wt.id), "source": "unstaged"]), as: [FileDiff].self).first?.hunks.first?.header)
+    // The header decides, not the index (which another view of the file may have counted differently); a stale one stages nothing.
+    await #expect(throws: (any Error).self) { try await c.call("git.hunk", .obj(["id": .string(wt.id), "file": "a.txt", "hunk": 0, "header": "@@ -9 +9 @@"])) }
+    _ = try await c.call("git.hunk", .obj(["id": .string(wt.id), "file": "a.txt", "hunk": 5, "header": .string(header)]))
+    #expect(try await c.call("git.status", .obj(["id": .string(wt.id)]), as: [FileChange].self).first { $0.path == "a.txt" }?.staged == true)
+}
+
 @Test func discardHunkOnlyWhatWasShown() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
