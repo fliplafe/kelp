@@ -155,3 +155,23 @@ final class Box: @unchecked Sendable {
     #expect(try await waitFor(10) { !p.isRunning })
     #expect(p.terminationStatus == 0)   // a clean exit, not a crash
 }
+
+/// A paste into a program that isn't reading (a build in the foreground) holds up nothing: not the caller (a connection's
+/// reader thread), not the questions the app asks about the terminal.
+@Test func writingToAProgramThatIsntReadingBlocksNothing() throws {
+    let box = Box()
+    let p = try PTY(argv: ["/bin/sh", "-c", "stty raw -echo; echo ready; sleep 30"], cwd: "/tmp", env: [:])   // raw, like a TUI: input queues up
+    p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
+    p.start()
+    defer { p.kill() }
+    for _ in 0..<100 where !box.text.contains("ready") { usleep(20_000) }
+    let big = Data(repeating: 0x61, count: 2 << 20)   // far more than the terminal buffers
+    var t = Date()
+    p.write(big)
+    #expect(Date().timeIntervalSince(t) < 0.2)       // queued, not written here
+    t = Date()
+    let done = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async { _ = p.size; _ = p.foregroundProgram; done.signal() }
+    #expect(done.wait(timeout: .now() + 2) == .success, "size / foregroundProgram waited on the stuck write")
+    #expect(Date().timeIntervalSince(t) < 0.5)
+}

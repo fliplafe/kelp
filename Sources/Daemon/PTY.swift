@@ -20,6 +20,12 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private let io = NSLock()     // `closed`: the primaryFD is closed under it, so no write lands in a reused fd
     private let life = NSLock()   // `reaped`: set before the pid is reaped, so no signal reaches a recycled one
     private var closed = false, reaped = false, started = false
+    /// Typing goes out on a queue of its own, from a copy of the terminal's fd that only this queue closes: a program that
+    /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `io`, and a write never
+    /// reaches a reused fd number. `stopWrites` (under io) ends a write that's waiting for room.
+    private let writes = DispatchQueue(label: "kelp.pty.write")
+    private let writeFD: Int32
+    private var stopWrites = false
 
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onExit: (@Sendable (Int32) -> Void)?
@@ -28,6 +34,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     public init(argv: [String], cwd: String, env: [String: String], cols: UInt16 = 120, rows: UInt16 = 32, trampoline: String? = PTY.trampoline) throws {
         let started = try Self.retrying { try Self.launch(argv: argv, cwd: cwd, env: env, cols: cols, rows: rows, trampoline: trampoline) }
         self.pid = started.pid; self.primaryFD = started.fd
+        self.writeFD = dup(started.fd)
+        _ = fcntl(writeFD, F_SETFL, fcntl(writeFD, F_GETFL) | O_NONBLOCK)   // shared with primaryFD: its reads already allow EAGAIN
     }
 
     /// A terminal that was freed a moment ago can refuse to open its slave side (EIO) while the kernel is still tearing it
@@ -135,8 +143,10 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private func hangUp() {
         io.withLock {
             guard !closed else { return }
-            closed = true; source?.cancel(); source = nil; close(primaryFD)
+            closed = true; stopWrites = true; source?.cancel(); source = nil; close(primaryFD)
         }
+        let w = writeFD
+        writes.async { close(w) }   // after any write still queued has given up
     }
 
     /// Dropped while its program runs (the limits probe quits that way): hang up the terminal. A controlling process
@@ -153,7 +163,19 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     static let scrubbed = ["CLAUDECODE", "CLAUDE_CODE_", "CODEX_SANDBOX", "CODEX_THREAD", "KELP_SESSION", "TERM_PROGRAM", "ITERM_", "VSCODE_"]
 
     /// Typing into the program; dropped once it has exited (the fd may be another terminal's by then).
-    public func write(_ d: Data) { io.withLock { if !closed { Unix.writeAll(primaryFD, d) } } }
+    public func write(_ d: Data) {
+        guard !io.withLock({ closed }) else { return }
+        writes.async { [self] in
+            var rest = d[...]
+            while !rest.isEmpty, !io.withLock({ stopWrites }) {
+                let n = rest.withUnsafeBytes { Darwin.write(writeFD, $0.baseAddress, $0.count) }
+                if n > 0 { rest = rest.dropFirst(n); continue }
+                guard n < 0, errno == EAGAIN || errno == EINTR else { return }   // EIO: the program's side is gone
+                var fds = pollfd(fd: writeFD, events: Int16(POLLOUT), revents: 0)
+                _ = poll(&fds, 1, 100)   // wait for room, looking at stopWrites every 0.1 s
+            }
+        }
+    }
 
     /// The program in the foreground when it isn't the one the PTY started (a shell running `npm run dev`, vim…).
     public var foregroundProgram: String? {
