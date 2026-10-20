@@ -36,10 +36,11 @@ public enum Git {
         if stdin != nil { p.standardInput = inp }
         try p.run()
         if let stdin { inp.fileHandleForWriting.write(Data(stdin.utf8)); try? inp.fileHandleForWriting.close() }
-        // Drain both pipes concurrently to avoid deadlock on large output.
+        // Drain both pipes concurrently to avoid deadlock on large output. stderr gets a thread of its own: GCD's global
+        // queue gets none while every cooperative thread is blocked (callers on the Swift pool, parallel tests) — a hang.
         nonisolated(unsafe) var errData = Data()
         let g = DispatchGroup(); g.enter()
-        DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+        Thread.detachNewThread { errData = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
         let outData = out.fileHandleForReading.readDataToEndOfFile()
         g.wait(); p.waitUntilExit()
         guard ok.contains(p.terminationStatus) else {
