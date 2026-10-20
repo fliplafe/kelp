@@ -9,20 +9,21 @@ final class FileWatcher {
     static let buildFolders: Set<Substring> = ["node_modules", ".build", "DerivedData", ".next", "__pycache__", ".gradle", ".swiftpm", ".venv", "target"]
     private var stream: FSEventStreamRef?
     private let queue = DispatchQueue(label: "dev.kelp.filewatcher")
-    private let roots: [String]
-    private let handler: ([String]) -> Void
+    /// What the callback reads. Not the watcher itself: a callback holding the last reference would run its deinit on
+    /// the stream's queue, where `queue.sync` traps.
+    private final class Sink { let roots: [String]; let handler: ([String]) -> Void; init(_ r: [String], _ h: @escaping ([String]) -> Void) { roots = r; handler = h } }
+    private let sink: Sink
 
     init?(root: String, latency: Double = 0.25, handler: @escaping ([String]) -> Void) {
-        self.handler = handler
-        roots = Array(Set([root, Self.real(root)].map { $0.hasSuffix("/") ? $0 : $0 + "/" }))
-        var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        sink = Sink(Array(Set([root, Self.real(root)].map { $0.hasSuffix("/") ? $0 : $0 + "/" })), handler)
+        var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(sink).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
             guard let info else { return }
-            let me = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
+            let sink = Unmanaged<Sink>.fromOpaque(info).takeUnretainedValue()
             let arr = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            let kept = arr.prefix(n).filter { !FileWatcher.isBuildOutput($0, under: me.roots) }
+            let kept = arr.prefix(n).filter { !FileWatcher.isBuildOutput($0, under: sink.roots) }
             guard !kept.isEmpty else { return }
-            let handler = me.handler
+            let handler = sink.handler
             DispatchQueue.main.async { handler(kept) }
         }
         guard let s = FSEventStreamCreate(nil, cb, &ctx, [root] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency,
@@ -44,7 +45,8 @@ final class FileWatcher {
     }
 
     deinit {
-        // On the stream's queue: no callback is running (or can start) once this returns, so `self` isn't read after it's gone.
+        // On the stream's queue (never this one: only a Sink is seen there): once it returns no callback runs or can
+        // start, so the sink isn't read after it's gone.
         if let s = stream { queue.sync { FSEventStreamStop(s); FSEventStreamInvalidate(s); FSEventStreamRelease(s) } }
     }
 }

@@ -35,6 +35,9 @@ final class ChangedFiles {
         Task {
             let ch = try? await c.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)
             report(wid, ch?.count ?? 0)
+            // Source Control isn't reading (not built, or out of the window): open diffs, the window bar and the sidebar
+            // badges still hear that git changed.
+            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
     }
 

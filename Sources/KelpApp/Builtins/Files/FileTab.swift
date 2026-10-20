@@ -82,7 +82,7 @@ final class FileTab: SavableTab {
         e.onChange = { [weak self] t in self?.edited(t) }
         startLSP()
         // FSEvents reports real paths (/private/tmp…): resolve ours once, not for every path of every event.
-        let real = url.resolvingSymlinksInPath().path
+        let real = FileWatcher.real(p)
         watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in
             guard paths.contains(where: { $0 == real || $0 == p }) else { return }
             self?.diskChanged()
