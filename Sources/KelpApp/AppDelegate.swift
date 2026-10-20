@@ -231,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let runs = sub("Run")
         runs.delegate = ScriptsMenu.shared   // the project's other commands go between the separators
-        add(runs, "scripts.run", "scripts.test", "scripts.stop", "-", "-", "scripts.edit")
+        add(runs, "scripts.run", "scripts.test", "scripts.stop", "-", "-", "editor.runFile", "editor.testAtCursor", "editor.format", "-", "scripts.edit")
 
         let win = sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
@@ -268,7 +268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSMenuItemValidation {
-    /// Show/Hide items say what choosing them does; Focus Mode is ticked while it's on; Stop needs something running.
+    /// Show/Hide items say what choosing them does; Focus Mode is ticked while it's on; Stop needs something running;
+    /// the file commands need a file.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.identifier?.rawValue {
         case "workbench.toggleSidebar": item.title = main.sidebarShown ? String(localized: "Hide Sidebar") : String(localized: "Show Sidebar")
@@ -276,6 +277,8 @@ extension AppDelegate: NSMenuItemValidation {
         case "workbench.toggleFocusMode": item.state = main.inFocusMode ? .on : .off
         case "scripts.run", "scripts.test", "scripts.edit": return Workbench.shared.workspaceId != nil
         case "scripts.stop": return ScriptsMenu.shared.canStop
+        // Off elsewhere, so a terminal still gets their keys.
+        case "editor.runFile", "editor.testAtCursor", "editor.format": return Workbench.editor?.focusedContent is FileTab
         default: break
         }
         return true

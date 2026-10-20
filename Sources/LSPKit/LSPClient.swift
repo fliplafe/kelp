@@ -52,6 +52,7 @@ public final class LSPClient: @unchecked Sendable {
         proc.currentDirectoryURL = URL(fileURLWithPath: root)
         proc.standardInput = input; proc.standardOutput = output; proc.standardError = FileHandle.nullDevice
         do { try proc.run() } catch { return nil }
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)   // a server that died fails the write, not the app
         Thread.detachNewThread { [self] in readLoop() }
     }
 
@@ -106,7 +107,8 @@ public final class LSPClient: @unchecked Sendable {
         _ = try await request("initialize", .obj([
             "processId": .int(Int(ProcessInfo.processInfo.processIdentifier)), "rootUri": .string(uri),
             "workspaceFolders": .array([.obj(["uri": .string(uri), "name": .string((root as NSString).lastPathComponent)])]),
-            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]), "completion": .obj(["completionItem": .obj(["snippetSupport": false])])])]),
+            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]), "completion": .obj(["completionItem": .obj(["snippetSupport": false])]),
+                                                   "documentSymbol": .obj(["hierarchicalDocumentSymbolSupport": true])])])
         ]))
         notify("initialized", .obj([:]))
     }
@@ -140,6 +142,27 @@ public final class LSPClient: @unchecked Sendable {
         let r = try await request("textDocument/completion", at(path, line, column))
         let items = r.array ?? r["items"]?.array ?? []
         return items.prefix(200).map { ($0["label"]?.string ?? "", $0["detail"]?.string, $0["insertText"]?.string ?? $0["textEdit"]?["newText"]?.string ?? $0["label"]?.string ?? "") }
+    }
+
+    /// The innermost function, method, class or module around a 1-based line (the test at the cursor).
+    public func symbol(_ path: String, line: Int) async throws -> String? {
+        Self.enclosingSymbol(try await request("textDocument/documentSymbol", .obj(["textDocument": .obj(["uri": Self.uri(path)])])), line: line)
+    }
+
+    /// From either shape of a documentSymbol result: nested `DocumentSymbol`s or flat `SymbolInformation`s. The smallest
+    /// range wins; on a tie the later one (a child is visited after its parent).
+    static func enclosingSymbol(_ result: JSONValue, line: Int) -> String? {
+        var best: (name: String, span: Int)?
+        func visit(_ s: JSONValue) {
+            let r = s["range"] ?? s["location"]?["range"]
+            if let name = s["name"]?.string, [2, 3, 5, 6, 12, 23].contains(s["kind"]?.int ?? 0),   // module, namespace, class, method, function, struct
+               let a = r?["start"]?["line"]?.int, let b = r?["end"]?["line"]?.int, a < line, line - 1 <= b, b - a <= best?.span ?? .max {
+                best = (name, b - a)
+            }
+            s["children"]?.array?.forEach(visit)
+        }
+        result.array?.forEach(visit)
+        return best?.name
     }
 
     public func shutdown() { Task { _ = try? await request("shutdown", .null); notify("exit", .null) } }

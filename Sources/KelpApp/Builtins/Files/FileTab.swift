@@ -181,6 +181,42 @@ final class FileTab: SavableTab {
         }
     }
 
+    // MARK: language commands
+
+    var language: LanguageSpec? { LSPManager.shared.language(path) }
+
+    /// The language's `run`, `test` or `format` with this file's variables filled in. Nil when there's none (a beep
+    /// for a file of no language, else a banner).
+    func command(_ name: String) async -> String? {
+        guard let lang = language, editor != nil else { NSSound.beep(); return nil }
+        guard let template = lang[command: name] else { Banner.show(String(localized: "\(lang.id) has no “\(name)” command.")); return nil }
+        let (line, column) = editor?.cursor ?? (1, 1)
+        var symbol = ""
+        if template.contains("${symbol}") {
+            let client = await LSPManager.shared.client(root: root, path: path)
+            symbol = (try? await client?.symbol(path, line: line)) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
+        }
+        let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
+        return LanguageSpec.expand(template, ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path,
+                                              "line": String(line), "symbol": symbol, "workspace": root])
+    }
+
+    /// Format Document: the text goes to the language's `format` on stdin and comes back formatted, as one undoable
+    /// edit with the cursor on its line. A failure shows the command's first lines of error.
+    func format() async {
+        guard FileManager.default.isWritableFile(atPath: path) else { NSSound.beep(); return }   // a remote or read-only file
+        guard let cmd = await command("format"), let e = editor else { return }
+        let text = e.text, line = e.cursor?.line ?? 1
+        let r = await Shell.run(cmd, cwd: url.deletingLastPathComponent().path, input: text, timeout: 20)
+        guard r.code == 0 else {
+            let why = (r.stderr.isEmpty ? r.stdout : r.stderr).split(separator: "\n").prefix(2).joined(separator: "\n")
+            Banner.show(String(localized: "Couldn't format \(title): \(why)"), style: .error); return
+        }
+        guard e.text == text, r.stdout != text, !r.stdout.isEmpty || text.isEmpty else { return }   // typed meanwhile, or nothing to do
+        e.apply(text: r.stdout, selection: NSRange(location: 0, length: 0))
+        e.goTo(line: line)
+    }
+
     private static func pin(_ v: NSView, in box: NSView) {
         v.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(v)
         NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: box.topAnchor), v.bottomAnchor.constraint(equalTo: box.bottomAnchor),

@@ -160,6 +160,16 @@
         }
       }
     },
+    "%@ has no “%@” command.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У %@ нет команды «%@»."
+          }
+        }
+      }
+    },
     "%@ isn't there anymore. Right-click › Locate… if it moved.": {
       "localizations": {
         "ru": {
@@ -1071,6 +1081,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Запуски CI"
+          }
+        }
+      }
+    },
+    "Couldn't format %@: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось отформатировать %@: %@"
           }
         }
       }
@@ -2728,6 +2748,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Размер шрифта"
+          }
+        }
+      }
+    },
+    "Format on save": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Форматировать при сохранении"
+          }
+        }
+      }
+    },
+    "Format Document": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Форматировать документ"
           }
         }
       }
@@ -5598,6 +5638,16 @@
         }
       }
     },
+    "Run File": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить файл"
+          }
+        }
+      }
+    },
     "Run Workflow…": {
       "localizations": {
         "ru": {
@@ -6881,6 +6931,16 @@
         }
       }
     },
+    "Test at Cursor": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тест под курсором"
+          }
+        }
+      }
+    },
     "Tests": {
       "localizations": {
         "ru": {
@@ -8000,6 +8060,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "⌘-клик — открыть · ⌥⌘-клик — открыть в своём приложении"
+          }
+        }
+      }
+    },
+    "⌘S runs Format Document first, for languages that have a formatter.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘S сначала форматирует документ — для языков, у которых есть форматтер."
           }
         }
       }

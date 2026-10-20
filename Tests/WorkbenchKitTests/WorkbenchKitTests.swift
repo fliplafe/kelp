@@ -140,3 +140,23 @@ import WorkbenchKit
     #expect(LanguageSpec.find("x.pyi", in: specs + [mine])?.server?.command == "pylsp")
     #expect(LanguageSpec.find("x.py", in: specs + [mine]) == nil)
 }
+
+@Test func languageCommands() throws {
+    let json = #"{ "id": "python", "extensions": ["py"], "run": "python3 ${file}", "test": "pytest ${file} -k ${symbol}", "format": "ruff format -" }"#
+    let py = try JSONDecoder().decode(LanguageSpec.self, from: Data(json.utf8))
+    #expect(py == LanguageSpec(id: "python", extensions: ["py"], run: "python3 ${file}", test: "pytest ${file} -k ${symbol}", format: "ruff format -"))
+    #expect(py[command: "test"] == "pytest ${file} -k ${symbol}" && py[command: "lint"] == nil)
+    // Values are one shell word each, spaces and quotes included; unknown names stay for the shell.
+    let vars = ["file": "/My Code/it's.py", "symbol": "", "line": "12"]
+    #expect(LanguageSpec.expand("python3 ${file} -k ${symbol} # ${line} ${HOME} ${", vars)
+            == #"python3 '/My Code/it'\''s.py' -k '' # '12' ${HOME} ${"#)
+}
+
+@Test func wordAtCursor() {
+    let text = "def test_parse(x):\n    assert parse(x)\n"
+    #expect(LanguageSpec.word(in: text, line: 1, column: 8) == "test_parse")
+    #expect(LanguageSpec.word(in: text, line: 1, column: 15) == "test_parse")   // just after it
+    #expect(LanguageSpec.word(in: text, line: 2, column: 1) == "")
+    #expect(LanguageSpec.word(in: text, line: 9, column: 1) == "")
+    #expect(LanguageSpec.word(in: "é_1 b", line: 1, column: 2) == "é_1")
+}

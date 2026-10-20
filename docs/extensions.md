@@ -132,18 +132,29 @@ takes its `.vsix` or its folder (`package.json` → `contributes.iconThemes`). P
 Same format as `~/.kelp/agents/*.json`: `{ "id", "name", "command", "args", "yoloArgs", "resumeArgs", … }`.
 
 ## languages
-Which files a language covers and the language server that gives them errors, completion and jump to definition:
+Which files a language covers, the language server that gives them errors, completion and jump to definition, and the
+commands that run, test and format them:
 ```json
 {
   "id": "python",
   "extensions": ["py"],
-  "server": { "command": "pyright-langserver", "args": ["--stdio"], "install": "npm i -g pyright" }
+  "server": { "command": "pyright-langserver", "args": ["--stdio"], "install": "npm i -g pyright" },
+  "run": "python3 ${file}",
+  "test": "python3 -m pytest ${file} -k ${symbol}",
+  "format": "ruff format -"
 }
 ```
 `id` is the LSP language id. `extensions` match in any case; `"fileNames": ["Dockerfile"]` matches whole names.
 Kelp's own are swift, typescript, typescriptreact, javascript, javascriptreact, python, go and rust; a language with
 the same `id` replaces one. When `command` isn't on PATH, opening a file says so, with a button that runs `install`
 in a terminal.
+
+`run` and `test` open a terminal tab in the workspace's folder: Run › Run File and Test at Cursor, and ⌘R / ⌘U when
+the project's `.kelp.yaml` has no `run` / `test`. `format` gets the file's text on stdin and prints it formatted, run
+in the file's folder (Format Document, ⌃⇧I; Settings › Editor › Format on save). In all three, `${file}`,
+`${relativeFile}` (to the workspace), `${dir}` (the file's folder), `${line}`, `${symbol}` (the function or class
+around the cursor, from the language server, else the word under it) and `${workspace}` are filled in, shell-quoted;
+any other `${…}` is left to the shell.
 
 ## Tips for agents writing extensions
 - Start from `kelp ext new <id>`; keep everything in that folder.

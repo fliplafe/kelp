@@ -90,16 +90,23 @@ enum Builtins {
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
             s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
-            s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true)
+            s("editor.lsp", "Language servers (errors, completion, jump to definition)", "boolean", true),
+            s("editor.formatOnSave", "Format on save", "boolean", false, "⌘S runs Format Document first, for languages that have a formatter.")
         ])]
         let ts = LanguageSpec.Server(command: "typescript-language-server", args: ["--stdio"], install: "npm i -g typescript-language-server typescript")
         c.languages = [
-            LanguageSpec(id: "swift", extensions: ["swift"], server: .init(command: "xcrun", args: ["sourcekit-lsp"])),
+            LanguageSpec(id: "swift", extensions: ["swift"], server: .init(command: "xcrun", args: ["sourcekit-lsp"]), format: "swift format -"),
             LanguageSpec(id: "typescript", extensions: ["ts"], server: ts), LanguageSpec(id: "typescriptreact", extensions: ["tsx"], server: ts),
-            LanguageSpec(id: "javascript", extensions: ["js"], server: ts), LanguageSpec(id: "javascriptreact", extensions: ["jsx"], server: ts),
-            LanguageSpec(id: "python", extensions: ["py"], server: .init(command: "pyright-langserver", args: ["--stdio"], install: "npm i -g pyright")),
-            LanguageSpec(id: "go", extensions: ["go"], server: .init(command: "gopls", install: "go install golang.org/x/tools/gopls@latest")),
-            LanguageSpec(id: "rust", extensions: ["rs"], server: .init(command: "rust-analyzer", install: "rustup component add rust-analyzer"))
+            LanguageSpec(id: "javascript", extensions: ["js"], server: ts, run: "node ${file}"),
+            LanguageSpec(id: "javascriptreact", extensions: ["jsx"], server: ts),
+            LanguageSpec(id: "python", extensions: ["py"], server: .init(command: "pyright-langserver", args: ["--stdio"], install: "npm i -g pyright"),
+                         run: "python3 ${file}", test: "python3 -m pytest ${file} -k ${symbol}", format: "ruff format -"),
+            // The file's package, so a main split over several files runs too.
+            LanguageSpec(id: "go", extensions: ["go"], server: .init(command: "gopls", install: "go install golang.org/x/tools/gopls@latest"),
+                         run: "cd ${dir} && go run .", test: "cd ${dir} && go test -run ${symbol} .", format: "gofmt"),
+            // From stdin rustfmt can't read Cargo.toml's edition, and 2015's parser rejects async fn.
+            LanguageSpec(id: "rust", extensions: ["rs"], server: .init(command: "rust-analyzer", install: "rustup component add rust-analyzer"),
+                         test: "cargo test ${symbol}", format: "rustfmt --edition 2021")
         ]
         let f = "kelp.files"
         c.commands = [cmd(f, "files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
@@ -108,7 +115,12 @@ enum Builtins {
                           guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
                           md.cycleMode()
                       },
-                      cmd(f, "editor.save", "Save", "cmd+s") { if let t = Workbench.editor?.focusedContent as? SavableTab { t.save() } else { NSSound.beep() } },
+                      cmd(f, "editor.save", "Save", "cmd+s") {
+                          guard let t = Workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
+                          if let file = t as? FileTab, SettingsStore.shared.bool("editor.formatOnSave") == true, file.language?.format != nil {
+                              Task { await file.format(); file.save() }
+                          } else { t.save() }
+                      },
                       cmd(f, "editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
                       cmd(f, "files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
                           Workbench.window?.showInspector(panel: "files")
@@ -125,7 +137,12 @@ enum Builtins {
                       cmd(f, "editor.copyReference", "Copy Path and Line", "opt+shift+cmd+c") {
                           if let t = fileTab { FileActions.copyReference(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
                       },
-                      cmd(f, "editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } }]
+                      cmd(f, "editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } },
+                      // The language's commands (`contributes.languages`): run, test and format the file.
+                      cmd(f, "editor.runFile", "Run File") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "run") } },
+                      cmd(f, "editor.testAtCursor", "Test at Cursor") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "test") } },
+                      // ⌃⇧I as in Xcode: an Option-only key like VS Code's ⇧⌥F never reaches the menu from a text view (it types Ï).
+                      cmd(f, "editor.format", "Format Document", "ctrl+shift+i") { if let t = fileTab { Task { await t.format() } } }]
         return c
     }
 

@@ -215,10 +215,10 @@ enum ExtActions {
     }
 }
 
-/// Runs a command the way the user's terminal would (login-shell PATH), off the main thread.
+/// Runs a command the way the user's terminal would (login-shell PATH), off the main thread; `input` goes to its stdin.
 enum Shell {
     struct Result: Sendable { var code: Int32; var stdout: String; var stderr: String }
-    static func run(_ command: String, cwd: String, timeout: TimeInterval = 60) async -> Result {
+    static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60) async -> Result {
         await Task.detached {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/zsh"); p.arguments = ["-lc", command]
@@ -226,8 +226,14 @@ enum Shell {
             var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
             p.environment = env
             let out = Pipe(), err = Pipe()
-            p.standardOutput = out; p.standardError = err; p.standardInput = FileHandle.nullDevice
+            let stdin = input.map { _ in Pipe() }
+            p.standardOutput = out; p.standardError = err; p.standardInput = stdin ?? FileHandle.nullDevice
             do { try p.run() } catch { return Result(code: -1, stdout: "", stderr: error.localizedDescription) }
+            if let stdin, let input {   // written alongside the reads, so a big text can't block on a full pipe
+                let h = stdin.fileHandleForWriting
+                _ = fcntl(h.fileDescriptor, F_SETNOSIGPIPE, 1)   // a command that exits unread fails the write, not the app
+                Task.detached { try? h.write(contentsOf: Data(input.utf8)); try? h.close() }
+            }
             // Read while it runs: a full pipe would block the process.
             async let o = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }.value
             async let e = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }.value

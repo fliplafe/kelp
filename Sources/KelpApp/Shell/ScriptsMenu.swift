@@ -2,9 +2,9 @@ import AppKit
 import Core
 import WorkbenchKit
 
-/// The Run menu: the project's commands from `.kelp.yaml` (⌘R run, ⌘U test, ⌘. stops), each in a tab of its own,
-/// opened behind what you're doing; when it ends, a banner says how, with the way to its output. A project's
-/// commands run only after you trust its file (and again when the file changes).
+/// The Run menu: the project's commands from `.kelp.yaml` (⌘R run, ⌘U test, ⌘. stops; without them, the focused
+/// file's language's), each in a tab of its own, opened behind what you're doing; when it ends, a banner says how, with
+/// the way to its output. A project's commands run only after you trust its file (and again when the file changes).
 @MainActor
 final class ScriptsMenu: NSObject, NSMenuDelegate {
     static let shared = ScriptsMenu()
@@ -56,6 +56,10 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
             guard let info = await load(wid) else { return }
             let scripts = cached[wid] ?? []
             guard name == "setup" || scripts.contains(where: { $0.name == name }) else {
+                // No project command: ⌘R runs the focused file, ⌘U its test at the cursor, when its language says how.
+                if let t = Workbench.editor?.focusedContent as? FileTab, ["run", "test"].contains(name), t.language?[command: name] != nil {
+                    runFile(t, name); return
+                }
                 Banner.show(String(localized: "This project has no “\(name)” command. Add one to .kelp.yaml (\(name): the command)."), action: (String(localized: "Edit Commands"), { [weak self] in self?.edit() }))
                 return
             }
@@ -63,20 +67,35 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                 guard await askTrust(scripts, setup: setupCommand[wid], file: info["file"]?.string ?? ".kelp.yaml") else { return }
                 guard await AppModel.shared.call("scripts.trust", .obj(["worktreeId": .string(wid)])) != nil else { return }
             }
-            // Again: start over, like Xcode's Run (the last run's tab gives way to the new one).
-            for (sid, r) in runs where r.workspace == wid && r.name == name {
-                runs[sid] = nil
-                if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
-                if let e = Workbench.editor, let t = e.layout.tab(uri: TabURI.session(sid)) { e.closeTab(t.id) }
-            }
-            guard let s = await AppModel.shared.call("scripts.run", .obj(["worktreeId": .string(wid), "name": .string(name)])),
-                  let sid = s["id"]?.string else { return }
-            runs[sid] = (wid, name)
-            await AppModel.shared.refresh()
-            // Below what you're doing, like a console; the keys stay where they were.
-            if wid == Workbench.shared.workspaceId { Workbench.editor?.open(TabURI.session(sid), split: .down, focus: false) }
-            else { Workbench.window?.editors.openInBackground(TabURI.session(sid), workspace: wid) }
+            await start(wid, name, "scripts.run", ["worktreeId": .string(wid), "name": .string(name)])
         }
+    }
+
+    /// Run File / Test at Cursor: the file's language's `run` / `test`, run like the project's commands. Languages come
+    /// from extensions the user installed, so there's no trust question.
+    func runFile(_ t: FileTab, _ name: String) {
+        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        watch()
+        Task {
+            guard let cmd = await t.command(name) else { return }
+            let title = "\(name) \(t.title)"
+            await start(wid, title, "session.create", ["worktreeId": .string(wid), "command": .string(cmd), "title": .string(title)])
+        }
+    }
+
+    /// Again: start over, like Xcode's Run (the last run's tab gives way to the new one).
+    private func start(_ wid: String, _ name: String, _ method: String, _ params: [String: JSONValue]) async {
+        for (sid, r) in runs where r.workspace == wid && r.name == name {
+            runs[sid] = nil
+            if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
+            if let e = Workbench.editor, let t = e.layout.tab(uri: TabURI.session(sid)) { e.closeTab(t.id) }
+        }
+        guard let s = await AppModel.shared.call(method, .object(params)), let sid = s["id"]?.string else { return }
+        runs[sid] = (wid, name)
+        await AppModel.shared.refresh()
+        // Below what you're doing, like a console; the keys stay where they were.
+        if wid == Workbench.shared.workspaceId { Workbench.editor?.open(TabURI.session(sid), split: .down, focus: false) }
+        else { Workbench.window?.editors.openInBackground(TabURI.session(sid), workspace: wid) }
     }
 
     func stop() {

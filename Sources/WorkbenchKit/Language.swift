@@ -17,9 +17,36 @@ public struct LanguageSpec: Codable, Equatable, Sendable {
     /// Whole file names, e.g. "Dockerfile".
     public var fileNames: [String]?
     public var server: Server?
+    /// Shell commands for Run File, Test at Cursor and Format Document (`format` reads the text on stdin, prints it formatted).
+    public var run: String?, test: String?, format: String?
 
-    public init(id: String, extensions: [String], server: Server? = nil) {
-        self.id = id; self.extensions = extensions; self.server = server
+    public init(id: String, extensions: [String], server: Server? = nil, run: String? = nil, test: String? = nil, format: String? = nil) {
+        self.id = id; self.extensions = extensions; self.server = server; self.run = run; self.test = test; self.format = format
+    }
+
+    /// `run`, `test` or `format` by name.
+    public subscript(command name: String) -> String? { ["run": run, "test": test, "format": format][name] ?? nil }
+
+    /// `${name}` replaced by `vars[name]` as one shell word (single-quoted). Names not in `vars` stay as written, so the
+    /// shell still expands its own (`${HOME}`).
+    public static func expand(_ command: String, _ vars: [String: String]) -> String {
+        var out = "", rest = Substring(command)
+        while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
+            out += rest[..<open.lowerBound]
+            out += vars[String(rest[open.upperBound..<close])].map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+                ?? String(rest[open.lowerBound...close])
+            rest = rest[rest.index(after: close)...]
+        }
+        return out + rest
+    }
+
+    /// The word (letters, digits, `_`) at a 1-based line and UTF-16 column: `${symbol}` when no language server names one.
+    public static func word(in text: String, line: Int, column: Int) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.indices.contains(line - 1) else { return "" }
+        let s = lines[line - 1], at = s.utf16.index(s.startIndex, offsetBy: min(max(column - 1, 0), s.utf16.count))
+        let isWord = { (c: Character) in c.isLetter || c.isNumber || c == "_" }
+        return String(s[..<at].reversed().prefix(while: isWord).reversed()) + s[at...].prefix(while: isWord)
     }
 
     /// The language of `path`: the last of `specs` naming its file or extension (case-insensitive). A spec whose `id`
