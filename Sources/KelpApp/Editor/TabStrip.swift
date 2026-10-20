@@ -9,7 +9,7 @@ extension NSPasteboard.PasteboardType { static let kelpTab = NSPasteboard.Pasteb
 @MainActor
 final class TabStrip: NSView {
     /// Room around the tabs: they don't run into the strip's edges or the pane dividers.
-    static let height: CGFloat = 36
+    static let height: CGFloat = 40
     struct Item {
         let id: String; var title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
         var edited = false
@@ -34,6 +34,8 @@ final class TabStrip: NSView {
     private var selectedId: String?
     private var buttons: [TabButton] = []
     private let insertion = NSView()
+    /// "+" follows the last tab (set in layout); with the strip full, it stays at the right end.
+    private var addLead: NSLayoutConstraint?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -49,26 +51,29 @@ final class TabStrip: NSView {
         unzoom.contentTintColor = .controlAccentColor; unzoom.symbolConfiguration = .init(pointSize: 11, weight: .medium)
         unzoom.toolTip = String(localized: "Show all panes (⇧⌘↩)"); unzoom.target = self; unzoom.action = #selector(unzoomTapped); unzoom.isHidden = true
         // The one way to add a tab, in each pane (like Safari's "+"); the empty workspace offers the same choices.
-        add.image = .symbol("plus", String(localized: "New Tab")); add.isBordered = false; add.contentTintColor = .secondaryLabelColor
+        add.image = .symbol("plus", String(localized: "New Tab")); add.bezelStyle = .recessed; add.showsBorderOnlyWhileMouseInside = true
+        add.contentTintColor = .secondaryLabelColor
         add.symbolConfiguration = .init(pointSize: 12, weight: .medium); add.toolTip = String(localized: "New tab: an agent (⌥⌘T), a terminal (⌘T), a browser…")
         add.target = self; add.action = #selector(addTapped)
-        let trailing = NSStackView(views: [unzoom, overflow, add]); trailing.spacing = 6
+        let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6; trailing.detachesHiddenViews = true
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
         scroll.automaticallyAdjustsContentInsets = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
-        for v in [scroll, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [scroll, add, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
+        let lead = add.leadingAnchor.constraint(equalTo: leadingAnchor); addLead = lead
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor), trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            scroll.trailingAnchor.constraint(equalTo: trailing.leadingAnchor, constant: -2),
+            scroll.trailingAnchor.constraint(equalTo: add.leadingAnchor), lead,
+            add.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
-            overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 22),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor), add.centerYAnchor.constraint(equalTo: centerYAnchor),
+            overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 26), add.heightAnchor.constraint(equalToConstant: 26),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
@@ -98,7 +103,12 @@ final class TabStrip: NSView {
     override func layout() {
         super.layout()
         stack.layoutSubtreeIfNeeded()
-        overflow.isHidden = stack.fittingSize.width <= scroll.bounds.width + 1
+        // "+" right after the tabs while they fit (as in Safari), else at the end of the room they have.
+        let natural = stack.fittingSize.width
+        let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - 26
+        let x = max(0, min(natural, room))
+        if abs((addLead?.constant ?? 0) - x) > 0.5 { addLead?.constant = x }
+        overflow.isHidden = natural <= room + 1
     }
 
     /// Keeps the selected tab in view when the strip is scrolled or squeezed.
@@ -173,12 +183,13 @@ private final class TabButton: NSControl, NSDraggingSource {
         // Unsaved changes: a dot where the close button goes (as in TextEdit's tabs); hovering shows the close button.
         editedDot.image = .symbol("circle.fill", String(localized: "Edited")); editedDot.symbolConfiguration = .init(pointSize: 9, weight: .bold)
         editedDot.contentTintColor = .labelColor
+        // One slot at the start: the agent's state while there's something to see, else the tab's icon; the close button on hover.
         let slot = NSView()
-        for v in [icon, close, editedDot] as [NSView] {
+        for v in [icon, mark, close, editedDot] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(v)
             NSLayoutConstraint.activate([v.centerXAnchor.constraint(equalTo: slot.centerXAnchor), v.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
         }
-        let row = NSStackView(views: [slot, title, meter, mark]); row.spacing = 5; row.edgeInsets = NSEdgeInsets(top: 0, left: 7, bottom: 0, right: 9)
+        let row = NSStackView(views: [slot, title, meter]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -207,9 +218,17 @@ private final class TabButton: NSControl, NSDraggingSource {
         updateLook()
     }
 
+    /// Working, asking, failed, or finished and not looked at: the state says more than the agent's icon.
+    private var showsState: Bool {
+        guard let s = item?.status else { return false }
+        return [.working, .waiting, .error].contains(s) || (s == .done && item?.unread == true)
+    }
+
     private func updateLook() {
         let edited = item?.edited == true
-        close.isHidden = !hover; editedDot.isHidden = hover || !edited; icon.isHidden = hover || edited
+        close.isHidden = !hover; editedDot.isHidden = hover || !edited
+        icon.isHidden = hover || edited || showsState
+        mark.alphaValue = hover || edited || !showsState ? 0 : 1   // StatusMark hides itself when there's no state
         let active = selected && groupFocused
         title.textColor = selected ? .labelColor : .secondaryLabelColor
         title.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
