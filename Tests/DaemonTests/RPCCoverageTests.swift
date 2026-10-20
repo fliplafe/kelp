@@ -104,3 +104,82 @@ private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.w
     #expect(hits.first?["path"]?.string == "a.txt")
     #expect((try await r.call("files.search", ["query": "HELLO", "case": true]).array ?? []).isEmpty)
 }
+
+private func session(_ r: Rig, _ command: String) async throws -> Session {
+    try await r.c.call("session.create", .obj(["worktreeId": .string(r.wt.id), "command": .string(command)]), as: Session.self)
+}
+private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("session.list", as: [Session].self) }
+
+@Test func unreadMarksFlipAndAnnotationsSetTheSummary() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "cat")
+    _ = try await r.c.call("session.markUnread", .obj(["id": .string(s.id)]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.unread == true)
+    _ = try await r.c.call("session.markRead", .obj(["id": .string(s.id)]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.unread == false)
+    _ = try await r.c.call("session.annotate", .obj(["id": .string(s.id), "summary": "Fixed the login bug"]))
+    #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }?.summary == "Fixed the login bug" })
+    _ = try await r.c.call("session.annotate", .obj(["id": "no-such-session", "summary": "x"]))   // a session that is gone is not an error
+}
+
+@Test func writingToASessionReachesItsProgramAndAMissingOneIsRefused() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "cat")
+    _ = try await r.c.call("session.write", .obj(["id": .string(s.id), "base64": .string(Data("typed\n".utf8).base64EncodedString())]))
+    #expect(try await waitFor { (try await r.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("typed") == true })
+    _ = try await r.c.call("session.write", .obj(["id": .string(s.id), "text": "plain\n"]))
+    #expect(try await waitFor { (try await r.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("plain") == true })
+    await #expect(throws: (any Error).self) { _ = try await r.c.call("session.write", .obj(["id": "gone", "text": "x"])) }
+}
+
+@Test func aSessionWithNoTurnYetHasNoTurnAndNoReply() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "cat")
+    let t = try await r.c.call("session.turn", .obj(["id": .string(s.id)]))
+    #expect(t["turn"] == .null && t["hasBase"]?.bool == false)
+    #expect(try await r.c.call("session.lastReply", .obj(["id": .string(s.id)])) == .null)   // a plain command has no transcript
+    #expect(try await r.c.call("session.turn", .obj(["id": "gone"])) == .null)
+}
+
+@Test func theScratchProjectIsMadeOnceAndReused() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let a = try await r.c.call("scratch.ensure", as: Worktree.self)
+    let b = try await r.c.call("scratch.ensure", as: Worktree.self)
+    #expect(a.id == b.id && FileManager.default.fileExists(atPath: a.path + "/.git"))
+    #expect(try await r.c.call("repo.list", as: [Repo].self).filter { $0.name == "Scratch" }.count == 1)
+}
+
+@Test func relocatingAProjectPointsItsDeskAtTheNewFolder() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let moved = try makeRepo()
+    let repo = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string(moved)]), as: Repo.self)
+    #expect(URL(fileURLWithPath: repo.path).resolvingSymlinksInPath().path == URL(fileURLWithPath: moved).resolvingSymlinksInPath().path)
+    await #expect(throws: (any Error).self) { _ = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string("/tmp/definitely-not-a-repo-\(UUID().uuidString)")])) }
+}
+
+@Test func theLegacyConfigApiStillMapsToSettings() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    _ = try await r.c.call("config.set", .obj(["hibernateMinutes": 12, "ignored": 1]))
+    let cfg = try await r.c.call("config.get")
+    #expect(cfg["hibernateMinutes"] == .int(12))
+    #expect(try await r.c.call("settings.get")["sessions.hibernateMinutes"] == .int(12))
+}
+
+@Test func aRecipeFillsInTheBranchAndBase() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let text = try await r.call("recipe.render", ["name": .string("commit")]).string ?? ""
+    #expect(!text.isEmpty && !text.contains("{"))   // every placeholder was filled
+}
+
+@Test func pushGoesToTheUpstreamAndFailsClearlyWithoutOne() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    await #expect(throws: (any Error).self) { _ = try await r.call("git.push") }   // no remote at all
+    let bare = tmp().path
+    try Git.run(["init", "-q", "--bare", "-b", "main"], cwd: bare)
+    try Git.run(["remote", "add", "origin", bare], cwd: r.wt.path)
+    try Git.run(["push", "-q", "-u", "origin", "feat/x"], cwd: r.wt.path)
+    try write(r, "n.txt", "n\n")
+    try Git.run(["add", "n.txt"], cwd: r.wt.path); try Git.run(["commit", "-qm", "more"], cwd: r.wt.path)
+    _ = try await r.call("git.push")
+    #expect(try Git.run(["rev-parse", "feat/x"], cwd: bare) == (try Git.run(["rev-parse", "HEAD"], cwd: r.wt.path)))
+}
