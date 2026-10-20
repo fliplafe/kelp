@@ -29,11 +29,27 @@ public enum Unix {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SocketError.socket(errno) }
         var a = try addr(path)
-        chmod((path as NSString).deletingLastPathComponent, 0o700)   // nobody else can reach the socket between bind and chmod (umask is process-wide, so not that)
+        closeOffDirectory((path as NSString).deletingLastPathComponent)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
         guard r == 0, Darwin.listen(fd, 16) == 0 else { let e = errno; close(fd); throw SocketError.bind(e) }
         chmod(path, 0o600)   // the socket is the auth boundary locally
         return fd
+    }
+
+    /// Nobody else can reach the socket between bind and chmod (umask is process-wide, so not that): its folder is ours alone.
+    /// A folder that isn't ours, or is shared (sticky, like /tmp), is left as it is; the socket's own mode still holds.
+    private static func closeOffDirectory(_ dir: String) {
+        var st = stat()
+        guard stat(dir, &st) == 0, st.st_uid == getuid(), st.st_mode & S_ISVTX == 0 else { return }
+        chmod(dir, 0o700)
+    }
+
+    /// Whether the process on the other end of an accepted connection runs as this user (or root).
+    /// The socket's own 0600 mode already says so; this holds even if someone loosens it.
+    public static func peerIsUs(_ fd: Int32) -> Bool {
+        var uid: uid_t = 0, gid: gid_t = 0
+        guard getpeereid(fd, &uid, &gid) == 0 else { return false }
+        return uid == getuid() || uid == 0
     }
 
     /// Write all bytes, retrying on partial writes. Returns false if the peer is gone.

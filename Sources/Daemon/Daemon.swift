@@ -90,7 +90,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: .global())
         src.setEventHandler { [self] in
             let fd = accept(listenFD, nil, nil)
-            if fd >= 0 { serve(fd) }
+            guard fd >= 0 else { return }
+            if Unix.peerIsUs(fd) { serve(fd) } else { close(fd) }
         }
         src.resume()
         acceptSource = src

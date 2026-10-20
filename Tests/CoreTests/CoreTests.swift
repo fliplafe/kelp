@@ -83,3 +83,33 @@ import Testing
     #expect(FixRecipes.fix(for: "fatal: The current branch x has no upstream branch.")?.command == "git push -u origin HEAD")
     #expect(FixRecipes.fix(for: "everything is fine") == nil)
 }
+
+@Test func aSocketIsPrivateToItsOwner() throws {
+    let dir = NSTemporaryDirectory() + "kelp-priv-\(getpid())"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+    let path = dir + "/k.sock"
+    let fd = try Unix.listen(path)
+    defer { close(fd); try? FileManager.default.removeItem(atPath: dir) }
+    func mode(_ p: String) -> Int { ((try? FileManager.default.attributesOfItem(atPath: p))?[.posixPermissions] as? Int) ?? -1 }
+    #expect(mode(path) == 0o600)
+    #expect(mode(dir) == 0o700)   // our own folder is closed off, so nothing could reach the socket before its chmod
+}
+
+@Test func aSharedFolderIsNotChangedForASocket() throws {
+    let before = ((try? FileManager.default.attributesOfItem(atPath: "/tmp"))?[.posixPermissions] as? Int) ?? 0
+    let path = "/tmp/kelp-shared-\(getpid()).sock"
+    let fd = try Unix.listen(path)
+    defer { close(fd); unlink(path) }
+    #expect(((try? FileManager.default.attributesOfItem(atPath: "/tmp"))?[.posixPermissions] as? Int) == before)   // sticky and not ours: left alone
+}
+
+@Test func onlyOurOwnProcessesAreAcceptedOnTheSocket() throws {
+    let path = NSTemporaryDirectory() + "kelp-peer-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try Unix.connect(path)
+    let peer = accept(server, nil, nil)
+    defer { close(client); close(peer) }
+    #expect(Unix.peerIsUs(peer))
+    #expect(!Unix.peerIsUs(-1))   // not a connection at all: refused, not trusted
+}
