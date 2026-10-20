@@ -48,7 +48,7 @@ extensions: user extensions live in `~/.kelp/extensions/<id>/` — see [extensio
 turned off or removed.
 
 ## Source Control
-The Git built-in is a VS Code-style Source Control panel (`Builtins/SourceControl.swift`): branch menu, commit box
+The Git built-in is a VS Code-style Source Control panel (`Builtins/Git/SourceControl.swift`): branch menu, commit box
 (Commit / Commit & Push / Amend), Merge / Staged / Changes sections with stage, unstage and discard, and a history graph
 whose lanes GitKit computes (`GitKit/History.swift`). Rows open `diff:` tabs, side by side or inline with hunk staging.
 Git runs in the daemon (`Daemon/GitHandlers.swift`: `git.branches`, `git.switch`, `git.graph`, `git.commitFiles`,
