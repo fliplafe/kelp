@@ -21,6 +21,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             case .needs(let id): "n:" + id
             }
         }
+        /// The agent a row stands for.
+        var session: String? {
+            switch kind {
+            case .agent(let id), .needs(let id): id
+            default: nil
+            }
+        }
         /// What a dragged row reorders: a project's or a workspace's id.
         var id: String? {
             switch kind {
@@ -109,8 +116,19 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     }
 
     private func updateVisibleCells() {
-        for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
+        var resized = IndexSet()
+        for row in 0..<outline.numberOfRows {
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update()
+            guard let n = outline.item(atRow: row) as? Node else { continue }
+            if Self.isTall(n) != tall.contains(n.key) { resized.insert(row); tall.formSymmetricDifference([n.key]) }
+        }
+        guard !resized.isEmpty else { return }
+        NSAnimationContext.runAnimationGroup { $0.duration = 0; outline.noteHeightOfRows(withIndexesChanged: resized) }
     }
+
+    /// Rows with a second line: an agent that asks for you or finished unseen says what happened, like a notification.
+    private var tall: Set<String> = []
+    static func isTall(_ n: Node) -> Bool { n.session.flatMap(AppModel.shared.session).map(SidebarCell.wantsYou) ?? false }
 
     /// Nothing matches the search or the filter: say which, and offer the way back.
     private func showNoMatch(_ on: Bool) {
@@ -281,8 +299,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, isGroupItem item: Any) -> Bool { Self.isHeader(item) }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { !Self.isHeader(item) }
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { !Self.isHeader(item) }
-    // One line per row, like Mail's mailbox list; section headers a little taller for air above them.
+    // One line per row, like Mail's mailbox list; section headers a little taller for air above them, and an agent
+    // with news two lines (what it asks or did under its name).
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        if let n = item as? Node, Self.isTall(n) { return TextSize.of(42) }
         return TextSize.of(Self.isHeader(item) ? 28 : 26)
     }
 
@@ -503,6 +523,8 @@ final class SidebarCell: NSTableCellView {
     /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
     private let trailing = NSTextField(labelWithString: "")
     private let mark = StatusMark(size: 14)
+    /// Under an agent's name while it wants you: "Needs your input · Allow Bash?", "Done · Fixed the parser tests".
+    private let detail = NSTextField(labelWithString: "")
     private var add: NSButton?
     /// Lines not committed and the PR, for rows that stand for a folder (RowBadges); they go first when the row is short of room.
     private let changes = NSButton(), pr = NSButton()
@@ -535,7 +557,8 @@ final class SidebarCell: NSTableCellView {
             count.font = .ui(11); count.textColor = .secondaryLabelColor; count.lineBreakMode = .byTruncatingTail
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            layout(row: [icon, title, count, NSView(), trailing, mark])
+            let name = NSStackView(views: [title, count]); name.spacing = 6
+            layout(row: [icon, withDetail(name), trailing, mark])
         case .workspace:
             title.font = .ui(13)
             layout(row: [title, NSView(), changes, pr, trailing, mark])
@@ -543,7 +566,7 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            layout(row: [icon, title, NSView(), trailing, mark])
+            layout(row: [icon, withDetail(title), trailing, mark])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         if case .needs = node.kind { count.setContentCompressionResistancePriority(.init(200), for: .horizontal) }   // the place gives way to the name
@@ -554,6 +577,18 @@ final class SidebarCell: NSTableCellView {
 
     override func mouseEntered(with e: NSEvent) { add?.isHidden = false }
     override func mouseExited(with e: NSEvent) { add?.isHidden = true }
+
+    /// The name with `detail` under it; it takes the row's spare width and gives way first when the row is narrow.
+    private func withDetail(_ name: NSView) -> NSView {
+        detail.font = .ui(11); detail.lineBreakMode = .byTruncatingTail; detail.maximumNumberOfLines = 1; detail.isHidden = true
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let v = NSStackView(views: [name, detail]); v.orientation = .vertical; v.alignment = .leading; v.spacing = 1
+        v.detachesHiddenViews = true
+        for s in [v, name as? NSStackView].compactMap({ $0 }) {
+            s.setClippingResistancePriority(.defaultLow, for: .horizontal); s.setHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        return v
+    }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -601,7 +636,7 @@ final class SidebarCell: NSTableCellView {
             title.stringValue = r?.name ?? ""
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
             count.stringValue = node.children.isEmpty ? "" : "\(node.children.count)"
-            let waiting = m.worktrees.filter { $0.repoId == id }.flatMap { live($0.id) }.filter { $0.status == .waiting }.count
+            let waiting = m.worktrees.filter { $0.repoId == id }.flatMap { live($0.id) }.filter(Self.wantsYou).count
             trailing.stringValue = missing ? String(localized: "Folder missing") : waiting == 0 ? "" : waiting == 1 ? String(localized: "1 needs you") : String(localized: "\(waiting) need you")
         case .section(let name):
             let needs = name == "Needs You"
@@ -616,6 +651,7 @@ final class SidebarCell: NSTableCellView {
             count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
             mark.status = s.endedWithError ? .error : s.status; mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt); toolTip = nil
+            showDetail(s)
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
             let agents = live(id)
@@ -640,7 +676,27 @@ final class SidebarCell: NSTableCellView {
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
             toolTip = nil
+            showDetail(s)
         }
+    }
+
+    private func showDetail(_ s: Session) {
+        detail.isHidden = !Self.wantsYou(s)
+        guard !detail.isHidden else { return }
+        let st = Self.shownStatus(s)
+        let color: NSColor = st == .waiting ? .systemOrange : st == .error ? .systemRed : .controlAccentColor
+        let t = NSMutableAttributedString(string: st.words, attributes: [.font: NSFont.ui(11, weight: .medium), .foregroundColor: color])
+        if !s.summary.isEmpty { t.append(NSAttributedString(string: " · " + s.summary, attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.secondaryLabelColor])) }
+        let one = NSMutableParagraphStyle(); one.lineBreakMode = .byTruncatingTail   // an attributed value brings its own wrapping
+        t.addAttribute(.paragraphStyle, value: one, range: NSRange(location: 0, length: t.length))
+        detail.attributedStringValue = t
+        detail.toolTip = s.summary.isEmpty ? nil : s.summary
+    }
+
+    /// Asks for you, failed, or finished and not looked at yet: the row says so on a second line.
+    static func wantsYou(_ s: Session) -> Bool {
+        let st = shownStatus(s)
+        return s.agent != "shell" && (st == .waiting || st == .error || (st == .done && s.unread))
     }
 
     /// A paused agent's row is dimmed, but what it finished and you haven't read keeps its bright mark.
