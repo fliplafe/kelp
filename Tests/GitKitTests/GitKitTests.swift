@@ -382,3 +382,25 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     let rows = DiffRows.reviewRows([gone], comments: [on5], sideBySide: false, hideFileRows: true)
     #expect(rows.filter { if case .comment = $0 { true } else { false } }.count == 1)   // line 5 exists in both files: under the added one only
 }
+
+@Test func remoteWordsAreQuotedForTheHostsShell() {
+    #expect(RemoteHost.quote("plain") == "'plain'")
+    #expect(RemoteHost.quote("it's") == "'it'\\''s'")
+    #expect(RemoteHost.quote("$(touch x); `id`") == "'$(touch x); `id`'")   // single quotes: the shell expands nothing inside
+    #expect(RemoteHost.cdArg("~") == "~")
+    #expect(RemoteHost.cdArg("~/my project") == "~/'my project'")   // the ~ stays outside so the host expands it
+    #expect(RemoteHost.cdArg("/srv/a b") == "'/srv/a b'")
+}
+
+@Test func theRemoteCommandRunsTheProgramByNameInsideTheProjectFolder() {
+    let r = RemoteHost(host: "box", path: "/srv/app")
+    #expect(r.command(nil) == "cd '/srv/app' && exec \"$SHELL\" -l")
+    // A local absolute path means nothing on the host: only the program's name is sent. Arguments with spaces and quotes survive one more level of quoting.
+    #expect(r.command(["/Users/me/.local/bin/claude", "--resume", "a b"]) == "cd '/srv/app' && exec \"$SHELL\" -lc " + RemoteHost.quote("'claude' '--resume' 'a b'"))
+    #expect(r.command([]) == r.command(nil))
+}
+
+@Test func onlyPlainHostNamesFollowSsh() {
+    for ok in ["box", "me@box", "10.0.0.2", "box.example.com"] { #expect(RemoteHost.isHost(ok), "\(ok)") }
+    for bad in ["", "-oProxyCommand=x", "a b", "a\tb", "a\nb"] { #expect(!RemoteHost.isHost(bad), "\(bad.debugDescription)") }
+}
