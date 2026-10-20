@@ -44,7 +44,7 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
             let m = AppModel.shared
             rows = usage.compactMap { u in
                 guard let id = u["session"]?.string, let s = m.session(id) else { return nil }
-                return Row(session: s, cpu: Self.number(u["cpu"]), memory: u["memory"]?.int ?? 0, processes: u["processes"]?.int ?? 0)
+                return Row(session: s, cpu: u["cpu"]?.number ?? 0, memory: u["memory"]?.int ?? 0, processes: u["processes"]?.int ?? 0)
             }
             let cpu = rows.reduce(0) { $0 + $1.cpu }, mem = rows.reduce(0) { $0 + $1.memory }
             total.stringValue = rows.isEmpty ? "" : String(localized: "\(rows.count) sessions · CPU \(Self.percent(cpu)) · \(Self.bytes(mem))")
@@ -53,7 +53,6 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
         }
     }
 
-    static func number(_ v: JSONValue?) -> Double { v?.int.map(Double.init) ?? (try? v?.decode(Double.self)) ?? 0 }
     static func percent(_ cpu: Double) -> String { cpu < 10 ? String(format: "%.1f%%", cpu) : "\(Int(cpu.rounded()))%" }
     static func bytes(_ b: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .memory) }
 

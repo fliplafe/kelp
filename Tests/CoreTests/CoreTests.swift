@@ -37,6 +37,7 @@ private extension Data {
     let v = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
     #expect(v == .object(["n": .null, "b": .bool(true), "i": .int(3), "d": .double(2.5), "s": .string("x"),
                           "a": .array([.int(1), .string("y"), .bool(false)]), "o": .object(["k": .array([])])]))
+    #expect(v["i"]?.number == 3 && v["d"]?.number == 2.5 && v["s"]?.number == nil)   // either kind of number, nothing else
 }
 
 @Test func callTimesOutWhenNoReplyComes() async throws {

@@ -110,7 +110,7 @@ struct UsageView: View {
         guard let c = AppModel.shared.client, let u = try? await c.call("usage.get", timeout: 60) else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
-            r.readAt = Self.num(u["plansReadAt"]?[a.id]).map { Date(timeIntervalSince1970: $0) }
+            r.readAt = u["plansReadAt"]?[a.id]?.number.map { Date(timeIntervalSince1970: $0) }
             switch a.id {
             case "claude": r.lines = Self.claude(u)
             case "codex": r.lines = Self.codex(u)
@@ -126,18 +126,10 @@ struct UsageView: View {
         [" Code", " CLI", " Agent"].reduce(name) { $0.hasSuffix($1) ? String($0.dropLast($1.count)) : $0 }
     }
 
-    private static func num(_ v: JSONValue?) -> Double? {
-        switch v {
-        case .double(let d)?: d
-        case .int(let i)?: Double(i)
-        default: nil
-        }
-    }
-
     /// Readings as the daemon passes them: kind ("session", "week", "week · Fable", "Gemini week"), percent, resets.
     private static func lines(_ readings: [JSONValue]) -> [Line] {
         readings.compactMap { l in
-            guard let kind = l["kind"]?.string, let p = num(l["percent"]) else { return nil }
+            guard let kind = l["kind"]?.string, let p = l["percent"]?.number else { return nil }
             let label = kind == "session" ? String(localized: "5 hours") : kind == "week" ? String(localized: "Week")
                 : kind.hasPrefix("week · ") ? String(localized: "Week, ") + kind.dropFirst(7) : kind.prefix(1).uppercased() + kind.dropFirst()
             return Line(label: label, used: p / 100, resets: l["resets"]?.string)
@@ -153,8 +145,8 @@ struct UsageView: View {
         guard let x = u["codex"]?.array?.first else { return [] }
         let now = Date().timeIntervalSince1970
         return [(String(localized: "5 hours"), "primaryUsedPercent", "primaryResetsAt"), (String(localized: "Week"), "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
-            guard let p = num(x[used]) else { return nil }
-            let t = num(x[reset]) ?? 0, expired = t > 0 && t < now
+            guard let p = x[used]?.number else { return nil }
+            let t = x[reset]?.number ?? 0, expired = t > 0 && t < now
             return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.until(t) : nil)
         }
     }

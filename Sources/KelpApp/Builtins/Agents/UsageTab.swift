@@ -80,7 +80,7 @@ struct UsageReportView: View {
         let r = try? await AppModel.shared.client?.call("usage.report", .obj(["days": .int(range)]))
         func rows(_ k: String) -> [Row] {
             (r?[k]?.array ?? []).map { j in
-                let c: Double = { if case .double(let d)? = j["cost"] { d } else { Double(j["cost"]?.int ?? 0) } }()
+                let c = j["cost"]?.number ?? 0
                 return Row(id: j["name"]?.string ?? "", cost: c, tokens: j["tokens"]?.int ?? 0)
             }
         }

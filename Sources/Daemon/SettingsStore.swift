@@ -22,13 +22,7 @@ final class SettingsStore: @unchecked Sendable {   // values and mtime under loc
 
     var all: JSONValue { lock.withLock { .object(values) } }
     subscript(key: String) -> JSONValue? { lock.withLock { values[key] } }
-    func number(_ key: String) -> Double? {
-        switch self[key] {
-        case .int(let i)?: Double(i)
-        case .double(let d)?: d
-        default: nil
-        }
-    }
+    func number(_ key: String) -> Double? { self[key]?.number }
 
     /// nil or .null removes the key.
     func set(_ key: String, _ value: JSONValue?) throws -> JSONValue {

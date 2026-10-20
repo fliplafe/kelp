@@ -71,7 +71,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         case "title": s = r["title"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Untitled")
         case "cwd": s = (r["cwd"]?.string ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~")
         default:
-            let d = Date(timeIntervalSinceReferenceDate: r["updated"].flatMap { if case .double(let x) = $0 { x } else { $0.int.map(Double.init) } } ?? 0)
+            let d = Date(timeIntervalSinceReferenceDate: r["updated"]?.number ?? 0)
             s = RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date())
         }
         let l = NSTextField(labelWithString: s); l.lineBreakMode = c?.identifier.rawValue == "cwd" ? .byTruncatingHead : .byTruncatingTail

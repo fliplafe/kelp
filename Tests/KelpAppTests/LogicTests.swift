@@ -46,8 +46,6 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 }
 
 @MainActor @Test func activityNumbersAndPercentagesAreReadable() {
-    #expect(ActivityController.number(.int(5)) == 5 && ActivityController.number(.double(2.5)) == 2.5 && ActivityController.number(nil) == 0)
-    #expect(ActivityController.number(.string("x")) == 0)
     #expect(ActivityController.percent(0) == "0.0%" && ActivityController.percent(9.94) == "9.9%")
     #expect(ActivityController.percent(10) == "10%" && ActivityController.percent(99.6) == "100%")   // from 10 up no decimals
 }

@@ -38,6 +38,14 @@ public enum JSONValue: Codable, Sendable, Equatable {
     public var int: Int? { if case .int(let i) = self { return i }; return nil }
     public var bool: Bool? { if case .bool(let b) = self { return b }; return nil }
     public var array: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
+    /// An int or a double (JSON doesn't tell 3 from 3.0).
+    public var number: Double? {
+        switch self {
+        case .int(let i): Double(i)
+        case .double(let d): d
+        default: nil
+        }
+    }
 
     /// Encode any Encodable into a JSONValue.
     public static func from<T: Encodable>(_ v: T) throws -> JSONValue {

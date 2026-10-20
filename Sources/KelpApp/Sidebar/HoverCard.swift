@@ -99,7 +99,7 @@ final class CardModel {
             if let t = (try? await c.call("session.turn", id))?["turn"], case .object = t {
                 let files = t["files"]?.array ?? []
                 let add = files.reduce(0) { $0 + ($1["added"]?.int ?? 0) }, del = files.reduce(0) { $0 + ($1["removed"]?.int ?? 0) }
-                let secs = Int(t["seconds"].flatMap { if case .double(let d) = $0 { d } else { $0.int.map(Double.init) } } ?? 0)
+                let secs = Int(t["seconds"]?.number ?? 0)
                 let took = secs < 60 ? "\(secs)s" : "\(secs / 60)m"
                 turn = files.isEmpty ? String(localized: "Last turn changed no files · \(took)")
                     : files.count == 1 ? String(localized: "Last turn: 1 file +\(add) −\(del) · \(took)")

@@ -43,13 +43,7 @@ final class SettingsStore {
     }
     func string(_ key: String) -> String? { value(key)?.string }
     func bool(_ key: String) -> Bool? { value(key)?.bool }
-    func number(_ key: String) -> Double? {
-        switch value(key) {
-        case .double(let d)?: d
-        case .int(let i)?: Double(i)
-        default: nil
-        }
-    }
+    func number(_ key: String) -> Double? { value(key)?.number }
 
     /// Shows a value without saving it (the palette trying themes on); `set` keeps one, `preview(key, saved)` goes back.
     func preview(_ key: String, _ v: JSONValue?) {
