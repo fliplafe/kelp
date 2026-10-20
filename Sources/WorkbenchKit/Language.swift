@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// A language from `contributes.languages`: the files it covers and the language server for them. `id` is the LSP languageId.
 public struct LanguageSpec: Codable, Equatable, Sendable {
@@ -33,7 +34,7 @@ public struct LanguageSpec: Codable, Equatable, Sendable {
         var out = "", rest = Substring(command)
         while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
             out += rest[..<open.lowerBound]
-            out += vars[String(rest[open.upperBound..<close])].map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            out += vars[String(rest[open.upperBound..<close])].map(IDE.shellWord)
                 ?? String(rest[open.lowerBound...close])
             rest = rest[rest.index(after: close)...]
         }

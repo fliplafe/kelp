@@ -73,5 +73,5 @@ public struct RemoteHost: Codable, Sendable, Equatable {
     }
 
     /// One shell word, single-quoted.
-    public static func quote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    public static func quote(_ s: String) -> String { IDE.shellWord(s) }
 }

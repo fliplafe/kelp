@@ -83,8 +83,8 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     private func command(_ r: JSONValue) -> String {
         let id = r["id"]?.string ?? ""
-        let cwd = (r["cwd"]?.string ?? "").replacingOccurrences(of: "'", with: "'\\''")
-        return r["agent"]?.string == "codex" ? "cd '\(cwd)' && codex resume \(id)" : "cd '\(cwd)' && claude --resume \(id)"
+        let cwd = IDE.shellWord(r["cwd"]?.string ?? "")
+        return r["agent"]?.string == "codex" ? "cd \(cwd) && codex resume \(id)" : "cd \(cwd) && claude --resume \(id)"
     }
     @objc private func copyCommand() {
         guard table.selectedRow >= 0 else { NSSound.beep(); return }

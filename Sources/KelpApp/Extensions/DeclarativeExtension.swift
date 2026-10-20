@@ -179,7 +179,7 @@ enum ExtActions {
                 if key.hasPrefix("setting:") { v = SettingsStore.shared.value(String(key.dropFirst(8))).map(text) ?? "" }
                 else { v = key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(text) ?? "" }
             }
-            out += quote ? "'" + v.replacingOccurrences(of: "'", with: "'\\''") + "'" : v
+            out += quote ? IDE.shellWord(v) : v
             rest = rest[rest.index(after: close)...]
         }
         return out + rest

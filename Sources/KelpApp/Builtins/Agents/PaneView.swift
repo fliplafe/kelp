@@ -73,7 +73,7 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
         #if canImport(GhosttyKit)
         if Self.useGhostty {
             let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
-            let cmd = "'\(kelp.replacingOccurrences(of: "'", with: "'\\''"))' attach \(id)"
+            let cmd = IDE.shellWord(kelp) + " attach \(id)"
             let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
             g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
             g.onExit = { [weak self] in self?.sessionEnded() }
