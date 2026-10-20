@@ -40,7 +40,10 @@ extension TabContent {
     func close() -> Bool { true }
 }
 
-/// SF Symbol image helper used by tabs and menus.
+/// SF Symbol image helper used by tabs and menus; a few names get Kelp's own drawing instead (Glyph).
 extension NSImage {
-    static func symbol(_ name: String, _ label: String? = nil) -> NSImage { NSImage(systemSymbolName: name, accessibilityDescription: label) ?? NSImage() }
+    static func symbol(_ name: String, _ label: String? = nil) -> NSImage {
+        if let g = Glyph.image(name) { g.accessibilityDescription = label; return g }
+        return NSImage(systemSymbolName: name, accessibilityDescription: label) ?? NSImage()
+    }
 }

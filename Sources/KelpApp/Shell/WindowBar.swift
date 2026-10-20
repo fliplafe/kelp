@@ -13,7 +13,7 @@ final class WindowBar: NSView {
     /// Icon, name, folder, branch, pull request; hidden without a workspace.
     let context = NSStackView()
     private let icon = NSImageView(), name = NSTextField(labelWithString: "")
-    private let folder = WindowBar.chip(nil), branch = WindowBar.chip("arrow.triangle.branch"), pr = WindowBar.chip(nil)
+    private let folder = WindowBar.chip(nil), branch = WindowBar.chip("arrow.triangle.branch"), pr = WindowBar.chip("arrow.triangle.pull")
     private let search = SearchPill()
     private var info: BranchInfo?
 
@@ -67,7 +67,7 @@ final class WindowBar: NSView {
         let b = NSButton(title: "", target: nil, action: nil)
         b.bezelStyle = .recessed; b.showsBorderOnlyWhileMouseInside = true
         b.font = .ui(12); b.imagePosition = .imageLeading; b.imageHugsTitle = true
-        if let symbol { b.image = .symbol(symbol, ""); b.symbolConfiguration = .init(pointSize: 11, weight: .regular) }
+        if let symbol { b.image = Glyph.image(symbol, size: 13) ?? .symbol(symbol, ""); b.symbolConfiguration = .init(pointSize: 11, weight: .regular) }
         return b
     }
 

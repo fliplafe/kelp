@@ -67,7 +67,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     override func loadView() {
         branchButton.isBordered = false; branchButton.imagePosition = .imageLeading; branchButton.imageHugsTitle = true
-        branchButton.image = .symbol("arrow.triangle.branch"); branchButton.font = .ui(12, weight: .semibold)
+        branchButton.image = Glyph.image("arrow.triangle.branch", size: 14); branchButton.font = .ui(12, weight: .semibold)
         branchButton.lineBreakMode = .byTruncatingMiddle; branchButton.target = self; branchButton.action = #selector(branchMenu)
         branchButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         branchButton.toolTip = String(localized: "Switch or create a branch")
