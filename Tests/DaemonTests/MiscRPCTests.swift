@@ -193,3 +193,23 @@ private let localSSH: String = {
     _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id)]))
     #expect(!Git.branchExists(w.repo.path, "feat/pushed"))
 }
+
+/// The ordering itself (applied on the reading thread, not one Task each) couldn't be made to fail here: requests start
+/// in order on this Mac. What this checks is that state and sizes sent as notifications are applied, ending at the last.
+@Test func stateSentAsNotificationsEndsAtTheLastValue() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    for i in 1...300 { w.c.notify(StateSet(key: "layout.test", value: .int(i))) }   // as the app saves a layout while you drag
+    #expect(try await waitFor(10) { try await w.c.call(StateGet(key: "layout.test")) == .int(300) })
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(try await w.c.call(StateGet(key: "layout.test")) == .int(300))   // and nothing older lands after it
+}
+
+@Test func aSizeSentAsANotificationReachesTheTerminal() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "size")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "cat"]), as: Session.self)
+    for cols in stride(from: 40, through: 200, by: 2) { w.c.notify("session.resize", .obj(["id": .string(s.id), "cols": .int(cols), "rows": 30])) }
+    _ = try await w.c.call("ping")   // the notifications before it have been read
+    let live = try #require(w.d.existing(s.id))
+    #expect(try await waitFor(5) { live.pty.size?.cols == 200 })
+}

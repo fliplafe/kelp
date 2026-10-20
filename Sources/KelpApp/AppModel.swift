@@ -261,7 +261,8 @@ final class AppModel {
     }
     func detach(session id: String) { outputHandlers[id] = nil; Task { _ = try? await client?.call("session.detach", .obj(["id": .string(id)])) } }
     func write(session id: String, _ d: Data) { client?.notify("session.write", .obj(["id": .string(id), "base64": .string(d.base64EncodedString())])) }
-    func resize(session id: String, cols: Int, rows: Int) { Task { _ = try? await client?.call("session.resize", .obj(["id": .string(id), "cols": .int(cols), "rows": .int(rows)])) } }
+    /// A notification, sent in call order and applied in that order: the last size is the one the terminal keeps.
+    func resize(session id: String, cols: Int, rows: Int) { client?.notify("session.resize", .obj(["id": .string(id), "cols": .int(cols), "rows": .int(rows)])) }
 
     func worktree(_ id: String?) -> Worktree? { worktrees.first { $0.id == id } }
     func repo(_ id: String?) -> Repo? { repos.first { $0.id == id } }

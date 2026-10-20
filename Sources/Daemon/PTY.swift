@@ -162,6 +162,15 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         var name = [CChar](repeating: 0, count: 256)
         return proc_name(pg, &name, UInt32(name.count)) > 0 ? String(cString: name) : "a program"
     }
+    /// The terminal's size as the kernel has it now (nil once it's closed).
+    public var size: (cols: UInt16, rows: UInt16)? {
+        io.withLock {
+            var ws = winsize()
+            guard !closed, ioctl(primaryFD, TIOCGWINSZ, &ws) == 0 else { return nil }
+            return (ws.ws_col, ws.ws_row)
+        }
+    }
+
     public func resize(cols: UInt16, rows: UInt16) {
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         io.withLock { if !closed { _ = ioctl(primaryFD, TIOCSWINSZ, &ws) } }

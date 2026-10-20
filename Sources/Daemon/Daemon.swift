@@ -150,6 +150,13 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
                         if let sid = req.params?["id"]?.string, let b = req.params?["base64"]?.string, let d = Data(base64Encoded: b) { existing(sid)?.userInput(d) }
                         continue
                     }
+                    // Quick, and only right in the order they were sent: a saved layout or a terminal size that finished second
+                    // must not win over the newer one. Applied here, one after another, like keystrokes.
+                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" {
+                        let p = req.params ?? .null
+                        if req.method == StateSet.name { _ = try? StateSet.run(p, self) } else { _ = try? handleSync(req.method, p, conn: c.id) }
+                        continue
+                    }
                     if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)
                         stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
                         break reading
