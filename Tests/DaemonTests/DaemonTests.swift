@@ -4,34 +4,11 @@ import Core
 import GitKit
 @testable import Daemon
 import Agents
+import TestSupport
 
-/// Every test that starts a daemon goes through `tmp()`, which isolates the whole test process first:
-/// - keys (Jira, Linear, agent secrets) go to a keychain service of their own, never the real one;
-/// - KELP_HOME, CLAUDE_CONFIG_DIR and CODEX_HOME are throwaway folders and PATH is given (KELP_LOGIN_PATH): nothing reads
-///   the user's ~/.kelp, ~/.claude or ~/.codex, nor runs their shell profile.
-/// Values inherited from outside are replaced, not kept: `swift test` run by an agent inside Kelp inherits the real
-/// KELP_HOME (and a profile's config dir). KELP_TEST_ISOLATED marks a process that's done it, so targets agree.
-let isolatedKeychain: String = {
-    if getenv("KELP_TEST_ISOLATED") == nil {
-        setenv("KELP_HOME", testRoot + "/home", 1)
-        setenv("CLAUDE_CONFIG_DIR", testRoot + "/claude", 1)
-        setenv("CODEX_HOME", testRoot + "/codex", 1)
-        setenv("KELP_LOGIN_PATH", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin", 1)
-        setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1)
-        setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1); setenv("GIT_CONFIG_NOSYSTEM", "1", 1)   // not the user's ~/.gitconfig (signing, hooks)
-        setenv("KELP_TEST_ISOLATED", "1", 1)
-    }
-    return String(cString: getenv("KELP_KEYCHAIN_SERVICE"))
-}()
-
-/// One folder per test process, removed when it exits: the many small homes and repos tests make don't pile up in /tmp.
-/// Short, since a Unix socket path inside it has to fit in 104 bytes.
-let testRoot: String = {
-    let r = "/tmp/kr-\(UUID().uuidString.prefix(6))"
-    try? FileManager.default.createDirectory(atPath: r, withIntermediateDirectories: true)
-    atexit { try? FileManager.default.removeItem(atPath: testRoot) }
-    return r
-}()
+/// Every test that starts a daemon goes through `tmp()`, which isolates the whole test process first (TestIsolation).
+let isolatedKeychain = TestIsolation.keychainService
+let testRoot = TestIsolation.root
 
 /// `ssh` that runs the command here (the host is this Mac). One for the whole test process, made before anything reads
 /// `RemoteHost.ssh` (which reads KELP_SSH once): two tests making their own could overwrite each other's.
@@ -495,6 +472,10 @@ final class NoteBox: @unchecked Sendable {
     let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
     let status = try await c.call("git.status", .obj(["id": .string(w.id)]), as: [FileChange].self)
     #expect(status.map(\.path) == ["a.txt"])
+    // gh / glab would run in the local marker folder (and its git walk up to ~): refused, said plainly.
+    do { _ = try await c.call("github.prs", .obj(["worktreeId": .string(w.id)])); Issue.record("ran gh for a remote project") }
+    catch { #expect("\(error)".contains("remote projects")) }
+    #expect(try await c.call("github.branchPR", .obj(["worktreeId": .string(w.id)])) == .null)
     #expect(try await c.call("files.list", .obj(["id": .string(w.id)]), as: [String].self).contains("a.txt"))
     #expect(try await c.call("files.readRemote", .obj(["path": .string(repo.path + "/a.txt")])).string == "changed\n")
     // Adding it again is the same project; a folder that isn't there says so.

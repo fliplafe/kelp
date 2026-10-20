@@ -8,13 +8,13 @@ extension Daemon {
         switch method {
         case "git.branches": return try .from(Git.branches(cwd(forWorktree: p.req("id")).path))
         case "git.switch":   // {id, branch, create?, remote?}
-            try Git.switchBranch(cwd(forWorktree: p.req("id")).path, to: p.req("branch"),
+            try Git.switchBranch(cwd(forWorktree: p.req("id")).path, to: ref(p.req("branch")) ?? "",
                                  create: p["create"]?.bool == true, remote: p["remote"]?.bool == true)
             return .null
         case "git.graph":    // {id, limit?} → {commits, more}
             let g = try Git.graph(cwd(forWorktree: p.req("id")).path, limit: max(1, p["limit"]?.int ?? 200))
             return .obj(["commits": try .from(g.commits), "more": .bool(g.more)])
-        case "git.commitFiles": return try .from(Git.commitFiles(cwd(forWorktree: p.req("id")).path, commit: p.req("commit")))
+        case "git.commitFiles": return try .from(Git.commitFiles(cwd(forWorktree: p.req("id")).path, commit: ref(p.req("commit")) ?? ""))
         case "git.discard":
             try Git.discard(cwd(forWorktree: p.req("id")).path, files: (p["files"]?.array ?? []).compactMap(\.string))
             return .null

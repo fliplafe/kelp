@@ -50,17 +50,18 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                                            "-Xlinker", "-platform_version", "-Xlinker", "macos", "-Xlinker", "14.0", "-Xlinker", "26.0"])]
         ),
-        .testTarget(name: "CoreTests", dependencies: ["Core"]),
-        .testTarget(name: "GitKitTests", dependencies: ["GitKit"]),
+        .target(name: "TestSupport", path: "Tests/TestSupport"),
+        .testTarget(name: "CoreTests", dependencies: ["Core", "TestSupport"]),
+        .testTarget(name: "GitKitTests", dependencies: ["GitKit", "TestSupport"]),
         .testTarget(name: "AgentsTests", dependencies: ["Agents"]),
         .testTarget(name: "AgentDataTests", dependencies: ["AgentData"]),
-        .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents"]),
+        .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents", "TestSupport"]),
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
         .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
-        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "TestSupport"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
 

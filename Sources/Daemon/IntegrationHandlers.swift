@@ -7,6 +7,14 @@ import Integrations
 extension Daemon {
     static let linearKeyAccount = "linear-api-key"
 
+    /// A branch, commit or base from a client, as git will be given it: never one that reads as an option ("--output=…"
+    /// would make `git show` write a file). No real ref starts with "-".
+    func ref(_ v: String?) throws -> String? {
+        guard let v else { return nil }
+        if v.hasPrefix("-") { throw RPCError.invalidParams("“\(v)” isn't a branch or commit.") }
+        return v
+    }
+
     func repoPath(_ p: JSONValue) throws -> (Repo, String) {
         if let wid = p["worktreeId"]?.string, let w = try store.worktree(wid), let r = try store.repo(w.repoId) { return (r, w.path) }
         guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
@@ -49,6 +57,12 @@ extension Daemon {
     }
 
     func handleIntegration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
+        // gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up
+        // to whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all.
+        if method.hasPrefix("github.") || method.hasPrefix("ci."), (try? repoPath(p)).map({ RemoteHost.of($0.1) != nil }) == true {
+            if method == "github.branchPR" || method == "github.forge" { return .null }   // asked by the sidebar on its own
+            throw RPCError.invalidParams("Pull requests and CI aren't available for remote projects yet.")
+        }
         do {
             if let r = try await offload({ [self] in try integrationBlocking(method, p) }) { return r }
             return try await integration(method, p, conn: conn)
@@ -88,7 +102,7 @@ extension Daemon {
             let w = try cwd(forWorktree: p.req("worktreeId"))
             var inputs: [String: String] = [:]
             if case .object(let o)? = p["inputs"] { for (k, v) in o { inputs[k] = v.string ?? "" } }
-            try CIRuns.dispatch(cwd: w.path, workflow: p.req("workflow"), branch: p.req("branch"), inputs: inputs); return .null
+            try CIRuns.dispatch(cwd: w.path, workflow: p.req("workflow"), branch: ref(p.req("branch")) ?? "", inputs: inputs); return .null
 
         case "github.status":
             let a = GitHub.account()

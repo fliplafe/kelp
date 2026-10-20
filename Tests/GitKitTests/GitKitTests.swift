@@ -2,21 +2,10 @@ import Foundation
 import Testing
 @testable import GitKit
 import Core
+import TestSupport
 
-/// This process's git and Kelp see none of the user's own: no ~/.gitconfig (signing, hooks, templates), no system config,
-/// a throwaway KELP_HOME (RemoteHost.of reads Paths.root). Replaces whatever was inherited; done once (KELP_TEST_ISOLATED).
-/// Its folders live under one root that goes when the process exits.
-let gitTestRoot: String = {
-    let r = NSTemporaryDirectory() + "kelp-gittests-\(UUID().uuidString.prefix(6))"
-    try? FileManager.default.createDirectory(atPath: r, withIntermediateDirectories: true)
-    atexit { try? FileManager.default.removeItem(atPath: gitTestRoot) }
-    if getenv("KELP_TEST_ISOLATED") == nil {
-        setenv("KELP_HOME", r + "/home", 1)
-        setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1); setenv("GIT_CONFIG_NOSYSTEM", "1", 1)
-        setenv("KELP_TEST_ISOLATED", "1", 1)
-    }
-    return r
-}()
+/// This process's git and Kelp see none of the user's own (TestIsolation). Repos live under its folder.
+let gitTestRoot: String = TestIsolation.root + "/git"
 
 func tempRepo() throws -> String {
     let d = gitTestRoot + "/" + UUID().uuidString

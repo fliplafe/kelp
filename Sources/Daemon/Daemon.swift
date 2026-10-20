@@ -213,6 +213,16 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     private func respond(_ req: Request, conn c: Connection) async {
         let reply: Reply
         let id = req.id ?? .null
+        // Attach: the reply with the history is queued in the same step that subscribes, so no live output can reach this
+        // connection ahead of it (the screen would show the newest bytes before the history they follow).
+        if req.method == "session.attach", !req.isNotification, let sid = req.params?["id"]?.string,
+           existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
+           let ls = try? await offload({ [self] in try liveSession(sid) }) {
+            _ = ls.attach(c.id) { history in
+                if let d = try? Wire.line(Reply(id: id, result: .obj(["history": .string(history.base64EncodedString())]), error: nil)) { c.send(d) }
+            }
+            return
+        }
         do { reply = Reply(id: id, result: try await handle(req.method, req.params ?? .null, conn: c.id), error: nil) }
         catch let e as RPCError { reply = Reply(id: id, result: nil, error: e) }
         catch { reply = Reply(id: id, result: nil, error: .internalError("\(error)")) }

@@ -68,7 +68,7 @@ extension Daemon {
                 }
                 guard taken else { return }
                 let s = ls.markHibernated(), pid = ls.pty.pid
-                ls.pty.kill()
+                ls.pty.terminate()   // SIGKILL after 2 s for one that ignores the hangup: a wake must not start a second copy
                 Self.waitGone([pid])
                 publish(s)
             }

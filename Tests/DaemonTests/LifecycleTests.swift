@@ -174,3 +174,20 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     let n = read(fd, &buf, buf.count)
     #expect(n > 0 && String(decoding: buf[0..<max(n, 0)], as: UTF8.self).contains("\"id\":1"))
 }
+
+/// The app's attach (JSON): the reply with the history comes before any live output, as with `kelp attach`.
+@Test func jsonAttachSendsHistoryBeforeLiveOutput() async throws {
+    let (d, c, w, root) = try await project(); defer { d.stop() }
+    let count = "i=0; while [ $i -lt 300000 ]; do i=$((i+1)); echo n$i; done; sleep 30"
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": .string(count)]), as: Session.self)
+    #expect(try await waitFor(10) { (try await c.call("session.read", .obj(["id": .string(s.id), "bytes": 100]))).string?.contains("n") == true })
+    for _ in 0..<5 {   // several tries: each a race the old code lost most of the time
+        let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
+        var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        Unix.writeAll(fd, try Wire.line(RPCRequest(id: 1, method: "session.attach", params: .obj(["id": .string(s.id)]))))
+        var got = "", buf = [UInt8](repeating: 0, count: 65536)
+        while !got.contains("\"id\":1") { let n = read(fd, &buf, buf.count); if n <= 0 { break }; got += String(decoding: buf[0..<n], as: UTF8.self) }
+        let reply = try #require(got.range(of: "\"id\":1"))
+        #expect(!got[..<reply.lowerBound].contains("event.output"), "live output came before the history")
+    }
+}

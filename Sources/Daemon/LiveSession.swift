@@ -56,6 +56,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     private var redrawUntil = Date.distantPast
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     private var pendingPrompt: String?
+    /// Someone answered the agent's first question (the user typed, or Kelp's auto-answer pressed its key): from then on
+    /// a trust dialog's words left in the scrollback no longer hold the launch prompt back.
+    private var dialogSettled = false
     /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
     private var promptIsDraft = false
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
@@ -168,7 +171,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
                 let a = autoAnswers[i].1
                 if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
                     steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
-                } else { answer = a.input; autoAnswers.remove(at: i) }
+                } else { answer = a.input; autoAnswers.remove(at: i); dialogSettled = true }
             }
         }
         var url: String?
@@ -268,7 +271,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let c = sync()
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
         var prompt: String?
-        if let p = pendingPrompt {
+        // Never while a trust question is open: its Enter would be the prompt's, and "Yes" is the default. Kelp leaves that
+        // question to the user on purpose (an untrusted project, a branch that changes agent config); the prompt waits.
+        if let p = pendingPrompt, steering == nil, !trustQuestionOpen() {
             let quiet = lastOutputAt.map { Date().timeIntervalSince($0) > 1.5 } ?? false
             if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompt = nil }
         }
@@ -276,6 +281,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if let c { onStatus?(c) }
         if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }, paste: true) }   // a task's text: never keys
     }
+
+    /// Caller holds the lock.
+    private func trustQuestionOpen() -> Bool {
+        guard !dialogSettled else { return false }
+        let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
+        return Self.trustQuestion?.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
+    }
+    private static let trustQuestion = try? NSRegularExpression(pattern: AgentManifest.trust.pattern)
 
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
     private func steer() {
@@ -291,7 +304,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { lock.unlock(); return }
         let onTarget = st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil
         let key: String
-        if onTarget { key = "\r"; steering = nil }
+        if onTarget { key = "\r"; steering = nil; dialogSettled = true }
         else { key = "\u{1B}[B"; steering?.lastKey = Date() }   // menus wrap, so stepping down always reaches it
         lock.unlock()
         pty.write(Data(key.utf8))
@@ -351,7 +364,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         pty.write(d)
         lock.lock()
         guard !TerminalReplies.isReply(d) else { lock.unlock(); return }   // the terminal answering the agent, not the user typing
-        typedYet = true
+        typedYet = true; dialogSettled = true
         detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
         var read: Session?
         if record.unread { record.unread = false; read = record }   // typing into it is having read it

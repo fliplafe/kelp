@@ -114,8 +114,8 @@ extension Daemon {
         case "worktree.create":
             guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
             let auto = try nextWorkspace(in: r)
-            let branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? auto.branch
-            let base = p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? r.baseBranch
+            let branch = try ref(p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
+            let base = try ref(p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? r.baseBranch
             let path = try Git.addWorktree(repo: r.path, branch: branch, base: base,
                                            into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
             let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? (p["branch"] == nil ? auto.name : ""), base: base)
@@ -201,8 +201,12 @@ extension Daemon {
             let (cols, rows) = Launch.size(p)
             try liveSession(p.req("id")).resize(cols: cols, rows: rows); return .null
         case "session.kill":
-            if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.kill() }
-            else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill
+            // Under wakeLock, as waking is: a paused session marked ended here can't be woken halfway through, nor this kill
+            // land on the old copy while a wake starts a new one.
+            try wakeLock.withLock {
+                if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.terminate() }
+                else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill
+            }
             return .null
         case "session.choose":   // {id, answer: allow | deny} → false when no menu is on screen to answer
             guard let s = existing(try p.req("id"))?.choose(try p.req("answer")) else { return .bool(false) }
@@ -257,8 +261,8 @@ extension Daemon {
             case "staged": src = .staged
             case "branch":
                 let base = try store.repo(w.repoId)?.baseBranch ?? "main"
-                src = .branch(base: p["base"]?.string ?? base)
-            case "commit": src = .commit(try p.req("commit"))
+                src = .branch(base: try ref(p["base"]?.string) ?? base)
+            case "commit": src = .commit(try ref(p.req("commit")) ?? "")
             default: src = .allUncommitted
             }
             return try .from(Git.diff(dir, source: src, file: p["file"]?.string))

@@ -522,3 +522,44 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
         return t.contains("first\r\n") && t.contains("second\r\n")   // each line on its own, not "firstsecond"
     })
 }
+
+/// A trust question Kelp leaves to the user holds the launch prompt back: its Enter would otherwise pick "Yes". Once the
+/// user has answered (typed anything), the prompt goes in.
+@Test func theLaunchPromptNeverAnswersATrustQuestion() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "untrusted")
+    let fake = #"printf 'Do you trust the files in this folder?\n> 1. Yes, proceed\n  2. No, exit\n'; "#
+        + #"if IFS= read -rsn1 -t 6 k; then echo ANSWERED-BY-PROMPT; else echo NOT-ANSWERED; fi; exec cat -v"#
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string("/bin/bash -c " + IDE.shellWord(fake)),
+                                                                 "prompt": "Fix the bug"]), as: Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    #expect(try await waitFor(15) { try await screen().contains("NOT-ANSWERED") })   // the question timed out unanswered
+    #expect(!(try await screen()).contains("ANSWERED-BY-PROMPT"))
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("1".utf8).base64EncodedString())]))   // the user answers
+    #expect(try await waitFor(10) { try await screen().contains("Fix the bug") })
+}
+
+/// Pausing an idle agent that ignores the hangup still ends it, so its wake can't start a second copy beside it.
+@Test func idlePausingEndsAnAgentThatIgnoresTheHangup() async throws {
+    let stubborn = AgentManifest(id: "stubborn", name: "Stubborn", command: "/bin/bash",
+                                 args: ["-c", "trap '' HUP TERM; echo up; while :; do sleep 0.1; done", "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [stubborn]); defer { w.d.stop() }
+    let wt = try await desk(w, "stubborn")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "stubborn"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
+    _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "done"]))   // finished: it may be paused
+    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))
+    defer { Task { _ = try? await w.c.call("config.set", .obj(["hibernateMinutes": 0])) } }
+    #expect(try await waitFor(15) { try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated })
+    #expect(try await waitFor(5) { kill(s.pid, 0) != 0 })
+}
+
+/// A commit or branch from a client never reaches git as an option: "--output=<file>" would make git show write a file.
+@Test func aRefThatLooksLikeAnOptionIsRefused() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "refs")
+    let file = tmp().path + "-written"
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.diff", .obj(["id": .string(wt.id), "source": "commit", "commit": .string("--output=" + file)])) }
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.commitFiles", .obj(["id": .string(wt.id), "commit": .string("--output=" + file)])) }
+    #expect(!FileManager.default.fileExists(atPath: file))
+}
