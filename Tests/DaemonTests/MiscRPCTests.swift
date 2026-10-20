@@ -213,3 +213,17 @@ private let localSSH: String = {
     let live = try #require(w.d.existing(s.id))
     #expect(try await waitFor(5) { live.pty.size?.cols == 200 })
 }
+
+@Test func aShortTurnIsNotCreditedWithThePreviousTurnsChanges() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "turns")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "cat", "agent": "claude-like"]), as: Session.self)
+    let live = try #require(w.d.existing(s.id))
+    live.noteTurn(.working)                                              // turn 1: changes a file
+    #expect(try await waitFor(5) { live.turnBase != nil })
+    try "changed\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    live.noteTurn(.idle)
+    #expect(try await waitFor(5) { live.lastTurn?.files.map(\.path) == ["a.txt"] })
+    live.noteTurn(.working); live.noteTurn(.idle)                        // turn 2: over at once, changed nothing
+    #expect(try await waitFor(5) { live.lastTurn?.files.isEmpty == true }, "turn 2 reported \(live.lastTurn?.files.map(\.path) ?? [])")
+}

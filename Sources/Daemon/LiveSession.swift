@@ -219,19 +219,22 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let starting = s == .working && !inTurn, ending = inTurn && s != .working
         if starting { inTurn = true; turnStart = Date(); turnDir = record.currentDir }
         if ending { inTurn = false }
-        let base = turnBase, start = turnStart, cwd = turnDir ?? record.cwd
+        let start = turnStart, cwd = turnDir ?? record.cwd
         lock.unlock()
         guard !shell, starting || ending else { return }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        // One after another, per session: a short turn's end waits for its own start snapshot instead of diffing against
+        // the previous turn's (which credited it with that turn's changes), and snapshots can't land out of order.
+        turnWork.async { [weak self] in
             if starting {
                 let tree = try? Git.snapshotTree(cwd)
                 self?.lock.withLock { self?.turnBase = tree }
-            } else if let base, let start {
+            } else if let start, let base = self?.lock.withLock({ self?.turnBase }) {
                 let files = ((try? Git.changesSince(tree: base, cwd: cwd)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
                 self?.lock.withLock { self?.lastTurn = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
             }
         }
     }
+    private let turnWork = DispatchQueue(label: "kelp.session.turn", qos: .utility)
 
     func tick() {
         steer()
