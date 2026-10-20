@@ -222,8 +222,7 @@ enum WorkspaceActions {
             let a = NSAlert(); a.messageText = String(localized: "Delete “\(w.displayName)” and its branch?")
             var lost: [String] = []
             if dirty { lost.append(String(localized: "It has uncommitted changes that will be lost.")) }
-            if commits > 0 { lost.append(commits == 1 ? String(localized: "1 commit on \(w.branch) isn't on any other branch or remote and will be lost.")
-                                                      : String(localized: "\(commits) commits on \(w.branch) aren't on any other branch or remote and will be lost.")) }
+            if commits > 0 { lost.append(String(localized: "\(commits) commits on this branch aren't on any other branch or remote and will be lost.")) }
             a.informativeText = lost.isEmpty ? String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.") : lost.joined(separator: " ")
             a.addButton(withTitle: lost.isEmpty ? String(localized: "Delete Workspace and Branch") : String(localized: "Delete and Lose Changes")).hasDestructiveAction = true
             a.addButton(withTitle: String(localized: "Cancel")); a.alertStyle = lost.isEmpty ? .warning : .critical

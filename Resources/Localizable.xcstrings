@@ -9928,6 +9928,58 @@
           }
         }
       }
+    },
+    "%lld commits on this branch aren't on any other branch or remote and will be lost.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld commit on this branch isn't on any other branch or remote and will be lost."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld commits on this branch aren't on any other branch or remote and will be lost."
+                }
+              }
+            }
+          }
+        },
+        "ru": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld коммита этой ветки есть только здесь, ни на одной другой ветке или remote, и будут потеряны."
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld коммитов этой ветки есть только здесь, ни на одной другой ветке или remote, и будут потеряны."
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld коммит этой ветки есть только здесь, ни на одной другой ветке или remote, и будет потерян."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld коммита этой ветки есть только здесь, ни на одной другой ветке или remote, и будут потеряны."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"
