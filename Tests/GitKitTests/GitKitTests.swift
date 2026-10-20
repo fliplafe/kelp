@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import GitKit
+import Core
 
 func tempRepo() throws -> String {
     let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
@@ -327,4 +328,57 @@ func tempRepo() throws -> String {
     #expect(parsed[2].letter(inWorktree: true) == "U")
     #expect(parsed[3].letter(inWorktree: true) == "!")
     #expect(parsed[0].letter(inWorktree: false, merging: true) == "!")   // everything in the Merge section is a conflict
+}
+
+@Test func changedRangesKeepOnlyWhatDiffers() {
+    func r(_ a: String, _ b: String) -> (NSRange, NSRange) { DiffRows.changedRanges(a, b) }
+    #expect(r("let x = 1", "let x = 2") == (NSRange(location: 8, length: 1), NSRange(location: 8, length: 1)))
+    #expect(r("foo(a)", "foo(a, b)") == (NSRange(location: 5, length: 0), NSRange(location: 5, length: 3)))   // an insertion has an empty old side
+    #expect(r("same", "same") == (NSRange(location: 4, length: 0), NSRange(location: 4, length: 0)))
+    #expect(r("abc", "xyz") == (NSRange(location: 0, length: 3), NSRange(location: 0, length: 3)))
+    #expect(r("aXa", "aa") == (NSRange(location: 1, length: 1), NSRange(location: 1, length: 0)))   // the common end can't overlap the common start
+}
+
+private func line(_ k: DiffLine.Kind, _ t: String, o: Int? = nil, n: Int? = nil) -> DiffLine { DiffLine(kind: k, text: t, oldLine: o, newLine: n) }
+private let sample = FileDiff(path: "f.swift", header: "", hunks: [
+    Hunk(header: "@@ -1,2 +1,2 @@", oldStart: 1, newStart: 1, lines: [line(.context, "a", o: 1, n: 1), line(.del, "x = 1", o: 2), line(.add, "x = 2", n: 2)])
+], binary: false)
+
+@Test func changedWordsAreKeyedByFileAndLine() {
+    let w = DiffRows.changedWords([sample])
+    #expect(w["0:d:2"] == NSRange(location: 4, length: 1) && w["0:a:2"] == NSRange(location: 4, length: 1))
+    #expect(w.count == 2)   // the context line has no counterpart
+}
+
+@Test func commentsSitUnderTheirLastLineAndResolvedOnesLeave() {
+    func c(_ line: Int, _ state: DiffComment.State, _ file: String = "f.swift") -> DiffComment {
+        DiffComment(worktreeId: "w", file: file, startLine: line, endLine: line, quote: "", text: "t\(line)", state: state)
+    }
+    let open = c(2, .open), sent = c(2, .sent), done = c(2, .resolved), other = c(2, .open, "g.swift")
+    let rows = DiffRows.reviewRows([sample], comments: [open, sent, done, other], sideBySide: false, hideFileRows: false)
+    let comments = rows.compactMap { if case .comment(let c) = $0 { c.id } else { nil } }
+    #expect(comments == [open.id, sent.id])   // not the resolved one, not another file's
+    let at = rows.firstIndex { if case .comment = $0 { true } else { false } } ?? 0
+    if case .diff(.line(_, let l)) = rows[at - 1] { #expect(l.newLine == 2 && l.kind == .add) } else { Issue.record("the comment isn't under its line") }
+}
+
+@Test func oneFileModeHidesTheFileRow() {
+    let withFile = DiffRows.reviewRows([sample], comments: [], sideBySide: true, hideFileRows: false)
+    let without = DiffRows.reviewRows([sample], comments: [], sideBySide: true, hideFileRows: true)
+    #expect(withFile.count == without.count + 1)
+    #expect(!without.contains { if case .diff(.file) = $0 { true } else { false } })
+}
+
+@Test func aCommentOnADeletedLineShowsOnceNotUnderTheAddedLineWithTheSameNumber() {
+    let gone = FileDiff(path: "f.swift", header: "", hunks: [
+        Hunk(header: "@@ -5,2 +5 @@", oldStart: 5, newStart: 5, lines: [line(.del, "old five", o: 5), line(.del, "old six", o: 6), line(.add, "new five", n: 5)])
+    ], binary: false)
+    let c = DiffComment(worktreeId: "w", file: "f.swift", startLine: 6, endLine: 6, quote: "", text: "why?")
+    for side in [false, true] {
+        let rows = DiffRows.reviewRows([gone], comments: [c], sideBySide: side, hideFileRows: true)
+        #expect(rows.filter { if case .comment = $0 { true } else { false } }.count == 1, "side by side: \(side)")   // the new file has no line 6, so the deleted line 6 takes it
+    }
+    let on5 = DiffComment(worktreeId: "w", file: "f.swift", startLine: 5, endLine: 5, quote: "", text: "hm")
+    let rows = DiffRows.reviewRows([gone], comments: [on5], sideBySide: false, hideFileRows: true)
+    #expect(rows.filter { if case .comment = $0 { true } else { false } }.count == 1)   // line 5 exists in both files: under the added one only
 }

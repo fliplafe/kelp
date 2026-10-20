@@ -2,11 +2,6 @@ import AppKit
 import Core
 import GitKit
 
-private enum UIRow {
-    case diff(DiffRow)
-    case comment(DiffComment)
-}
-
 final class DiffTable: NSTableView {
     var onKey: ((NSEvent) -> Bool)?
     override func keyDown(with event: NSEvent) { if onKey?(event) != true { super.keyDown(with: event) } }
@@ -24,7 +19,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     private let status = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
     private var diffs: [FileDiff] = []
-    private var rows: [UIRow] = []
+    private var rows: [ReviewRow] = []
     private var comments: [DiffComment] = []
     private var changes: [FileChange] = []
     /// Changed character range of a line that has a counterpart on the other side, by "file:kind:line".
@@ -209,41 +204,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     private func rebuildRows() {
-        var out: [UIRow] = []
-        for r in DiffRows.build(diffs, sideBySide: sideBySide) {
-            if single != nil, case .file = r { continue }   // the bar names the file
-            out.append(.diff(r))
-            var fi = -1, ln: Int?
-            switch r {
-            case .line(let f, let l): fi = f; ln = l.newLine ?? l.oldLine
-            case .pair(let f, _, let right): fi = f; ln = right?.newLine
-            default: break
-            }
-            if fi >= 0, let ln { for c in comments where c.file == diffs[fi].path && c.endLine == ln && c.state != .resolved { out.append(.comment(c)) } }
-        }
-        words = [:]
-        for (fi, f) in diffs.enumerated() {
-            for h in f.hunks {
-                for (l, r) in DiffRows.pairs(h.lines) {
-                    guard let l, let r, l.kind == .del, r.kind == .add, let o = l.oldLine, let n = r.newLine else { continue }
-                    let (a, b) = Self.changedRanges(l.text, r.text)
-                    words["\(fi):d:\(o)"] = a; words["\(fi):a:\(n)"] = b
-                }
-            }
-        }
-        rows = out
+        rows = DiffRows.reviewRows(diffs, comments: comments, sideBySide: sideBySide, hideFileRows: single != nil)
+        words = DiffRows.changedWords(diffs)
         table.reloadData()
-    }
-
-    /// The part of two versions of a line that differs: what's left after the common start and end.
-    /// Limit: one range per line, not a word-by-word diff; enough to spot the edit, as VS Code's first pass does.
-    static func changedRanges(_ a: String, _ b: String) -> (NSRange, NSRange) {
-        let x = Array(a.utf16), y = Array(b.utf16)
-        var p = 0
-        while p < min(x.count, y.count), x[p] == y[p] { p += 1 }
-        var s = 0
-        while s < min(x.count, y.count) - p, x[x.count - 1 - s] == y[y.count - 1 - s] { s += 1 }
-        return (NSRange(location: p, length: x.count - p - s), NSRange(location: p, length: y.count - p - s))
     }
 
     // MARK: table

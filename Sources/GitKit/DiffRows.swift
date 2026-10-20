@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// Flat rows for a diff table: one place builds them so inline and side-by-side stay consistent.
 public enum DiffRow: Equatable, Sendable {
@@ -40,5 +41,63 @@ public enum DiffRows {
             }
         }
         return rows
+    }
+}
+
+/// A row of the review table: a diff row, or a comment shown under the line it is about.
+public enum ReviewRow: Equatable, Sendable {
+    case diff(DiffRow)
+    case comment(DiffComment)
+}
+
+extension DiffRows {
+    /// The part of two versions of a line that differs: what's left after the common start and end (UTF-16 ranges).
+    /// Limit: one range per line, not a word-by-word diff; enough to spot the edit, as VS Code's first pass does.
+    public static func changedRanges(_ a: String, _ b: String) -> (NSRange, NSRange) {
+        let x = Array(a.utf16), y = Array(b.utf16)
+        var p = 0
+        while p < min(x.count, y.count), x[p] == y[p] { p += 1 }
+        var s = 0
+        while s < min(x.count, y.count) - p, x[x.count - 1 - s] == y[y.count - 1 - s] { s += 1 }
+        return (NSRange(location: p, length: x.count - p - s), NSRange(location: p, length: y.count - p - s))
+    }
+
+    /// Changed range of every line that has a counterpart on the other side, by "file:d:oldLine" / "file:a:newLine".
+    public static func changedWords(_ diffs: [FileDiff]) -> [String: NSRange] {
+        var out: [String: NSRange] = [:]
+        for (fi, f) in diffs.enumerated() {
+            for h in f.hunks {
+                for (l, r) in pairs(h.lines) {
+                    guard let l, let r, l.kind == .del, r.kind == .add, let o = l.oldLine, let n = r.newLine else { continue }
+                    let (a, b) = changedRanges(l.text, r.text)
+                    out["\(fi):d:\(o)"] = a; out["\(fi):a:\(n)"] = b
+                }
+            }
+        }
+        return out
+    }
+
+    /// The table's rows: comments that aren't resolved go under their last line, once. A comment keeps one line number,
+    /// so a line of the new file wins; a deleted line takes it only when the new file has no such line in that file.
+    /// `hideFileRows`: one-file mode, where the bar already names the file.
+    public static func reviewRows(_ diffs: [FileDiff], comments: [DiffComment], sideBySide: Bool, hideFileRows: Bool) -> [ReviewRow] {
+        var newLines = Set<String>()
+        for (fi, f) in diffs.enumerated() { for h in f.hunks { for l in h.lines { if let n = l.newLine { newLines.insert("\(fi):\(n)") } } } }
+        func under(_ fi: Int, _ l: DiffLine) -> [ReviewRow] {
+            let ln: Int
+            if let n = l.newLine { ln = n } else if let o = l.oldLine, !newLines.contains("\(fi):\(o)") { ln = o } else { return [] }
+            return comments.filter { $0.file == diffs[fi].path && $0.endLine == ln && $0.state != .resolved }.map { .comment($0) }
+        }
+        var out: [ReviewRow] = []
+        for r in build(diffs, sideBySide: sideBySide) {
+            if hideFileRows, case .file = r { continue }
+            out.append(.diff(r))
+            switch r {
+            case .line(let f, let l): out += under(f, l)
+            case .pair(let f, let l, let right): if let x = right ?? l { out += under(f, x) }
+            default: break
+            }
+        }
+        return out
     }
 }
