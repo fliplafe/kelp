@@ -304,3 +304,27 @@ func tempRepo() throws -> String {
     #expect(Git.headerPath("b/a b.txt\t") == "a b.txt")
     #expect(Git.headerPath("/dev/null") == nil)
 }
+
+@Test func changesGroupLikeSourceControlListsThem() {
+    let parsed = Git.parseStatus("1 MM N... 100644 100644 100644 a b both.swift\0"
+                                 + "1 M. N... 100644 100644 100644 a b staged.swift\0"
+                                 + "1 .M N... 100644 100644 100644 a b edited.swift\0"
+                                 + "u UU N... 100644 100644 100644 100644 a b c conflict.swift\0"
+                                 + "? new.swift\0")
+    let g = parsed.grouped
+    #expect(g.merge.map(\.path) == ["conflict.swift"])
+    #expect(g.staged.map(\.path) == ["both.swift", "staged.swift"])
+    #expect(g.changes.map(\.path) == ["both.swift", "edited.swift", "new.swift"])   // a file edited on both sides is in both lists
+}
+
+@Test func statusLettersFollowTheColumnTheListShows() {
+    let parsed = Git.parseStatus("1 AM N... 100644 100644 100644 a b added.swift\0"
+                                 + "1 .D N... 100644 100644 100644 a b gone.swift\0"
+                                 + "? new.swift\0"
+                                 + "u UU N... 100644 100644 100644 100644 a b c conflict.swift\0")
+    #expect(parsed[0].letter(inWorktree: false) == "A" && parsed[0].letter(inWorktree: true) == "M")
+    #expect(parsed[1].letter(inWorktree: true) == "D")
+    #expect(parsed[2].letter(inWorktree: true) == "U")
+    #expect(parsed[3].letter(inWorktree: true) == "!")
+    #expect(parsed[0].letter(inWorktree: false, merging: true) == "!")   // everything in the Merge section is a conflict
+}

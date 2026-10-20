@@ -10,6 +10,35 @@ public struct FileChange: Codable, Sendable, Equatable {
     public var conflicted: Bool { index == "U" || worktree == "U" || (index == "A" && worktree == "A") || (index == "D" && worktree == "D") }
 }
 
+/// What Source Control lists, in the order it lists it: conflicts, then what's staged, then the rest.
+/// A file with both staged and unstaged edits is in two sections; a conflicted one only in the first.
+public struct ChangeGroups: Equatable, Sendable {
+    public var merge: [FileChange], staged: [FileChange], changes: [FileChange]
+}
+
+extension Array where Element == FileChange {
+    public var grouped: ChangeGroups {
+        ChangeGroups(merge: filter(\.conflicted),
+                     staged: filter { $0.staged && !$0.conflicted },
+                     changes: filter { ($0.unstaged || $0.untracked) && !$0.conflicted })
+    }
+}
+
+extension FileChange {
+    /// VS Code's status letter: `inWorktree` picks which column speaks (the unstaged list shows the worktree's).
+    public func letter(inWorktree: Bool, merging: Bool = false) -> String {
+        if merging || conflicted { return "!" }
+        if untracked { return "U" }
+        switch inWorktree ? worktree : index {
+        case "A": return "A"
+        case "D": return "D"
+        case "R": return "R"
+        case "C": return "C"
+        default: return "M"
+        }
+    }
+}
+
 extension Git {
     /// Parse `git status --porcelain=v2 -z`: entries end in NUL, paths are as they are (no quoting), and a rename's
     /// entry is followed by its old path. Renames report the new path.

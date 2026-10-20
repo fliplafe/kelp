@@ -407,9 +407,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             if !collapsed.contains(s.rawValue) { n.children = files.map { Node(.file($0, s)) } }
             out.append(n)
         }
-        section(.merge, changes.filter(\.conflicted))
-        section(.staged, changes.filter { $0.staged && !$0.conflicted })
-        section(.changes, changes.filter { ($0.unstaged || $0.untracked) && !$0.conflicted })
+        let g = changes.grouped
+        section(.merge, g.merge)
+        section(.staged, g.staged)
+        section(.changes, g.changes)
         if changes.isEmpty, info != nil { out.append(Node(.note(String(localized: "No changes")))) }
         roots = out
         outline.reloadData(); outline.expandItem(nil, expandChildren: true)
@@ -714,14 +715,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     // MARK: status letters (VS Code's colors)
 
     static func letter(_ f: FileChange, _ s: Section) -> (String, NSColor) {
-        if s == .merge || f.conflicted { return ("!", .systemRed) }
-        if f.untracked { return ("U", .systemGreen) }
-        switch s == .changes ? f.worktree : f.index {
-        case "A": return ("A", .systemGreen)
-        case "D": return ("D", .systemRed)
-        case "R": return ("R", .systemBlue)
-        case "C": return ("C", .systemBlue)
-        default: return ("M", .systemOrange)
+        let l = f.letter(inWorktree: s == .changes, merging: s == .merge)
+        switch l {
+        case "!", "D": return (l, .systemRed)
+        case "U", "A": return (l, .systemGreen)
+        case "R", "C": return (l, .systemBlue)
+        default: return (l, .systemOrange)
         }
     }
 }
