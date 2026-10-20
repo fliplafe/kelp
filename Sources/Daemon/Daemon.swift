@@ -304,7 +304,9 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest) throws -> [String] {
         var run = argv
         if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
-            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : argv)]
+            // A command line (`.custom`: zsh -lc "…") goes to sh there: the host may have no zsh.
+            let onHost = manifest.id == "custom" && argv.count == 3 && argv[1] == "-lc" ? ["sh", "-c", argv[2]] : argv
+            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : onHost)]
         }
         guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
         return [try LoginPath.resolve(exe)] + run.dropFirst()

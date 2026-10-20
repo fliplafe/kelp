@@ -12,10 +12,12 @@ extension EditorArea {
         createSession(p, split: split)
     }
     func newTerminal(split: SplitDirection? = nil) { createSession(["worktreeId": .string(workspaceId), "agent": "shell"], split: split) }
-    func run(command: String?, title: String? = nil, split: SplitDirection? = nil) {
+    /// `cwd`: run it in another folder (a remote project's runs on its host), as a tab here.
+    func run(command: String?, title: String? = nil, cwd: String? = nil, split: SplitDirection? = nil) {
         guard let command, !command.isEmpty else { newTerminal(split: split); return }
         var p: [String: JSONValue] = ["worktreeId": .string(workspaceId), "command": .string(command)]
         if let title { p["title"] = .string(title) }
+        if let cwd { p["cwd"] = .string(cwd) }
         createSession(p, split: split)
     }
 

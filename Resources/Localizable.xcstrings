@@ -7455,6 +7455,36 @@
         }
       }
     },
+    "SSH hosts: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH-хосты: %@"
+          }
+        }
+      }
+    },
+    "Update %@ on %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить %1$@ на %2$@"
+          }
+        }
+      }
+    },
+    "Update on Hosts": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить на хостах"
+          }
+        }
+      }
+    },
     "Update available": {
       "localizations": {
         "ru": {

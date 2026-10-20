@@ -455,6 +455,11 @@ final class NoteBox: @unchecked Sendable {
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "pwd -P"]), as: Session.self)
     let real = URL(fileURLWithPath: there).resolvingSymlinksInPath().path
     #expect(try await waitFor(10) { (try await c.call("session.read", .obj(["id": .string(s.id)])).string ?? "").contains(real) })
+    // A command line runs in sh on the host, not in this Mac's zsh; cwd (the project's folder) picks the host for another workspace's tab.
+    let ssh = try d.launchArgv(["/bin/zsh", "-lc", "claude update"], cwd: repo.path, manifest: .custom("claude update"))
+    #expect(ssh.last?.hasSuffix(RemoteHost.quote("'sh' '-c' 'claude update'")) == true)
+    let other: Session = try await c.call("session.create", .obj(["cwd": .string(repo.path), "command": "pwd -P"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await c.call("session.read", .obj(["id": .string(other.id)])).string ?? "").contains(real) })
 }
 
 /// A finished turn moves the agent's plan read up to half a minute away; it never puts a sooner one off.

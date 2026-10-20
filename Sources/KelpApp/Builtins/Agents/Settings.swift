@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Core
 import Agents
+import GitKit
 
 /// Per-agent: its version (and a newer one, if published), Install / Update in a terminal you can watch, and overrides:
 /// binary, arguments, environment. Secrets in the environment go to the login keychain. Reset deletes the override.
@@ -91,15 +92,30 @@ struct AgentsSettings: View {
             if v?.version == nil, let cmd = m.install { Button("Install…") { run(cmd, String(localized: "Install \(m.name)")) }.help(cmd) }
             else if let cmd = m.update { Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd) }
         }
+        // The agents of SSH projects run on their hosts: the same command there, one terminal per host.
+        if let cmd = m.update, !hosts.isEmpty {
+            HStack {
+                let names = hosts.map(\.host).joined(separator: ", ")
+                Text("SSH hosts: \(names)").foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail).help(names)
+                Spacer()
+                Button("Update on Hosts") { for h in hosts { run(cmd, String(localized: "Update \(m.name) on \(h.host)"), in: h.folder) } }.help(cmd)
+            }
+        }
+    }
+
+    /// One remote project's folder per host: a command run in it runs on that host, in its login shell.
+    private var hosts: [(host: String, folder: String)] {
+        var seen = Set<String>()
+        return AppModel.shared.repos.compactMap { r in RemoteHost.of(r.path).flatMap { seen.insert($0.host).inserted ? ($0.host, r.path) : nil } }
     }
 
     /// The agent's own command, in a terminal in the workspace on screen, so what it does is in plain sight.
-    private func run(_ cmd: String, _ title: String) {
+    private func run(_ cmd: String, _ title: String, in folder: String? = nil) {
         guard let e = Workbench.editor else {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(cmd, forType: .string)
             Banner.show(String(localized: "Open a workspace to run it there — the command is on the clipboard: \(cmd)")); return
         }
-        e.run(command: cmd, title: title)
+        e.run(command: cmd, title: title, cwd: folder)
         Workbench.window?.window?.makeKeyAndOrderFront(nil)
     }
 
