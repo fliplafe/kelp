@@ -139,9 +139,10 @@ final class WindowBar: NSView {
         return mode == "agents" && working ? "working" : mode
     }
 
-    /// The cup right of the search: empty while the Mac may sleep, steaming while agents keep it awake, orange while it's on
-    /// for good. A click is Keep Mac Awake; a right-click picks the mode.
+    /// The cup right of the search, only while it's doing something: steaming while agents keep the Mac awake, orange while
+    /// it's on for good. A click is Keep Mac Awake (also in the Tools menu); a right-click picks the mode.
     private func showAwake(_ mode: String) {
+        awake.isHidden = mode != "working" && mode != "always"
         let (symbol, tip) = switch mode {
         case "always": ("cup.and.heat.waves.fill", String(localized: "The Mac stays awake until you click here"))
         case "working": ("cup.and.heat.waves", String(localized: "The Mac stays awake while agents work. Click to keep it awake always"))
@@ -168,15 +169,17 @@ final class WindowBar: NSView {
 /// Open Quickly as a place to click: it looks like a search field and opens the ⌘P palette (files, agents, commands).
 @MainActor
 final class SearchPill: NSControl {
+    private let glass = NSImageView(image: .symbol("magnifyingglass", ""))
+    private let label = NSTextField(labelWithString: ""), key = NSTextField(labelWithString: "⌘P")
+    private let full = String(localized: "Files, agents, commands"), short = String(localized: "Search")
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        let glass = NSImageView(image: .symbol("magnifyingglass", ""))
         glass.symbolConfiguration = .init(pointSize: 11, weight: .regular); glass.contentTintColor = .secondaryLabelColor
-        let label = NSTextField(labelWithString: String(localized: "Files, agents, commands"))
         label.font = .ui(12); label.textColor = .secondaryLabelColor; label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.init(200), for: .horizontal)
-        let key = NSTextField(labelWithString: "⌘P"); key.font = .ui(11); key.textColor = .tertiaryLabelColor
+        key.font = .ui(11); key.textColor = .tertiaryLabelColor
         let row = NSStackView(views: [glass, label, NSView(), key]); row.spacing = 6
         row.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 10); row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
@@ -189,7 +192,13 @@ final class SearchPill: NSControl {
 
     override func updateLayer() { layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07).cgColor }
     override var wantsUpdateLayer: Bool { true }
-    override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2 }
+    override func layout() {
+        super.layout(); layer?.cornerRadius = bounds.height / 2
+        // Short of room, "Search" rather than "Files, a…". The room is the pill's, so the choice doesn't feed back on itself.
+        let room = bounds.width - 19 - glass.frame.width - key.frame.width - 18
+        let text = (full as NSString).size(withAttributes: [.font: label.font ?? .ui(12)]).width <= room ? full : short
+        if label.stringValue != text { label.stringValue = text }
+    }
     /// The whole pill takes the click; in the title bar its label would move the window instead.
     override func hitTest(_ p: NSPoint) -> NSView? { super.hitTest(p) == nil ? nil : self }
     override var mouseDownCanMoveWindow: Bool { false }

@@ -92,7 +92,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
     }
 
+    /// Narrowed until the editor would have less than 640 pt, the inspector steps aside and comes back once the window has
+    /// room again, as Mail's sidebar does (at 1000 pt the two side columns had half the window). Not saved: the inspector
+    /// you open or close yourself is (`inspector.collapsed`). The split's own collapse-on-resize only acts on live resizes.
+    private var narrowedAt: CGFloat?
+    func windowDidResize(_ n: Notification) {
+        guard focusMode == nil, !autoHide.inspector, let width = window?.frame.width else { return }
+        if let at = narrowedAt {
+            if width >= at + 20 { narrowedAt = nil; inspectorItem.isCollapsed = false }   // a little past it, or it flaps
+        } else if !inspectorItem.isCollapsed, editors.view.frame.width < 640 {
+            narrowedAt = width; inspectorItem.isCollapsed = true
+        }
+    }
+
     @objc func toggleInspectorPanel() {
+        narrowedAt = nil
         if focusMode != nil { return togglePeek(inspectorItem) }
         if autoHide.inspector { return togglePin(inspectorItem) }
         inspectorItem.animator().isCollapsed.toggle()
