@@ -134,7 +134,7 @@ private extension Data {
 }
 
 @Test func keychainSetUpdatesInPlaceAndDeleteRemoves() throws {
-    if getenv("KELP_KEYCHAIN_SERVICE") == nil { setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1) }   // never the real keys
+    if getenv("KELP_TEST_ISOLATED") == nil { setenv("KELP_KEYCHAIN_SERVICE", "dev.kelp.tests.\(UUID().uuidString)", 1) }   // never the real keys, even if one was inherited
     let account = "kelp-test-\(UUID().uuidString)"
     defer { Keychain.delete(account) }
     #expect(Keychain.get(account) == nil)
