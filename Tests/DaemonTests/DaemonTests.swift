@@ -12,6 +12,11 @@ import Agents
 /// Whichever test target gets here first names them, and the others keep them.
 let isolatedKeychain: String = {
     if getenv("KELP_HOME") == nil { setenv("KELP_HOME", testRoot + "/home", 1) }
+    // Agents' own folders and the login shell: a test daemon reads neither the user's ~/.claude nor ~/.codex, and never
+    // runs their shell profile to learn PATH.
+    if getenv("CLAUDE_CONFIG_DIR") == nil { setenv("CLAUDE_CONFIG_DIR", testRoot + "/claude", 1) }
+    if getenv("CODEX_HOME") == nil { setenv("CODEX_HOME", testRoot + "/codex", 1) }
+    if getenv("KELP_LOGIN_PATH") == nil { setenv("KELP_LOGIN_PATH", ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin", 1) }
     if let have = getenv("KELP_KEYCHAIN_SERVICE") { return String(cString: have) }
     let s = "dev.kelp.tests.\(UUID().uuidString)"
     setenv("KELP_KEYCHAIN_SERVICE", s, 1)

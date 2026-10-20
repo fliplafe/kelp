@@ -19,7 +19,9 @@ public struct AgentSessionInfo: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum ClaudeHistory {
-    public static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+    /// Where Claude Code keeps conversations: under CLAUDE_CONFIG_DIR when it's set, as Claude Code itself does.
+    public static let defaultRoot = (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")).appendingPathComponent("projects")
 
     /// Sessions under `root/<encoded-cwd>/<sessionId>.jsonl`, newest first. Subagent transcripts (deeper) are skipped.
     public static func sessions(root: URL = defaultRoot) -> [AgentSessionInfo] {
@@ -82,7 +84,9 @@ public enum ClaudeHistory {
 }
 
 public enum CodexHistory {
-    public static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+    /// Under CODEX_HOME when it's set, as Codex itself does.
+    public static let defaultRoot = (ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")).appendingPathComponent("sessions")
 
     /// Sessions from `root/YYYY/MM/DD/rollout-*.jsonl`, newest first.
     public static func sessions(root: URL = defaultRoot) -> [AgentSessionInfo] {

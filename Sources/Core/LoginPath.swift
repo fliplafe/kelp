@@ -4,6 +4,8 @@ import Foundation
 /// user's shell profile points (~/.local/bin, Homebrew, npm…). Read once from a login shell, plus well-known dirs.
 public enum LoginPath {
     public static let value: String = {
+        // Given outright (tests: the user's shell profile must not run), it is the PATH.
+        if let given = ProcessInfo.processInfo.environment["KELP_LOGIN_PATH"] { return given }
         let home = NSHomeDirectory()
         let known = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.bun/bin", "\(home)/.npm-global/bin",
                      "\(home)/.claude/local", "\(home)/.cargo/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]

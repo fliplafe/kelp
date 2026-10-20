@@ -26,6 +26,9 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private let writes = DispatchQueue(label: "kelp.pty.write")
     private let writeFD: Int32
     private var stopWrites = false
+    /// Closes the terminal's fd from the read source's cancel handler, once GCD is done with it: closing right after
+    /// `cancel()` could pull the fd from under a read still running (which would then read whatever reuses the number).
+    private let closer: FDCloser
 
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onExit: (@Sendable (Int32) -> Void)?
@@ -35,6 +38,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         let started = try Self.retrying { try Self.launch(argv: argv, cwd: cwd, env: env, cols: cols, rows: rows, trampoline: trampoline) }
         self.pid = started.pid; self.primaryFD = started.fd
         self.writeFD = dup(started.fd)
+        self.closer = FDCloser(started.fd)
         _ = fcntl(writeFD, F_SETFL, fcntl(writeFD, F_GETFL) | O_NONBLOCK)   // shared with primaryFD: its reads already allow EAGAIN
     }
 
@@ -107,6 +111,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         guard first else { return }
         let src = DispatchSource.makeReadSource(fileDescriptor: primaryFD, queue: q)
         src.setEventHandler { [weak self] in self?.drain() }
+        let closer = closer
+        src.setCancelHandler { closer.cancelled() }
         q.sync { source = src }
         src.resume()
         let pid = pid
@@ -135,8 +141,10 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         exited = true
         // Flush anything still buffered in the kernel.
         var buf = [UInt8](repeating: 0, count: 65536)
-        let fl = fcntl(primaryFD, F_GETFL); _ = fcntl(primaryFD, F_SETFL, fl | O_NONBLOCK)
-        while true { let n = read(primaryFD, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
+        if !io.withLock({ closed }) {   // already hung up (dropped): the fd isn't ours any more
+            let fl = fcntl(primaryFD, F_GETFL); _ = fcntl(primaryFD, F_SETFL, fl | O_NONBLOCK)
+            while true { let n = read(primaryFD, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
+        }
         hangUp()
         onExit?(status)
     }
@@ -144,7 +152,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private func hangUp() {
         let first = io.withLock { () -> Bool in
             guard !closed else { return false }
-            closed = true; stopWrites = true; source?.cancel(); source = nil; close(primaryFD)
+            closed = true; stopWrites = true
+            if let s = source { closer.ask(); s.cancel(); source = nil } else { close(primaryFD) }   // with a source: closed in its cancel handler
             return true
         }
         // Once only (finish and deinit both get here): a second close would hit whatever reused the number since.
@@ -213,4 +222,14 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 
     /// `f(pid)` while the pid is still this program's.
     private func signal(_ f: (pid_t) -> Void) { life.withLock { if !reaped { f(pid) } } }
+}
+
+/// Closes an fd from a dispatch source's cancel handler, only when asked to (a source cancelled at EOF leaves it open).
+private final class FDCloser: @unchecked Sendable {   // asked / done under lock
+    let fd: Int32
+    private let lock = NSLock()
+    private var asked = false, done = false
+    init(_ fd: Int32) { self.fd = fd }
+    func ask() { lock.withLock { asked = true } }
+    func cancelled() { lock.withLock { if asked && !done { done = true; close(fd) } } }
 }

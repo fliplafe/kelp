@@ -90,6 +90,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         }
         listenFD = try Unix.listen(socketPath)
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: .global())
+        let fd = listenFD
+        src.setCancelHandler { close(fd) }   // after any accept still running, not under it
         src.setEventHandler { [self] in
             let fd = accept(listenFD, nil, nil)
             guard fd >= 0 else { return }
@@ -109,7 +111,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         lock.lock(); let all = Array(live.values); let cs = Array(conns.values); lock.unlock()
         all.forEach { $0.pty.kill() }
         cs.forEach { $0.hangUp() }
-        close(listenFD); unlink(socketPath)
+        if acceptSource == nil { close(listenFD) }   // else its cancel handler closes it
+        unlink(socketPath)
         if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }
     }
 
