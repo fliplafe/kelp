@@ -58,7 +58,7 @@ extension Daemon {
                 if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
                     publish(ls.markHibernated())
                 } else {
-                    ls.overrideStatus(.exited)   // said here: once out of `live`, nothing records its exit
+                    ls.overrideStatus(.exited); publish(ls.snapshot)   // said here and saved now: out of `live`, nothing records its exit
                 }
                 pids += ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
             }

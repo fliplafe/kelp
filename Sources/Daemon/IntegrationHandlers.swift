@@ -15,6 +15,19 @@ extension Daemon {
         return v
     }
 
+    /// `{name}` from `vars` in one pass over the template: a value is never searched again, so a title holding "{body}"
+    /// stays as written whatever order the names come in.
+    static func fill(_ template: String, _ vars: [String: String]) -> String {
+        var out = "", rest = Substring(template)
+        while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {
+            out += rest[..<open]
+            let name = String(rest[rest.index(after: open)..<close])
+            out += vars[name] ?? String(rest[open...close])
+            rest = rest[rest.index(after: close)...]
+        }
+        return out + rest
+    }
+
     func repoPath(_ p: JSONValue) throws -> (Repo, String) {
         if let wid = p["worktreeId"]?.string, let w = try store.worktree(wid), let r = try store.repo(w.repoId) { return (r, w.path) }
         guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
@@ -251,7 +264,7 @@ extension Daemon {
                 }) else { throw RPCError.internalError("worktree vanished") }
                 let cfg = trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
                 let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
-                var prompt = cfg.issueCommand.map { t in vars.reduce(t) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) } }
+                var prompt = cfg.issueCommand.map { Self.fill($0, vars) }
                     ?? Recipes.render("issue", config: cfg, vars: vars)
                 if let extra = p["prompt"]?.string, !extra.isEmpty { prompt += "\n\n" + extra }
                 var o = Launch(p); o.prompt = prompt; o.title = "\(ref) \(title)".prefix(48).description

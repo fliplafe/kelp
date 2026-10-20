@@ -51,6 +51,12 @@ extension Daemon {
         catch let e as GitError { throw RPCError.internalError(e.message) }
     }
 
+    /// Where a project's worktrees go: its name made safe for a folder ("../x" can't leave `worktrees/`) and its id, so two
+    /// projects with one name don't share a folder.
+    static func worktreesDir(_ root: URL, _ r: Repo) -> URL {
+        root.appendingPathComponent("worktrees").appendingPathComponent(Git.slug(r.name).replacingOccurrences(of: ".", with: "-") + "-" + r.id.prefix(8))
+    }
+
     /// git, gh and ssh hold their thread until they exit, and Swift's cooperative pool has one thread per core: a few slow
     /// ones (the sidebar asks every folder's PR at once) would stall every other request, a terminal's attach included.
     /// A thread of its own, not GCD's pool: that one stops at 64 threads (concurrent queues Kelp makes draw from it too),
@@ -117,7 +123,7 @@ extension Daemon {
             let branch = try ref(p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
             let base = try ref(p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? r.baseBranch
             let path = try Git.addWorktree(repo: r.path, branch: branch, base: base,
-                                           into: root.appendingPathComponent("worktrees/\(r.name)"), copyFiles: r.copyFiles)
+                                           into: Self.worktreesDir(root, r), copyFiles: r.copyFiles)
             let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? (p["branch"] == nil ? auto.name : ""), base: base)
             try store.save(w)
             var result = try JSONValue.from(w)
@@ -306,6 +312,8 @@ extension Daemon {
             if try Git.isDirty(r.path) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
             // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
             let branch = (try? Git.currentBranch(w.path)) ?? w.branch
+            // Detached: "HEAD" would merge the main checkout into itself ("Already up to date") and report success.
+            guard branch != "HEAD" else { throw RPCError.invalidParams("This workspace isn't on a branch (detached HEAD). Create a branch for its commits, then merge.") }
             let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: p["keepConflicts"]?.bool == true)
             return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
 

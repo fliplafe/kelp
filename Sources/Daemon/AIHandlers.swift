@@ -15,11 +15,17 @@ extension Daemon {
             if let st = p["status"]?.string.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
             return .null
 
-        case "session.restart":   // (withoutSessionId: the new session pins an id of its own, never the old one's)    // same command, same directory; resumes the conversation when the agent supports it
+        // Same command, same directory; resumes the conversation when the agent supports it. The new session pins an id of
+        // its own, never the old one's (withoutSessionId).
+        case "session.restart":
             guard let old = try store.session(p.req("id")) else { throw RPCError.invalidParams("no session") }
             // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
-            // If the new one can't start, this one still ends as Ended.
-            if let ls = existing(old.id) { Self.waitGone(ls.pty.terminate()) }
+            // Under wakeLock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
+            // If the new one can't start, the old one still ends as Ended.
+            try wakeLock.withLock {
+                if let ls = existing(old.id) { Self.waitGone(ls.pty.terminate()) }
+                else if old.status == .hibernated { var s = old; s.status = .exited; try store.update(s) }
+            }
             let m = try manifest(old.agent, command: nil, fallbackArgv: old.argv)
             var o = Launch(p); o.title = old.titleManual ? old.title : nil
             if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise

@@ -8,7 +8,9 @@ extension Git {
 
     /// New branch from `base` in a fresh worktree; copies `copyFiles` present in the repo root.
     public static func addWorktree(repo: String, branch: String, base: String, into dir: URL, copyFiles: [String]) throws -> String {
-        let path = dir.appendingPathComponent(slug(branch)).path
+        // "feat/a" and "feat-a" make one slug: the second gets "-2" rather than a confusing "already exists" from git.
+        var path = dir.appendingPathComponent(slug(branch)).path, n = 2
+        while FileManager.default.fileExists(atPath: path) { path = dir.appendingPathComponent("\(slug(branch))-\(n)").path; n += 1 }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try run(["worktree", "add", "-b", branch, path, base], cwd: repo)
         let fm = FileManager.default
@@ -81,6 +83,13 @@ extension Git {
         if let branch, !dropCommits, case let n = try onlyOnBranch(repo: repo, branch), n > 0 {
             throw GitError(args: ["branch", "-D", branch], status: 1,
                            stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
+        }
+        // Commits made on a detached HEAD belong to no branch at all: removing the folder would leave them to `git gc`.
+        if !dropCommits, FileManager.default.fileExists(atPath: path),
+           case let n = Int((try? run(["rev-list", "--count", "HEAD", "--not", "--branches", "--remotes"], cwd: path))?   // no commits yet: 0
+               .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0, n > 0 {
+            throw GitError(args: ["worktree", "remove"], status: 1,
+                           stderr: "This workspace has \(n) commit\(n == 1 ? "" : "s") on no branch (a detached HEAD). Create a branch for them first.")
         }
     }
 

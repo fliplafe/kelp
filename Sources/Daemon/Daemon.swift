@@ -313,13 +313,14 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         if o.openURLs, let wid = worktreeId {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
             ls.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(sid)])) }
         }
+        // The record first: a program nobody has a record of could be neither seen nor stopped.
+        do { try store.save(rec) } catch { ls.discard(); throw error }
         lock.lock(); live[rec.id] = ls; lock.unlock()
-        defer { ls.start() }   // after the record is saved (its first status must not be overwritten), and in any case
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
         }
-        try store.save(rec)
+        ls.start()   // after the record is saved: its first status must not be overwritten
         notify("event.session", try .from(rec))
         return rec
     }

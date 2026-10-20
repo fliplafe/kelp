@@ -63,7 +63,8 @@ extension Daemon {
             // {digest} from scripts.list: the file changed since it was shown (an agent, a pull), so that isn't what was trusted.
             // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
             // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
-            // program. (The limit: a process of this user can still drive the app itself, e.g. with synthetic key events.)
+            // program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
+            // process of this user can drive the app (synthetic key events) or write trusted-configs.json itself.
             guard let peer = lock.withLock({ conns[conn]?.peer }), peer == Self.appExecutable else {
                 throw RPCError.invalidParams("Only Kelp's window can trust a project's commands: open the project there and run one.")
             }

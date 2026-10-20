@@ -674,3 +674,36 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "one\ntwo"]))
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("[200~one") == true })
 }
+
+/// A workspace on a detached HEAD: merging says so instead of "merged" (it merged nothing), and removing it refuses to
+/// leave its commits on no branch.
+@Test func aDetachedWorkspaceIsNeitherMergedNorRemovedSilently() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt: Worktree = try await w.c.call("worktree.create", .obj(["repoId": .string(w.repo.id), "branch": "feat/detached", "setup": false]), as: Worktree.self)
+    try Git.run(["checkout", "-q", "--detach"], cwd: wt.path)
+    try "work\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)
+    try Git.run(["commit", "-qam", "on no branch"], cwd: wt.path)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("git.merge", .obj(["id": .string(wt.id)])) }
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("worktree.remove", .obj(["id": .string(wt.id), "force": true])) }
+    #expect(FileManager.default.fileExists(atPath: wt.path + "/a.txt"))
+}
+
+/// Worktree folders never collide or leave `worktrees/`: "feat/a" and "feat-a" get two folders, a project named "../x"
+/// stays inside.
+@Test func worktreeFoldersNeitherCollideNorEscape() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let a: Worktree = try await w.c.call("worktree.create", .obj(["repoId": .string(w.repo.id), "branch": "feat/a", "setup": false]), as: Worktree.self)
+    let b: Worktree = try await w.c.call("worktree.create", .obj(["repoId": .string(w.repo.id), "branch": "feat-a", "setup": false]), as: Worktree.self)
+    #expect(a.path != b.path)
+    let other = try makeRepo()
+    let r: Repo = try await w.c.call("repo.add", .obj(["path": .string(other), "name": "../../escaped"]), as: Repo.self)
+    let e: Worktree = try await w.c.call("worktree.create", .obj(["repoId": .string(r.id), "branch": "x", "setup": false]), as: Worktree.self)
+    let inside = w.root.appendingPathComponent("worktrees").standardizedFileURL.path + "/"
+    #expect(URL(fileURLWithPath: e.path).standardizedFileURL.path.hasPrefix(inside), "\(e.path)")
+}
+
+/// An issue's text is put in once: a title that says "{body}" stays as written, in any order of the names.
+@Test func issueTemplatesFillEachPlaceholderOnce() {
+    let vars = ["title": "Use {body} here", "body": "BODY", "ref": "#7"]
+    #expect(Daemon.fill("{ref}: {title}\n{body} {unknown}", vars) == "#7: Use {body} here\nBODY {unknown}")
+}

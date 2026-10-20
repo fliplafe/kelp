@@ -77,6 +77,13 @@ public final class Store: Sendable {
         m.registerMigration("v10") { db in
             try db.alter(table: "session") { t in t.add(column: "profile", .text) }
         }
+        m.registerMigration("v11") { db in   // a workspace's review comments go with it (its project's removal included)
+            try db.execute(sql: "DELETE FROM diffComment WHERE worktreeId NOT IN (SELECT id FROM worktree)")
+            try db.execute(sql: """
+                CREATE TRIGGER worktreeComments AFTER DELETE ON worktree
+                BEGIN DELETE FROM diffComment WHERE worktreeId = OLD.id; END
+                """)
+        }
         try m.migrate(db)
     }
 

@@ -469,3 +469,11 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     let d = try #require(try Git.diff(repo, source: .unstaged, file: "zero").first)   // returns at once: /dev/zero isn't read
     #expect(d.hunks.first?.lines.map(\.text) == ["/dev/zero"] && d.header.contains("120000"))
 }
+
+@Test func anUntrackedScriptKeepsItsExecutableMode() throws {
+    let repo = try tempRepo()
+    try "#!/bin/sh\necho hi\n".write(toFile: repo + "/run.sh", atomically: true, encoding: .utf8)
+    chmod(repo + "/run.sh", 0o755)
+    let d = try #require(try Git.diff(repo, source: .unstaged, file: "run.sh").first)
+    #expect(d.header.contains("new file mode 100755"))   // a hunk staged from it keeps the script runnable
+}

@@ -189,7 +189,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             if !found.isEmpty, found != lastLimits { lastLimits = found; limits = found }
         }
         let subs = attached, sid = record.id   // read under the lock: other threads write `record`
-        let changed = sync() ?? (said != (record.summary, record.progress) ? record : nil)
+        emit(sync() ?? (said != (record.summary, record.progress) ? record : nil))
         lock.unlock()
         if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !limits.isEmpty { onLimits?(limits) }
@@ -197,7 +197,6 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if let topic { onTopic?(topic) }
         if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
         onOutput?(sid, d, subs)
-        if let changed { onStatus?(changed) }
     }
 
     private func handleExit(_ code: Int32) {
@@ -207,10 +206,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure
         if exitCode != 0, record.agent != "shell" { record.summary = "Ended with an error (exit code \(exitCode))" }
         record.progress = nil; record.exitCode = Int((code & 0x7f) == 0 ? (code >> 8) & 0xff : 128 + (code & 0x7f))
-        let changed = sync()
+        emit(sync())
         try? log?.close()
         lock.unlock()
-        if let changed { onStatus?(changed) }
     }
 
     /// What the program says about itself (OSC 7501 or `kelp report`): its state, a message for its row, how far it got.
@@ -223,13 +221,22 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
 
     /// `kelp report`: the record to publish when only what it says changed (a new state goes out through onStatus).
     func report(_ r: ProgramStatus.Report) -> Session? {
-        lock.lock(); apply(r); let c = sync(), rec = record; lock.unlock()
-        if let c { onStatus?(c); return nil }
+        lock.lock(); apply(r); let c = sync(), rec = record; emit(c); lock.unlock()
+        if c != nil { return nil }
         return rec
     }
 
     /// Copy detector status into the record. Caller holds the lock. Returns the record if it changed.
     /// Ended is final: a hook or a keystroke that arrives after the exit doesn't bring the session back.
+    /// Hands a change to `onStatus` (saved, sent to the app, turn bookkeeping) in the order the changes were made: queued
+    /// here, under the lock, and run one after another. Called after the lock, from whichever thread made the change, an
+    /// older "working" could be saved after a newer "done" and stay. Caller holds the lock.
+    private func emit(_ s: Session?) {
+        guard let s else { return }
+        statusQueue.async { self.onStatus?(s) }   // held until it ran: a session just taken out of `live` still says so
+    }
+    private let statusQueue = DispatchQueue(label: "kelp.session.status")
+
     private func sync() -> Session? {
         let s = detector.status
         guard s != record.status, record.status != .exited else { return nil }
@@ -271,7 +278,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
                 detector.override(.idle); record.summary = "Stopped by you"; interruptArmed = nil
             } else if Date().timeIntervalSince(arm.at) > 10 { interruptArmed = nil }
         }
-        let c = sync()
+        emit(sync())
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
         var prompt: String?
         // Never while a question is open: its Enter would be the prompt's, and the default option is usually "Yes". Kelp
@@ -281,7 +288,6 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompt = nil }
         }
         lock.unlock()
-        if let c { onStatus?(c) }
         if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }, paste: true) }   // a task's text: never keys
     }
 
@@ -386,9 +392,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
                 detector.override(.working); interruptArmed = (Date(), "")
             }
         }
-        let changed = sync() ?? read
+        emit(sync() ?? read)
         lock.unlock()
-        if let changed { onStatus?(changed) }
         lock.lock(); defer { lock.unlock() }
         guard !sawFirstPrompt else { return }
         var s = String(decoding: d, as: UTF8.self)
@@ -415,8 +420,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     }
 
     func overrideStatus(_ s: AgentStatus) {
-        lock.lock(); detector.override(s); let c = sync(); lock.unlock()
-        if let c { onStatus?(c) }
+        lock.lock(); detector.override(s); emit(sync()); lock.unlock()
     }
 
     /// `trigger`: PreCompact's manual / auto; `message`: what a Notification says ("Claude needs your permission to use Bash").
@@ -435,8 +439,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             detector.hook(event)
         default: detector.hook(event)
         }
-        let c = sync(); lock.unlock()
-        if let c { onStatus?(c) }
+        emit(sync()); lock.unlock()
     }
 
     /// A hook's `cwd`: where the agent works now. The record when that changed.
