@@ -18,6 +18,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var focusMode: (sidebar: Bool, inspector: Bool)?
     /// Settings › Appearance › Auto-hide: that panel stays away the same way, for good.
     private var autoHide = (sidebar: false, inspector: false)
+    /// Auto-hide panels the toggle (⌘0 / ⌥⌘0) pinned: they stay in like a normal panel until it's pressed again.
+    private var pinned = (sidebar: false, inspector: false)
     private let leftEdge = EdgeTrigger(), rightEdge = EdgeTrigger()
     private let bar = WindowBar()
     /// Fixed in the window bar's corners, whichever panels are open.
@@ -91,15 +93,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func toggleInspectorPanel() {
-        if hides(inspectorItem) { return togglePeek(inspectorItem) }
+        if focusMode != nil { return togglePeek(inspectorItem) }
+        if autoHide.inspector { return togglePin(inspectorItem) }
         inspectorItem.animator().isCollapsed.toggle()
         UserDefaults.standard.set(inspectorItem.isCollapsed, forKey: "inspector.collapsed")
     }
     func showInspector(panel: String) {
-        if inspectorItem.isCollapsed { toggleInspectorPanel() }
+        if inspectorItem.isCollapsed { if hides(inspectorItem) { peek(sidebar: false) } else { toggleInspectorPanel() } }
         inspector.show(panel: panel)
     }
-    @objc func toggleSidebarPanel() { if hides(sidebarItem) { togglePeek(sidebarItem) } else { split.toggleSidebar(nil) } }
+    @objc func toggleSidebarPanel() {
+        if focusMode != nil { togglePeek(sidebarItem) } else if autoHide.sidebar { togglePin(sidebarItem) } else { split.toggleSidebar(nil) }
+    }
     var sidebarShown: Bool { !sidebarItem.isCollapsed }
     var inspectorShown: Bool { !inspectorItem.isCollapsed }
 
@@ -118,7 +123,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             sidebarItem.animator().isCollapsed = was.sidebar; inspectorItem.animator().isCollapsed = was.inspector
         } else {
             stopPeek()
-            focusMode = (sidebarItem.isCollapsed || autoHide.sidebar, inspectorItem.isCollapsed || autoHide.inspector)
+            focusMode = (sidebarItem.isCollapsed || hides(sidebarItem), inspectorItem.isCollapsed || hides(inspectorItem))
             sidebarItem.animator().isCollapsed = true; inspectorItem.animator().isCollapsed = true
         }
         let on = focusMode != nil
@@ -129,7 +134,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func setAutoHide(sidebar: Bool, _ on: Bool) {
         guard on != (sidebar ? autoHide.sidebar : autoHide.inspector) else { return }   // the first, unloaded read keeps the saved layout
-        if sidebar { autoHide.sidebar = on; focusMode?.sidebar = on } else { autoHide.inspector = on; focusMode?.inspector = on }
+        if sidebar { autoHide.sidebar = on; pinned.sidebar = false; focusMode?.sidebar = on } else { autoHide.inspector = on; pinned.inspector = false; focusMode?.inspector = on }
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
         if peeking === item { stopPeek() }
         if focusMode == nil {
@@ -138,11 +143,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         updateEdges()
     }
-    private func hides(_ item: NSSplitViewItem) -> Bool { focusMode != nil || (item === sidebarItem ? autoHide.sidebar : autoHide.inspector) }
+    private func hides(_ item: NSSplitViewItem) -> Bool {
+        focusMode != nil || (item === sidebarItem ? autoHide.sidebar && !pinned.sidebar : autoHide.inspector && !pinned.inspector)
+    }
     private func updateEdges() { leftEdge.isHidden = !hides(sidebarItem); rightEdge.isHidden = !hides(inspectorItem) }
 
     /// Focus mode and auto-hide: the pointer at an edge brings that panel in; once it leaves the panel for the rest
-    /// of the window, the panel goes again. ⌘0 / ⌥⌘0 bring it in the same way.
+    /// of the window, the panel goes again. In focus mode ⌘0 / ⌥⌘0 bring it in the same way; with auto-hide they pin it.
     /// (A tracking area on the editor used to end it: while the inspector slid in the editor was still under the
     /// pointer for a frame, so it went straight back out.)
     private var peeking: NSSplitViewItem?
@@ -185,6 +192,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         peeking = nil; editors.hold(from: nil)
     }
     private func togglePeek(_ item: NSSplitViewItem) { if peeking === item { endPeek() } else { peek(sidebar: item === sidebarItem) } }
+    /// Auto-hide: pinned, the panel stays (a peeking one just stops peeking and the editor area makes room);
+    /// unpinned, it goes and comes in at the edge again.
+    private func togglePin(_ item: NSSplitViewItem) {
+        let pin = item === sidebarItem ? !pinned.sidebar : !pinned.inspector
+        if item === sidebarItem { pinned.sidebar = pin } else { pinned.inspector = pin }
+        if peeking === item { stopPeek() }
+        item.animator().isCollapsed = !pin
+        updateEdges()
+    }
 
     /// Closing the window quits (the daemon keeps agents running) — through the unsaved-files question; Cancel keeps it.
     func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
