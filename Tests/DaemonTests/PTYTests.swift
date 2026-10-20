@@ -106,7 +106,8 @@ final class Box: @unchecked Sendable {
     #expect(p.foregroundProgram == nil)   // at the prompt
     p.write(Data("sleep 30\n".utf8))
     var seen: String?
-    for _ in 0..<200 where seen == nil { try await Task.sleep(for: .milliseconds(100)); seen = p.foregroundProgram }   // up to 20 s on a loaded machine
+    // Until it is sleep: just after the fork the foreground is briefly a copy of the shell, not yet the program.
+    for _ in 0..<200 where seen != "sleep" { try await Task.sleep(for: .milliseconds(100)); seen = p.foregroundProgram }   // up to 20 s on a loaded machine
     #expect(seen == "sleep")
 }
 
