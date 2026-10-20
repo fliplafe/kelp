@@ -66,3 +66,23 @@ private func home() throws -> URL {
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: f.path)
     #expect(!s.reloadIfChanged() && s["a"] == .int(1))
 }
+
+@Test func aChangeFromTheAppKeepsAHandEditMadeJustBefore() throws {
+    let d = try home()
+    let s = SettingsStore(root: d)
+    _ = try s.set("a", .int(1))
+    try #"{"a": 1, "byHand": true}"#.write(to: d.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)   // not polled yet
+    _ = try s.set("b", .int(2))
+    let back = SettingsStore(root: d)
+    #expect(back["byHand"] == .bool(true) && back["b"] == .int(2) && back["a"] == .int(1))
+}
+
+@Test func aFileBeingEditedIsNeverOverwritten() throws {
+    let d = try home()
+    let s = SettingsStore(root: d)
+    _ = try s.set("a", .int(1))
+    let f = d.appendingPathComponent("settings.json")
+    try "{ \"a\": 1, \"half-typed\": ".write(to: f, atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { _ = try s.set("b", .int(2)) }
+    #expect(try String(contentsOf: f, encoding: .utf8) == "{ \"a\": 1, \"half-typed\": ")   // the user's text is still there
+}

@@ -210,3 +210,11 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(pr.checks.failed == 1 && pr.checks.passed == 0)
     #expect(CIRuns.gitlabState("manual").0 == "waiting" && CIRuns.gitlabState("canceled").1 == "cancelled")
 }
+
+@Test func gitlabIsRecognisedByTheHostNotAWordInThePath() {
+    #expect(GitLab.isGitLab(remote: "git@gitlab.com:g/r.git"))
+    #expect(GitLab.isGitLab(remote: "https://gitlab.example.org/g/r"))
+    #expect(!GitLab.isGitLab(remote: "https://github.com/firecow/gitlab-ci-local.git"))   // a GitHub repo named after GitLab
+    #expect(!GitLab.isGitLab(remote: "git@github.com:me/gitlab-mirror.git"))
+    #expect(!GitLab.isGitLab(remote: ""))
+}

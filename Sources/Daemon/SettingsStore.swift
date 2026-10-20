@@ -33,6 +33,14 @@ final class SettingsStore: @unchecked Sendable {   // values and mtime under loc
     /// nil or .null removes the key.
     func set(_ key: String, _ value: JSONValue?) throws -> JSONValue {
         try lock.withLock {
+            // A hand edit saved since the last poll is merged, not overwritten; a file that doesn't parse is the user's
+            // work in progress, so nothing is written over it.
+            if let d = try? Data(contentsOf: url) {
+                guard case .object(let onDisk)? = try? JSONDecoder().decode(JSONValue.self, from: d) else {
+                    throw RPCError.invalidParams("settings.json has an error, so the change wasn't saved. Fix the file (or remove it) and try again.")
+                }
+                values = onDisk
+            }
             values[key] = value == .null ? nil : value
             try write()
             return .object(values)

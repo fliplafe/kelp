@@ -30,7 +30,7 @@ extension Git {
     }
 
     /// `git@github.com:o/r.git`, `ssh://git@host:22/o/r`, `https://user@host/o/r.git` → (host, "o/r").
-    static func webRepo(_ remote: String) -> (String, String)? {
+    public static func webRepo(_ remote: String) -> (String, String)? {
         var s = remote
         var hasScheme = false   // only `ssh://host:22/…` has a port; in `git@host:123/repo` the 123 is the owner
         if let r = s.range(of: "://") { s = String(s[r.upperBound...]); hasScheme = true }

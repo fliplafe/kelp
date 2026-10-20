@@ -66,3 +66,8 @@ private func folder(_ files: [String: String]) throws -> URL {
     #expect(info.id == "me.icons" && info.name == "Icons")
     #expect(c.iconThemes.map(\.id) == ["i"])
 }
+
+@MainActor @Test func anExtensionIdThatIsntAPlainFolderNameIsRefused() {
+    for bad in ["..", ".", "", "a/b", "../x", ".hidden"] { #expect(!ExtensionRegistry.isPlainName(bad), "\(bad.debugDescription)") }
+    for ok in ["me.icons", "icons", "kelp-git"] { #expect(ExtensionRegistry.isPlainName(ok)) }
+}

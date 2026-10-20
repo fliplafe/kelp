@@ -167,6 +167,11 @@ final class ExtensionRegistry {
     }
 
     /// Follows symlinks: a VS Code extension can be linked in rather than copied.
+    /// One folder name and nothing more: not empty, no "/", not "." or "..", not hidden.
+    nonisolated static func isPlainName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("/") && !name.contains("\0") && !name.hasPrefix(".") && name.count <= 255
+    }
+
     private static func isFolder(_ u: URL) -> Bool {
         var dir: ObjCBool = false
         return FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) && dir.boolValue
@@ -195,6 +200,9 @@ final class ExtensionRegistry {
                 name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: folder.appendingPathComponent("package.json"))).manifest.id)
                     ?? src.deletingPathExtension().lastPathComponent
             }
+            // The id names a folder inside ~/.kelp/extensions: "..", "a/b" or ".hidden" would point somewhere else (".." is
+            // ~/.kelp itself, which the line below would send to the Trash).
+            guard Self.isPlainName(name) else { throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path]) }
             let dest = dir.appendingPathComponent(name)
             if fm.fileExists(atPath: dest.path) { try fm.trashItem(at: dest, resultingItemURL: nil) }
             try fm.copyItem(at: folder, to: dest)

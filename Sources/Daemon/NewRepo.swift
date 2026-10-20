@@ -50,10 +50,18 @@ extension Daemon {
         return dest
     }
 
+    /// Makes the folder, or fails if anything is there already: of two clones racing for one name, exactly one gets it.
+    static func claim(_ dest: String) -> Bool { mkdir(dest, 0o755) == 0 }
+
     private func clone(_ url: String, into parent: String, id: String, conn: Int) async throws -> String {
         let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty, !url.hasPrefix("-") else { throw RPCError.invalidParams("Enter the repository's URL.") }
         let dest = try Self.newFolder(Self.repoName(url), in: parent)
+        // Made here, atomically: two clones that pick the same name can't both get past this, so the cleanup below only
+        // ever removes this clone's own folder (git clones into an empty folder that exists).
+        guard Self.claim(dest) else {
+            throw RPCError.invalidParams("“\((dest as NSString).lastPathComponent)” already exists in \((parent as NSString).abbreviatingWithTildeInPath).")
+        }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         proc.arguments = ["clone", "--progress", "--", url, dest]
@@ -74,7 +82,7 @@ extension Daemon {
         Self.clones.set(id, nil)
         err.fileHandleForReading.readabilityHandler = nil
         guard status.0 == 0 else {
-            try? FileManager.default.removeItem(atPath: dest)   // it didn't exist before (newFolder checked)
+            try? FileManager.default.removeItem(atPath: dest)   // this clone made it (mkdir above), nobody else wrote there
             if status.1 == .uncaughtSignal || status.0 == 130 { throw RPCError.invalidParams("Clone cancelled.") }
             throw RPCError.invalidParams(log.failure ?? "git clone failed (exit code \(status.0)).")
         }

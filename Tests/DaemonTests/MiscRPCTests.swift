@@ -104,3 +104,24 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     #expect(pick(["/p/gone"], ["/p/gone", "/p/api"], usable: ["/p/api"]) == "/p/api")   // a folder that no longer exists is skipped
     #expect(pick([], []) == nil)
 }
+
+@Test func aFailedCloneRemovesOnlyItsOwnFolder() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let parent = tmp().path
+    // Someone else's folder already has the name this clone would use.
+    try FileManager.default.createDirectory(atPath: parent + "/app", withIntermediateDirectories: true)
+    try "mine\n".write(toFile: parent + "/app/keep.txt", atomically: true, encoding: .utf8)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.clone", .obj(["url": "/nonexistent/app.git", "parent": .string(parent), "id": "c1"])) }
+    #expect(FileManager.default.fileExists(atPath: parent + "/app/keep.txt"))   // untouched
+    // A clone that fails in a folder of its own leaves nothing behind.
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.clone", .obj(["url": "/nonexistent/other.git", "parent": .string(parent), "id": "c2"])) }
+    #expect(!FileManager.default.fileExists(atPath: parent + "/other"))
+}
+
+@Test func onlyOneCloneCanClaimAFolderName() throws {
+    let parent = tmp().path
+    #expect(Daemon.claim(parent + "/app"))      // the first clone gets the folder
+    #expect(!Daemon.claim(parent + "/app"))     // a second one with the same name is refused before it can touch it
+    try "theirs".write(toFile: parent + "/file", atomically: true, encoding: .utf8)
+    #expect(!Daemon.claim(parent + "/file"))    // a file in the way counts too
+}
