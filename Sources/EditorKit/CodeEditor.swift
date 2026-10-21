@@ -144,7 +144,7 @@ public final class CodeEditor: NSObject {
         func ribbon(in v: NSView) -> NSView? {
             NSStringFromClass(type(of: v)).hasSuffix("LineFoldRibbonView") ? v : v.subviews.lazy.compactMap(ribbon).first
         }
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua   // as defaultTheme decides
+        let dark = (NSApp?.effectiveAppearance ?? NSAppearance.currentDrawing()).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua   // as defaultTheme decides
         ribbon(in: controller.view)?.alphaValue = dark ? 0.5 : 1
     }
 
@@ -180,7 +180,7 @@ public final class CodeEditor: NSObject {
 
     /// Xcode-like default themes; colors must be concrete RGB (the editor reads brightness components).
     static var defaultTheme: EditorTheme {
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let dark = (NSApp?.effectiveAppearance ?? NSAppearance.currentDrawing()).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         func c(_ hex: UInt32) -> NSColor { NSColor(srgbRed: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1) }
         func a(_ hex: UInt32, bold: Bool = false) -> EditorTheme.Attribute { .init(color: c(hex), bold: bold) }
         if dark {

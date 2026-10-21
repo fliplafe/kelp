@@ -13,7 +13,7 @@ final class FileTab: SavableTab {
     let path: String, url: URL
     var onChange: (() -> Void)?
     let view: NSView
-    private var editor: CodeEditor?
+    private(set) var editor: CodeEditor?
     private(set) var markdown: MarkdownTab?
     private var notebook: NotebookTab?
     private var lastSaved = ""
