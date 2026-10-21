@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Core
 
 /// SQLite persistence for repos, worktrees, sessions and diff comments.
 public final class Store: Sendable {

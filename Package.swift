@@ -20,11 +20,11 @@ let package = Package(
         .package(url: "https://github.com/CodeEditApp/CodeEditSourceEditor", from: "0.15.0"),
     ],
     targets: [
-        .target(name: "Core", dependencies: [.product(name: "GRDB", package: "GRDB.swift")], resources: [.copy("Resources/extensions.md")]),   // docs/extensions.md links here
+        .target(name: "Core", resources: [.copy("Resources/extensions.md")]),   // docs/extensions.md links here
         .target(name: "GitKit", dependencies: ["Core"]),
         .target(name: "Agents", dependencies: ["Core"]),
         .target(name: "AgentData", dependencies: ["Core"]),
-        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData"]),
+        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData", .product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "TerminalKit", dependencies: ["Core", "GhosttyKit"], linkerSettings: ghosttyLinks),
         .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
         .executableTarget(name: "kelp", dependencies: ["Core"]),

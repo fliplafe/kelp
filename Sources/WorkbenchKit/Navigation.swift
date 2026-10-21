@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 extension WorkspaceLayout {
     /// The tab `offset` steps from the selected one in the focused group, wrapping around (⌃Tab).

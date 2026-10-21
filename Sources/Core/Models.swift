@@ -1,7 +1,6 @@
 import Foundation
-import GRDB
 
-public struct Repo: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord, Identifiable {
+public struct Repo: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var path: String
@@ -11,10 +10,9 @@ public struct Repo: Codable, Sendable, Equatable, FetchableRecord, PersistableRe
     public init(id: String = UUID().uuidString, name: String, path: String, baseBranch: String = "main", copyFiles: [String] = [".env", ".env.local"]) {
         self.id = id; self.name = name; self.path = path; self.baseBranch = baseBranch; self.copyFiles = copyFiles
     }
-    public static let databaseTableName = "repo"
 }
 
-public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord, Identifiable {
+public struct Worktree: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var repoId: String
     public var branch: String
@@ -37,7 +35,6 @@ public struct Worktree: Codable, Sendable, Equatable, FetchableRecord, Persistab
         self.note = note; self.archived = archived; self.createdAt = createdAt
         self.issue = issue; self.issueURL = issueURL; self.linearIssueId = linearIssueId; self.prNumber = prNumber; self.prURL = prURL
     }
-    public static let databaseTableName = "worktree"
 }
 
 public enum AgentStatus: String, Codable, Sendable {
@@ -59,7 +56,7 @@ public enum AgentStatus: String, Codable, Sendable {
     }
 }
 
-public struct Session: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord, Identifiable {
+public struct Session: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var worktreeId: String?
     public var cwd: String
@@ -98,10 +95,9 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     public var displayTitle: String { title.isEmpty ? (agent ?? "shell") : title }
     /// The folder the agent works in now.
     public var currentDir: String { workDir ?? cwd }
-    public static let databaseTableName = "session"
 }
 
-public struct DiffComment: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord, Identifiable {
+public struct DiffComment: Codable, Sendable, Equatable, Identifiable {
     public enum State: String, Codable, Sendable { case open, sent, resolved }
     public var id: String
     public var worktreeId: String
@@ -115,7 +111,6 @@ public struct DiffComment: Codable, Sendable, Equatable, FetchableRecord, Persis
         self.id = id; self.worktreeId = worktreeId; self.file = file; self.startLine = startLine
         self.endLine = endLine; self.quote = quote; self.text = text; self.state = state
     }
-    public static let databaseTableName = "diffComment"
 }
 
 extension Worktree {
