@@ -160,7 +160,9 @@ extension GitHubPRMerge: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Done {
         guard let w = try d.store.worktree(worktreeId), let n = pr ?? w.prNumber else { throw RPCError.invalidParams("no PR linked") }
         let how = method ?? "squash"
-        if let slug = try await d.offload({ BitbucketClient.slug(cwd: w.path) }), let bb = await d.bitbucketClient() {
+        if let slug = try await d.offload({ BitbucketClient.slug(cwd: w.path) }) {
+            // Bitbucket's API or nothing: gh would look for the number on whatever GitHub repository it found.
+            guard let bb = await d.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
             try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
         } else if try await d.offload({ GitLab.isGitLab(cwd: w.path) }) {
             try await d.offload { try GitLab.mergeMR(cwd: w.path, number: n, squash: how == "squash") }
@@ -177,9 +179,9 @@ extension GitHubPRMerge: AsyncHandled {
 
 extension LinearSetKey: AsyncHandled {
     func handle(_ d: Daemon) async throws -> LinearUser? {
-        if key.isEmpty { Keychain.delete(Daemon.linearKeyAccount); return nil }
+        if key.isEmpty { try await d.keepSecret("", account: Daemon.linearKeyAccount); return nil }
         let me = try await LinearClient(apiKey: key).viewer()   // validate before saving
-        try Keychain.set(key, account: Daemon.linearKeyAccount)
+        try await d.keepSecret(key, account: Daemon.linearKeyAccount)
         return me
     }
 }
@@ -216,9 +218,9 @@ extension LinearSetState: AsyncHandled {
 
 extension JiraSetCredentials: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Account? {
-        if token.isEmpty { Keychain.delete(Daemon.jiraAccount); return nil }
+        if token.isEmpty { try await d.keepSecret("", account: Daemon.jiraAccount); return nil }
         let name = try await JiraClient(site: site, email: email, token: token).myself()   // validate before saving
-        try Keychain.set(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Daemon.jiraAccount)
+        try await d.keepSecret(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Daemon.jiraAccount)
         return Account(name: name)
     }
 }
@@ -248,8 +250,8 @@ extension JiraTransitionIssue: AsyncHandled {
 
 extension BitbucketSetCredentials: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Done {
-        if token.isEmpty { Keychain.delete(Daemon.bitbucketAccount); return Done() }
-        try Keychain.set(String(decoding: try JSONEncoder().encode(["user": user, "token": token]), as: UTF8.self), account: Daemon.bitbucketAccount)
+        try await d.keepSecret(token.isEmpty ? "" : String(decoding: try JSONEncoder().encode(["user": user, "token": token]), as: UTF8.self),
+                               account: Daemon.bitbucketAccount)
         return Done()
     }
 }

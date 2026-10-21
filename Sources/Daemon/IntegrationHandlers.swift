@@ -39,6 +39,10 @@ extension Daemon {
     func linearClient() async -> LinearClient? { try? await offload { [self] in linear } }
     func jiraClient() async -> JiraClient? { try? await offload { [self] in jira } }
     func bitbucketClient() async -> BitbucketClient? { try? await offload { [self] in bitbucket } }
+    /// Saved there, off the pool as well; an empty one removes the account.
+    func keepSecret(_ value: String, account: String) async throws {
+        try await offload { if value.isEmpty { Keychain.delete(account) } else { try Keychain.set(value, account: account) } }
+    }
 
     /// Jira issues linked to a worktree ("ENG-12") move along with the PR, like Linear.
     func moveJira(_ w: Worktree, toName hint: String, category: String) async {

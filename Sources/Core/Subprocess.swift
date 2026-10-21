@@ -17,8 +17,22 @@ public enum Subprocess {
         public var timedOut: Bool
     }
 
+    /// The daemon's connection reader while it applies an in-order call (`Handled.inOrder`): whatever was sent after the
+    /// call waits for it, so no program runs there. `run` refuses inside `body`, and the call fails instead of stalling.
+    public static func quickOnly<T>(_ body: () throws -> T) rethrows -> T {
+        let d = Thread.current.threadDictionary
+        d[quickOnlyKey] = true
+        defer { d[quickOnlyKey] = nil }
+        return try body()
+    }
+    private static let quickOnlyKey = "dev.kelp.subprocess.quickOnly"
+
     /// `argv[0]` is a path. `env` is the whole environment.
     public static func run(_ argv: [String], cwd: String, env: [String: String], stdin: Data? = nil, timeLimit: TimeInterval) throws -> Output {
+        if Thread.current.threadDictionary[quickOnlyKey] != nil {
+            let name = argv.first.map { ($0 as NSString).lastPathComponent } ?? "A program"
+            throw RPCError.internalError("\(name) can't run from an in-order call: it would hold up the connection.")
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: argv.first ?? "/usr/bin/false")
         p.arguments = Array(argv.dropFirst())

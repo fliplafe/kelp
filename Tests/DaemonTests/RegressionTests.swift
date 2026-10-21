@@ -304,17 +304,29 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     #expect(!(try await screen(typed)).contains("BRIEF:"))   // and by then the first, typed one, still not sent
 }
 
-/// A project without a desk yet, listed from many requests at once, gets exactly one "Workspace 1".
-@Test func listingAtOnceMakesOneFirstDesk() async throws {
+/// A project without a desk yet, synced from many threads at once, gets exactly one "Workspace 1".
+@Test func syncingAtOnceMakesOneFirstDesk() async throws {
     let w = try await world(); defer { w.d.stop() }
     let path = try makeRepo()
     let r = Repo(name: "fresh", path: path, baseBranch: "main")
     try w.d.store.save(r)   // as an older daemon left it: a project, no desk
-    try await withThrowingTaskGroup(of: Void.self) { g in
-        for _ in 0..<16 { g.addTask { _ = try await w.c.call("worktree.list", .obj(["repoId": .string(r.id)])) } }
-        try await g.waitForAll()
-    }
+    DispatchQueue.concurrentPerform(iterations: 16) { _ in try? w.d.syncMainWorkspaces() }
     #expect(try w.d.store.worktrees(repo: r.id).count == 1)
+}
+
+/// Listing only reads: a project an older daemon left without a desk gets its first one when the daemon starts, and a
+/// desk follows its folder's branch switched outside Kelp without anyone listing. worktree.list used to do both.
+@Test func desksFollowTheirFolderWithoutBeingListed() async throws {
+    let root = tmp(), path = try makeRepo()
+    let d = try Daemon(root: root); defer { d.stop() }
+    let r = Repo(name: "older", path: path, baseBranch: "main")
+    try d.store.save(r)   // as an older daemon left it: a project, no desk
+    #expect(try WorktreeList(repoId: r.id).handle(d).isEmpty)
+    #expect(try d.store.worktrees(repo: r.id).isEmpty)
+    try d.start()
+    #expect(try await waitFor { try d.store.worktrees(repo: r.id).count == 1 })
+    try Git.run(["checkout", "-qb", "elsewhere"], cwd: path)
+    #expect(try await waitFor { try d.store.worktrees(repo: r.id).first?.branch == "elsewhere" })
 }
 
 /// A hookless agent that was typed into and is still printing when its workspace is archived comes back paused, not

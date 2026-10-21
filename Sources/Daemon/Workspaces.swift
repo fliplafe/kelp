@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import Agents
 import GitKit
@@ -19,7 +20,7 @@ extension Daemon {
         let all = try store.worktrees(repo: nil)
         for r in try store.repos() {
             let desks = all.filter { isMain($0, r) }
-            // A remote project's branch is read over ssh: not on every list (an unreachable host would stall each one for
+            // A remote project's branch is read over ssh: not on every sync (an unreachable host would stall each one for
             // its connect timeout). Its desks keep the branch they have; git.status and the like read it when asked.
             if RemoteHost.of(r.path) != nil, !desks.isEmpty { continue }
             let branch = RemoteHost.of(r.path) != nil ? r.baseBranch : (try? Git.currentBranch(r.path)) ?? r.baseBranch
@@ -31,6 +32,42 @@ extension Daemon {
                 }
             }
         }
+    }
+
+    /// One local project's .git, watched for its HEAD.
+    struct HeadWatch: Sendable { let dir: String, watcher: FileWatcher }
+    static let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
+
+    /// At start: desks catch up with branches switched while no daemon ran, and from then on follow them.
+    func followHeads() {
+        watchHeads()
+        do { try syncMainWorkspaces() } catch { Log.store.error("desks didn't follow their folders' branches: \(error)") }
+    }
+
+    /// Desks follow their folder's branch as it moves, also when it's switched outside Kelp: a watcher on each local
+    /// project's .git sees HEAD change, and the sync pushes the desks it updated (event.worktree), so listing only reads.
+    /// Runs at start and whenever a project is written or removed (the store's change hook).
+    /// Limit: a project that is itself a linked worktree (its .git a file) follows at the next start or new desk.
+    func watchHeads() {
+        let local = ((try? store.repos()) ?? []).filter { RemoteHost.of($0.path) == nil }
+        let want = Dictionary(local.map { ($0.id, $0.path + "/.git") }, uniquingKeysWith: { a, _ in a })
+        let have = heads.withLock { $0.mapValues(\.dir) }
+        var made: [String: HeadWatch] = [:]
+        for (id, dir) in want where have[id] != dir {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
+            let fw = FileWatcher(root: dir, deliver: Self.headQueue) { [weak self] paths in
+                guard paths.contains(where: { $0.hasSuffix("/HEAD") && !$0.contains("/logs/") }) else { return }
+                do { try self?.syncMainWorkspaces() } catch { Log.store.error("desks didn't follow their branch: \(error)") }
+            }
+            if let fw { made[id] = HeadWatch(dir: dir, watcher: fw) }
+        }
+        let gone = heads.withLock { [made] h -> [HeadWatch] in
+            let gone = h.filter { want[$0.key] != $0.value.dir }.map(\.value)
+            h = h.filter { want[$0.key] == $0.value.dir }.merging(made) { old, _ in old }
+            return gone
+        }
+        _ = gone   // their streams stop as they go, out of the lock
     }
 
     /// A new desk in the project's folder: instant, named "Workspace N" until its first prompt names it (see autoTitle).

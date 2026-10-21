@@ -81,6 +81,24 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
         #expect(sent.withLock { $0 }.contains(#""source":{"branch":{"name":"switched-to"}}"#))
     }
 
+    /// A Bitbucket pull request merges through Bitbucket's API, and without its credentials says so: gh never runs for
+    /// one (it looked the number up on whatever GitHub repository it found).
+    @Test func aBitbucketPullRequestMergesOnBitbucketOrNotAtAll() async throws {
+        let (d, c, _) = try daemon(); defer { d.stop(); clearKeys() }
+        clearKeys()
+        let path = try makeRepo()
+        try Git.run(["remote", "add", "origin", "git@bitbucket.org:w/r.git"], cwd: path)
+        let repo: Repo = try await c.call("repo.add", .obj(["path": .string(path)]), as: Repo.self)
+        let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
+        let merge = JSONValue.obj(["worktreeId": .string(w.id), "pr": .int(7)])
+        await #expect(throws: Daemon.bitbucketNeedsCredentials) { _ = try await c.call("github.pr-merge", merge) }
+        let asked = OSAllocatedUnfairLock(initialState: "")
+        StubURL.serve("api.bitbucket.org") { r in asked.withLock { $0 = r.method + " " + r.path }; return (200, "{}") }
+        _ = try await c.call("bitbucket.setCredentials", .obj(["user": "me", "token": "t"]))
+        _ = try await c.call("github.pr-merge", merge)
+        #expect(asked.withLock { $0 }.hasSuffix("/repositories/w/r/pullrequests/7/merge"), "\(asked.withLock { $0 })")
+    }
+
     @Test func bitbucketCredentialsAreKeptOrCleared() async throws {
         let (d, c, _) = try daemon(); defer { d.stop(); clearKeys() }
         clearKeys()

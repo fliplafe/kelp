@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import GitKit
 import Agents
@@ -63,10 +64,17 @@ extension Daemon {
         return try await integrationErrors { try await gitErrors { try await t.answer(p, self, conn: conn) } }
     }
 
-    /// An in-order method, here on the connection's reader thread.
+    /// An in-order method, here on the connection's reader thread, where everything sent after it waits: it starts no
+    /// program (`Subprocess.quickOnly` refuses one, so the call fails at once instead of holding up the connection), and
+    /// one that still took long says so in the log.
     func answerNow(_ t: any Handled.Type, _ p: JSONValue, conn: Int) throws -> Data {
         if let quiet = try refuseRemoteForge(t, p) { return quiet }
-        do { return try t.answerNow(p, self, conn: conn) } catch let e as GitError { throw RPCError.internalError(e.message) }
+        let start = DispatchTime.now()
+        defer {
+            let ms = (DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+            if ms >= 100 { Log.rpc.error("in-order \(t.name, privacy: .public) held its connection for \(ms) ms") }
+        }
+        do { return try Subprocess.quickOnly { try t.answerNow(p, self, conn: conn) } } catch let e as GitError { throw RPCError.internalError(e.message) }
     }
 
     /// The same as a value, for callers that read it by hand (tests).
@@ -88,9 +96,52 @@ extension Daemon {
     /// ones (the sidebar asks every folder's PR at once) would stall every other request, a terminal's attach included.
     /// A thread of its own, not GCD's pool: that one stops at 64 threads (concurrent queues Kelp makes draw from it too),
     /// Swift's tasks run on it as well, and once slow hosts hold them all no request is answered. git, gh and ssh all have
-    /// time limits, so the threads stay bounded by what is actually running.
+    /// time limits, so a thread is held only while its program runs; at most `offloadLimit` run at once, the rest wait
+    /// their turn in the order they came, holding no thread meanwhile.
     func offload<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
+        await offloads.acquire()
+        return try await withCheckedThrowingContinuation { c in
+            Thread.detachNewThread { [offloads] in
+                let r = Result(catching: work)
+                offloads.release()
+                c.resume(with: r)
+            }
+        }
+    }
+
+    /// 128 at once: wider than any fan-out Kelp makes itself (the sidebar's PR per folder, every watched folder's status),
+    /// and than the slow ones that once stalled every request (aRequestIsAnsweredWhileManySlowOnesRun holds 80): the next
+    /// request still runs while that many wait on hosts that don't answer. Past it, a runaway client queues instead of
+    /// starting a program per request: each is a thread here, two more reading its pipes (`Subprocess`) and a process,
+    /// and the user's processes are capped for the whole login (kern.maxprocperuid), terminals included.
+    static let offloadLimit = 128
+}
+
+/// At most `limit` holders at once; the rest wait first come, first served, suspended (no thread held while waiting).
+/// Limit: a waiter whose task is cancelled still takes its turn; nothing here cancels (a client's deadline is its own).
+final class Slots: Sendable {
+    let limit: Int
+    private struct State { var held = 0; var waiting: [CheckedContinuation<Void, Never>] = [] }
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    init(_ limit: Int) { self.limit = limit }
+
+    func acquire() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let now = state.withLock { s -> Bool in
+                guard s.held < limit else { s.waiting.append(c); return false }
+                s.held += 1; return true
+            }
+            if now { c.resume() }
+        }
+    }
+
+    /// The slot passes straight to the longest waiter, if there is one.
+    func release() {
+        let next = state.withLock { s -> CheckedContinuation<Void, Never>? in
+            guard !s.waiting.isEmpty else { s.held -= 1; return nil }
+            return s.waiting.removeFirst()
+        }
+        next?.resume()
     }
 }
 

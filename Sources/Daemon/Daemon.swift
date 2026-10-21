@@ -38,13 +38,15 @@ public final class Daemon: Sendable {
     func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
+    let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
     let watches = Watches()   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
-    /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
+    /// Reading the projects' desks and adding the missing first one is one step: two syncs at once added two "Workspace 1".
     let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
+    let heads = OSAllocatedUnfairLock<[String: HeadWatch]>(initialState: [:])   // by project: its .git, for desks to follow the branch
 
     public init(root: URL = Paths.root, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
@@ -59,7 +61,15 @@ public final class Daemon: Sendable {
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
         RemoteHost.controlDir = ssh.path
         RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
-        self.store.changed.withLock { $0 = { [weak self] c in self?.recordChanged(c) } }   // records go to the clients as they change
+        self.store.changed.withLock {
+            $0 = { [weak self] c in
+                self?.recordChanged(c)   // records go to the clients as they change
+                switch c {   // and a project added, moved or removed is followed (watchHeads) from then on
+                case .repo, .repoRemoved: self?.watchHeads()
+                default: break
+                }
+            }
+        }
     }
 
     /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
@@ -121,6 +131,7 @@ public final class Daemon: Sendable {
         t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
         running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t }
         src.resume(); t.resume()
+        Self.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.followHeads() } }   // not once stopped
         try? FileManager.default.removeItem(at: Paths.daemonError(in: root))   // an earlier failure is over
         Log.start.info("kelpd \(getpid()) serves \(self.socketPath, privacy: .public)")
     }
@@ -136,6 +147,8 @@ public final class Daemon: Sendable {
         Self.waitGone(pids)
         lsp.stopAll()
         watches.stopAll()
+        let h = heads.withLock { h in defer { h = [:] }; return h }
+        _ = h   // the streams stop here, out of the lock
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }

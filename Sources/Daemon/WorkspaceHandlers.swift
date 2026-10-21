@@ -108,11 +108,9 @@ extension WorktreeCreate: Handled {
     }
 }
 
+/// Only reads: desks follow their folders' branches as they change (`watchHeads`), not when someone lists them.
 extension WorktreeList: Handled {
-    func handle(_ d: Daemon) throws -> [Worktree] {
-        try d.syncMainWorkspaces()
-        return try d.store.worktrees(repo: repoId).filter { archived == true || !$0.archived }
-    }
+    func handle(_ d: Daemon) throws -> [Worktree] { try d.store.worktrees(repo: repoId).filter { archived == true || !$0.archived } }
 }
 
 extension WorktreeArchive: Handled {

@@ -105,3 +105,42 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     #expect(Date().timeIntervalSince(start) < 1.8, "the ping waited for the wake")
     #expect(try await waitFor(15) { try await w.c.call(SessionRead(id: s.id)).contains("hello-lane") })
 }
+
+/// Only a sync `Handled` is applied in order (the reader thread can't wait for an async one): an async method marked
+/// in-order would run on a task of its own, its order lost without a word.
+@Test func inOrderMethodsAreSyncHandlers() {
+    let inOrder = Daemon.methods.values.filter { $0.inOrder }
+    #expect(inOrder.count >= 10)
+    for t in inOrder { #expect(t is any Handled.Type, "\(t.name)") }
+}
+
+/// An in-order call is applied on the connection's reader thread, where whatever was sent after it waits: one that would
+/// start a program (git, gh, ssh) fails at once instead of holding the connection up. Off that thread the same one runs.
+@Test func anInOrderCallStartsNoProgram() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let p = JSONValue.obj(["id": .string(try await firstDesk(w).id)])
+    #expect(throws: RPCError.self) { _ = try w.d.answerNow(GitStatus.self, p, conn: -1) }
+    _ = try await w.d.answer(GitStatus.name, p, conn: -1)
+}
+
+/// A burst of offloaded work (git, gh, ssh) runs at most `offloadLimit` at once; the rest wait their turn, and all of it
+/// finishes. Each used to get a thread at once, however many came.
+@Test func offloadRunsAtMostItsLimitAtOnce() async throws {
+    let (d, _, _) = try daemon(); defer { d.stop() }
+    let now = OSAllocatedUnfairLock(initialState: (running: 0, most: 0, done: 0))
+    try await withThrowingTaskGroup(of: Void.self) { g in
+        for _ in 0..<(Daemon.offloadLimit * 3) {
+            g.addTask {
+                try await d.offload {
+                    now.withLock { $0.running += 1; $0.most = max($0.most, $0.running) }
+                    usleep(20_000)
+                    now.withLock { $0.running -= 1; $0.done += 1 }
+                }
+            }
+        }
+        try await g.waitForAll()
+    }
+    let seen = now.withLock { $0 }
+    #expect(seen.most <= Daemon.offloadLimit && seen.most > 1, "\(seen)")
+    #expect(seen.done == Daemon.offloadLimit * 3)
+}
