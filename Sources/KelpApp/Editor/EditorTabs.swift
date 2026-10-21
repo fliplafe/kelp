@@ -31,7 +31,7 @@ extension EditorArea {
         // A file already open (at another line): that tab, moved to the line asked for.
         if layout.tab(uri: uri) == nil, let t = layout.fileTab(sameFileAs: uri) {
             select(t.id, focus: focus)
-            if let l = TabURI.filePath(uri).line { (contents[t.id] as? FileTab)?.goTo(line: l) }
+            if let l = TabURI.filePath(uri).line { contents[t.id]?.goTo(line: l) }
             return
         }
         if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
@@ -48,16 +48,24 @@ extension EditorArea {
         select(t.id, focus: focus)
     }
 
-    func closeTab(_ id: String) {
+    func closeTab(_ id: String) { Task { await closeTabAsking(id) } }
+
+    /// Closes the tab once it agrees (its questions are sheets, awaited); false when it stays.
+    @discardableResult
+    func closeTabAsking(_ id: String) async -> Bool {
+        guard closing.insert(id).inserted else { return false }
+        defer { closing.remove(id) }
         let uri = layout.allTabs.first { $0.id == id }?.uri ?? ""
         let sid = TabURI.scheme(uri) == "session" ? TabURI.body(uri) : nil
         // A tab not built yet (in the background since launch) ends its session all the same.
-        if let c = contents[id] { guard c.close() else { return } } else if let sid, !SessionTab.close(session: sid) { return }
+        if let c = contents[id] { guard await c.close() else { return false } } else if let sid, await !SessionTab.close(session: sid) { return false }
+        guard layout.allTabs.contains(where: { $0.id == id }) else { return true }   // gone while it asked (its workspace closed)
         if let sid { closed.insert(sid) }
         contents[id] = nil
         layout.remove(id)
         if layout.allTabs.isEmpty { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual }
         arrange(); render(); focusSelected()
+        return true
     }
 
     /// Sessions whose tab is on screen right now (the selected tab of each pane shown).
@@ -166,7 +174,8 @@ extension EditorArea {
         m.add(String(localized: "Close Tab")) { [weak self] in self?.closeTab(id) }
         m.add(String(localized: "Close Other Tabs")) { [weak self] in
             guard let self, let gid = layout.group(of: id) else { return }
-            for t in layout.groups[gid]?.tabs ?? [] where t.id != id { closeTab(t.id) }
+            let others = (layout.groups[gid]?.tabs ?? []).filter { $0.id != id }
+            Task { for t in others { await self.closeTabAsking(t.id) } }   // one question at a time
         }
         return m
     }

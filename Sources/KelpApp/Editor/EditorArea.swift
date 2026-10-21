@@ -18,6 +18,8 @@ final class EditorArea: NSViewController {
     var reconciledOnce = false
     /// Sessions whose tab was just closed: until their kill lands, a daemon update mustn't bring the tab back.
     var closed: Set<String> = []
+    /// Tabs asking before they close: a second ⌘W meanwhile doesn't ask again.
+    var closing: Set<String> = []
     /// The group shown alone (⇧⌘↩), not saved: a relaunch shows every pane.
     var zoomed: String?
 
@@ -200,8 +202,8 @@ final class EditorArea: NSViewController {
         }, model.tabs), selected: model.selectedTab?.id)
         g.show(visible?.view)
         // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
-        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible is SessionTab
-        g.attention = (visible as? SessionTab)?.attention
+        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.isTerminal == true
+        g.attention = visible?.attention
         showEdited()
     }
 

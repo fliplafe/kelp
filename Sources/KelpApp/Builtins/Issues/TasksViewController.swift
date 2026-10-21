@@ -110,11 +110,11 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     /// Custom JQL asks for its query when picked, not on every refresh or workspace switch.
     @objc private func filterChanged() {
-        if source.indexOfSelectedItem == 3, filter.indexOfSelectedItem == 1 {
-            guard let jql = prompt(String(localized: "Jira search"), "JQL", initial: jiraJQL) else { filter.selectItem(at: 0); reload(); return }
-            jiraJQL = jql
+        guard source.indexOfSelectedItem == 3, filter.indexOfSelectedItem == 1 else { reload(); return }
+        Task {
+            if let jql = await prompt(String(localized: "Jira search"), "JQL", initial: jiraJQL) { jiraJQL = jql } else { filter.selectItem(at: 0) }
+            reload()
         }
-        reload()
     }
 
     @objc private func reload() {

@@ -344,10 +344,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         }
     }
 
-    @objc private func newFolder() {
-        guard let name = prompt(String(localized: "New folder"), String(localized: "In /\(selectedDir)")), !name.isEmpty else { return }
+    @objc private func newFolder() { Task { await newFolderNamed() } }
+    private func newFolderNamed() async {
+        let dir = selectedDir
+        guard let name = await prompt(String(localized: "New folder"), String(localized: "In /\(dir)")), !name.isEmpty else { return }
         do {
-            try FileManager.default.createDirectory(at: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).appendingPathComponent(name),
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: root).appendingPathComponent(dir).appendingPathComponent(name),
                 withIntermediateDirectories: true)
         }
         catch { showError(error) }

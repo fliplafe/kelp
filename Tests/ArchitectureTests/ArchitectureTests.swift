@@ -39,11 +39,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// (decorations, which say so). `try?` around a call turned a failure into an empty list; the raw client skipped all of it.
 /// AppModel.swift itself is the way (it also manages the connection), so it isn't counted.
 @Test func daemonErrorsAreNotSwallowed() throws {
-    // SessionTab.busy waits for its answer off the main thread while closing a terminal; it goes once closing is async.
-    let allowed = ["Sources/KelpApp/Builtins/Agents/SessionTab.swift"]
-    func outside(_ found: [String]) -> [String] {
-        found.filter { f in !f.hasPrefix("Sources/KelpApp/AppModel.swift:") && !allowed.contains { f.hasPrefix($0 + ":") } }
-    }
+    func outside(_ found: [String]) -> [String] { found.filter { !$0.hasPrefix("Sources/KelpApp/AppModel.swift:") } }
     let swallowed = outside(try matches(#"try\? await [^=\n]*\.call\("#, in: ["Sources/KelpApp"]))
     let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: ["Sources/KelpApp"]))
     #expect(swallowed == [], "try? around a call: \(swallowed)")
@@ -61,7 +57,18 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// The shell (window, editor area) knows tabs as `TabContent`: a built-in's own type there is a feature reached around
 /// the contribution points.
 @Test func theShellKnowsTabsOnlyAsContributions() throws {
-    let casts = try matches(#"as\? (FileTab|SessionTab|UntitledTab|NotebookTab|MarkdownTab|BrowserTab)\b"#,
-                        in: ["Sources/KelpApp/Shell", "Sources/KelpApp/Editor"])
-    #expect(casts.count <= 6, "\(casts)")
+    let casts = try matches(#"(as[?!]?|is) (FileTab|SessionTab|UntitledTab|NotebookTab|MarkdownTab|BrowserTab)\b"#,
+                            in: ["Sources/KelpApp/Shell", "Sources/KelpApp/Editor"])
+    #expect(casts == [])
+}
+
+/// Questions are sheets that are awaited: a nested modal loop (runModal for a sheet) runs every timer, event and task of
+/// the app inside it, and a semaphore on the main thread stops them all. (The hang watcher's semaphore is on a thread of
+/// its own: it's what notices a stuck main thread.)
+@Test func theMainThreadNeverWaitsInALoopOfItsOwn() throws {
+    #expect(try matches(#"runAsSheet|NSApp\.runModal\(for"#, in: ["Sources/KelpApp"]) == [])
+    #expect(try matches(#"DispatchSemaphore"#, in: ["Sources/KelpApp"]).filter { !$0.hasPrefix("Sources/KelpApp/DevAids.swift") } == [])
+    // Until a `.terminateLater` reply AppKit runs a modal mode in which the main actor's tasks don't run: an async
+    // question asked from there never shows (quitting with an unsaved file closed nothing and asked nothing).
+    #expect(try matches(#"\.terminateLater"#, in: ["Sources/KelpApp"]) == [])
 }

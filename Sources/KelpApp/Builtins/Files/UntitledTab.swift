@@ -36,13 +36,13 @@ final class UntitledTab: SavableTab {
 
     func focus() { editor.focus() }
 
-    func close() -> Bool {
+    func close() async -> Bool {
         guard isEdited else { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save “\(title)”?")
         a.informativeText = String(localized: "It hasn't been saved yet, so its text will be lost if you don't save it.")
         a.addButton(withTitle: String(localized: "Save…")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
-        switch runAsSheet(a) {
-        case .alertFirstButtonReturn: return save()
+        switch await runSheet(a) {
+        case .alertFirstButtonReturn: return await save()
         case .alertThirdButtonReturn: return true
         default: return false
         }
@@ -50,13 +50,13 @@ final class UntitledTab: SavableTab {
 
     /// Asks for a name in the workspace's folder, writes the file and puts it in this tab's place.
     @discardableResult
-    func save() -> Bool {
+    func save() async -> Bool {
         let p = NSSavePanel()
         p.nameFieldStringValue = Self.suggestedName(editor.text) ?? title
         p.directoryURL = AppModel.shared.worktree(Workbench.shared.workspaceId).map { URL(fileURLWithPath: $0.path) }
         p.canCreateDirectories = true; p.isExtensionHidden = false
         p.message = String(localized: "Name it with an extension for code (main.py, App.swift); without one it's a .txt file.")
-        guard runAsSheet(p) == .OK, var url = p.url else { return false }
+        guard await runSheet(p) == .OK, var url = p.url else { return false }
         if url.pathExtension.isEmpty { url.appendPathExtension("txt") }
         do { try editor.text.write(to: url, atomically: true, encoding: .utf8) }
         catch { Banner.show(String(localized: "Couldn't save \(url.lastPathComponent): \(error.localizedDescription)")); return false }

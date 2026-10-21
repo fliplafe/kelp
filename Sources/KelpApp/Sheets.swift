@@ -2,35 +2,23 @@ import AppKit
 import Core
 import WorkbenchKit
 
-/// Present an alert as a sheet on the main window and await the answer (native, non-blocking).
+/// The window a sheet goes on: key / main are nil while Kelp isn't the active app, the sheet still belongs on its window.
+/// One that already shows a sheet queues the next.
+@MainActor
+private var sheetWindow: NSWindow? { NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeMain } }
+
+/// An alert as a sheet on the front window, awaited (native, no nested modal loop). Every question in the app goes here.
 @MainActor
 func runSheet(_ a: NSAlert) async -> NSApplication.ModalResponse {
-    guard let w = NSApp.keyWindow ?? NSApp.mainWindow else { return a.runModal() }
+    guard let w = sheetWindow else { return a.runModal() }
     return await withCheckedContinuation { c in a.beginSheetModal(for: w) { c.resume(returning: $0) } }
 }
 
-/// The window a synchronous sheet goes on: key / main are nil while Kelp isn't the active app, the sheet still belongs
-/// on its window; one that already shows a sheet can't take another.
+/// A save panel as a sheet on the front window, awaited.
 @MainActor
-private func sheetWindow() -> NSWindow? {
-    guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }), w.attachedSheet == nil else { return nil }
-    return w
-}
-
-/// An alert as a sheet on the front window, answered synchronously (for code that needs the answer right away).
-@MainActor
-func runAsSheet(_ a: NSAlert) -> NSApplication.ModalResponse {
-    guard let w = sheetWindow() else { return a.runModal() }
-    a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
-    return NSApp.runModal(for: a.window)
-}
-
-/// A save panel as a sheet on the front window, answered synchronously (closing a tab or quitting needs the answer).
-@MainActor
-func runAsSheet(_ p: NSSavePanel) -> NSApplication.ModalResponse {
-    guard let w = sheetWindow() else { return p.runModal() }
-    p.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
-    return NSApp.runModal(for: p)
+func runSheet(_ p: NSSavePanel) async -> NSApplication.ModalResponse {
+    guard let w = sheetWindow else { return p.runModal() }
+    return await withCheckedContinuation { c in p.beginSheetModal(for: w) { c.resume(returning: $0) } }
 }
 
 /// Session-level agent actions shared by tabs and the sidebar.
@@ -38,8 +26,10 @@ func runAsSheet(_ p: NSSavePanel) -> NSApplication.ModalResponse {
 enum AgentActions {
     static func rename(_ sid: String) {
         let cur = AppModel.shared.session(sid)?.title ?? ""
-        guard let t = prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."), initial: cur) else { return }
-        Task { await AppModel.shared.call(SessionRename(id: sid, title: t)) }
+        Task {
+            guard let t = await prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."), initial: cur) else { return }
+            await AppModel.shared.call(SessionRename(id: sid, title: t))
+        }
     }
 
     /// Same command in the same tab; resumes the conversation when the agent supports it.
@@ -99,10 +89,10 @@ enum AgentActions {
 
 /// A one-field question (rename, go to line…).
 @MainActor
-func prompt(_ title: String, _ info: String, initial: String = "") -> String? {
+func prompt(_ title: String, _ info: String, initial: String = "") async -> String? {
     let a = NSAlert(); a.messageText = title; a.informativeText = info
     let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); f.stringValue = initial
     a.accessoryView = f; a.addButton(withTitle: String(localized: "OK")); a.addButton(withTitle: String(localized: "Cancel"))
     a.window.initialFirstResponder = f
-    return runAsSheet(a) == .alertFirstButtonReturn ? f.stringValue : nil
+    return await runSheet(a) == .alertFirstButtonReturn ? f.stringValue : nil
 }

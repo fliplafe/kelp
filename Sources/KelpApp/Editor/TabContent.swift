@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// Anything shown as a tab in the editor area. Made by a `TabProvider` from a URI.
 @MainActor
@@ -22,15 +23,31 @@ protocol TabContent: AnyObject {
     /// Called when title / icon / status / edited state change.
     var onChange: (() -> Void)? { get set }
     func focus()
-    /// Return false to keep the tab (e.g. the user cancelled).
-    func close() -> Bool
+    /// Return false to keep the tab (e.g. the user cancelled). Questions are sheets, awaited.
+    func close() async -> Bool
+
+    // What the shell asks of a tab without knowing its kind (built-ins answer; the defaults say "not this one").
+    /// The colored ring around its pane: an agent asking (orange), failed (red), finished unseen (accent).
+    var attention: NSColor? { get }
+    /// A terminal: it fades a little in an unfocused split, like Ghostty's.
+    var isTerminal: Bool { get }
+    /// Columns × rows of the terminal on screen, which sizes the next one before it's shown.
+    var terminalGrid: (cols: Int, rows: Int)? { get }
+    /// The file it shows (Reveal in Finder).
+    var fileURL: URL? { get }
+    /// Its language, when ⌘R / ⌘U can run it without a project command.
+    var language: LanguageSpec? { get }
+    /// The command that runs it ("run") or its test at the cursor ("test"); nil when there is none.
+    func command(_ name: String) async -> String?
+    /// Shows that line (a link to a file that's already open at another line).
+    func goTo(line: Int)
 }
 
 /// A tab holding work that can be unsaved: ⌘S, Save All and quitting save it.
 @MainActor
 protocol SavableTab: TabContent {
     /// False when nothing was written (the user cancelled, or it failed and said why).
-    @discardableResult func save() -> Bool
+    @discardableResult func save() async -> Bool
     /// The user chose Don't Save for a tab that's going away: it isn't edited any more, and nothing writes it later.
     func discard()
     /// A save still on its way (a remote file's, to its host): what closing or quitting waits for.
@@ -48,7 +65,14 @@ extension TabContent {
     var meter: Double? { nil }
     var progress: Double? { nil }
     var isEdited: Bool { false }
-    func close() -> Bool { true }
+    func close() async -> Bool { true }
+    var attention: NSColor? { nil }
+    var isTerminal: Bool { false }
+    var terminalGrid: (cols: Int, rows: Int)? { nil }
+    var fileURL: URL? { nil }
+    var language: LanguageSpec? { nil }
+    func command(_ name: String) async -> String? { nil }
+    func goTo(line: Int) {}
 }
 
 /// SF Symbol image helper used by tabs and menus; a few names get Kelp's own drawing instead (Glyph).

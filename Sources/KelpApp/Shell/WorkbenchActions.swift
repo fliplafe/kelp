@@ -224,7 +224,7 @@ enum WorkspaceActions {
 
     /// The file in the focused tab, else the workspace's folder (Xcode's "Show in Finder" works on the selection).
     static func revealCurrent() {
-        if let f = Workbench.editor?.focusedContent as? FileTab { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: f.path)]); return }
+        if let u = Workbench.editor?.focusedContent?.fileURL { NSWorkspace.shared.activateFileViewerSelecting([u]); return }
         guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { NSSound.beep(); return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)])
     }

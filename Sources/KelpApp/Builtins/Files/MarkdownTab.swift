@@ -116,7 +116,9 @@ final class MarkdownTab: NSViewController {
     @objc private func table() { edit { MarkdownFormat.insertTable($0, $1, columns: 3, rows: 2) } }
     @objc private func headingPicked(_ p: NSPopUpButton) { let l = p.indexOfSelectedItem; edit { MarkdownFormat.heading($0, $1, level: l) }; p.selectItem(at: 0) }
     @objc func link() {
-        guard let u = prompt(String(localized: "Insert link"), "URL", initial: "https://") else { return }
-        edit { MarkdownFormat.makeLink($0, $1, url: u) }
+        Task {
+            guard let u = await prompt(String(localized: "Insert link"), "URL", initial: "https://") else { return }
+            edit { MarkdownFormat.makeLink($0, $1, url: u) }
+        }
     }
 }

@@ -131,17 +131,21 @@ enum Builtins {
                       },
                       cmd("editor.save", "Save", "cmd+s") {
                           guard let t = Workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
-                          if let file = t as? FileTab, SettingsStore.shared.bool("editor.formatOnSave") == true, file.language?.format != nil {
-                              Task { await file.format(); file.save() }
-                          } else { t.save() }
+                          Task {
+                              if let file = t as? FileTab, SettingsStore.shared.bool("editor.formatOnSave") == true, file.language?.format != nil { await file.format() }
+                              await t.save()
+                          }
                       },
-                      cmd("editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
+                      cmd("editor.saveAll", "Save All", "opt+cmd+s") {
+                          Task { for t in Workbench.window?.editors.editedFiles ?? [] { await t.save() } }
+                      },
                       cmd("files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
                           Workbench.window?.showInspector(panel: "files")
                           DispatchQueue.main.async { (Workbench.window?.inspector.built("files") as? FilesPanel)?.findInFiles() }   // after the panel is built
                       },
                       cmd("editor.goToLine", "Go to Line…", "cmd+l") {
-                          if let t = fileTab, let s = prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) }
+                          guard let t = fileTab else { return }
+                          Task { if let s = await prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) } }
                       },
                       cmd("editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab?.jumpToDefinition() },
                       // ⌥⌘↩: "path:12-30" into the agent's prompt (it reads the file itself), without pressing Return.

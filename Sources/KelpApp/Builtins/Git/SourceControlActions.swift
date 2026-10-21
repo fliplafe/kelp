@@ -45,8 +45,10 @@ extension SourceControlController {
             a.addButton(withTitle: files.count == 1 ? String(localized: "Discard Changes") : String(localized: "Discard \(files.count) Changes")).hasDestructiveAction = true
         }
         a.addButton(withTitle: String(localized: "Cancel"))
-        guard runAsSheet(a) == .alertFirstButtonReturn else { return }
-        run { GitDiscard(id: $0, files: files.map(\.path)) }
+        Task {
+            guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            run { GitDiscard(id: $0, files: files.map(\.path)) }
+        }
     }
 
     func sectionActions(_ s: Section, _ n: Node) -> [RowAction] {
@@ -120,9 +122,11 @@ extension SourceControlController {
         }
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
-            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
-                !name.isEmpty else { return }
-            self?.run { GitSwitch(id: $0, branch: name, create: true) }
+            Task {
+                guard let name = await prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
+                    !name.isEmpty else { return }
+                self?.run { GitSwitch(id: $0, branch: name, create: true) }
+            }
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branchButton.bounds.height + 4), in: branchButton)
     }

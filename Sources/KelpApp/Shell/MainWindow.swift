@@ -342,7 +342,8 @@ final class EditorHost: NSViewController {
             let edited = a.editedFiles
             guard !edited.isEmpty else { a.removeFromParent(); continue }
             Task {
-                _ = UnsavedChanges.settle(edited, await runSheet(UnsavedChanges.alert(edited, quitting: false, canCancel: false)), canCancel: false)
+                let answer = await runSheet(UnsavedChanges.alert(edited, quitting: false, canCancel: false))
+                if await UnsavedChanges.settle(edited, answer, canCancel: false) { _ = await UnsavedChanges.written(edited) }
                 a.removeFromParent()
             }
         }

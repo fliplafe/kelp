@@ -14,7 +14,6 @@ final class UsageTab: TabContent {
     var icon: NSImage? { .symbol("chart.bar") }
     init() { view = NSHostingView(rootView: UsageReportView()) }
     func focus() {}
-    func close() -> Bool { true }
 }
 
 struct UsageReportView: View {

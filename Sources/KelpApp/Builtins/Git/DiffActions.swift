@@ -67,9 +67,9 @@ extension DiffViewController {
             }
         }
         guard let file, let first = lines.first, let last = lines.last else { NSSound.beep(); return }
-        guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"),
-                                String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
         Task {
+            guard let text = await prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"),
+                                          String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
             await AppModel.shared.call(CommentAdd(id: wid, file: file, start: first.0, end: last.0, quote: lines.map(\.1).joined(separator: "\n"), text: text))
             await load()
         }
@@ -84,15 +84,15 @@ extension DiffViewController {
     @objc func sendComments() {
         guard let wid = worktreeId else { return }
         guard comments.contains(where: { $0.state == .open }) else { status.stringValue = String(localized: "No open comments"); return }
-        guard let sid = pickAgentSession(wid) else { return }
         Task {
+            guard let sid = await pickAgentSession(wid) else { return }
             let n = await AppModel.shared.call(CommentSend(id: wid, session: sid)) ?? 0
             status.stringValue = String(localized: "Sent \(n) comments to agent"); await load()
         }
     }
 
     /// The focused session if it is in this worktree, else ask.
-    private func pickAgentSession(_ wid: String) -> String? {
+    private func pickAgentSession(_ wid: String) async -> String? {
         let live = AppModel.shared.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
         if let cur = Workbench.shared.focusedSession, live.contains(where: { $0.id == cur }) { return cur }
         if live.count == 1 { return live[0].id }
@@ -101,6 +101,6 @@ extension DiffViewController {
         for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
         let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop
         a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
-        return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
+        return await runSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 }

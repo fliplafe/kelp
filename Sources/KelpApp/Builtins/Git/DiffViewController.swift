@@ -176,6 +176,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         loads += 1; let load = loads
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
+            askCommit = false   // before asking: a load that starts while the question is up doesn't ask again
             let log = await AppModel.shared.call(GitLog(id: wid, all: true)) ?? []   // the user picked "a commit": a banner if git can't list them
             let menu = NSMenu()
             for c in log.prefix(30) {
@@ -185,7 +186,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
             let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop
             a.addButton(withTitle: String(localized: "Show")); a.addButton(withTitle: String(localized: "Cancel"))
-            if runAsSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
+            if await runSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
         }
         askCommit = false
         if single == nil, source.indexOfSelectedItem == 5, FileActions.targetAgent == nil {

@@ -57,16 +57,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Agents installed while Kelp was in the background show up when it comes back.
     func applicationDidBecomeActive(_ n: Notification) { AgentAvailability.shared.refresh(); notifier.checkAllowed() }
 
-    /// Unsaved files ask before quitting, like any Mac app.
+    /// Unsaved files ask before quitting, like any Mac app: the question is a sheet, and the app quits once it's answered
+    /// and any remote file's save came back (not if one failed).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let edited = main?.editors.editedFiles ?? []
-        guard !edited.isEmpty else { return .terminateNow }
-        guard UnsavedChanges.settle(edited, runAsSheet(UnsavedChanges.alert(edited, quitting: true))) else { return .terminateCancel }
-        guard edited.contains(where: { $0.pendingSave != nil }) else { return .terminateNow }
-        // A remote file's save is a request to its host: quit once it's answered, and not if it failed.
-        Task { NSApp.reply(toApplicationShouldTerminate: await UnsavedChanges.written(edited)) }
-        return .terminateLater
+        guard !edited.isEmpty, !unsavedAnswered else { return .terminateNow }
+        // Asked in a sheet, then quit again. Not `terminateLater`: until its reply AppKit runs a modal mode in which the
+        // main actor's tasks don't run, so the question could never be asked.
+        Task {
+            let answer = await runSheet(UnsavedChanges.alert(edited, quitting: true))
+            guard await UnsavedChanges.settle(edited, answer), await UnsavedChanges.written(edited) else { return }
+            unsavedAnswered = true
+            NSApp.terminate(nil)
+        }
+        return .terminateCancel
     }
+    /// The quit question was answered (saved, or Don't Save): the next terminate goes through.
+    private var unsavedAnswered = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
     func applicationWillTerminate(_ n: Notification) { main?.leaveFocusMode() }

@@ -58,7 +58,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
             let scripts = cached[wid] ?? []
             guard name == "setup" || scripts.contains(where: { $0.name == name }) else {
                 // No project command: ⌘R runs the focused file, ⌘U its test at the cursor, when its language says how.
-                if let t = Workbench.editor?.focusedContent as? FileTab, ["run", "test"].contains(name), t.language?[command: name] != nil {
+                if let t = Workbench.editor?.focusedContent, ["run", "test"].contains(name), t.language?[command: name] != nil {
                     runFile(t, name); return
                 }
                 Banner.show(String(localized: "This project has no “\(name)” command. Add one to .kelp.yaml (\(name): the command)."),
@@ -79,7 +79,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// Run File / Test at Cursor: the file's language's `run` / `test`, run like the project's commands. Languages come
     /// from extensions the user installed, so there's no trust question.
-    func runFile(_ t: FileTab, _ name: String) {
+    func runFile(_ t: TabContent, _ name: String) {
         guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         watch()
         Task {

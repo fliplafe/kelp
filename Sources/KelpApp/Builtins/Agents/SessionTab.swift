@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import os
 import WorkbenchKit
 
 /// An agent or terminal session as a tab (libghostty via PaneView; the daemon keeps the process).
@@ -41,6 +40,9 @@ final class SessionTab: TabContent {
         return s.status == .done && s.unread ? .controlAccentColor : nil
     }
     var unread: Bool { session?.unread ?? false }
+    var isTerminal: Bool { true }
+    /// Only one on screen: a hidden pane's grid is from whatever size it last had.
+    var terminalGrid: (cols: Int, rows: Int)? { pane.window == nil ? nil : pane.gridSize }
     var meter: Double? { AppModel.shared.contextShare[sessionId] }
     var toolTip: String? {
         session.map { "\(title) — \($0.statusWords)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") + ($0.workingElsewhere.map { "\n\($0)" } ?? "") }
@@ -49,33 +51,29 @@ final class SessionTab: TabContent {
 
     /// Closing the tab ends the session; it asks only when something would stop: a working agent, or a program
     /// running in a terminal (an idle shell or a finished agent just closes).
-    func close() -> Bool { Self.close(session: sessionId) }
+    func close() async -> Bool { await Self.close(session: sessionId) }
 
     /// Also for a tab that was never built (EditorArea closes those without making them).
-    static func close(session sid: String) -> Bool {
+    static func close(session sid: String) async -> Bool {
         let session = AppModel.shared.session(sid)
         if let s = session, s.agent != "shell", s.status == .working {
             let a = NSAlert(); a.messageText = String(localized: "Stop \(AgentCatalog.displayName(s))?")
             a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
             a.addButton(withTitle: String(localized: "Stop Agent")); a.addButton(withTitle: String(localized: "Cancel"))
-            guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
-        } else if session?.agent == "shell", let program = busy(sid) {
+            guard await runSheet(a) == .alertFirstButtonReturn else { return false }
+        } else if session?.agent == "shell", let program = await busy(sid) {
             let a = NSAlert()
             a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
-            guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
+            guard await runSheet(a) == .alertFirstButtonReturn else { return false }
         }
         Task { await AppModel.shared.call(SessionKill(id: sid)) }
         return true
     }
 
-    /// What runs in the foreground of a terminal, asked synchronously (a tab closes or stays on this answer).
-    /// Limit: blocks up to 300 ms on the daemon round trip; a slower daemon closes the tab as before.
-    private static func busy(_ sid: String) -> String? {
-        guard let c = AppModel.shared.client else { return nil }   // the client answers on its own thread, not the main one
-        let done = DispatchSemaphore(value: 0), answer = OSAllocatedUnfairLock<String?>(initialState: nil)
-        Task.detached { let name = (try? await c.call(SessionBusy(id: sid))) ?? nil; answer.withLock { $0 = name }; done.signal() }
-        _ = done.wait(timeout: .now() + 0.3)
-        return answer.withLock { $0 }   // under its lock: a late answer can't be written while this reads
+    /// What runs in the foreground of a terminal: the tab closes or stays on this answer. A daemon that doesn't answer
+    /// within 2 s closes the tab as if nothing ran.
+    private static func busy(_ sid: String) async -> String? {
+        await AppModel.shared.quiet(SessionBusy(id: sid), timeout: 2) ?? nil
     }
 }

@@ -204,11 +204,13 @@ enum ExtActions {
     }
 
     static func perform(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)? = nil) {
-        if let q = a.confirm {
-            let alert = NSAlert(); alert.messageText = expand(q, item: item, quote: false)
-            alert.addButton(withTitle: a.title); alert.addButton(withTitle: String(localized: "Cancel"))
-            guard runAsSheet(alert) == .alertFirstButtonReturn else { return }
-        }
+        guard let q = a.confirm else { act(a, item: item, folder: folder, after: after); return }
+        let alert = NSAlert(); alert.messageText = expand(q, item: item, quote: false)
+        alert.addButton(withTitle: a.title); alert.addButton(withTitle: String(localized: "Cancel"))
+        Task { if await runSheet(alert) == .alertFirstButtonReturn { act(a, item: item, folder: folder, after: after) } }
+    }
+
+    private static func act(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)?) {
         if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
         else if let o = a.open {
             if let u = openURI(o, item: item) { Workbench.open(u) }

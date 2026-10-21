@@ -35,6 +35,7 @@ final class FileTab: SavableTab {
     private var focusWhenLoaded = false
 
     var uri: String { TabURI.file(path) }
+    var fileURL: URL? { url }
     var title: String { url.lastPathComponent }
     var icon: NSImage? { gone ? .symbol("exclamationmark.triangle", String(localized: "Moved or deleted")) : FileIcon.image(url.lastPathComponent) }
     var toolTip: String? { gone ? String(localized: "\(path) was moved or deleted. ⌘S asks before writing it there again.") : path }
@@ -124,11 +125,11 @@ final class FileTab: SavableTab {
     var selectedLines: ClosedRange<Int>? { editor?.selectedLines }
     /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab. With autosave
     /// it only asks when writing isn't safe: an agent changed the file meanwhile, or it was moved or deleted.
-    func close() -> Bool {
+    func close() async -> Bool {
         autosaving.cancel()
         guard let e = editor, isEdited else { return true }
         let action = isRemote ? .write : FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
-        if Self.autosave, action == .write, writeAndClose() { return true }
+        if Self.autosave, action == .write, await writeAndClose() { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save the changes you made to “\(title)”?")
         a.informativeText = switch action {
         case .conflict: String(localized: "An agent changed it on disk meanwhile. Save replaces that version with yours.")
@@ -136,8 +137,8 @@ final class FileTab: SavableTab {
         default: String(localized: "Your changes will be lost if you don't save them.")
         }
         a.addButton(withTitle: String(localized: "Save")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
-        switch runAsSheet(a) {
-        case .alertFirstButtonReturn: return writeAndClose()
+        switch await runSheet(a) {
+        case .alertFirstButtonReturn: return await writeAndClose()
         case .alertThirdButtonReturn: discarded = true; return true
         default: return false
         }
@@ -165,7 +166,7 @@ final class FileTab: SavableTab {
 
     /// ⌘S. False when it couldn't be written, or the user is asked first (an agent changed the file meanwhile, or it's gone).
     @discardableResult
-    func save() -> Bool {
+    func save() async -> Bool {
         guard let e = editor else { return true }
         if isRemote { return write() }
         switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
@@ -175,7 +176,7 @@ final class FileTab: SavableTab {
             let a = NSAlert(); a.messageText = String(localized: "“\(title)” was moved or deleted")
             a.informativeText = String(localized: "Save writes it at its old place again.")
             a.addButton(withTitle: String(localized: "Save Here")); a.addButton(withTitle: String(localized: "Cancel"))
-            return runAsSheet(a) == .alertFirstButtonReturn && write()
+            return await runSheet(a) == .alertFirstButtonReturn && write()
         default: return true
         }
     }
@@ -202,27 +203,27 @@ final class FileTab: SavableTab {
         return true
     }
 
-    /// Closing with a save: a remote file's tab stays until the host has it (a failed save keeps the edits), then closes.
-    private func writeAndClose() -> Bool {
+    /// Closing with a save: a remote file's tab waits until the host has it, and stays (with its edits) when that failed.
+    private func writeAndClose() async -> Bool {
         guard isRemote else { return write() }
-        writeRemote { [uri] in Workbench.closeTab(uri: uri) }
-        return false
+        writeRemote(); await saving?.value
+        return !isEdited
     }
 
     var pendingSave: Task<Void, Never>? { saving }
 
     /// Each save waits for the one before, so it's checked against what that one wrote, not what's in flight.
     /// It holds the tab: one closed (or its workspace) right after Save still gets written.
-    private func writeRemote(then done: (() -> Void)? = nil) {
+    private func writeRemote() {
         let previous = saving
         saving = Task { [self] in
             await previous?.value
-            guard let e = editor, e.text != lastSaved else { done?(); return }
+            guard let e = editor, e.text != lastSaved else { return }
             let text = e.text
             let res = await AppModel.shared.tryCall(FilesWriteRemote(path: path, text: text, base: lastSaved))
             if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return }
             if let now = res.value??.changed { askKeepMine(disk: now); return }
-            lastSaved = text; editedStateMayHaveChanged(); done?()
+            lastSaved = text; editedStateMayHaveChanged()
         }
     }
 

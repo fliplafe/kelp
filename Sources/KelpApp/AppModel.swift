@@ -151,7 +151,7 @@ final class AppModel {
             a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
             // Return keeps the agents running: ending them takes a deliberate click.
             a.buttons[0].hasDestructiveAction = true; a.buttons[0].keyEquivalent = ""; a.buttons[1].keyEquivalent = "\r"
-            guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
+            guard await runSheet(a) == .alertFirstButtonReturn else { return false }
         }
         _ = try? await c.call(DaemonShutdown())
         c.close(); client = nil
