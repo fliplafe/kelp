@@ -82,7 +82,7 @@ public final class GhosttyRuntime {
 
     // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Kelp; Ghostty keeps only terminal ones.
     // ⇧↩ types a line feed: a new line in agent prompts (Claude Code, Codex) instead of sending the message.
-    private static let overrides = """
+    static let overrides = """
         keybind = clear
         keybind = super+c=copy_to_clipboard
         keybind = super+v=paste_from_clipboard
@@ -99,6 +99,7 @@ public final class GhosttyRuntime {
         keybind = super+end=scroll_to_bottom
         confirm-close-surface = false
         clipboard-paste-protection = false
+        clipboard-write = deny
         window-padding-x = 12
         window-padding-y = 8
         """

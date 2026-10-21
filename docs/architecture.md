@@ -112,7 +112,10 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
   can record that trust (`state.set` of `lsp.*` checks the connecting program, as `scripts.trust` does).
 - Links clicked in a Markdown, notebook or PDF preview, or ⌘-clicked in a terminal, open web pages, plain files (as tabs) and
   mail only: a link to an app the repo ships (files from `git clone` carry no quarantine), a `.command` file or another
-  app's scheme is refused. ⌥⌘ on a path a program printed shows it in the Finder rather than opening it with its app.
+  app's scheme is refused (in either terminal, Ghostty or the SwiftTerm fallback). ⌥⌘ on a path a program printed
+  shows it in the Finder rather than opening it with its app.
+- Programs in a terminal can't put text on the clipboard (OSC 52 writes are refused): text placed there unseen would run
+  on the user's next ⌘V in a shell that takes no pastes. The user's own copy is unaffected.
 - An extension's `open` action (and `kelp.open` in its page) can't turn data (an issue's fields) into a `terminal:` or
   `agent:` URI; only the extension's own template can name those. Its agent prompts are typed, for the user to send.
 - A remote project's marker counts only under `~/.kelp/remote`; gh/glab don't run for remote projects.

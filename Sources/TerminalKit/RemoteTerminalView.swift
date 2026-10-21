@@ -6,6 +6,7 @@ import SwiftTerm
 @MainActor
 public final class RemoteTerminalView: NSView, @preconcurrency TerminalViewDelegate {
     private let term = TerminalView(frame: .zero)
+    public var onOpenURL: ((URL) -> Void)?
     public var onInput: ((Data) -> Void)?
     public var onResize: ((Int, Int) -> Void)?
     public var onTitle: ((String) -> Void)?
@@ -46,12 +47,13 @@ public final class RemoteTerminalView: NSView, @preconcurrency TerminalViewDeleg
     public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     public func send(source: TerminalView, data: ArraySlice<UInt8>) { onInput?(Data(data)) }
     public func scrolled(source: TerminalView, position: Double) {}
+    /// ⌘-clicked links (OSC 8 ones too, whose target hides behind any text) go to `onOpenURL`, which decides what opens.
     public func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        if let u = URL(string: link) { NSWorkspace.shared.open(u) }
+        if let u = URL(string: link) { if let h = onOpenURL { h(u) } else { NSWorkspace.shared.open(u) } }
     }
-    public func clipboardCopy(source: TerminalView, content: Data) {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(String(decoding: content, as: UTF8.self), forType: .string)
-    }
+    /// OSC 52 from a program: ignored. Text a program put on the clipboard unseen would run on the next ⌘V in a shell that
+    /// takes no pastes. The user's own copy (⌘C) doesn't come this way.
+    public func clipboardCopy(source: TerminalView, content: Data) {}
     public func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
 

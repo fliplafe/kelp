@@ -1,3 +1,5 @@
+import AppKit
+import SwiftTerm
 import Testing
 @testable import TerminalKit
 
@@ -25,3 +27,22 @@ import Testing
     #expect(TerminalCopy.word(in: line, at: 1)?.width == 4)
     #expect(TerminalCopy.word(in: line, at: 4) == nil)
 }
+
+/// A link ⌘-clicked in the SwiftTerm terminal goes to the pane's handler (which opens pages and files only), never
+/// straight to its app: an OSC 8 link can hide a cloned repo's tool.app behind any text.
+@MainActor
+@Test func aSwiftTermLinkGoesToTheHandler() {
+    let t = RemoteTerminalView(frame: .zero)
+    var got: URL?
+    t.onOpenURL = { got = $0 }
+    t.requestOpenLink(source: TerminalView(frame: .zero), link: "file:///tmp/tool.app", params: [:])
+    #expect(got?.path == "/tmp/tool.app")
+}
+
+#if canImport(GhosttyKit)
+@MainActor
+/// Programs can't put text on the clipboard (OSC 52): it would run on the user's next ⌘V in a shell that takes no pastes.
+@Test func programsDontWriteTheClipboard() {
+    #expect(GhosttyRuntime.overrides.contains("clipboard-write = deny"))
+}
+#endif
