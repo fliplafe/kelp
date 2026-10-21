@@ -144,7 +144,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func expand(_ item: Item, openFailed: Bool) async {
         guard case .run(let run) = item.kind, let w = worktree else { return }
         if item.children == nil {
-            let jobs = (try? await AppModel.shared.client?.call(CIJobs(worktreeId: w, run: run.id))) ?? []
+            guard let jobs = await AppModel.shared.call(CIJobs(worktreeId: w, run: run.id)) else { return }   // the banner says why; asked again next time
             item.children = jobs.map { j in let i = Item(.job(j, run: run.id)); i.children = j.steps.map { Item(.step($0)) }; return i }
             outline.reloadItem(item, reloadChildren: true)
         }

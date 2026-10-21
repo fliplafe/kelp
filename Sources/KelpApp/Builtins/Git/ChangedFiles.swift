@@ -30,9 +30,9 @@ final class ChangedFiles {
     private func scheduleReload() { pending.after(0.4) { [weak self] in self?.reload() } }
 
     private func reload() {
-        guard let wid, panel?.workspace != wid, let c = AppModel.shared.client else { return }
+        guard let wid, panel?.workspace != wid else { return }
         Task {
-            let ch = try? await c.call(GitStatus(id: wid))
+            let ch = await AppModel.shared.quiet(GitStatus(id: wid))   // a count on an icon; Source Control says what failed
             report(wid, ch?.count ?? 0)
             // Source Control isn't reading (not built, or out of the window): open diffs, the window bar and the sidebar
             // badges still hear that git changed.

@@ -20,9 +20,9 @@ enum UIState {
     }
     static func strings(_ key: String) -> [String] { values[key]?.array?.compactMap(\.string) ?? [] }
 
-    /// A daemon too old for `state.*` leaves it empty.
-    static func load(_ c: RPCClient) async {
-        guard case .object(let all)? = try? await c.call(StateGet(prefix: "")) else { return }
+    /// A daemon too old for `state.*` leaves it empty (quiet: the window just opens as new).
+    static func load() async {
+        guard case .object(let all)? = await AppModel.shared.quiet(StateGet(prefix: "")) else { return }
         values = all
     }
 }

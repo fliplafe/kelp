@@ -23,11 +23,12 @@ extension SourceControlController {
         // Swapped out of the inspector: no git until it shows again.
         guard view.window != nil else { stale = true; return }
         stale = false
-        guard let wid = worktreeId, let c = AppModel.shared.client else { return }
+        guard let wid = worktreeId, AppModel.shared.client != nil else { return }   // reconnecting reloads it
         Task {
             do {
-                let ch = try await c.call(GitStatus(id: wid))
-                let br = try await c.call(GitBranches(id: wid))
+                let m = AppModel.shared
+                let ch = try await m.get(GitStatus(id: wid))
+                let br = try await m.get(GitBranches(id: wid))
                 guard wid == worktreeId else { return }   // another workspace is shown now: its own reload is on its way
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
                     || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
@@ -39,7 +40,7 @@ extension SourceControlController {
                 changes = ch; info = br; showError(nil)
                 ChangedFiles.shared.report(wid, ch.count)
                 updateHeader(); updateCommitButton()
-                let stats = ch.isEmpty ? nil : try? await c.call(GitLineStats(id: wid))
+                let stats = ch.isEmpty ? nil : await m.quiet(GitLineStats(id: wid))   // the "+6 −2" beside the header
                 guard wid == worktreeId else { return }
                 showStats(stats)
                 if graphStale || commits.isEmpty { loadCI(); await loadGraph() } else if changed { rebuildChanges() }
@@ -120,8 +121,9 @@ extension SourceControlController {
     }
 
     func loadGraph() async {
-        guard let wid = worktreeId, let c = AppModel.shared.client else { return }
-        let r = try? await c.call(GitGraph(id: wid, limit: limit))
+        guard let wid = worktreeId else { return }
+        // Quiet: git failing shows in the panel from the status read before this; a graph that failed alone keeps the last one.
+        let r = await AppModel.shared.quiet(GitGraph(id: wid, limit: limit), timeout: 60)
         guard wid == worktreeId else { return }
         if let r {
             let list = r.commits

@@ -1895,6 +1895,16 @@
         }
       }
     },
+    "Couldn't list the files: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось получить список файлов: %@"
+          }
+        }
+      }
+    },
     "Couldn't load": {
       "localizations": {
         "ru": {
@@ -1905,12 +1915,42 @@
         }
       }
     },
+    "Couldn't measure the sessions: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось измерить сессии: %@"
+          }
+        }
+      }
+    },
     "Couldn't read it.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось прочитать."
+          }
+        }
+      }
+    },
+    "Couldn't read the checks: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать проверки: %@"
+          }
+        }
+      }
+    },
+    "Couldn't read the usage: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать расход: %@"
           }
         }
       }
@@ -1937,6 +1977,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось сохранить %@: %@"
+          }
+        }
+      }
+    },
+    "Couldn't search: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось выполнить поиск: %@"
           }
         }
       }

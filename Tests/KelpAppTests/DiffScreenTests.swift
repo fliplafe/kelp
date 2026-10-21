@@ -55,3 +55,34 @@ extension SharedAppModel {
         #expect(cached.contains("+bottom change") && !cached.contains("+top change"))
     }
 }
+
+/// A folder Files can't list (moved away under Kelp, git refusing it) says why where the tree would be: it used to be
+/// an empty tree, the same as an empty folder.
+extension SharedAppModel {
+    @Test func theFilesPanelSaysWhyItShowsNoFiles() async throws {
+        _ = testHome
+        let root = URL(fileURLWithPath: "/tmp/kf-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+        let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+        let repo = root.appendingPathComponent("repo").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try Git.run(["init", "-q", "-b", "main"], cwd: repo)
+        let r = try await c.call(RepoAdd(path: repo))
+        let wt = try #require(try await c.call(WorktreeList(repoId: r.id)).first)
+        try FileManager.default.removeItem(atPath: repo)   // moved away: nothing can list it now
+
+        let m = AppModel.shared, wb = Workbench.shared
+        let saved = (m.client, m.repos, m.worktrees, wb.workspaceId)
+        defer { (m.client, m.repos, m.worktrees, wb.workspaceId) = saved }
+        m.client = c; m.repos = [r]; m.worktrees = [wt]; wb.workspaceId = wt.id
+        let panel = FilesPanel()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 500), styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentViewController = panel
+        await withCheckedContinuation { k in panel.reloadTree { k.resume() } }
+        @MainActor func labels(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(labels) }
+        let said = labels(panel.view).filter { !$0.isHidden && $0.stringValue.contains("Couldn't list the files") }
+        #expect(said.count == 1, "\(labels(panel.view).map(\.stringValue))")
+    }
+}

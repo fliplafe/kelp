@@ -360,7 +360,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         openCommits.insert(hash)
         guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
-            let files = (try? await AppModel.shared.client?.call(GitCommitFiles(id: wid, commit: hash))) ?? []
+            // Unfolded by a click: a banner says why it can't, and it folds back to be asked again.
+            guard let files = await AppModel.shared.call(GitCommitFiles(id: wid, commit: hash)) else { openCommits.remove(hash); rebuildGraph(); return }
             guard wid == worktreeId else { return }
             commitFiles[hash] = files
             rebuildGraph()

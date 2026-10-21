@@ -25,9 +25,7 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
         guard !opening else { return }   // ⌃⌥⌘K twice while the first is still setting up: one panel
         opening = true; defer { opening = false }
         if panel == nil {
-            guard let w = try? await AppModel.shared.client?.call(ScratchEnsure()) else {
-                Banner.show(String(localized: "Kelp's background service isn't running."), style: .error); return
-            }
+            guard let w = await AppModel.shared.call(ScratchEnsure()) else { return }   // the banner says why
             await AppModel.shared.refresh()
             let a = EditorArea(workspaceId: w.id)
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480), styleMask: [.titled, .closable, .resizable, .utilityWindow],

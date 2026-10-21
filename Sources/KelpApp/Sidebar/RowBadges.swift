@@ -31,12 +31,13 @@ final class RowBadges {
     }
 
     func refresh(_ wid: String, force: Bool = false) {
-        guard force || Date().timeIntervalSince(asked[wid] ?? .distantPast) > 60, let c = AppModel.shared.client else { return }
+        guard force || Date().timeIntervalSince(asked[wid] ?? .distantPast) > 60, AppModel.shared.client != nil else { return }
         asked[wid] = Date()
         Task {
-            let s = try? await c.call(GitLineStats(id: wid))
+            let m = AppModel.shared
+            let s = await m.quiet(GitLineStats(id: wid))
             if s != stats[wid] { stats[wid] = s }
-            let pr = (try? await c.call(GitHubBranchPR(worktreeId: wid))) ?? nil
+            let pr = await m.quiet(GitHubBranchPR(worktreeId: wid)) ?? nil
             if pr != prs[wid] { prs[wid] = pr }
         }
     }

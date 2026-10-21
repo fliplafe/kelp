@@ -90,10 +90,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         // Claude Code: its own last reply (the terminal around it — spinners, mode lines — reads as nonsense when summarized).
         // The Stop hook can come a moment before the transcript has the final message.
         try? await Task.sleep(for: .milliseconds(1200))
-        if let c = AppModel.shared.client, let reply = (try? await c.call(SessionLastReply(id: s.id))) ?? nil {
+        if let reply = await AppModel.shared.quiet(SessionLastReply(id: s.id)) ?? nil {
             let line = Self.firstSentence(reply)
             s.summary = line
-            _ = try? await c.call(SessionAnnotate(id: s.id, summary: line))
+            _ = await AppModel.shared.quiet(SessionAnnotate(id: s.id, summary: line))
         }
         post(s)   // other agents: no summary; the state says enough
     }

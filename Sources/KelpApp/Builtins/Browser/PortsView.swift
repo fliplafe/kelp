@@ -37,7 +37,7 @@ final class PortsView: NSView {
     private func reload() {
         guard !isHidden, let wid = Workbench.shared.workspaceId else { return }
         Task {
-            let ports = (try? await AppModel.shared.client?.call(PortsList(worktreeId: wid))) ?? []
+            let ports = await AppModel.shared.quiet(PortsList(worktreeId: wid), timeout: 10) ?? []   // asked again in 3 s
             let numbers = ports.map(\.port)
             guard numbers != shown else { return }
             shown = numbers

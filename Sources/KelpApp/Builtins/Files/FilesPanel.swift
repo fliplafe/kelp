@@ -98,9 +98,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         clear.bezelStyle = .push; clear.controlSize = .small
         let empty = NSStackView(views: [noMatches, clear]); empty.orientation = .vertical; empty.spacing = 8; empty.isHidden = true
         noResults = empty
-        for x in [search, leftScroll, resultsScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        loadError.textColor = .secondaryLabelColor; loadError.alignment = .center; loadError.isHidden = true
+        for x in [search, leftScroll, resultsScroll, empty, loadError] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
-                                     empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32)])
+                                     empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32),
+                                     loadError.centerXAnchor.constraint(equalTo: v.centerXAnchor),
+                                     loadError.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
+                                     loadError.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32)])
         NSLayoutConstraint.activate([
             search.topAnchor.constraint(equalTo: v.topAnchor, constant: 8), search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10),
             search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
@@ -157,9 +161,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         stale = false
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
-            let paths = (try? await AppModel.shared.client?.call(FilesList(id: w.id))) ?? []
-            let st = (try? await AppModel.shared.client?.call(GitStatus(id: w.id))) ?? []
+            let listed = await AppModel.shared.tryCall(FilesList(id: w.id))
+            let st = await AppModel.shared.quiet(GitStatus(id: w.id)) ?? []   // only the letters: the tree says what failed
             guard worktree?.id == w.id else { return }   // switched meanwhile: these paths are another folder's
+            showLoadError(listed.error)
+            guard let paths = listed.value else { done?(); return }
             status = Dictionary(st.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
             changedFolders = Set(status.keys.flatMap { p in p.indices.filter { p[$0] == "/" }.map { String(p[..<$0]) } })
             if paths == shownPaths { reloadIcons() } else {   // an agent saving a file changes its badge, not the tree
@@ -374,7 +380,16 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         FileActions.copyWebLink(p)
     }
     // MARK: search
-    private func showResults(_ on: Bool) { resultsScroll.isHidden = !on; leftScroll.isHidden = on; if !on { noResults?.isHidden = true } }
+    private func showResults(_ on: Bool) {
+        resultsScroll.isHidden = !on; leftScroll.isHidden = on || !loadError.isHidden; if !on { noResults?.isHidden = true }
+    }
+    /// The files couldn't be listed (a folder moved away, git refusing it): say why where the tree would be, not an empty tree.
+    private let loadError = NSTextField(wrappingLabelWithString: "")
+    private func showLoadError(_ message: String?) {
+        loadError.stringValue = message.map { String(localized: "Couldn't list the files: \($0)") } ?? ""
+        loadError.isHidden = message == nil
+        leftScroll.isHidden = message != nil || !resultsScroll.isHidden
+    }
     /// A search that found nothing says so (and the tree is one click away), rather than an empty list.
     private let noMatches = NSTextField(wrappingLabelWithString: "")
     private var noResults: NSView?
@@ -399,11 +414,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         showResults(!q.isEmpty)
         guard !q.isEmpty else { return }
         Task {
-            let found = (try? await AppModel.shared.client?.call(FilesSearch(id: w.id, query: q))) ?? []
+            let found = await AppModel.shared.tryCall(FilesSearch(id: w.id, query: q))
             guard worktree?.id == w.id, search.stringValue.trimmingCharacters(in: .whitespaces) == q else { return }   // a newer search or workspace
-            matches = found
+            matches = found.value ?? []
             results.reloadData()
-            noMatches.stringValue = String(localized: "No matches for “\(q)”."); noResults?.isHidden = !matches.isEmpty
+            noMatches.stringValue = found.error.map { String(localized: "Couldn't search: \($0)") } ?? String(localized: "No matches for “\(q)”.")
+            noResults?.isHidden = !matches.isEmpty
         }
     }
     func numberOfRows(in t: NSTableView) -> Int { matches.count }

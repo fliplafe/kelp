@@ -16,7 +16,8 @@ struct AccountProfile: Codable, Hashable, Identifiable {
 @MainActor
 enum Accounts {
     static func load() async -> [AccountProfile] {
-        (try? await AppModel.shared.call(SettingsGet())?["accounts.profiles"]?.decode([AccountProfile].self)) ?? []
+        let saved = await AppModel.shared.call(SettingsGet())?["accounts.profiles"]   // a banner when the settings can't be read
+        return (try? saved?.decode([AccountProfile].self)) ?? []
     }
     static func save(_ list: [AccountProfile]) async {
         await AppModel.shared.call(SettingsSet(key: "accounts.profiles", value: (try? JSONValue.from(list)) ?? .array([])))

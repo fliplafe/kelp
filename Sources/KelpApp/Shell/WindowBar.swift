@@ -94,9 +94,9 @@ final class WindowBar: NSView {
     }
 
     private func reload() {
-        guard let w = worktree, let c = AppModel.shared.client else { update(); return }
+        guard let w = worktree, AppModel.shared.client != nil else { update(); return }
         Task {
-            let i = try? await c.call(GitBranches(id: w.id))
+            let i = await AppModel.shared.quiet(GitBranches(id: w.id))   // the branch chip; Source Control says what failed
             guard w.id == worktree?.id else { return }
             info = i; update()
         }

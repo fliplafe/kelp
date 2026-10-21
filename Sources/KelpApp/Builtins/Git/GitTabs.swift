@@ -103,9 +103,9 @@ final class CommitMessageTab: TabContent {
 
     /// The message (the last commit's, when amending), then what goes into the commit as "#" lines, as git's own template does.
     private func fill(_ message: String) async {
-        let c = AppModel.shared.client
-        let changes = (try? await c?.call(GitStatus(id: worktreeId))) ?? []
-        let branch = (try? await c?.call(GitBranches(id: worktreeId)))?.current
+        // The "#" lines only describe the commit; without them the message is still the message.
+        let changes = await AppModel.shared.quiet(GitStatus(id: worktreeId)) ?? []
+        let branch = await AppModel.shared.quiet(GitBranches(id: worktreeId))?.current
         let staged = changes.filter { $0.staged && !$0.conflicted }
         let files = staged.isEmpty ? changes.filter { !$0.conflicted } : staged
         var lines = [message, ""]
@@ -149,7 +149,8 @@ final class CommitMessageTab: TabContent {
 @MainActor
 enum GitCommit {
     static func run(_ wid: String, message: String, push: Bool, amend: Bool) async -> Bool {
-        let changes = (try? await AppModel.shared.client?.call(GitStatus(id: wid))) ?? []
+        // Unread, nothing would look staged and every change would go in: stop with the banner instead.
+        guard let changes = await AppModel.shared.call(GitStatus(id: wid)) else { return false }
         let all = !changes.contains { $0.staged && !$0.conflicted }
         let r = await AppModel.shared.tryCall(Core.GitCommit(id: wid, message: message, all: all, amend: amend))   // this enum's namesake
         if let e = r.error { GitFix.offer(e, recipe: "fixCommit", worktree: wid); return false }

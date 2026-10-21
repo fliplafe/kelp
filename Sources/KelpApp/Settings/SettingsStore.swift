@@ -11,7 +11,7 @@ final class SettingsStore {
     private(set) var values: [String: JSONValue] = [:]
 
     func load() async {
-        if let o = try? await AppModel.shared.client?.call(SettingsGet()) { apply(o) }
+        if let o = await AppModel.shared.call(SettingsGet()) { apply(o) }   // else a banner: what's shown may not be settings.json
     }
 
     func apply(_ o: [String: JSONValue]) {
@@ -48,11 +48,8 @@ final class SettingsStore {
         apply(next)   // optimistic; the daemon's echo confirms
         Task {
             // Not saved: say so and show what settings.json really holds again, instead of a value that reverts later.
-            do {
-                guard let c = AppModel.shared.client else { throw RPCError.internalError(String(localized: "Kelp's background service isn't running.")) }
-                _ = try await c.call(SettingsSet(key: key, value: v))
-            } catch {
-                Banner.show(String(localized: "Couldn't change “\(key)”: \(AppModel.message(error))"), style: .error)
+            if let error = await AppModel.shared.tryCall(SettingsSet(key: key, value: v)).error {
+                Banner.show(String(localized: "Couldn't change “\(key)”: \(error)"), style: .error)
                 await load()
             }
         }

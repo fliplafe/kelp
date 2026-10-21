@@ -40,8 +40,11 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
 
     private func reload() {
         Task {
-            let usage = (try? await AppModel.shared.client?.call(SessionUsage())) ?? []
             let m = AppModel.shared
+            let read = await m.tryCall(SessionUsage())
+            let usage = read.value ?? []
+            // Couldn't measure: say why where "No sessions running." would be, not that nothing runs.
+            empty.stringValue = read.error.map { String(localized: "Couldn't measure the sessions: \($0)") } ?? String(localized: "No sessions running.")
             rows = usage.compactMap { u in
                 guard let s = m.session(u.session) else { return nil }
                 return Row(session: s, cpu: u.cpu, memory: u.memory, processes: u.processes)

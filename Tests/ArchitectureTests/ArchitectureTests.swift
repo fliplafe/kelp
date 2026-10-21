@@ -35,10 +35,19 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     #expect(cli.count <= 0, "string-named calls in the kelp CLI: \(cli)")
 }
 
-/// A failed call says why (a banner, the panel's error state): `try?` turns it into an empty list or nothing at all.
+/// One way to the daemon, through AppModel: `call` (a banner), `tryCall` / `get` (the panel's error state) or `quiet`
+/// (decorations, which say so). `try?` around a call turned a failure into an empty list; the raw client skipped all of it.
+/// AppModel.swift itself is the way (it also manages the connection), so it isn't counted.
 @Test func daemonErrorsAreNotSwallowed() throws {
-    let swallowed = try matches(#"try\? await [^=\n]*\.call\("#, in: ["Sources/KelpApp"])
-    #expect(swallowed.count <= 52, "\(swallowed)")
+    // SessionTab.busy waits for its answer off the main thread while closing a terminal; it goes once closing is async.
+    let allowed = ["Sources/KelpApp/Builtins/Agents/SessionTab.swift"]
+    func outside(_ found: [String]) -> [String] {
+        found.filter { f in !f.hasPrefix("Sources/KelpApp/AppModel.swift:") && !allowed.contains { f.hasPrefix($0 + ":") } }
+    }
+    let swallowed = outside(try matches(#"try\? await [^=\n]*\.call\("#, in: ["Sources/KelpApp"]))
+    let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: ["Sources/KelpApp"]))
+    #expect(swallowed == [], "try? around a call: \(swallowed)")
+    #expect(raw == [], "the client called directly: \(raw)")
 }
 
 /// The app reads the daemon's records as Core's types: running git, gh, the agents' files and the daemon itself is the

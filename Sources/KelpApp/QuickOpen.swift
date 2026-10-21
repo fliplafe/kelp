@@ -204,7 +204,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             filesLoad?.cancel()
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 filesLoad = Task {
-                    let files = (try? await AppModel.shared.client?.call(FilesList(id: wid))) ?? []
+                    let files = await AppModel.shared.call(FilesList(id: wid)) ?? []   // why there are none, if it failed
                     let fuzzy = await Task.detached { files.map(ProjectFiles.FuzzyPath.init) }.value
                     // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
                     guard !Task.isCancelled, choosing == nil else { return }
@@ -281,7 +281,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         prSearch?.cancel()
         guard let repo = AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId else { return }
         prSearch = Task { [weak self] in
-            let prs = (try? await AppModel.shared.client?.call(GitHubPRs(repoId: repo, filter: "open"))) ?? []
+            let prs = await AppModel.shared.call(GitHubPRs(repoId: repo, filter: "open")) ?? []   // gh missing or signed out: says so
             guard let self, !Task.isCancelled, field.stringValue == q else { return }
             let term = String(q.dropFirst()).lowercased()
             setRows(prs.filter { p in term.isEmpty || "\(p.number)".hasPrefix(term) || p.title.lowercased().contains(term) }.map { p in

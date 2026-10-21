@@ -76,16 +76,16 @@ final class CardModel {
     }
 
     func load() {
-        guard let c = AppModel.shared.client else { return }
+        let m = AppModel.shared
         Task {
-            if let repo { worktrees = (try? await c.call(RepoWorktreeSizes(id: repo.id))) ?? []; return }
+            if let repo { worktrees = await m.quiet(RepoWorktreeSizes(id: repo.id)) ?? []; return }
             if !agentOnly {
-                changes = try? await c.call(GitLineStats(id: workspaceId))
-                if let p = (try? await c.call(GitHubBranchPR(worktreeId: workspaceId))) ?? nil { pr = p }
-                ports = ((try? await c.call(PortsList(worktreeId: workspaceId))) ?? []).map(\.port)
+                changes = await m.quiet(GitLineStats(id: workspaceId))
+                if let p = await m.quiet(GitHubBranchPR(worktreeId: workspaceId)) ?? nil { pr = p }
+                ports = (await m.quiet(PortsList(worktreeId: workspaceId)) ?? []).map(\.port)
             }
             guard agentOnly, let a = agents.first else { return }
-            if let t = ((try? await c.call(SessionTurn(id: a.id))) ?? nil)?.turn {
+            if let t = (await m.quiet(SessionTurn(id: a.id)) ?? nil)?.turn {
                 let files = t.files
                 let add = files.reduce(0) { $0 + $1.added }, del = files.reduce(0) { $0 + $1.removed }
                 let took = shortSpan(t.seconds, smallest: .second)
@@ -93,7 +93,7 @@ final class CardModel {
                     : files.count == 1 ? String(localized: "Last turn: 1 file +\(add) −\(del) · \(took)")
                     : String(localized: "Last turn: \(files.count) files +\(add) −\(del) · \(took)")
             }
-            if let u = try? await c.call(SessionContextWindow(id: a.id)) { context = (u.used, u.window) }
+            if let u = await m.quiet(SessionContextWindow(id: a.id)) ?? nil { context = (u.used, u.window) }
         }
     }
 }

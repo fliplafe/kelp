@@ -120,7 +120,8 @@ struct AgentsSettings: View {
     }
 
     private func loadVersions() async {
-        let rows = (try? await AppModel.shared.client?.call(AgentsVersions())) ?? []
+        // Quiet: a version column beside each agent (npm offline, say); unknown versions just stay blank.
+        let rows = await AppModel.shared.quiet(AgentsVersions(), timeout: 60) ?? []
         var v: [String: (String?, String?)] = [:]
         for r in rows { v[r.id] = (r.version, r.latest) }
         for a in agents where v[a.id] == nil { v[a.id] = (nil, nil) }

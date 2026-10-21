@@ -25,6 +25,7 @@ struct UsageReportView: View {
     @State private var projects: [Row] = []
     @State private var loading = true
     @State private var slow = false
+    @State private var failed: String?
 
     var body: some View {
         ScrollView {
@@ -46,6 +47,7 @@ struct UsageReportView: View {
                         if slow { Text("Reading Claude Code's transcripts — the first time takes a minute.").foregroundStyle(.secondary) }
                     }
                 }
+                else if let failed { Text("Couldn't read the usage: \(failed)").foregroundStyle(.secondary) }
                 else if days.isEmpty { Text("No Claude Code conversations in this time.").foregroundStyle(.secondary) }
                 else {
                     let cost = days.reduce(0) { $0 + $1.cost }, tokens = days.reduce(0) { $0 + $1.tokens }
@@ -77,7 +79,8 @@ struct UsageReportView: View {
         loading = true; slow = false
         let hint = Task { try? await Task.sleep(for: .seconds(3)); if loading { slow = true } }
         defer { hint.cancel() }
-        let r = try? await AppModel.shared.client?.call(UsageReport(days: range))
+        let read = await AppModel.shared.tryCall(UsageReport(days: range))
+        let r = read.value; failed = read.error
         func rows(_ groups: [UsageReport.Group]?) -> [Row] { (groups ?? []).map { Row(id: $0.name, cost: $0.cost, tokens: $0.tokens) } }
         days = rows(r?.days).sorted { $0.id < $1.id }; models = rows(r?.models); projects = rows(r?.projects)
         loading = false

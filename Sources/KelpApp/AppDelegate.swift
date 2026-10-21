@@ -157,15 +157,18 @@ extension AppDelegate: NSMenuItemValidation {
 @MainActor
 final class ArchivedMenu: NSObject, NSMenuDelegate {
     private var archived: [Worktree] = []
+    private var failed: String?   // why the list couldn't be read: the menu says so instead of "None"
     override init() {
         super.init()
         track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in Task { await self?.reload() } }
     }
     private func reload() async {
-        archived = ((try? await AppModel.shared.client?.call(WorktreeList(archived: true))) ?? []).filter(\.archived)
+        let r = await AppModel.shared.tryCall(WorktreeList(archived: true))
+        archived = (r.value ?? []).filter(\.archived); failed = r.error
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if let failed { menu.addItem(withTitle: failed, action: nil, keyEquivalent: "").isEnabled = false; return }
         guard !archived.isEmpty else { menu.addItem(withTitle: String(localized: "None"), action: nil, keyEquivalent: "").isEnabled = false; return }
         for w in archived.sorted(by: { $0.createdAt > $1.createdAt }) {
             menu.add("\(w.displayName) — \(AppModel.shared.repo(w.repoId)?.name ?? "")") { WorkspaceActions.unarchive(w.id) }

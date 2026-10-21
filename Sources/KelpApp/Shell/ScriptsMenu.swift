@@ -31,8 +31,10 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         if let wid { Task { await load(wid) } }   // next time it's current
     }
 
-    @discardableResult private func load(_ wid: String) async -> ScriptsList.Result? {
-        guard let r = try? await AppModel.shared.client?.call(ScriptsList(worktreeId: wid)) else { return nil }
+    /// `asked`: for Run, which says why it can't (a banner); the menu's refresh in the background stays quiet.
+    @discardableResult private func load(_ wid: String, asked: Bool = false) async -> ScriptsList.Result? {
+        let m = ScriptsList(worktreeId: wid)
+        guard let r = asked ? await AppModel.shared.call(m) : await AppModel.shared.quiet(m) else { return nil }
         cached[wid] = r.scripts
         setupCommand[wid] = r.setup
         return r
@@ -52,7 +54,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         watch()
         Task {
-            guard let info = await load(wid) else { return }
+            guard let info = await load(wid, asked: true) else { return }
             let scripts = cached[wid] ?? []
             guard name == "setup" || scripts.contains(where: { $0.name == name }) else {
                 // No project command: ⌘R runs the focused file, ⌘U its test at the cursor, when its language says how.

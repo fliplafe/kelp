@@ -139,7 +139,7 @@ struct UsageView: View {
 
     private func load() async {
         // The poll awaits each answer: without a timeout one lost reply froze the limits for good ("Read 36m ago; not since").
-        guard let c = AppModel.shared.client, let u = try? await c.call(UsageGet(), timeout: 60) else { return }
+        guard let u = await AppModel.shared.quiet(UsageGet(), timeout: 60) else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }

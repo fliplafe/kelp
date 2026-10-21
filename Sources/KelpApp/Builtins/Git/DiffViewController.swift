@@ -176,7 +176,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         loads += 1; let load = loads
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
-            let log = (try? await AppModel.shared.client?.call(GitLog(id: wid, all: true))) ?? []
+            let log = await AppModel.shared.call(GitLog(id: wid, all: true)) ?? []   // the user picked "a commit": a banner if git can't list them
             let menu = NSMenu()
             for c in log.prefix(30) {
                 let m = menu.addItem(withTitle: "\(c.hash)  \(c.subject)", action: nil, keyEquivalent: "")
@@ -194,15 +194,15 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         let r = await AppModel.shared.tryCall(diffRequest())
         let d = r.value ?? []
         var ch: [FileChange] = [], cm: [DiffComment] = []
-        if single == nil, r.error == nil {
-            ch = (try? await AppModel.shared.client?.call(GitStatus(id: wid))) ?? []
-            cm = (try? await AppModel.shared.client?.call(CommentList(id: wid))) ?? []
+        if single == nil, r.error == nil {   // the files' letters and the comments: the diff above already said what failed
+            ch = await AppModel.shared.quiet(GitStatus(id: wid)) ?? []
+            cm = await AppModel.shared.quiet(CommentList(id: wid)) ?? []
         }
         // Rows, cell tags and the hunk buttons index `diffs`: they change together, once every answer is in.
         guard load == loads, wid == worktreeId else { return }
         diffs = d; changes = ch; comments = cm
         files.reloadData(); rebuildRows()
-        if let e = r.error, single == nil, source.indexOfSelectedItem == 5 { status.stringValue = e; return }
+        if let e = r.error { status.stringValue = e; return }   // why there's nothing, not "0 files"
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         let open = comments.filter { $0.state == .open }.count
         status.stringValue = single != nil ? (diffs.isEmpty ? String(localized: "No changes") : RowBadges.changes(added: add, removed: del).string)

@@ -117,7 +117,7 @@ final class AppModel {
             self.client = nil; self.connected = false; self.reconnectSoon()
         } }
         if await checkDaemonVersion(c) { return }
-        await UIState.load(c)
+        await UIState.load()
         if UIState.strings("sidebar.order") != order { order = UIState.strings("sidebar.order") }
         await SettingsStore.shared.load()
         await refresh()
@@ -193,12 +193,12 @@ final class AppModel {
     }
 
     private func refreshOnce() async {
-        guard let c = client else { return }
-        // Assign only what changed: every assignment re-renders the views that read it.
-        if let r = try? await c.call(RepoList()), r != repos { repos = r }
-        if let w = try? await c.call(WorktreeList()), w != worktrees { worktrees = w }
+        // Assign only what changed: every assignment re-renders the views that read it. Quiet: a failed read keeps the
+        // lists on screen, and a dropped connection says so itself (and refreshes again once it's back).
+        if let r = await quiet(RepoList()), r != repos { repos = r }
+        if let w = await quiet(WorktreeList()), w != worktrees { worktrees = w }
         let before = sessionEvents
-        if let s = try? await c.call(SessionList()) {
+        if let s = await quiet(SessionList()) {
             let merged = Self.merge(list: s, local: sessions, newer: Set(sessionEvents.keys.filter { sessionEvents[$0] != before[$0] }))
             if merged != sessions { sessions = merged }
         }
@@ -243,11 +243,9 @@ final class AppModel {
     /// No answer (not Claude Code, ended, just compacted by an older Claude Code) takes the ring away.
     private func readContext(_ id: String) {
         Task {
-            guard let c = client else { return }
-            do {
-                let share = try await c.call(SessionContextWindow(id: id)).flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }
-                if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
-            } catch {}   // no reply at all: the ring stays
+            guard let usage = await quiet(SessionContextWindow(id: id)) else { return }   // no reply at all: the ring stays
+            let share = usage.flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }
+            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
         }
     }
 
@@ -280,10 +278,22 @@ final class AppModel {
 
     /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.
     func tryCall<M: RPCMethod>(_ m: M) async -> (value: M.Result?, error: String?) {
-        guard let c = client else { return (nil, Self.noService) }
-        do { return (try await c.call(m), nil) } catch { return (nil, Self.message(error)) }
+        do { return (try await get(m), nil) } catch { return (nil, Self.message(error)) }
+    }
+    /// `tryCall` for a chain of calls that one `catch` turns into the panel's error state.
+    func get<M: RPCMethod>(_ m: M) async throws -> M.Result {
+        guard let c = client else { throw RPCError.internalError(Self.noService) }
+        return try await c.call(m)
     }
     static func message(_ e: Error) -> String { (e as? RPCError)?.message ?? e.localizedDescription }
+
+    /// For what decorates rather than answers the user: a badge, a hover card's extras, a notification's summary, a poll
+    /// that asks again in a few seconds. Its failure says nothing (nil), since an error there would be noise about
+    /// something nobody asked for, and the next read tries again. `timeout`: a reply that never comes ends this read,
+    /// not the loop that makes it.
+    func quiet<M: RPCMethod>(_ m: M, timeout: TimeInterval = 30) async -> M.Result? {
+        try? await client?.call(m, timeout: timeout)
+    }
 
     func worktree(_ id: String?) -> Worktree? { worktrees.first { $0.id == id } }
     func repo(_ id: String?) -> Repo? { repos.first { $0.id == id } }

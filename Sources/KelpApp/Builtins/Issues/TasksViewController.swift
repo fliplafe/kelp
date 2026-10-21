@@ -85,7 +85,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func nameSources() {
         guard let repoId else { return }
         Task {
-            let forge = try? await AppModel.shared.client?.call(GitHubForge(repoId: repoId))
+            let forge = await AppModel.shared.quiet(GitHubForge(repoId: repoId))   // the list's own load says what failed
             source.item(at: 0)?.title = forge == "gitlab" ? String(localized: "Merge Requests") : String(localized: "Pull Requests")
         }
     }
@@ -99,7 +99,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case 2:
             filter.addItems(withTitles: [String(localized: "My issues")])
             Task {   // team boards
-                for t in (try? await AppModel.shared.client?.call(LinearTeams())) ?? [] {
+                for t in await AppModel.shared.quiet(LinearTeams()) ?? [] {   // the list's own load says what failed
                     filter.addItem(withTitle: String(localized: "Team: \(t.name)")); filter.lastItem?.representedObject = t.id
                 }
             }
@@ -125,26 +125,26 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             defer { slow.cancel() }
             var rows: [Row] = []
             do {
-                let c = AppModel.shared.client
+                let m = AppModel.shared
                 switch src {
-                case 0: rows = (try await c?.call(GitHubPRs(repoId: repoId, filter: ["open", "mine", "review"][max(0, f)])) ?? []).map(Row.pr)
-                case 1: rows = (try await c?.call(GitHubIssues(repoId: repoId, filter: f == 1 ? "mine" : "open")) ?? []).map(Row.issue)
+                case 0: rows = try await m.get(GitHubPRs(repoId: repoId, filter: ["open", "mine", "review"][max(0, f)])).map(Row.pr)
+                case 1: rows = try await m.get(GitHubIssues(repoId: repoId, filter: f == 1 ? "mine" : "open")).map(Row.issue)
                 case 2:
                     let team = filter.selectedItem?.representedObject as? String
-                    var issues = try await c?.call(LinearIssues(teamId: team)) ?? []
+                    var issues = try await m.get(LinearIssues(teamId: team))
                     if team != nil { issues.sort { $0.state.name < $1.state.name } }
                     rows = issues.map(Row.linear)
                 case 3:
-                    rows = (try await c?.call(JiraIssues(jql: f == 1 ? jiraJQL : nil)) ?? []).map(Row.jira)
+                    rows = try await m.get(JiraIssues(jql: f == 1 ? jiraJQL : nil)).map(Row.jira)
                 default:
                     if filter.itemTitles.first == String(localized: "Loading projects…") {
-                        let ps = try await c?.call(GitHubProjects(repoId: repoId)) ?? []
+                        let ps = try await m.get(GitHubProjects(repoId: repoId))
                         filter.removeAllItems()
                         for p in ps { filter.addItem(withTitle: p.title); filter.lastItem?.tag = p.number }
                         projectOwner = ps.first.flatMap { URL(string: $0.url)?.pathComponents.dropFirst(2).first }
                     }
                     if let owner = projectOwner, let n = filter.selectedItem?.tag {
-                        rows = (try await c?.call(GitHubProjectItems(owner: owner, number: n)) ?? [])
+                        rows = try await m.get(GitHubProjectItems(owner: owner, number: n))
                             .sorted { ($0.status ?? "~") < ($1.status ?? "~") }.map(Row.item)
                     } else { rows = [] }
                 }
@@ -255,8 +255,10 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         detail.addArrangedSubview(label(String(localized: "Checks"), weight: .semibold)); detail.addArrangedSubview(checksBox)
         guard let repoId else { return }
         Task {
-            let checks = (try? await AppModel.shared.client?.call(GitHubChecks(repoId: repoId, pr: n))) ?? []
-            if checks.isEmpty { checksBox.addArrangedSubview(label(String(localized: "No checks reported."), color: .secondaryLabelColor)) }
+            let read = await AppModel.shared.tryCall(GitHubChecks(repoId: repoId, pr: n))
+            let checks = read.value ?? []
+            if let e = read.error { checksBox.addArrangedSubview(label(String(localized: "Couldn't read the checks: \(e)"), color: .secondaryLabelColor)) }
+            else if checks.isEmpty { checksBox.addArrangedSubview(label(String(localized: "No checks reported."), color: .secondaryLabelColor)) }
             for c in checks {
                 let icon = c.bucket == "pass" ? "✓" : c.bucket == "fail" ? "✕" : c.bucket == "pending" ? "◌" : "–"
                 let row = NSStackView(views: [label("\(icon)  \(c.name)", color: c.bucket == "fail" ? .systemRed : .labelColor)]); row.spacing = 8
@@ -273,7 +275,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func statePicker(_ r: LinearIssue) -> NSView {
         let pop = NSPopUpButton(); pop.addItem(withTitle: r.state.name)
         Task {
-            guard let states = try? await AppModel.shared.client?.call(LinearStates(teamId: r.team.id)) else { return }
+            guard let states = await AppModel.shared.quiet(LinearStates(teamId: r.team.id)) else { return }   // keeps the current state
             pop.removeAllItems()
             for s in states { pop.addItem(withTitle: s.name); pop.lastItem?.representedObject = s.id }
             pop.selectItem(withTitle: r.state.name)
@@ -291,7 +293,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func jiraTransitions(_ key: String, current: String) -> NSView {
         let pop = NSPopUpButton(); pop.addItem(withTitle: current.isEmpty ? String(localized: "Status") : current)
         Task {
-            let ts = (try? await AppModel.shared.client?.call(JiraTransitions(key: key))) ?? []
+            let ts = await AppModel.shared.quiet(JiraTransitions(key: key)) ?? []   // none offered: the status stays as shown
             for t in ts { pop.addItem(withTitle: "→ " + t.name); pop.lastItem?.representedObject = t.id }
         }
         let sink = ClosureTarget { [weak pop, weak self] in
@@ -333,7 +335,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func sendReview(_ n: Int, _ wt: Worktree) {
         guard let repoId else { return }
         Task {
-            let cs = (try? await AppModel.shared.client?.call(GitHubReviewComments(repoId: repoId, pr: n))) ?? []
+            guard let cs = await AppModel.shared.call(GitHubReviewComments(repoId: repoId, pr: n)) else { return }   // the banner says why
             guard !cs.isEmpty else { status.stringValue = String(localized: "No review comments"); return }
             var parts: [String] = []
             for (i, c) in cs.enumerated() {
