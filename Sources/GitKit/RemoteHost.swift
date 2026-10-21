@@ -61,14 +61,15 @@ public struct RemoteHost: Codable, Sendable, Equatable {
                 "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
     }
 
-    /// What the host's shell runs: `argv` in the project's folder, through a login shell so the host's PATH applies;
+    /// What the host's shell runs: `argv` in the project's folder, through an interactive login shell so the host's PATH
+    /// applies (interactive too: nvm and npm's global bin go in .bashrc, which `bash -lc` skips);
     /// nil argv is an interactive login shell.
     public func command(_ argv: [String]?) -> String {
         let cd = "cd \(Self.cdArg(path))"
         guard let argv, !argv.isEmpty else { return cd + " && exec \"$SHELL\" -l" }
         // A local absolute path means nothing there: the host finds the program by name.
         let words = [(argv[0] as NSString).lastPathComponent] + argv.dropFirst()
-        return cd + " && exec \"$SHELL\" -lc " + Self.quote(words.map(Self.quote).joined(separator: " "))
+        return cd + " && exec \"$SHELL\" -ilc " + Self.quote(words.map(Self.quote).joined(separator: " "))
     }
 
     /// `cd`'s argument: quoted, with a leading ~ left outside the quotes so the host's shell expands it.
