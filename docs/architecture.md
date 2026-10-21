@@ -32,6 +32,10 @@ contributions, the command palette and settings.
   File › Attach to tmux Session or "+". tmux keeps the session: after the daemon restarts the tab comes back paused and
   attaches again when shown, and closing it only detaches. With `terminal.tmux` on, every new terminal runs in a tmux
   session of its own (`kelp-tab-…`, left out of the picker), which ends when its tab is closed.
+- **Remote agents** run in a tmux session of their own on the host when it has tmux (`Session.tmux`,
+  `RemoteHost.command(_:inTmux:)`): the agent keeps working through a dropped connection or a daemon restart, a wake or
+  Restart attaches to it again ("Connection lost" › Reconnect), closing the tab ends it. Their status comes from the
+  screen (hooks are files on this Mac); after attaching, tmux's redraw doesn't count as a turn.
 
 ## Contribution points (built-in Swift extensions and `extension.json` folders use the same ones)
 | Point | Where it shows |

@@ -395,6 +395,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         lock.lock(); f(&record); let r = record; lock.unlock(); return r
     }
 
+    /// Attached again to a program that kept running (a remote agent in its tmux session): StatusDetector.attachedToRunning.
+    func attachedToRunning() { lock.lock(); detector.attachedToRunning(); lock.unlock() }
+
     /// Hibernation: the PTY dies but the record says so, so the UI shows "Paused" instead of "Exited".
     func markHibernated() -> Session {
         lock.lock(); detector.override(.hibernated); record.status = .hibernated; let r = record; lock.unlock(); return r

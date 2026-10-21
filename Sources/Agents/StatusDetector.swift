@@ -84,6 +84,10 @@ public struct StatusDetector: Sendable {
 
     public mutating func exited() { status = .exited }
 
+    /// Attached again to a program that kept running (tmux): what it prints is its work, typed or not, once tmux's redraw
+    /// of the screen in the first seconds is past (that redraw is no turn, and its end no "done").
+    public mutating func attachedToRunning(at now: Date = Date()) { active = true; settledAt = now }
+
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.
     /// `typing`: keys without Return (the prompt is still being written); output in the next seconds is their echo.
     public mutating func input(typing: Bool = false, at now: Date = Date()) { tail = ""; active = true; settledAt = nil; typedAt = typing ? now : nil }

@@ -85,6 +85,9 @@ public struct Session: Codable, Sendable, Equatable, Identifiable {
     /// The account profile it started with (Settings › Accounts); nil: the agent's own default login. Kept so a woken or
     /// restarted session comes back on the same account.
     public var profile: String?
+    /// The tmux session on a remote project's host its agent runs in (`RemoteHost.command(_:inTmux:)`), so the agent outlives a
+    /// dropped connection and the daemon; kept so a wake or a restart attaches to it again. nil elsewhere.
+    public var tmux: String?
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil,
                 status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {

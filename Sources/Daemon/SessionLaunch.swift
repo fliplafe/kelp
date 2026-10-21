@@ -52,7 +52,15 @@ extension Daemon {
     /// Paused rather than ended when its program stops with the daemon or sits idle, and back where it was when woken: an
     /// agent that resumes its conversation, a tmux terminal (tmux keeps the session, the wake attaches again).
     static func resumable(_ s: Session, _ manifests: [AgentManifest]) -> Bool {
-        Tmux.session(s.argv) != nil || manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
+        tmuxName(s) != nil || manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
+    }
+
+    /// The manifest its live session reads. A remote agent gets no hooks (they're files on this Mac): its status comes
+    /// from the screen, which an agent that has hooks elsewhere would never get read.
+    func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
+        var out = trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env)
+        if RemoteHost.of(cwd) != nil { out.hooksSettingsFlag = nil }
+        return out
     }
 
     /// Pause agents that have sat idle (done / waiting) for `hibernateMinutes` with nobody watching.
@@ -136,9 +144,10 @@ extension Daemon {
         rec.argv = argv   // the conversation it found is this session's from now on
         let env = launchEnv(m, rec)
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: trustAnswered(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
-                                 argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
+        let ls = try LiveSession(record: rec, manifest: liveManifest(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
+                                 argv: try launchArgv(argv, cwd: rec.cwd, manifest: m, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
+        if rec.tmux != nil { ls.attachedToRunning() }
         wire(ls)
         live.add(ls)
         publish(ls.snapshot)

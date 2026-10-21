@@ -51,10 +51,13 @@ extension SessionRestart: Handled {
         let m = try d.manifest(old.agent, command: nil, fallbackArgv: old.argv)
         var o = Daemon.Launch(self); o.title = old.titleManual ? old.title : nil
         if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
+        // A remote agent still running in its tmux session on the host: the new tab attaches to it (after a dropped
+        // connection, that's all a restart is), so there's still one copy. Starting afresh ends it.
+        if resume != false { o.tmux = old.tmux }
         // The new session pins an id of its own, never the old one's.
         o.argv = Daemon.withoutSessionId(resume != false ? d.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
         let s = try d.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
-        d.discard(old, keepTmux: true)   // its exit, still to come, doesn't save it again; the new one has its tmux session
+        d.discard(old, keepTmux: old.tmux == nil || resume != false)   // its exit, still to come, doesn't save it again
         return s
     }
 }

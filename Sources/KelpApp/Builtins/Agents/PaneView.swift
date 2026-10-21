@@ -10,6 +10,8 @@ final class PaneView: NSView {
     let sessionId: String
     private var ghostty: GhosttyTerminalView
     private let ended = NSStackView()
+    private let endedLabel = NSTextField(labelWithString: String(localized: "Session ended"))
+    private let restartButton = NSButton()
     /// `kelp attach` still streams, and from which daemon (`AppModel.connections` when it started).
     private var attached = true
     private var attachedTo = AppModel.shared.connections
@@ -60,8 +62,8 @@ final class PaneView: NSView {
     }
 
     private func buildEndedOverlay() {
-        let l = NSTextField(labelWithString: String(localized: "Session ended")); l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
-        let b = NSButton(title: String(localized: "Restart"), target: self, action: #selector(restartTapped)); b.bezelStyle = .rounded
+        let l = endedLabel; l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
+        let b = restartButton; b.title = String(localized: "Restart"); b.target = self; b.action = #selector(restartTapped); b.bezelStyle = .rounded
         b.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); b.imagePosition = .imageLeading
         let c = NSButton(title: String(localized: "Close"), target: self, action: #selector(closeTapped)); c.bezelStyle = .rounded
         let buttons = NSStackView(views: [b, c]); buttons.spacing = 8
@@ -81,6 +83,10 @@ final class PaneView: NSView {
         let s = AppModel.shared.session(sessionId), m = AppModel.shared
         if let s, s.status != .exited, m.connected, m.connections != attachedTo, window != nil { reattach(s) }
         ended.isHidden = attached && s?.status != .exited
+        // ssh ends with 255 when the connection drops: Restart connects again (to the agent still running in tmux there).
+        let lost = s?.exitCode == 255 && s.flatMap { RemoteHost.of($0.cwd) } != nil
+        endedLabel.stringValue = lost ? String(localized: "Connection lost") : String(localized: "Session ended")
+        restartButton.title = lost ? String(localized: "Reconnect") : String(localized: "Restart")
     }
 
     private func reattach(_ s: Session) {

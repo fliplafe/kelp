@@ -259,6 +259,7 @@ public final class Daemon: Sendable {
         var openURLs = false   // the first local URL it prints opens in the workspace's browser (event.devserver)
         var cols: UInt16 = 120, rows: UInt16 = 32
         var argv: [String]?   // restart: reuse exactly
+        var tmux: String?   // restart: the host's tmux session the old one's agent still runs in
 
         /// A terminal size: anything out of range is clamped, nothing (or 0) is 120 × 32.
         static func size(cols: Int?, rows: Int?) -> (cols: UInt16, rows: UInt16) {
@@ -290,10 +291,13 @@ public final class Daemon: Sendable {
         if local, let flag = manifest.sessionIdFlag, !argv.contains(flag), !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
         rec.argv = argv
         rec.profile = o.profile
+        // A remote agent runs in a tmux session of its own on the host: a dropped connection or a daemon restart leaves it working.
+        if !local, !["shell", "custom"].contains(manifest.id) { rec.tmux = o.tmux ?? Tmux.own() }
         let env = launchEnv(manifest, rec)
-        let ls = try LiveSession(record: rec, manifest: trustAnswered(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
-                                 argv: try launchArgv(argv, cwd: cwd, manifest: manifest), env: env,
+        let ls = try LiveSession(record: rec, manifest: liveManifest(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
+                                 argv: try launchArgv(argv, cwd: cwd, manifest: manifest, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
+        if o.tmux != nil { ls.attachedToRunning() }
         rec = ls.snapshot
         let sid = rec.id
         wire(ls)
@@ -314,13 +318,14 @@ public final class Daemon: Sendable {
 
     /// What runs: `argv` itself, or for a remote project ssh running it in the project's folder on the host. Records
     /// keep the plain argv, so a restart or a wake wraps it once (older records kept the ssh line: that runs as it is).
-    func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest) throws -> [String] {
+    func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest, tmux: String? = nil) throws -> [String] {
         var run = argv
         if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
             // A command line (`.custom`: zsh -lc "…") goes to sh there: the host may have no zsh.
             let onHost = manifest.id == "custom" && argv.count == 3 && argv[1] == "-lc" ? ["sh", "-c", argv[2]] : argv
             let loginShell = manifest.id == "shell" && Tmux.session(argv) == nil
-            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(loginShell ? nil : onHost)]
+            let command = tmux.map { remote.command(onHost, inTmux: $0) } ?? remote.command(loginShell ? nil : onHost)
+            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [command]
         }
         guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
         return [try LoginPath.resolve(exe)] + run.dropFirst()

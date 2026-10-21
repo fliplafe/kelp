@@ -11,9 +11,12 @@ extension Daemon {
         return try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeLimit)
     }
 
-    /// Ends the tmux session a terminal of Kelp's own ran in, in the background (over ssh it can take a while).
+    /// The tmux session it runs in: a remote agent's on the host, or the one a terminal attaches to.
+    static func tmuxName(_ s: Session) -> String? { s.tmux ?? Tmux.session(s.argv) }
+
+    /// Ends the tmux session a session of Kelp's own ran in, in the background (over ssh it can take a while).
     func endOwnTmux(_ s: Session) {
-        guard let name = Tmux.session(s.argv), Tmux.isOwn(name) else { return }
+        guard let name = Self.tmuxName(s), Tmux.isOwn(name) else { return }
         DispatchQueue.global(qos: .utility).async { [self] in _ = try? tmux(["kill-session", "-t", "=" + name], cwd: s.cwd) }
     }
 

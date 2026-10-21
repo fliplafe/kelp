@@ -10242,6 +10242,28 @@
           }
         }
       }
+    },
+    "Connection lost": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Соединение потеряно"
+          }
+        }
+      }
+    },
+    "Reconnect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переподключиться"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

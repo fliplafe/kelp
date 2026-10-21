@@ -85,6 +85,9 @@ public final class Store: Sendable {
                 BEGIN DELETE FROM diffComment WHERE worktreeId = OLD.id; END
                 """)
         }
+        m.registerMigration("v12") { db in
+            try db.alter(table: "session") { t in t.add(column: "tmux", .text) }
+        }
         try m.migrate(db)
     }
 
