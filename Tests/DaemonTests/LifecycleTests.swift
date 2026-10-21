@@ -4,6 +4,7 @@ import Testing
 import Core
 import GitKit
 @testable import Daemon
+import TestSupport
 
 /// A daemon on a fresh home, a client, and the first workspace of one project.
 private func project() async throws -> (Daemon, RPCClient, Worktree, URL) {
@@ -202,4 +203,19 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
         let reply = try #require(got.range(of: "\"id\":1"))
         #expect(!got[..<reply.lowerBound].contains("event.output"), "live output came before the history")
     }
+}
+
+/// A daemon that can't start (here another one serves this home) leaves its reason where the app's banner reads it, and
+/// the next daemon that starts takes it away.
+@Test func aDaemonThatCantStartSaysWhyWhereTheAppLooks() throws {
+    let root = tmp(), err = Paths.daemonError(in: root)
+    let first = try Daemon(root: root); try first.start()
+    let second = try Daemon(root: root)
+    do { try second.start(); Issue.record("a second daemon started on the same home"); second.stop() }
+    catch { _ = Daemon.startFailed(error, root: root) }   // what kelpd does with it
+    #expect((try? String(contentsOf: err, encoding: .utf8))?.contains("another kelpd is already running") == true)
+    first.stop()
+    let third = try Daemon(root: root); try third.start()
+    #expect(!FileManager.default.fileExists(atPath: err.path))
+    third.stop()
 }

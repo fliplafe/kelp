@@ -115,6 +115,15 @@ else a `NotificationCenter` name (`kelpGitChanged`: after a git action the windo
   Language-server requests time out.
 - **Checked by** DaemonTests, which run against a real daemon with real PTYs and git, also under Thread Sanitizer in CI.
 
+## When the daemon misbehaves
+- **Its log:** `log stream --predicate 'subsystem == "dev.kelp.daemon"'` (or Console.app). It logs what would otherwise
+  fail without a trace: startup, store writes that fail (a full disk), failed requests (debug level), refused
+  "only Kelp's window" calls with the program that asked, sessions that didn't start. Never terminal output, prompts,
+  tokens or file contents.
+- **Why it didn't start:** `<KELP_HOME>/kelpd.err` holds the reason (the lock held by another kelpd, a socket path over
+  104 bytes, a database it can't open); the app's "background service isn't running" banner shows it, with the fix
+  when one is known. The next daemon that starts removes it.
+
 ## What Kelp trusts (threat model)
 **Trusted: the user and every process running as the user.** The daemon's socket is the user's own (0600 in a 0700
 folder, the peer's uid checked); anything that reaches it — the app, the `kelp` CLI, an agent with `KELP_SOCKET`, a

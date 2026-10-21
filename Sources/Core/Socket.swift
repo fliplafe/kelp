@@ -1,6 +1,15 @@
 import Foundation
 
-public enum SocketError: Error { case path, socket(Int32), connect(Int32), bind(Int32), inUse }
+public enum SocketError: Error, CustomStringConvertible {
+    case path, socket(Int32), connect(Int32), bind(Int32), inUse
+    public var description: String {
+        switch self {
+        case .path: "the socket's path is longer than macOS allows (104 bytes): set KELP_HOME to a shorter folder"
+        case .socket(let e), .connect(let e), .bind(let e): String(cString: strerror(e))
+        case .inUse: "another program answers on Kelp's socket"
+        }
+    }
+}
 
 public enum Unix {
     static func addr(_ path: String) throws -> sockaddr_un {

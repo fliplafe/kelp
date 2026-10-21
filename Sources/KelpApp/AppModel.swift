@@ -106,7 +106,7 @@ final class AppModel {
         }
         guard let c = client else {
             // Keeps trying (less and less often); every action meanwhile says why it does nothing.
-            if !failing { failing = true; Banner.show(Self.noService, style: .error, action: (String(localized: "Try Again"), { Task { await AppModel.shared.connect() } })) }
+            if !failing { failing = true; Banner.show(Self.whyNoService(), style: .error, action: (String(localized: "Try Again"), { Task { await AppModel.shared.connect() } })) }
             reconnectSoon(); return
         }
         retryDelay = 1; failing = false
@@ -129,6 +129,13 @@ final class AppModel {
     }
 
     static let noService = String(localized: "Kelp's background service isn't running.")
+    /// What the banner says when kelpd doesn't answer: why it didn't start (`kelpd.err`, which it leaves for this), and the
+    /// command that fixes it when one is known; without one, only that it isn't running.
+    static func whyNoService(root: URL = Paths.root) -> String {
+        let why = (try? String(contentsOf: Paths.daemonError(in: root), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !why.isEmpty else { return noService }
+        return noService + " " + why + (FixRecipes.fix(for: why).map { " " + String(localized: "Fix it in Terminal: \($0.command)") } ?? "")
+    }
 
     private var restartAttempted = false
     /// Where kelpd and kelp sit next to the app binary.

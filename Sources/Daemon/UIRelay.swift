@@ -10,7 +10,7 @@ extension UIPublish: Handled {
     func handle(_ d: Daemon, conn: Int) throws -> Done {
         guard case .object = state else { throw RPCError.invalidParams("state must be an object") }
         // Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
-        guard d.clients.peer(conn) == Daemon.appExecutable else { throw RPCError.invalidParams("Only Kelp's window publishes its state.") }
+        try d.requireApp(conn, "Only Kelp's window publishes its state.")
         d.clients.publishUI(state, from: conn)
         return Done()
     }
@@ -53,9 +53,7 @@ extension StateSet: Handled {
     func handle(_ d: Daemon, conn: Int) throws -> Done {
         // Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window
         // (as `scripts.trust`); an agent's call or a repository's script can't record it.
-        if key.hasPrefix("lsp."), d.clients.peer(conn) != Daemon.appExecutable {
-            throw RPCError.invalidParams("Only Kelp's window can trust a project for language servers.")
-        }
+        if key.hasPrefix("lsp.") { try d.requireApp(conn, "Only Kelp's window can trust a project for language servers.") }
         try d.store.setUIState(key, value); return Done()
     }
 }

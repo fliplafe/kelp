@@ -43,7 +43,8 @@ extension Daemon {
     /// Jira issues linked to a worktree ("ENG-12") move along with the PR, like Linear.
     func moveJira(_ w: Worktree, toName hint: String, category: String) async {
         guard let j = await jiraClient(), w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil, w.linearIssueId.isEmpty else { return }
-        try? await j.move(key: w.issue, toName: hint, category: category)
+        do { try await j.move(key: w.issue, toName: hint, category: category) }
+        catch { Log.rpc.notice("Jira issue \(w.issue, privacy: .public) didn't move to \(hint, privacy: .public): \(error)") }
     }
 
     /// Move a linked Linear issue to a workflow state kind; quiet no-op without a key or link.
@@ -53,7 +54,8 @@ extension Daemon {
               let issue = try? await l.myIssues().first(where: { $0.id == w.linearIssueId }) ?? nil,
               let states = try? await l.workflowStates(teamId: issue.team.id),
               let st = LinearClient.stateFor(kind: kind, in: states) else { return }
-        try? await l.setState(issueId: w.linearIssueId, stateId: st.id)
+        do { try await l.setState(issueId: w.linearIssueId, stateId: st.id) }
+        catch { Log.rpc.notice("Linear issue \(w.linearIssueId, privacy: .public) didn't move: \(error)") }
     }
 
     /// gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up to

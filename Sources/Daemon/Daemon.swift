@@ -52,7 +52,9 @@ public final class Daemon: Sendable {
         self.settings = SettingsStore(root: root)
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
-        let ssh = root.appendingPathComponent("ssh"); try? Paths.ensure(ssh); RemoteHost.controlDir = ssh.path
+        let ssh = root.appendingPathComponent("ssh")
+        do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
+        RemoteHost.controlDir = ssh.path
         RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
     }
 
@@ -78,11 +80,13 @@ public final class Daemon: Sendable {
         running.withLock { $0.instanceLock = lockFD }
         // Sessions from a previous daemon run lost their PTYs; resumable ones come back as paused, the rest as exited.
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        for var s in (try? store.sessions()) ?? [] where s.status != .exited {
-            s.status = Self.resumable(s, manifests) ? .hibernated : .exited
-            s.progress = nil   // what ran there isn't getting any further
-            try? store.save(s)
-        }
+        do {
+            for var s in try store.sessions() where s.status != .exited {
+                s.status = Self.resumable(s, manifests) ? .hibernated : .exited
+                s.progress = nil   // what ran there isn't getting any further
+                try store.save(s)
+            }
+        } catch { Log.store.error("couldn't mark the last run's sessions paused or ended: \(error)") }
         _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one
         DispatchQueue.global().async { _ = LoginPath.value }   // warm up so the first agent doesn't wait for the shell
         // The usage index reads gigabytes the first time: do it in the background now, not when Usage is opened.
@@ -113,6 +117,8 @@ public final class Daemon: Sendable {
         t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
         running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t }
         src.resume(); t.resume()
+        try? FileManager.default.removeItem(at: Paths.daemonError(in: root))   // an earlier failure is over
+        Log.start.info("kelpd \(getpid()) serves \(self.socketPath, privacy: .public)")
     }
 
     public func stop() {
@@ -228,8 +234,8 @@ public final class Daemon: Sendable {
             return
         }
         do { reply = Reply(id: id, result: try await handle(req.method, req.params ?? .null, conn: c.id), error: nil) }
-        catch let e as RPCError { reply = Reply(id: id, result: nil, error: e) }
-        catch { reply = Reply(id: id, result: nil, error: .internalError("\(error)")) }
+        catch let e as RPCError { reply = Reply(id: id, result: nil, error: e); Log.rpc.debug("\(req.method, privacy: .public) failed: \(e.message)") }
+        catch { reply = Reply(id: id, result: nil, error: .internalError("\(error)")); Log.rpc.error("\(req.method, privacy: .public) failed: \(error)") }
         if !req.isNotification, let d = try? Wire.line(reply) { c.send(d) }
     }
 
@@ -363,8 +369,8 @@ public final class Daemon: Sendable {
         wakeLocks.withLock(s.id) {
             let ls = live.remove(s.id)
             if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
-            try? store.delete(s)
-            try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))
+            do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
         }
     }
 }

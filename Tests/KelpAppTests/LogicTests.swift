@@ -138,3 +138,13 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
         #expect(text.contains(line), "\(line) is missing from the sheet")
     }
 }
+
+/// When kelpd doesn't answer, the banner says why it didn't start (what it left in kelpd.err) and the fix when one is
+/// known, not only that it isn't running.
+@MainActor @Test func theNoServiceBannerSaysWhyTheDaemonDidntStart() throws {
+    let root = tmp()
+    #expect(AppModel.whyNoService(root: root) == AppModel.noService)   // nothing left: nothing to add
+    try "xcrun: error: invalid active developer path\n".write(to: Paths.daemonError(in: root), atomically: true, encoding: .utf8)
+    let said = AppModel.whyNoService(root: root)
+    #expect(said.hasPrefix(AppModel.noService) && said.contains("invalid active developer path") && said.contains("xcode-select --install"))
+}

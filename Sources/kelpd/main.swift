@@ -21,6 +21,6 @@ do {
     }
     dispatchMain()
 } catch {
-    FileHandle.standardError.write(Data("kelpd: \(error)\n".utf8))
+    FileHandle.standardError.write(Data("kelpd: \(Daemon.startFailed(error))\n".utf8))
     exit(1)
 }

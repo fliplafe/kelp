@@ -70,9 +70,7 @@ extension ScriptsTrust: Handled {
         // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
         // program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
         // process of this user can drive the app (synthetic key events) or write trusted-configs.json itself.
-        guard let peer = d.clients.peer(conn), peer == Daemon.appExecutable else {
-            throw RPCError.invalidParams("Only Kelp's window can trust a project's commands: open the project there and run one.")
-        }
+        try d.requireApp(conn, "Only Kelp's window can trust a project's commands: open the project there and run one.")
         // The digest from scripts.list: a file changed since it was shown (an agent, a pull) isn't what was trusted.
         guard let digest else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
         guard digest == now else { throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.") }

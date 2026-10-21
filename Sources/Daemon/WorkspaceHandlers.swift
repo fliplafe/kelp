@@ -88,7 +88,12 @@ extension WorktreeCreate: Handled {
         let read = d.configAndTrust(r.path), cfg = read.config
         if read.trusted {
             Git.linkShared(cfg.shared, repo: r.path, worktree: path)
-            if tabs != false { for t in cfg.tabs { _ = try? d.spawn(cwd: path, manifest: d.manifest(t, command: nil), worktreeId: w.id) } }
+            if tabs != false {
+                for t in cfg.tabs {
+                    do { _ = try d.spawn(cwd: path, manifest: d.manifest(t, command: nil), worktreeId: w.id) }
+                    catch { Log.session.error(".kelp.yaml tab \(t, privacy: .public) didn't start: \(error)") }
+                }
+            }
         }
         let asks = cfg.setup != nil || !cfg.tabs.isEmpty || !cfg.shared.isEmpty
         if asks, setup != false, !read.trusted {

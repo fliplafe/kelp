@@ -52,7 +52,7 @@ final class EditorArea: NSViewController {
     /// brings the content back.
     private func extensionsChanged() {
         // A reloaded extension may have changed its view: its tabs are built again from the new definition.
-        let stale = contents.filter { $0.value is ExtViewTab || (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
+        let stale = contents.filter { TabURI.scheme($0.value.uri) == "ext" || (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
         guard !stale.isEmpty else { return }
         stale.forEach { contents[$0] = nil }
         render()

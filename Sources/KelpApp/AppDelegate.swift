@@ -153,7 +153,7 @@ extension AppDelegate: NSMenuItemValidation {
         case "scripts.run", "scripts.test", "scripts.edit": return Workbench.shared.workspaceId != nil
         case "scripts.stop": return ScriptsMenu.shared.canStop
         // Off elsewhere, so a terminal still gets their keys.
-        case "editor.runFile", "editor.testAtCursor", "editor.format": return Workbench.editor?.focusedContent is FileTab
+        case "editor.runFile", "editor.testAtCursor", "editor.format": return Workbench.editor?.focusedContent?.fileURL != nil
         default: break
         }
         return true

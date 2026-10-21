@@ -132,7 +132,9 @@ extension Daemon {
 
     static func probe(_ p: PlanProbe, argv: [String], cwd: String) -> ([ClaudeLimits.Reading], String) {
         let screen = ScreenBuffer()
-        guard let pty = try? PTY(argv: argv, cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 80) else { return ([], "") }
+        let pty: PTY
+        do { pty = try PTY(argv: argv, cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 80) }
+        catch { Log.session.error("the usage probe for \(argv.first ?? "", privacy: .public) didn't start: \(error)"); return ([], "") }
         pty.onOutput = { screen.append($0) }
         pty.start()
         defer { pty.terminate() }

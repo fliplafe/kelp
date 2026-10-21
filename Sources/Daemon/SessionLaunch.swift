@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Core
 import GitKit
 import Agents
@@ -190,7 +191,11 @@ extension Daemon {
     }
 
     func publish(_ s: Session) {
-        do { try store.update(s) } catch { return }   // deleted meanwhile (closed, its project removed): not brought back
+        do { try store.update(s) } catch {
+            // Deleted meanwhile (closed, its project removed): not brought back. Anything else (a full disk) is logged.
+            if !(error is RecordError) { Log.store.error("couldn't save session \(s.id, privacy: .public): \(error)") }
+            return
+        }
         notify(s)
         if s.status == .done || s.status == .waiting, let a = s.agent { planUsed(a) }
     }

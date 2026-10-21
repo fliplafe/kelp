@@ -2719,6 +2719,16 @@
         }
       }
     },
+    "Fix it in Terminal: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Исправьте в Терминале: %@"
+          }
+        }
+      }
+    },
     "Fix with Agent": {
       "localizations": {
         "ru": {

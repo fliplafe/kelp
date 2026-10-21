@@ -125,7 +125,10 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         let logURL = historyDir.appendingPathComponent("\(record.id).log")
         self.logURL = logURL
         if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
-        log = try? FileHandle(forWritingTo: logURL)
+        do { log = try FileHandle(forWritingTo: logURL) } catch {
+            log = nil   // it runs, unrecorded
+            Log.session.error("no history for session \(record.id, privacy: .public): \(error)")
+        }
         logSize = Int((try? log?.seekToEnd()) ?? 0)
         pty = try PTY(argv: argv, cwd: record.cwd, env: env, cols: cols, rows: rows)
         rec.pid = pty.pid

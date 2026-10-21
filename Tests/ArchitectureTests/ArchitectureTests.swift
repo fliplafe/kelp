@@ -40,7 +40,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// AppModel.swift itself is the way (it also manages the connection), so it isn't counted.
 @Test func daemonErrorsAreNotSwallowed() throws {
     func outside(_ found: [String]) -> [String] { found.filter { !$0.hasPrefix("Sources/KelpApp/AppModel.swift:") } }
-    let swallowed = outside(try matches(#"try\? await [^=\n]*\.call\("#, in: ["Sources/KelpApp"]))
+    let swallowed = outside(try matches(#"try\? await [^=\n]*\.(call|get|tryCall)\("#, in: ["Sources/KelpApp"]))
     let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: ["Sources/KelpApp"]))
     #expect(swallowed == [], "try? around a call: \(swallowed)")
     #expect(raw == [], "the client called directly: \(raw)")
@@ -54,12 +54,27 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     #expect(found.map(\.path) == [])
 }
 
-/// The shell (window, editor area) knows tabs as `TabContent`: a built-in's own type there is a feature reached around
-/// the contribution points.
+/// The shell knows tabs as `TabContent`: a contributed tab's own type anywhere outside `Builtins/` (the window, the editor
+/// area, the app delegate…) is a feature reached around the contribution points. The types are read from the sources:
+/// every `TabContent` / `SavableTab` declared in `Builtins/` or `Extensions/`.
 @Test func theShellKnowsTabsOnlyAsContributions() throws {
-    let casts = try matches(#"(as[?!]?|is) (FileTab|SessionTab|UntitledTab|NotebookTab|MarkdownTab|BrowserTab)\b"#,
-                            in: ["Sources/KelpApp/Shell", "Sources/KelpApp/Editor"])
-    #expect(casts == [])
+    let declared = try NSRegularExpression(pattern: #"(?:class|struct) (\w+)\s*:[^{]*\b(?:TabContent|SavableTab)\b"#)
+    var tabs: [String: String] = [:]   // type → the file that declares it (which may name itself)
+    for f in sources(["Sources/KelpApp/Builtins", "Sources/KelpApp/Extensions"]) {
+        for m in declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
+            if let r = Range(m.range(at: 1), in: f.text) { tabs[String(f.text[r])] = f.path }
+        }
+    }
+    #expect(tabs.keys.contains("FileTab") && tabs.keys.contains("ExtViewTab"), "\(tabs.keys.sorted())")   // the scan finds them
+    let cast = try NSRegularExpression(pattern: #"(?:as[?!]?|is) ("# + tabs.keys.joined(separator: "|") + #")\b"#)
+    var found: [String] = []
+    for f in sources(["Sources/KelpApp"]) where !f.path.hasPrefix("Sources/KelpApp/Builtins/") {
+        for m in cast.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
+            guard let r = Range(m.range(at: 1), in: f.text), tabs[String(f.text[r])] != f.path else { continue }
+            found.append("\(f.path): \(f.text[r])")
+        }
+    }
+    #expect(found == [])
 }
 
 /// Questions are sheets that are awaited: a nested modal loop (runModal for a sheet) runs every timer, event and task of
