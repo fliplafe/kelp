@@ -34,7 +34,7 @@ extension Daemon {
     /// Where a session's Claude conversations are: under its profile's config dir when it has one.
     func claudeProjects(_ rec: Session) -> URL {
         rec.profile.flatMap { profile($0, agent: "claude") }.map { URL(fileURLWithPath: $0.dir).appendingPathComponent("projects") }
-            ?? agentHomes.claude
+            ?? agentHomes.current.claude
     }
 
     /// Account profiles keep each agent login in its own config dir: switching needs no re-login.

@@ -5,16 +5,19 @@ import Agents
 import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
-public final class Daemon: @unchecked Sendable {   // listenFD, ticker, instanceLock: set in start, before any other thread
-    /// Running sessions and who is connected each keep their own lock; the order they're taken in is in `Clients`.
+/// Running sessions and who is connected each keep their own lock; the order they're taken in is in `Clients`.
+public final class Daemon: Sendable {
     public let store: Store
     let socketPath: String
     let root: URL
     let live = SessionTable()
     let clients = Clients()
-    private var listenFD: Int32 = -1
-    private var instanceLock: Int32 = -1   // flock on kelpd.lock: one daemon per KELP_HOME
-    private var ticker: DispatchSourceTimer?
+    /// What start() opens and stop() closes: the socket, the flock on kelpd.lock (one daemon per KELP_HOME), the sources.
+    private struct Running: @unchecked Sendable {   // the sources are only set up and cancelled, under `running`'s lock
+        var listenFD: Int32 = -1, instanceLock: Int32 = -1
+        var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?
+    }
+    private let running = Locked(Running())
     let extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue]
     let settings: SettingsStore
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
@@ -27,7 +30,7 @@ public final class Daemon: @unchecked Sendable {   // listenFD, ticker, instance
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
     let usageIndex: UsageIndex
     /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
-    var agentHomes = (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot)
+    let agentHomes = Locked((claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot))
     let lastMethod = Locked("")
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
     let claudeLimits = Locked<[String: (reading: ClaudeLimits.Reading, at: Date)]>([:])
@@ -72,7 +75,7 @@ public final class Daemon: @unchecked Sendable {   // listenFD, ticker, instance
             if lockFD >= 0 { close(lockFD) }
             throw RPCError.internalError("another kelpd is already running for \(root.path)")
         }
-        instanceLock = lockFD
+        running.withLock { $0.instanceLock = lockFD }
         // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
         for var s in (try? store.sessions()) ?? [] where s.status != .exited {
             let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
@@ -87,33 +90,31 @@ public final class Daemon: @unchecked Sendable {   // listenFD, ticker, instance
             let since = Calendar.current.date(byAdding: .day, value: -89, to: Calendar.current.startOfDay(for: Date())) ?? Date()
             _ = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
         }
-        listenFD = try Unix.listen(socketPath)
+        let listenFD = try Unix.listen(socketPath)
         // Accept and the ticker have queues of their own (serial queues get a thread even when every pooled one is held
         // by a slow git or ssh in `offload`), so new connections and status keep going whatever is stuck.
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: DispatchQueue(label: "kelp.accept"))
-        let fd = listenFD
-        src.setCancelHandler { close(fd) }   // after any accept still running, not under it
+        src.setCancelHandler { close(listenFD) }   // after any accept still running, not under it
         src.setEventHandler { [self] in
             let fd = accept(listenFD, nil, nil)
             guard fd >= 0 else { return }
             if Unix.peerIsUs(fd) { Unix.noSigPipe(fd); serve(fd) } else { close(fd) }
         }
-        src.resume()
-        acceptSource = src
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
         t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
-        t.resume(); ticker = t
+        running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t }
+        src.resume(); t.resume()
     }
-    private var acceptSource: DispatchSourceRead?
 
     public func stop() {
-        acceptSource?.cancel(); ticker?.cancel()
+        let r = running.withLock { r in defer { r = Running() }; return r }
+        r.accept?.cancel(); r.ticker?.cancel()   // the accept source's cancel closes the socket
+        if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
         live.all.forEach { $0.pty.kill() }
         clients.everyone().forEach { $0.hangUp() }
-        if acceptSource == nil { close(listenFD) }   // else its cancel handler closes it
         unlink(socketPath)
-        if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }
+        if r.instanceLock >= 0 { close(r.instanceLock) }
     }
 
     // MARK: connections

@@ -529,7 +529,7 @@ final class NoteBox: @unchecked Sendable {
 /// History and usage answer from the agents' folders (empty, then one conversation), now off the cooperative pool.
 @Test func historyAndUsageFromAgentFolders() async throws {
     let d = try Daemon(root: tmp()), home = tmp()
-    d.agentHomes = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions"))
+    d.agentHomes.withLock { $0 = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions")) }
     #expect(try await d.handle("history.list", .null, conn: 0) == .array([]))
     let dir = home.appendingPathComponent("projects/-work-app"), now = ISO8601DateFormatter().string(from: Date())
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
