@@ -33,13 +33,19 @@ extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods as [any Handled.Type]).map { ($0.name, $0) })
+                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods + integrationMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
         if let e = extra[method] { return try await e(self, p) }
+        if let r = try refuseRemoteForge(method, p) { return r }
+        return try await integrationErrors { try await dispatch(method, p, conn: conn) }
+    }
+
+    private func dispatch(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         do {
             if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self, conn: conn) } }
+            if let t = Self.asyncTyped[method] { return try await t.run(p, self) }
             if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
             if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await offload({ [self] in try handleHistory(method, p) }) { return r }
