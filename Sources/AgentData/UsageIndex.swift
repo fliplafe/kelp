@@ -93,26 +93,29 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
                                  estimatedCostUSD: in_.reduce(0) { $0 + $1.tally.cost }, models: Set(in_.map(\.model)).sorted())
     }
 
-    /// The complete lines after `offset`; a line still being written waits for next time.
+    /// The complete lines after `offset`, 8 MB at a time (one session can be gigabytes); a line still being written waits
+    /// for next time.
     static func read(_ url: URL, into st: inout FileState) {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return }
+        guard let h = try? FileHandle(forReadingFrom: url), (try? h.seek(toOffset: st.offset)) != nil else { return }
         defer { try? h.close() }
-        try? h.seek(toOffset: st.offset)
-        guard let data = try? h.readToEnd(), let last = data.lastIndex(of: 0x0A) else { return }
-        let marker = Data("\"output_tokens\"".utf8)
-        var recent = st.recent ?? [], seen = Set(recent), hours = st.hours ?? [:]
-        for line in data[..<last].split(separator: 0x0A) where line.range(of: marker) != nil {
-            guard let e = entry(line), e.time >= st.born - 120 else { continue }   // older: history a resumed session copied in
-            if let id = e.id { guard seen.insert(id).inserted else { continue }; recent.append(id) }   // one response, several lines
-            let cost = Pricing.cost(model: e.model, tokens: e.tokens)
-            func add(_ t: inout Tally) { t.tokens += e.tokens; t.cost += cost }
-            add(&st.tallies["\(day(e.time))|\(e.model)|\(e.cwd)", default: Tally()])
-            add(&hours["\(Int(e.time / 3600) * 3600)|\(e.model)", default: Tally()])
+        var recent = st.recent ?? [], seen = Set(recent), hours = st.hours ?? [:], rest = Data()
+        while let chunk = autoreleasepool(invoking: { try? h.read(upToCount: 8 << 20) }), !chunk.isEmpty {
+            let data = rest.isEmpty ? chunk : rest + chunk
+            guard let last = data.lastIndex(of: 0x0A) else { rest = data; continue }
+            for line in JSONL.lines(data[..<last]) where line.range(of: marker) != nil {
+                guard let e = entry(line), e.time >= st.born - 120 else { continue }   // older: history a resumed session copied in
+                if let id = e.id { guard seen.insert(id).inserted else { continue }; recent.append(id) }   // one response, several lines
+                let cost = Pricing.cost(model: e.model, tokens: e.tokens)
+                func add(_ t: inout Tally) { t.tokens += e.tokens; t.cost += cost }
+                add(&st.tallies["\(day(e.time))|\(e.model)|\(e.cwd)", default: Tally()])
+                add(&hours["\(Int(e.time / 3600) * 3600)|\(e.model)", default: Tally()])
+            }
+            st.offset += UInt64(last - data.startIndex + 1)
+            rest = Data(data[(last + 1)...])
         }
         let dayAgo = Date().timeIntervalSince1970 - 86400
         st.hours = hours.filter { (Double($0.key.prefix { $0 != "|" }) ?? 0) >= dayAgo }
         st.recent = Array(recent.suffix(64))
-        st.offset += UInt64(last - data.startIndex + 1)
     }
 
     /// One assistant line's numbers, without parsing its (large) message content.
@@ -145,7 +148,7 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
         return nil
     }
 
-    static let assistant = Data("\"type\":\"assistant\"".utf8)
+    static let assistant = Data("\"type\":\"assistant\"".utf8), marker = Data("\"output_tokens\"".utf8)
     static func day(_ t: TimeInterval) -> String { day(Date(timeIntervalSince1970: t)) }
     static func day(_ d: Date) -> String { Date.ISO8601FormatStyle(timeZone: .current).year().month().day().format(d) }   // local "yyyy-MM-dd"
 }

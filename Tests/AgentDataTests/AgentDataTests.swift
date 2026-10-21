@@ -239,6 +239,11 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     let rows = again.rows(roots: [dir], since: since)
     #expect(rows.reduce(0) { $0 + $1.tally.tokens.output } == 12)
     #expect(rows.first?.cwd == "/p" && rows.first?.model == "claude-sonnet-4-5")
+    // Read in 8 MB pieces from where the last read ended: a long line (a pasted image) puts the next one's end, usage
+    // and all, past the first piece.
+    let d = line("d", now, 30), g = try FileHandle(forWritingTo: f); try g.seekToEnd()
+    try g.write(contentsOf: Data((#"{"type":"user","text":""# + String(repeating: "x", count: (8 << 20) - 26 - d.utf8.count + 120) + "\"}\n" + d + "\n").utf8)); try g.close()
+    #expect(UsageIndex(cache: dir.appendingPathComponent("cache.json")).rows(roots: [dir], since: since).reduce(0) { $0 + $1.tally.tokens.output } == 42)
 }
 
 @Test func timesAndDaysReadTheWayTranscriptsWriteThem() throws {
