@@ -1,5 +1,5 @@
 import AppKit
-import GitKit
+import Core
 
 /// A project's own icon, found where web, desktop and Xcode projects keep theirs, at the top or in one of its folders
 /// (a monorepo's `frontend/public/`, an app's `Resources/`); a folder when it has none.

@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Core
-import GitKit
 import WorkbenchKit
 
 /// What the sidebar's menus and keys do.

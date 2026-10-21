@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Core
 @testable import Integrations
 
 private func d(_ s: String) -> Data { Data(s.utf8) }

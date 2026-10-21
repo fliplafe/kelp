@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 extension Git {
     /// Slug safe for directory names: "feat/login ui" -> "feat-login-ui".

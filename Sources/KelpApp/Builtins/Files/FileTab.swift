@@ -1,7 +1,6 @@
 import AppKit
 import Core
 import EditorKit
-import GitKit
 import WorkbenchKit
 
 /// A file as a tab: code editor with LSP, Markdown with preview, notebooks, or a Quick Look preview.

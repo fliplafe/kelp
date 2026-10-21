@@ -41,14 +41,12 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     #expect(swallowed.count <= 52, "\(swallowed)")
 }
 
-/// The app reads the daemon's records as Core's types; GitKit and Integrations run git and gh, which is the daemon's job.
+/// The app reads the daemon's records as Core's types: running git, gh, the agents' files and the daemon itself is the
+/// daemon's job. (Package.swift enforces it too; this says why when someone adds the dependency back.)
 @Test func theAppDoesNotImportTheDaemonsLibraries() {
-    let all = sources(["Sources/KelpApp"])
-    #expect(!all.contains { $0.text.contains("\nimport Daemon") || $0.text.hasPrefix("import Daemon") })
-    let gitKit = all.filter { $0.text.contains("\nimport GitKit") }.map(\.path)
-    let integrations = all.filter { $0.text.contains("\nimport Integrations") }.map(\.path)
-    #expect(gitKit.count <= 23, "\(gitKit)")
-    #expect(integrations.count <= 4, "\(integrations)")
+    let banned = ["Daemon", "GitKit", "Integrations", "AgentData"]
+    let found = sources(["Sources/KelpApp"]).filter { f in banned.contains { f.text.hasPrefix("import \($0)\n") || f.text.contains("\nimport \($0)\n") } }
+    #expect(found.map(\.path) == [])
 }
 
 /// The shell (window, editor area) knows tabs as `TabContent`: a built-in's own type there is a feature reached around

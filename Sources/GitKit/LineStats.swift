@@ -1,30 +1,5 @@
 import Foundation
-
-/// Lines added / removed in the working tree (staged, unstaged and new files) against HEAD, split by what kind of file.
-public struct LineStats: Codable, Sendable, Equatable {
-    public enum Kind: String, Codable, Sendable, CaseIterable { case code, tests, generated }
-    public var added: [Kind: Int] = [:], removed: [Kind: Int] = [:]
-    public var totalAdded: Int { added.values.reduce(0, +) }
-    public var totalRemoved: Int { removed.values.reduce(0, +) }
-
-    /// Lock files, build output and codegen count as generated; test folders and `*.test.*` / `*Tests.swift` as tests.
-    public static func kind(_ path: String) -> Kind {
-        let p = path.lowercased(), name = (p as NSString).lastPathComponent
-        let locks: Set<String> = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock", "cargo.lock", "podfile.lock",
-                                  "package.resolved", "go.sum", "poetry.lock", "composer.lock", "gemfile.lock", "uv.lock", "flake.lock"]
-        if locks.contains(name) || p.hasPrefix("dist/") || p.hasPrefix("build/") || p.contains("/__generated__/") || p.contains("/generated/")
-            || name.contains(".min.") || name.contains(".generated.") || name.hasSuffix(".pb.go") || name.hasSuffix(".g.dart") || name.hasSuffix(".snap") {
-            return .generated
-        }
-        let dirs = p.split(separator: "/").dropLast()
-        if dirs.contains(where: { ["test", "tests", "spec", "specs", "__tests__", "testing"].contains($0) || $0.hasSuffix("tests") })
-            || name.contains(".test.") || name.contains(".spec.") || name.contains("_test.") || name.hasPrefix("test_")
-            || name.hasSuffix("tests.swift") || name.hasSuffix("test.swift") {
-            return .tests
-        }
-        return .code
-    }
-}
+import Core
 
 extension Git {
     public static func lineStats(_ cwd: String) throws -> LineStats {

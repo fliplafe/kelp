@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import GitKit
 
 /// Staging, discarding and commenting on what the diff shows.
 extension DiffViewController {

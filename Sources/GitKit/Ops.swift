@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 extension Git {
     public static func stage(_ path: String, files: [String]) throws { try run(["add", "--"] + literal(files), cwd: path) }

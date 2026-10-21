@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import GitKit
 import WorkbenchKit
 
 /// "diff:<workspace>" (every change) or "diff:<workspace>?file=<path>[&source=unstaged|staged][&commit=<hash>]" (one file,

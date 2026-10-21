@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Core
-import GitKit
 import WorkbenchKit
 
 /// Dragging rows among their own and folders from Finder.

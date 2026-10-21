@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Core
-import GitKit
 import WorkbenchKit
 
 /// Projects → workspaces → agents in a source-list outline (like Finder and Xcode).

@@ -1,5 +1,5 @@
 import AppKit
-import GitKit
+import Core
 
 struct RowAction {
     let symbol: String, title: String, run: @MainActor () -> Void

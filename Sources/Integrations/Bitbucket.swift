@@ -1,4 +1,5 @@
 import Foundation
+import Core
 import GitKit
 
 /// Bitbucket Cloud pull requests (REST 2.0, Basic auth user:token). Shapes map onto `GitHub.PullRequest` so the UI is shared.

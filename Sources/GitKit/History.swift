@@ -1,30 +1,5 @@
 import Foundation
-
-/// One row of the commit graph (VS Code's Source Control Graph). Lines are lane pairs:
-/// `top` runs from the row's top edge (lane `[0]`) to its middle (lane `[1]`), `bottom` from the middle to the bottom edge.
-public struct GraphCommit: Codable, Sendable, Equatable {
-    public var hash: String
-    public var parents: [String]
-    public var author: String
-    public var date: Double
-    public var subject: String
-    /// `git log %D` items: "HEAD -> main", "origin/main", "tag: v1.0".
-    public var refs: [String]
-    public var lane: Int
-    public var top: [[Int]]
-    public var bottom: [[Int]]
-}
-
-public struct BranchInfo: Codable, Sendable, Equatable {
-    public var current: String?        // nil when HEAD is detached
-    public var head: String?           // short hash of HEAD (nil before the first commit)
-    public var local: [String]
-    public var remote: [String]
-    public var upstream: String?
-    public var ahead: Int?
-    public var behind: Int?
-    public var merging: Bool
-}
+import Core
 
 extension Git {
     /// Lanes for commits in topological order (children before parents). A commit takes the lane that was waiting for it
@@ -52,17 +27,6 @@ extension Git {
             }
             while lanes.last == .some(nil) { lanes.removeLast() }
             out.append((col, top, bottom))
-        }
-        return out
-    }
-
-    /// Commits no remote branch has. Topological order lists a commit before its ancestors, so one pass down from the
-    /// remote branches' tips marks everything they reach; what's left is local only. No remotes: nothing to mark.
-    public static func unpushed(_ commits: [GraphCommit], remotes: Set<String>) -> Set<String> {
-        guard !remotes.isEmpty else { return [] }
-        var pushed = Set<String>(), out = Set<String>()
-        for c in commits {
-            if pushed.contains(c.hash) || c.refs.contains(where: remotes.contains) { pushed.formUnion(c.parents) } else { out.insert(c.hash) }
         }
         return out
     }

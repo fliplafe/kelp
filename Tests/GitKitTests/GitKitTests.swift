@@ -1,7 +1,8 @@
 import Foundation
 import Testing
 @testable import GitKit
-import Core
+@testable import Core
+import WorkbenchKit
 import TestSupport
 
 /// This process's git and Kelp see none of the user's own (TestIsolation). Repos live under its folder.

@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 public struct JiraIssue: Codable, Sendable, Equatable {
     public var key: String, title: String, description: String, url: String

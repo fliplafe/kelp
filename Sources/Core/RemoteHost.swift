@@ -1,6 +1,5 @@
 import Foundation
 import os
-import Core
 
 /// A project on another machine, over SSH. Kelp keeps a local folder for it that holds only `.kelp-remote`
 /// (`{"host", "path"}`); git in that folder runs on the host instead (so the git and file panels work as they are),

@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 extension Git {
     /// The working tree as it is now (tracked and new files, .gitignore respected) written as a tree object, so a

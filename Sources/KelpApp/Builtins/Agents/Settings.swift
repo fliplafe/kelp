@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import Core
 import Agents
-import GitKit
 
 /// Per-agent: its version (and a newer one, if published), Install / Update in a terminal you can watch, and overrides:
 /// binary, arguments, environment. Secrets in the environment go to the login keychain. Reset deletes the override.

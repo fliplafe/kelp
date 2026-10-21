@@ -1,6 +1,5 @@
 import Foundation
 import Core
-import GitKit
 
 /// The number on the Source Control icon: files changed in the workspace on screen. It watches the folder itself, since
 /// the panel is only built once it's shown; the open panel reports what it read so the two agree.

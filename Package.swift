@@ -35,7 +35,7 @@ let package = Package(
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "Integrations", "GhosttyKit",
+            dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "GhosttyKit",
                            .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
@@ -47,7 +47,7 @@ let package = Package(
         .target(name: "TestSupportC", path: "Tests/TestSupportC"),
         .target(name: "TestSupport", dependencies: ["TestSupportC"], path: "Tests/TestSupport"),
         .testTarget(name: "CoreTests", dependencies: ["Core", "TestSupport"]),
-        .testTarget(name: "GitKitTests", dependencies: ["GitKit", "TestSupport"]),
+        .testTarget(name: "GitKitTests", dependencies: ["GitKit", "WorkbenchKit", "TestSupport"]),   // diffs as parsed, then as rows
         .testTarget(name: "AgentsTests", dependencies: ["Agents", "TestSupport"]),
         .testTarget(name: "AgentDataTests", dependencies: ["AgentData", "TestSupport"]),
         .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents", "TestSupport"]),

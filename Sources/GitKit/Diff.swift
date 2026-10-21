@@ -1,50 +1,5 @@
 import Foundation
-
-public struct DiffLine: Codable, Sendable, Equatable {
-    public enum Kind: String, Codable, Sendable { case context, add, del }
-    public var kind: Kind
-    public var text: String
-    public var oldLine: Int?
-    public var newLine: Int?
-    /// The file's last line, with no newline after it (git's "\ No newline at end of file").
-    public var noNewline: Bool?
-}
-
-public struct Hunk: Codable, Sendable, Equatable {
-    public var header: String
-    public var oldStart: Int, newStart: Int
-    public var lines: [DiffLine]
-}
-
-extension Hunk {
-    /// The hunk as shown, header and every line: an edit inside it that keeps the counts (a line rewritten in place) changes
-    /// this, where the "@@" header alone stays the same.
-    public var fingerprint: String {
-        ([header] + lines.map { "\($0.kind.rawValue)|\($0.text)" }).joined(separator: "\n")
-    }
-}
-
-public struct FileDiff: Codable, Sendable, Equatable {
-    public var path: String
-    /// Raw `diff --git` / `---` / `+++` lines, needed to rebuild patches for hunk staging.
-    public var header: String
-    public var hunks: [Hunk]
-    public var binary: Bool
-    /// The file isn't UTF-8: its text was read byte for byte (Latin-1), and patches go back the same way.
-    public var latin1: Bool?
-    public var additions: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .add }.count } }
-    public var deletions: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .del }.count } }
-
-    /// Patch containing only the given hunk, for `git apply --cached [-R]`, in the file's own bytes.
-    public func patch(hunk i: Int) -> Data {
-        var s = header + "\n" + hunks[i].header + "\n"
-        for l in hunks[i].lines {
-            s += (l.kind == .add ? "+" : l.kind == .del ? "-" : " ") + l.text + "\n"
-            if l.noNewline == true { s += "\\ No newline at end of file\n" }
-        }
-        return latin1 == true ? Data(s.unicodeScalars.map { UInt8(truncatingIfNeeded: $0.value) }) : Data(s.utf8)
-    }
-}
+import Core
 
 /// What a diff is taken against.
 public enum DiffSource: Sendable {

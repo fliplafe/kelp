@@ -1,6 +1,6 @@
 import AppKit
 import Core
-import GitKit
+import WorkbenchKit
 
 final class DiffTable: NSTableView {
     var onKey: ((NSEvent) -> Bool)?

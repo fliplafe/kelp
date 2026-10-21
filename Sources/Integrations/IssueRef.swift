@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// Issue references (`#123`, `ENG-123`) as branch names (`123-fix-login`, `eng-123-fix-login`).
 public enum IssueRef {

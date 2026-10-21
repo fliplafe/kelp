@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import Integrations
 
 /// CI of the branch on screen: runs → jobs → steps, the failed job's log under them (the latest failure opens by itself),
 /// Re-run Failed, Ask Agent to Fix, and Run Workflow… for workflows started by hand. GitHub Actions (gh) or GitLab (glab).

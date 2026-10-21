@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// Links to a file on the repository's website (GitHub, GitLab, Bitbucket) at the commit checked out now.
 extension Git {

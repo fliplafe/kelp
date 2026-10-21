@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Core
-import GitKit
 
 /// What a sidebar row holds, in full, when the pointer rests on it: the row itself stays one line.
 /// After half a second the card appears; while one is open, moving to another row shows that row's card at once.

@@ -1,5 +1,4 @@
 import AppKit
-import GitKit
 import Core
 import WorkbenchKit
 

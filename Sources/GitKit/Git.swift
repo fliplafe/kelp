@@ -14,8 +14,8 @@ public struct GitError: Error, CustomStringConvertible, Sendable {
     }
 }
 
-/// Thin wrapper over the system git. Behaviour matches what you'd see in a terminal.
-public enum Git {
+/// Running the system git (the daemon's). Behaviour matches what you'd see in a terminal.
+extension Git {
     @discardableResult
     public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
                            env extra: [String: String] = [:]) throws -> String {

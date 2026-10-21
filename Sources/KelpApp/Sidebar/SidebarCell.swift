@@ -1,6 +1,5 @@
 import AppKit
 import Core
-import GitKit
 
 /// One row; `update()` re-reads the model, so status changes don't rebuild the outline.
 @MainActor

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import GitKit
+@testable import Core
 import TestSupport
 
 /// What Source Control shows about branches, read from one for-each-ref: checked against what git itself says.
