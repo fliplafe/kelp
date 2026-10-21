@@ -203,19 +203,21 @@ final class SidebarCell: NSTableCellView {
     }
 }
 
-/// The source list puts a project's workspaces level with its name; set in, they read as the project's.
+/// Levels line up as Mail nests mailboxes: a workspace's name under its project's (the cell's 2 pt, icon 16, gap 6),
+/// an agent's icon under the workspace's name, the chevron on the project icon's axis.
 final class SidebarOutline: NSOutlineView {
-    static let inset: CGFloat = 12
+    static let lead: CGFloat = 14, step: CGFloat = 22
     /// Room over and under a row's content, where its project's card opens and closes (SidebarRowView.group).
     var pads: (Int) -> (top: CGFloat, bottom: CGFloat) = { _ in (0, 0) }
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
         var r = padded(super.frameOfOutlineCell(atRow: row), row)
-        if level(forRow: row) > 0 { r.origin.x += Self.inset }
+        r.origin.x = Self.lead + 2 + 8 - r.width / 2
         return r
     }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var r = padded(super.frameOfCell(atColumn: column, row: row), row)
-        if level(forRow: row) > 0 { r.origin.x += Self.inset; r.size.width -= Self.inset }
+        let x = Self.lead + (level(forRow: row) > 0 ? Self.step : 0)
+        r.size.width = r.maxX - x; r.origin.x = x
         return r
     }
     private func padded(_ r: NSRect, _ row: Int) -> NSRect {
@@ -266,6 +268,14 @@ final class SidebarRowView: NSTableRowView {
         r.size.height += last ? -bottom : 12
         color.setFill()
         NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
+    }
+    /// The outline sizes a row's cell once; when the row's height changes later (a project's last row gains or loses the
+    /// card's foot) the cell would only stretch with it, its text off the chevron. Put it where the outline says.
+    override func resizeSubviews(withOldSize old: NSSize) {
+        super.resizeSubviews(withOldSize: old)
+        guard let o = superview as? NSOutlineView, case let row = o.row(for: self), row >= 0, let cell = subviews.first(where: { $0 is NSTableCellView }) else { return }
+        let f = o.frameOfCell(atColumn: 0, row: row)   // only its height: mid-update a project's row comes back narrower
+        cell.frame = NSRect(x: cell.frame.minX, y: f.minY - o.rect(ofRow: row).minY, width: cell.frame.width, height: f.height)
     }
     override var isSelected: Bool { didSet { if isSelected != oldValue { needsDisplay = true } } }
     /// In the sidebar's vibrant material a dark fill would come out lighter; the card and pill are drawn as they are.
