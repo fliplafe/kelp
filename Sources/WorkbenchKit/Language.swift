@@ -28,10 +28,6 @@ public struct LanguageSpec: Codable, Equatable, Sendable {
     /// `run`, `test` or `format` by name.
     public subscript(command name: String) -> String? { ["run": run, "test": test, "format": format][name] ?? nil }
 
-    /// `${name}` filled from `vars` (see `ShellTemplate.fill`). Names not in `vars` stay as written, so the shell still
-    /// expands its own (`${HOME}`).
-    public static func expand(_ command: String, _ vars: [String: String]) -> String { ShellTemplate.fill(command) { vars[$0] } }
-
     /// The word (letters, digits, `_`) at a 1-based line and UTF-16 column: `${symbol}` when no language server names one.
     public static func word(in text: String, line: Int, column: Int) -> String {
         let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)   // CRLF files too

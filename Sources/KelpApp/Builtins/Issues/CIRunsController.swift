@@ -1,33 +1,6 @@
 import AppKit
 import Core
-
-/// What the daemon's ci.* methods return (Integrations.CI's shapes; the app only reads them).
-enum CIRuns {
-    /// Finished without success (failed, timed out, cancelled…).
-    static func failed(_ status: String, _ conclusion: String?) -> Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
-    struct Step: Codable {
-        var name: String; var status: String; var conclusion: String?
-        var failed: Bool { CIRuns.failed(status, conclusion) }
-    }
-    struct Job: Codable {
-        var id: Int, name: String, status: String, conclusion: String?, url: String?
-        var steps: [Step]
-        var failed: Bool { CIRuns.failed(status, conclusion) }
-    }
-    struct Run: Codable {
-        var id: Int, title: String, workflow: String, status: String, conclusion: String?, event: String, url: String, createdAt: String
-        var failed: Bool { CIRuns.failed(status, conclusion) }
-    }
-    /// The newest run of each workflow (runs come newest first): what the branch's CI says now.
-    static func latest(_ runs: [Run]) -> [Run] {
-        var seen = Set<String>()
-        return runs.filter { seen.insert($0.workflow).inserted }
-    }
-    struct Workflow: Codable {
-        struct Input: Codable { var name: String, description: String, defaultValue: String, options: [String], required: Bool }
-        var file: String, name: String, inputs: [Input]
-    }
-}
+import Integrations
 
 /// CI of the branch on screen: runs → jobs → steps, the failed job's log under them (the latest failure opens by itself),
 /// Re-run Failed, Ask Agent to Fix, and Run Workflow… for workflows started by hand. GitHub Actions (gh) or GitLab (glab).

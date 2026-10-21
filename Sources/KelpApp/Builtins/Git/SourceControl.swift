@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import GitKit
+import Integrations
 import WorkbenchKit
 
 /// Source Control, modeled on VS Code's: branch and sync up top, the commit message, merge / staged / unstaged

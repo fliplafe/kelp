@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import GitKit
+import Integrations
 
 /// Reading the workspace's status, history and remote state from the daemon.
 extension SourceControlController {

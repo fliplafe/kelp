@@ -14,14 +14,14 @@ public enum NotebookHTML {
         guard let nb = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let cells = nb["cells"] as? [[String: Any]] else { return nil }
         let lang = MarkdownHTML.esc(language(nb).filter { $0.isLetter || $0.isNumber || "+#._-".contains($0) })   // a class name
         var html = ""
-        for (i, c) in cells.enumerated() {
+        for c in cells {
             let src = text(c["source"])
             switch c["cell_type"] as? String {
             case "markdown":
                 html += "<div class=\"nb-md\">\(MarkdownHTML.render(src))</div>\n"
             case "code":
                 let n = (c["execution_count"] as? Int).map(String.init) ?? " "
-                html += "<div class=\"nb-cell\" data-cell=\"\(i)\"><div class=\"nb-in\">In [\(n)]:</div>"
+                html += "<div class=\"nb-cell\"><div class=\"nb-in\">In [\(n)]:</div>"
                 html += "<pre><code class=\"language-\(lang)\">\(MarkdownHTML.esc(src))</code></pre>"
                 for o in c["outputs"] as? [[String: Any]] ?? [] { html += output(o) }
                 html += "</div>\n"

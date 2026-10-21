@@ -1,11 +1,11 @@
 import Foundation
 
 /// Dependency-free GitHub-flavoured Markdown → HTML.
-/// Raw HTML is always escaped (safety over fidelity); block elements carry `data-line` (1-based source line).
+/// Raw HTML is always escaped (safety over fidelity).
 public enum MarkdownHTML {
     public static func render(_ md: String) -> String {
         let src = md.replacingOccurrences(of: "\r\n", with: "\n")
-        let lines = src.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { Line(s: detab(String($1)), n: $0 + 1) }
+        let lines = src.split(separator: "\n", omittingEmptySubsequences: false).map { Line(s: detab(String($0))) }
         let r = Renderer()
         r.collectRefs(lines)
         return r.blocks(lines)
@@ -22,7 +22,7 @@ public enum MarkdownHTML {
         mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: '\(dark ? "dark" : "default")'});
         document.querySelectorAll('pre > code.language-mermaid').forEach(c => {
           const d = document.createElement('div'); d.className = 'mermaid'; d.textContent = c.textContent;
-          d.dataset.line = c.parentElement.dataset.line || ''; c.parentElement.replaceWith(d);
+          c.parentElement.replaceWith(d);
         });
         mermaid.run().catch(() => {});   // a broken diagram shows mermaid's own error in its place
         </script>
@@ -116,10 +116,9 @@ public enum MarkdownHTML {
 
 struct Line {
     var s: String
-    let n: Int
     var blank: Bool { s.allSatisfy(\.isWhitespace) }
     var indent: Int { s.prefix { $0 == " " }.count }
-    func dropping(_ k: Int) -> Line { Line(s: String(s.dropFirst(min(k, indent))), n: n) }
+    func dropping(_ k: Int) -> Line { Line(s: String(s.dropFirst(min(k, indent)))) }
 }
 
 struct Marker {
@@ -161,8 +160,8 @@ final class Renderer {
             let block: (html: String?, end: Int)
             if ind >= 4 { block = indentedCode(ls, i) }
             else if let f = fence(s) { block = fencedCode(ls, i, f) }
-            else if let h = atx(s) { block = (heading(h.0, h.1, l.n), i + 1) }
-            else if isHR(s) { block = ("<hr data-line=\"\(l.n)\">", i + 1) }
+            else if let h = atx(s) { block = (heading(h.0, h.1), i + 1) }
+            else if isHR(s) { block = ("<hr>", i + 1) }
             else if s.hasPrefix(">") { block = blockquote(ls, i) }
             else if let m = marker(l.s) { block = list(ls, i, m) }
             else if isTable(ls, i) { block = table(ls, i) }
@@ -180,7 +179,7 @@ final class Renderer {
         var body: [String] = [], j = i
         while j < ls.count, ls[j].blank || ls[j].indent >= 4 { body.append(String(ls[j].s.dropFirst(4))); j += 1 }
         while body.last?.allSatisfy(\.isWhitespace) == true { body.removeLast() }
-        return ("<pre data-line=\"\(ls[i].n)\"><code>\(MarkdownHTML.esc(body.joined(separator: "\n")))\n</code></pre>", j)
+        return ("<pre><code>\(MarkdownHTML.esc(body.joined(separator: "\n")))\n</code></pre>", j)
     }
 
     private func fencedCode(_ ls: [Line], _ i: Int, _ f: (ch: Character, len: Int, info: String)) -> (String?, Int) {
@@ -193,7 +192,7 @@ final class Renderer {
         }
         let lang = f.info.split(separator: " ").first.map { " class=\"language-\(MarkdownHTML.esc(String($0)))\"" } ?? ""
         let code = body.isEmpty ? "" : MarkdownHTML.esc(body.joined(separator: "\n")) + "\n"
-        return ("<pre data-line=\"\(ls[i].n)\"><code\(lang)>\(code)</code></pre>", j)
+        return ("<pre><code\(lang)>\(code)</code></pre>", j)
     }
 
     private func blockquote(_ ls: [Line], _ i: Int) -> (String?, Int) {
@@ -203,13 +202,13 @@ final class Renderer {
             if x.indent < 4, xs.hasPrefix(">") {
                 var rest = xs.dropFirst()
                 if rest.first == " " { rest = rest.dropFirst() }
-                inner.append(Line(s: String(rest), n: x.n))
+                inner.append(Line(s: String(rest)))
             } else if !x.blank, inner.last?.blank == false, !interrupts(x.s) {
                 inner.append(x) // lazy continuation
             } else { break }
             j += 1
         }
-        return ("<blockquote data-line=\"\(ls[i].n)\">\n\(blocks(inner))\n</blockquote>", j)
+        return ("<blockquote>\n\(blocks(inner))\n</blockquote>", j)
     }
 
     /// A paragraph, or a setext heading when an `===` / `---` line ends it.
@@ -226,12 +225,12 @@ final class Renderer {
             text.append(String(x.s.drop { $0 == " " })); j += 1
         }
         let raw = text.joined(separator: "\n").replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-        if setext > 0 { return (heading(setext, raw, ls[i].n), j) }
+        if setext > 0 { return (heading(setext, raw), j) }
         let body = inline(raw)
-        return (body.isEmpty ? nil : tight ? body : "<p data-line=\"\(ls[i].n)\">\(body)</p>", j)
+        return (body.isEmpty ? nil : tight ? body : "<p>\(body)</p>", j)
     }
 
-    private func heading(_ level: Int, _ raw: String, _ n: Int) -> String {
+    private func heading(_ level: Int, _ raw: String) -> String {
         let html = inline(raw)
         var base = ""
         for c in stripTags(html).replacing(/&#?\w+;/, with: "").lowercased() {
@@ -240,18 +239,17 @@ final class Renderer {
         let k = slugs[base, default: 0]
         slugs[base] = k + 1
         let id = k == 0 ? base : "\(base)-\(k)"
-        return "<h\(level) id=\"\(MarkdownHTML.esc(id))\" data-line=\"\(n)\">\(html)</h\(level)>"
+        return "<h\(level) id=\"\(MarkdownHTML.esc(id))\">\(html)</h\(level)>"
     }
 
     private func list(_ ls: [Line], _ i: Int, _ m0: Marker) -> (String, Int) {
-        var items: [(n: Int, body: [Line])] = [], j = i, cur = m0, loose = false
+        var items: [[Line]] = [], j = i, cur = m0, loose = false
         while true {
-            let n = ls[j].n
-            var body = [Line(s: cur.rest, n: n)]
+            var body = [Line(s: cur.rest)]
             j += 1
             while j < ls.count {
                 let x = ls[j]
-                if x.blank { body.append(Line(s: "", n: x.n)) }
+                if x.blank { body.append(Line(s: "")) }
                 else if x.indent >= cur.content { body.append(x.dropping(cur.content)) }
                 else if marker(x.s) == nil, body.last?.blank == false, !interrupts(x.s) { body.append(x) } // lazy
                 else { break }
@@ -261,7 +259,7 @@ final class Renderer {
             while body.count > 1, body.last?.blank == true { body.removeLast(); trailing += 1 }
             // Limit: blank line followed by an unindented line inside an item counts as loose; fenced code with blank lines can false-positive.
             if zip(body, body.dropFirst()).contains(where: { $0.blank && !$1.blank && $1.indent == 0 }) { loose = true }
-            items.append((n, body))
+            items.append(body)
             guard j < ls.count, let nm = marker(ls[j].s), nm.kind == m0.kind,
                   !isHR(String(ls[j].s.dropFirst(ls[j].indent))) else { break }
             if trailing > 0 { loose = true }
@@ -269,19 +267,19 @@ final class Renderer {
         }
         let tag = m0.ordered ? "ol" : "ul"
         let start = m0.ordered && m0.start != 1 ? " start=\"\(m0.start)\"" : ""
-        var html = "<\(tag) data-line=\"\(ls[i].n)\"\(start)>\n"
-        for var it in items {
+        var html = "<\(tag)\(start)>\n"
+        for var body in items {
             var box = ""
-            let first = it.body[0].s
+            let first = body[0].s
             if first.hasPrefix("[ ]") || first.hasPrefix("[x]") || first.hasPrefix("[X]"), first.count == 3 || first.dropFirst(3).first == " " {
                 box = "<input type=\"checkbox\" disabled\(first.hasPrefix("[ ]") ? "" : " checked")> "
-                it.body[0].s = String(first.dropFirst(4))
+                body[0].s = String(first.dropFirst(4))
             }
-            var inner = blocks(it.body, tight: !loose)
+            var inner = blocks(body, tight: !loose)
             if !box.isEmpty {
                 if inner.hasPrefix("<p"), let gt = inner.firstIndex(of: ">") { inner.insert(contentsOf: box, at: inner.index(after: gt)) } else { inner = box + inner }
             }
-            html += "<li data-line=\"\(it.n)\"\(box.isEmpty ? "" : " class=\"task-list-item\"")>\(inner)</li>\n"
+            html += "<li\(box.isEmpty ? "" : " class=\"task-list-item\"")>\(inner)</li>\n"
         }
         return (html + "</\(tag)>", j)
     }
@@ -325,9 +323,9 @@ final class Renderer {
                 let style = al[k].isEmpty ? "" : " style=\"text-align:\(al[k])\""
                 return "<\(tag)\(style)>\(k < cs.count ? inline(cs[k]) : "")</\(tag)>"
             }
-            return "<tr data-line=\"\(l.n)\">\(tds.joined())</tr>"
+            return "<tr>\(tds.joined())</tr>"
         }
-        var html = "<table data-line=\"\(ls[i].n)\">\n<thead>\n\(row(ls[i], "th"))\n</thead>\n"
+        var html = "<table>\n<thead>\n\(row(ls[i], "th"))\n</thead>\n"
         var j = i + 2, body: [String] = []
         while j < ls.count, !ls[j].blank, ls[j].s.contains("|"), !interrupts(ls[j].s) { body.append(row(ls[j], "td")); j += 1 }
         if !body.isEmpty { html += "<tbody>\n\(body.joined(separator: "\n"))\n</tbody>\n" }

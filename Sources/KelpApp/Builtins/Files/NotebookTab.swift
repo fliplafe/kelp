@@ -11,7 +11,6 @@ final class NotebookTab: NSViewController {
     private let web = WKWebView()
     private let links = PreviewLinks()
     private let status = NSTextField(labelWithString: "")
-    var currentSession: () -> String? = { nil }
 
     init(url: URL, path: String, worktreeId: String?) {
         self.url = url; self.path = path; self.worktreeId = worktreeId
@@ -75,7 +74,7 @@ final class NotebookTab: NSViewController {
     }
 
     @objc private func askAgent() {
-        guard let sid = currentSession() else { NSSound.beep(); return }
+        guard let sid = Workbench.shared.focusedSession else { NSSound.beep(); return }
         Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string("Look at the notebook \(path) (cells and outputs). "), "enter": false])) }
     }
 }

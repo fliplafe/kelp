@@ -3,33 +3,21 @@ import Core
 import TerminalKit
 import WorkbenchKit
 
-extension NSPasteboard.PasteboardType { static let kelpPane = NSPasteboard.PasteboardType("dev.kelp.pane") }
-
 /// One terminal bound to one daemon session. libghostty renders it when available (attached via `kelp attach`,
-/// so the daemon keeps the process); SwiftTerm is the fallback. A slim header appears only inside splits.
+/// so the daemon keeps the process); SwiftTerm is the fallback.
 @MainActor
-final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
+final class PaneView: NSView, NSMenuItemValidation {
     let sessionId: String
     private var termView = NSView()
     #if canImport(GhosttyKit)
     private var ghostty: GhosttyTerminalView?
     #endif
     private var swiftTerm: RemoteTerminalView?
-    private let header = NSView()
-    private let title = NSTextField(labelWithString: "")
-    private let dot = StatusMark(size: 10)
     private let ended = NSStackView()
-    private let dropHint = NSView()
-    private var headerHeight: NSLayoutConstraint!
     private var lastActivity = Date()
 
     var onClose: ((PaneView) -> Void)?
-    var onFocus: ((PaneView) -> Void)?
     var onRestart: ((PaneView) -> Void)?
-    var onDrop: ((String, PaneView, DropEdge) -> Void)?
-    var showsHeader = false { didSet { headerHeight.constant = showsHeader ? 24 : 0; header.isHidden = !showsHeader } }
-
-    enum DropEdge { case left, right, top, bottom }
 
     static var useGhostty: Bool {
         #if canImport(GhosttyKit)
@@ -44,22 +32,14 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
         super.init(frame: .zero)
         wantsLayer = true
         buildTerminal(session)
-        buildHeader()
         buildEndedOverlay()
-        for v in [header, termView, ended, dropHint] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        dropHint.translatesAutoresizingMaskIntoConstraints = true
-        dropHint.wantsLayer = true; dropHint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor
-        dropHint.layer?.cornerRadius = 6; dropHint.isHidden = true
-        headerHeight = header.heightAnchor.constraint(equalToConstant: 0)
+        for v in [termView, ended] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor), header.leadingAnchor.constraint(equalTo: leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor), headerHeight,
-            termView.topAnchor.constraint(equalTo: header.bottomAnchor), termView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            termView.topAnchor.constraint(equalTo: topAnchor), termView.leadingAnchor.constraint(equalTo: leadingAnchor),
             termView.trailingAnchor.constraint(equalTo: trailingAnchor), termView.bottomAnchor.constraint(equalTo: bottomAnchor),
             ended.centerXAnchor.constraint(equalTo: termView.centerXAnchor), ended.centerYAnchor.constraint(equalTo: termView.centerYAnchor)
         ])
-        header.isHidden = true
-        registerForDraggedTypes([.kelpPane, .fileURL, .png, .tiff, .string])
+        registerForDraggedTypes([.fileURL, .png, .tiff, .string])
         update(session)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -75,7 +55,6 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
             let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
             let cmd = IDE.shellWord(kelp) + " attach \(id)"
             let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
-            g.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
             g.onExit = { [weak self] in self?.sessionEnded() }
             g.onSearch = { [weak self] in self?.searchEvent($0) }
             g.onOpenURL = Self.openLink
@@ -94,23 +73,10 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
         t.onOpenURL = Self.openLink
         t.onInput = { AppModel.shared.write(session: id, $0) }
         t.onResize = { AppModel.shared.resize(session: id, cols: $0, rows: $1) }
-        t.onFocus = { [weak self] in if let me = self { me.onFocus?(me) } }
         Task { await AppModel.shared.attach(session: id) { [weak self] in self?.swiftTerm?.feed($0); self?.lastActivity = Date() } }
         swiftTerm = t; termView = t
         applySwiftTermAppearance()
         NotificationCenter.default.addObserver(self, selector: #selector(applySwiftTermAppearance), name: UserDefaults.didChangeNotification, object: nil)
-    }
-
-    private func buildHeader() {
-        header.wantsLayer = true
-        title.font = .systemFont(ofSize: 11, weight: .medium); title.lineBreakMode = .byTruncatingTail; title.textColor = .secondaryLabelColor
-        let close = NSButton(image: .symbol("xmark", String(localized: "Close pane")), target: self, action: #selector(closeTapped))
-        close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold); close.contentTintColor = .secondaryLabelColor
-        let row = NSStackView(views: [dot, title, NSView(), close]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 8)
-        row.translatesAutoresizingMaskIntoConstraints = false; header.addSubview(row)
-        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: header.leadingAnchor), row.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-                                     row.topAnchor.constraint(equalTo: header.topAnchor), row.bottomAnchor.constraint(equalTo: header.bottomAnchor)])
-        header.toolTip = String(localized: "Drag to move this pane; drop on an edge of another pane to split")
     }
 
     private func buildEndedOverlay() {
@@ -132,7 +98,6 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            header.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         }
     }
@@ -166,8 +131,6 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     }
 
     func update(_ s: Session) {
-        title.stringValue = AgentCatalog.displayName(s)
-        dot.status = s.agent == "shell" ? nil : s.status; dot.unread = s.unread
         if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
         if s.status == .done || s.status == .waiting { lastActivity = Date() }
     }
@@ -280,44 +243,11 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
     @objc private func closeTapped() { onClose?(self) }
     @objc private func restartTapped() { onRestart?(self) }
 
-    // MARK: dragging this pane by its header
-    override func mouseDragged(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        guard showsHeader, header.frame.contains(p) else { return super.mouseDragged(with: event) }
-        let item = NSPasteboardItem(); item.setString(sessionId, forType: .kelpPane)
-        let di = NSDraggingItem(pasteboardWriter: item)
-        di.setDraggingFrame(header.frame, contents: header.snapshot())
-        beginDraggingSession(with: [di], event: event, source: self)
-    }
-    nonisolated func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .move }
-
-    // MARK: drops: panes (edge = split) and files/images/text into the agent's prompt
-    private func edge(_ info: NSDraggingInfo) -> DropEdge {
-        let p = convert(info.draggingLocation, from: nil), w = bounds.width, h = bounds.height
-        let dx = min(p.x, w - p.x) / w, dy = min(p.y, h - p.y) / h
-        if dx < dy { return p.x < w / 2 ? .left : .right }
-        return p.y < h / 2 ? .bottom : .top
-    }
-    private func hint(_ e: DropEdge) {
-        let b = bounds.insetBy(dx: 4, dy: 4)
-        dropHint.frame = switch e {
-        case .left: NSRect(x: b.minX, y: b.minY, width: b.width / 2, height: b.height)
-        case .right: NSRect(x: b.midX, y: b.minY, width: b.width / 2, height: b.height)
-        case .top: NSRect(x: b.minX, y: b.midY, width: b.width, height: b.height / 2)
-        case .bottom: NSRect(x: b.minX, y: b.minY, width: b.width, height: b.height / 2)
-        }
-        dropHint.isHidden = false
-    }
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if sender.draggingPasteboard.string(forType: .kelpPane) != nil { hint(edge(sender)); return .move }
-        return .copy
-    }
-    override func draggingExited(_ sender: NSDraggingInfo?) { dropHint.isHidden = true }
+    // MARK: drops: files/images/text into the agent's prompt
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        dropHint.isHidden = true
         let pb = sender.draggingPasteboard
-        if let id = pb.string(forType: .kelpPane) { onDrop?(id, self, edge(sender)); return true }
         var paths = (pb.readObjects(forClasses: [NSURL.self]) as? [URL])?.map(\.path) ?? []
         if paths.isEmpty, let png = TerminalPaste.savedImage(pb) { paths = [png] }
         if paths.isEmpty, let text = pb.string(forType: .string) { insert(text); return true }

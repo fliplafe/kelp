@@ -1,4 +1,5 @@
 import AppKit
+import Integrations
 
 /// The branch's CI in a line under Commit: the latest run of each workflow, a failure first with where it broke
 /// ("test › Run swift test") on a second line. Only the summary: a click opens the CI Runs panel, which has the log and the actions.

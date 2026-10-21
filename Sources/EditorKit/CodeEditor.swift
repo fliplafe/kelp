@@ -22,17 +22,14 @@ public final class CodeEditor: NSObject {
     /// Big documents re-parse off the main thread so typing never waits for tree-sitter (highlighting catches up a frame later).
     private static let tuned: Void = { TreeSitterClient.Constants.maxSyncContentLength = 100_000 }()
 
-    public init(text: String, url: URL, editable: Bool = true, fontSize: CGFloat = 13) {
+    public init(text: String, url: URL, editable: Bool = true) {
         _ = Self.tuned
-        let t0 = Date()
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
-        let t1 = Date()
         big = text.utf8.lazy.filter { $0 == 10 }.count > Self.bigLines
         let cfg = SourceEditorConfiguration(
             appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),
-            peripherals: .init(showMinimap: Self.showMinimap && !big,
-                               showFoldingRibbon: ProcessInfo.processInfo.environment["KELP_NO_FOLD"] == nil)
+            peripherals: .init(showMinimap: Self.showMinimap && !big)
         )
         // A big file: empty first, the text once the view sits in its scroll view. A text view outside one lays out
         // every line (a 50k-line file was 24 s of main thread); inside, only what's on screen. (The minimap would keep
@@ -41,9 +38,6 @@ public final class CodeEditor: NSObject {
         super.init()
         relay.owner = self
         if big { _ = controller.view; suppress = true; controller.setText(text); suppress = false }
-        if ProcessInfo.processInfo.environment["KELP_EDITOR_TIMING"] != nil {
-            print("EDITOR lang \(Int(t1.timeIntervalSince(t0) * 1000))ms ctrl \(Int(Date().timeIntervalSince(t1) * 1000))ms")
-        }
     }
 
     public var view: NSView { let v = controller.view; evenFoldRibbon(); return v }

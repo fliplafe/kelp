@@ -12,7 +12,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     private let fullText = NSButton(checkboxWithTitle: String(localized: "Search inside conversations"), target: nil, action: nil)
     private let status = NSTextField(labelWithString: "")
     private var rows: [JSONValue] = []
-    private var pending: Task<Void, Never>?
+    private let pending = Debounce()
 
     func show() {
         if window == nil { build() }
@@ -46,8 +46,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     func controlTextDidChange(_ obj: Notification) { searchChanged() }
     @objc private func searchChanged() {
-        pending?.cancel()
-        pending = Task { try? await Task.sleep(for: .milliseconds(250)); if !Task.isCancelled { load() } }
+        pending.after(0.25) { [weak self] in self?.load() }
     }
 
     private func load() {

@@ -417,12 +417,15 @@ enum GitFix {
 
     static func send(_ recipe: String, worktree wid: String, vars: [String: String]) {
         guard let s = FileActions.targetAgent else { return }
-        Task {
-            var v: [String: JSONValue] = [:]; for (k, x) in vars { v[k] = .string(x) }
-            guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wid), "name": .string(recipe), "vars": .object(v)]))?.string else { return }
-            await AppModel.shared.call("session.send", .obj(["id": .string(s.id), "text": .string(text), "enter": false]))
-            Workbench.focus(session: s.id)
-        }
+        Task { if await type(recipe, worktree: wid, vars: vars, into: s.id) { Workbench.focus(session: s.id) } }
+    }
+
+    /// The recipe typed into the session, not sent: other people's text (errors, CI logs, review comments) waits for Return.
+    static func type(_ recipe: String, worktree wid: String, vars: [String: String], into sid: String) async -> Bool {
+        let v = JSONValue.object(vars.mapValues { .string($0) })
+        guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wid), "name": .string(recipe), "vars": v]))?.string else { return false }
+        await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text), "enter": false]))
+        return true
     }
 }
 

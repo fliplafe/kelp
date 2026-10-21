@@ -26,12 +26,6 @@ public struct LSPFramer: Sendable {
     }
 }
 
-public struct Diagnostic: Sendable, Equatable {
-    public var line: Int, column: Int   // 1-based
-    public var severity: Int            // 1 error, 2 warning, 3 info, 4 hint
-    public var message: String
-}
-
 public struct Location: Sendable, Equatable { public var path: String; public var line: Int; public var column: Int }
 
 /// One language server process for one workspace root. Once the process has exited every request fails at once
@@ -48,7 +42,6 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
     private var opened: [String: Int] = [:]   // path -> how many tabs have it open (didOpen once, didClose after the last)
     private var exited = false
     public let root: String
-    public var onDiagnostics: (@Sendable (String, [Diagnostic]) -> Void)?
     /// The last open document was closed.
     public var onIdle: (@Sendable () -> Void)?
 
@@ -91,16 +84,8 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
     private func handle(_ body: Data) {
         guard let m = try? JSONDecoder().decode(JSONValue.self, from: body) else { return }
         let id = m["id"].flatMap { $0 == .null ? nil : $0 }
-        if let method = m["method"]?.string {
-            if method == "textDocument/publishDiagnostics", let p = m["params"], let uri = p["uri"]?.string, let path = URL(string: uri)?.path {
-                let ds = (p["diagnostics"]?.array ?? []).map { d in
-                    Diagnostic(line: (d["range"]?["start"]?["line"]?.int ?? 0) + 1, column: (d["range"]?["start"]?["character"]?.int ?? 0) + 1,
-                               severity: d["severity"]?.int ?? 1, message: d["message"]?.string ?? "")
-                }
-                onDiagnostics?(path, ds)
-            } else if let id {   // server → client request (e.g. workspace/configuration): answer null
-                send(["jsonrpc": "2.0", "id": id, "result": .null])
-            }
+        if m["method"]?.string != nil {   // a notification (diagnostics…) is ignored; a request (workspace/configuration) gets null
+            if let id { send(["jsonrpc": "2.0", "id": id, "result": .null]) }
             return
         }
         guard let id = id?.int else { return }
@@ -139,7 +124,7 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
         _ = try await request("initialize", .obj([
             "processId": .int(Int(ProcessInfo.processInfo.processIdentifier)), "rootUri": .string(uri),
             "workspaceFolders": .array([.obj(["uri": .string(uri), "name": .string((root as NSString).lastPathComponent)])]),
-            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]),
+            "capabilities": .obj(["textDocument": .obj(["definition": .obj([:]),
                                                    "completion": .obj(["completionItem": .obj(["snippetSupport": false])]),
                                                    "documentSymbol": .obj(["hierarchicalDocumentSymbolSupport": true])])])
         ]))

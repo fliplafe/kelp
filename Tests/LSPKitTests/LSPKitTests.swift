@@ -33,8 +33,8 @@ import Core
 
 @Test func documentsAreSharedByTabs() throws {
     let c = try #require(LSPClient(argv: ["/bin/cat"], root: NSTemporaryDirectory()))
-    let idle = DiagBox()
-    c.onIdle = { idle.set("", [Diagnostic(line: 1, column: 1, severity: 1, message: "")]) }
+    let idle = Counter()
+    c.onIdle = { idle.add() }
     c.open("/x.swift", text: "", languageId: "swift"); c.open("/x.swift", text: "", languageId: "swift")
     c.close("/x.swift")
     #expect(c.openDocuments == ["/x.swift": 1] && idle.count == 0)
@@ -44,28 +44,24 @@ import Core
     c.terminate()
 }
 
-@Test func sourcekitDiagnosticsAndDefinition() async throws {
+@Test func sourcekitDefinition() async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lsp-\(UUID().uuidString.prefix(6))").path
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     let file = dir + "/main.swift"
     let text = "func greet() -> Int { 1 }\nlet x: String = greet()\n"
     try text.write(toFile: file, atomically: true, encoding: .utf8)
     guard let c = LSPClient(argv: ["xcrun", "sourcekit-lsp"], root: dir) else { return }
-    let got = DiagBox()
-    c.onDiagnostics = { p, d in got.set(p, d) }
     try await c.initialize()
     c.open(file, text: text, languageId: "swift")
     let loc = try await c.definition(file, line: 2, column: 18)
     #expect(loc?.line == 1)
-    for _ in 0..<100 where got.count == 0 { try await Task.sleep(for: .milliseconds(100)) }
-    #expect(got.count > 0)   // Int is not String
     c.shutdown()
 }
 
-final class DiagBox: @unchecked Sendable {
-    private let l = NSLock(); private var d: [Diagnostic] = []
-    func set(_ p: String, _ x: [Diagnostic]) { l.lock(); d = x; l.unlock() }
-    var count: Int { l.lock(); defer { l.unlock() }; return d.count }
+final class Counter: @unchecked Sendable {
+    private let l = NSLock(); private var n = 0
+    func add() { l.lock(); n += 1; l.unlock() }
+    var count: Int { l.lock(); defer { l.unlock() }; return n }
 }
 
 @Test func symbolAroundALine() throws {

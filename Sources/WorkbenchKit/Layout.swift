@@ -44,11 +44,4 @@ public indirect enum LayoutNode: Codable, Equatable {
         return c.reduce(into: [Self.splitKey(c)]) { $0.formUnion($1.splitKeys) }
     }
     public static func splitKey(_ children: [LayoutNode]) -> String { children.compactMap(\.sessions.first).joined(separator: ",") }
-
-    /// Neighbour in reading order, for keyboard pane navigation.
-    public func neighbor(of id: String, step: Int) -> String? {
-        let all = sessions
-        guard let i = all.firstIndex(of: id), !all.isEmpty else { return nil }
-        return all[(i + step + all.count) % all.count]
-    }
 }

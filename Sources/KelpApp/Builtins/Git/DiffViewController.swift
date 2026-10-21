@@ -32,7 +32,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     /// Side by side when chosen and there's room for two columns; a narrow pane shows it inline (like VS Code).
     private var sideBySide: Bool { layoutToggle.selectedSegment == 0 && !narrow }
     private var narrow = false
-    var currentSession: () -> String? = { nil }
 
     private static let addTint = NSColor.systemGreen.withAlphaComponent(0.14), delTint = NSColor.systemRed.withAlphaComponent(0.14)
     private static let addWord = NSColor.systemGreen.withAlphaComponent(0.32), delWord = NSColor.systemRed.withAlphaComponent(0.32)

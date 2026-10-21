@@ -119,7 +119,6 @@ import WorkbenchKit
     #expect(moved.sessions == ["c", "a", "b"])
     #expect(LayoutNode.pane("a").removing("a") == nil)
     #expect(l.removing("a")?.removing("b")?.removing("c") == nil)
-    #expect(l.neighbor(of: "c", step: 1) == "a")
 }
 
 /// Divider positions are kept per split: the key survives tab changes and changes when the split gets another pane.
@@ -156,7 +155,7 @@ import WorkbenchKit
     #expect(py[command: "test"] == "pytest ${file} -k ${symbol}" && py[command: "lint"] == nil)
     // Values arrive as one argument each, spaces and quotes included; unknown names stay for the shell.
     let vars = ["file": "/My Code/it's.py", "symbol": "", "line": "12"]
-    let cmd = LanguageSpec.expand("printf '<%s>' ${file} -k ${symbol} ${HOME} '${line}' # ${line}", vars)
+    let cmd = ShellTemplate.fill("printf '<%s>' ${file} -k ${symbol} ${HOME} '${line}' # ${line}") { vars[$0] }
     #expect(try sh("/bin/zsh", cmd) == "</My Code/it's.py><-k><><\(NSHomeDirectory())><12>")
 }
 

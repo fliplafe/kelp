@@ -90,13 +90,7 @@ extension EditorArea {
         guard let cur = layout.focusedGroup?.id, let from = groupViews[cur], from.window != nil else { return }
         var others: [String: CGRect] = [:]
         for (id, v) in groupViews where id != cur && v.window != nil { others[id] = v.convert(v.bounds, to: nil) }
-        let side: PaneEdge = switch edge {
-        case .minX: .left
-        case .maxX: .right
-        case .minY: .down
-        default: .up
-        }
-        guard let gid = WorkspaceLayout.nearestPane(from: from.convert(from.bounds, to: nil), among: others, toward: side),
+        guard let gid = WorkspaceLayout.nearestPane(from: from.convert(from.bounds, to: nil), among: others, toward: edge),
               let t = layout.groups[gid]?.selectedTab else { NSSound.beep(); return }
         select(t.id)
     }

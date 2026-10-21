@@ -19,7 +19,7 @@ final class FileTab: SavableTab {
     private var lastSaved = ""
     private(set) var isEdited = false
     private static var autosave: Bool { SettingsStore.shared.bool("editor.autoSave") == true }
-    private var saveTask: Task<Void, Never>?
+    private let autosaving = Debounce()
     private var lspTask: Task<Void, Never>?
     private var watcher: FileWatcher?
     private let root: String
@@ -58,7 +58,6 @@ final class FileTab: SavableTab {
         if Preview.canPreview(url) { view = Preview.view(for: url); return }
         if ext == "ipynb" {
             let nb = NotebookTab(url: url, path: p, worktreeId: AppModel.shared.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
-            nb.currentSession = { Workbench.shared.focusedSession }
             notebook = nb; view = nb.view; return
         }
         // Moved or deleted (often by an agent) since the tab was opened: say so, never an empty buffer ⌘S would write.
@@ -107,7 +106,7 @@ final class FileTab: SavableTab {
     /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab. With autosave
     /// it only asks when writing isn't safe: an agent changed the file meanwhile, or it was moved or deleted.
     func close() -> Bool {
-        saveTask?.cancel()
+        autosaving.cancel()
         guard let e = editor, isEdited else { return true }
         let action = FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
         if Self.autosave, action == .write, write() { return true }
@@ -128,13 +127,7 @@ final class FileTab: SavableTab {
     // MARK: saving
 
     private func edited(_ t: String) {
-        if Self.autosave {
-            saveTask?.cancel()
-            saveTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(600))
-                if !Task.isCancelled { self?.autosaveNow() }
-            }
-        }
+        if Self.autosave { autosaving.after(0.6) { [weak self] in self?.autosaveNow() } }
         editedStateMayHaveChanged()
         markdown?.textChanged()
         lspTask?.cancel()
@@ -265,8 +258,8 @@ final class FileTab: SavableTab {
             symbol = (try? await client?.symbol(path, line: line)) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
         }
         let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
-        return LanguageSpec.expand(template, ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path,
-                                              "line": String(line), "symbol": symbol, "workspace": root])
+        let vars = ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path, "line": String(line), "symbol": symbol, "workspace": root]
+        return ShellTemplate.fill(template) { vars[$0] }
     }
 
     /// Format Document: the text goes to the language's `format` on stdin and comes back formatted, as one undoable

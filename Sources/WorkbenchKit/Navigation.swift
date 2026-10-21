@@ -1,8 +1,5 @@
 import Foundation
 
-/// Which way an arrow key moves between panes. Window coordinates: y grows upward.
-public enum PaneEdge: Sendable { case left, right, down, up }
-
 extension WorkspaceLayout {
     /// The tab `offset` steps from the selected one in the focused group, wrapping around (⌃Tab).
     public func tab(cycling offset: Int) -> String? {
@@ -24,14 +21,14 @@ extension WorkspaceLayout {
     }
 
     /// The pane on that side of `from`, the nearest by center (Ghostty's goto_split). Panes only touching the edge by
-    /// 2 points or less still count as beside it.
-    public static func nearestPane(from a: CGRect, among panes: [String: CGRect], toward edge: PaneEdge) -> String? {
+    /// 2 points or less still count as beside it. Window coordinates: y grows upward (`.maxY` is up).
+    public static func nearestPane(from a: CGRect, among panes: [String: CGRect], toward edge: NSRectEdge) -> String? {
         panes.compactMap { id, b -> (String, CGFloat)? in
             let beyond = switch edge {
-            case .left: b.maxX <= a.minX + 2
-            case .right: b.minX >= a.maxX - 2
-            case .down: b.maxY <= a.minY + 2
-            case .up: b.minY >= a.maxY - 2
+            case .minX: b.maxX <= a.minX + 2
+            case .maxX: b.minX >= a.maxX - 2
+            case .minY: b.maxY <= a.minY + 2
+            default: b.minY >= a.maxY - 2
             }
             return beyond ? (id, hypot(b.midX - a.midX, b.midY - a.midY)) : nil
         }.min { $0.1 < $1.1 || ($0.1 == $1.1 && $0.0 < $1.0) }?.0

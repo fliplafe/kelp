@@ -41,7 +41,7 @@ let package = Package(
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", .product(name: "Sparkle", package: "Sparkle")]
+            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "Integrations", .product(name: "Sparkle", package: "Sparkle")]
                 + (hasGhostty ? ["GhosttyKit"] : []),
             swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the

@@ -311,10 +311,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
     private func sendRecipe(_ name: String, _ wt: Worktree, _ vars: [String: String]) async {
         guard let sid = agentSession(wt) else { status.stringValue = String(localized: "No running agent in \(wt.branch) — start one first"); return }
-        var v: [String: JSONValue] = [:]; for (k, x) in vars { v[k] = .string(x) }
-        guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wt.id), "name": .string(name), "vars": .object(v)]))?.string else { return }
-        // Typed, not sent: review comments and CI logs are other people's text; the user presses Return once it reads right.
-        await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text), "enter": false]))
+        guard await GitFix.type(name, worktree: wt.id, vars: vars, into: sid) else { return }
         status.stringValue = String(localized: "Typed into \(AppModel.shared.session(sid)?.displayTitle ?? "agent") — press Return there to send")
     }
     private func fixCheck(_ name: String, _ run: Int, _ wt: Worktree) {

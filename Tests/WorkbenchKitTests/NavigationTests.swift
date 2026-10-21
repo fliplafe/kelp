@@ -47,10 +47,10 @@ private func twoPanes() throws -> (WorkspaceLayout, left: String, right: String,
                  "right": CGRect(x: 200, y: 100, width: 100, height: 100), "above": CGRect(x: 100, y: 200, width: 100, height: 100),
                  "diagonal": CGRect(x: 200, y: 300, width: 100, height: 100)]
     typealias Layout = WorkspaceLayout
-    #expect(Layout.nearestPane(from: me, among: panes, toward: .left) == "left")    // touching counts, the farther one doesn't
-    #expect(Layout.nearestPane(from: me, among: panes, toward: .right) == "right")
-    #expect(Layout.nearestPane(from: me, among: panes, toward: .up) == "above")     // y grows upward
-    #expect(Layout.nearestPane(from: me, among: panes, toward: .down) == nil)       // nothing below: the caller beeps
+    #expect(Layout.nearestPane(from: me, among: panes, toward: .minX) == "left")    // touching counts, the farther one doesn't
+    #expect(Layout.nearestPane(from: me, among: panes, toward: .maxX) == "right")
+    #expect(Layout.nearestPane(from: me, among: panes, toward: .maxY) == "above")     // y grows upward
+    #expect(Layout.nearestPane(from: me, among: panes, toward: .minY) == nil)       // nothing below: the caller beeps
     #expect(Layout.nearestPane(from: me, among: ["a": CGRect(x: 300, y: 95, width: 10, height: 10), "b": CGRect(x: 300, y: 195, width: 10, height: 10)],
-                               toward: .right) == "a")   // equal distance: stable
+                               toward: .maxX) == "a")   // equal distance: stable
 }

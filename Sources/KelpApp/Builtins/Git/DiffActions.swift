@@ -94,7 +94,7 @@ extension DiffViewController {
     /// The focused session if it is in this worktree, else ask.
     private func pickAgentSession(_ wid: String) -> String? {
         let live = AppModel.shared.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
-        if let cur = currentSession(), live.contains(where: { $0.id == cur }) { return cur }
+        if let cur = Workbench.shared.focusedSession, live.contains(where: { $0.id == cur }) { return cur }
         if live.count == 1 { return live[0].id }
         guard !live.isEmpty else { status.stringValue = String(localized: "No running agent in this worktree"); return nil }
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))

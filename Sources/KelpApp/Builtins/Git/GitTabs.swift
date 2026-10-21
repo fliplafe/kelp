@@ -23,12 +23,10 @@ final class DiffTab: TabContent {
 
     init(uri: String) {
         self.uri = uri
-        let parts = TabURI.body(uri).split(separator: "?", maxSplits: 1)
-        worktreeId = parts.first.map(String.init) ?? ""
-        let q = parts.count > 1 ? URLComponents(string: "x:?" + parts[1])?.queryItems ?? [] : []
-        func item(_ n: String) -> String? { q.first { $0.name == n }?.value }
+        let c = URLComponents(string: uri)
+        worktreeId = c?.path ?? ""
+        func item(_ n: String) -> String? { c?.queryItems?.first { $0.name == n }?.value }
         file = item("file"); source = item("source"); commit = item("commit")
-        controller.currentSession = { Workbench.shared.focusedSession }
         _ = controller.view
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
@@ -67,9 +65,8 @@ final class CommitMessageTab: TabContent {
 
     init(uri: String) {
         self.uri = uri
-        let parts = TabURI.body(uri).split(separator: "?", maxSplits: 1)
-        worktreeId = parts.first.map(String.init) ?? ""
-        let q = parts.count > 1 ? URLComponents(string: "x:?" + parts[1])?.queryItems ?? [] : []
+        let c = URLComponents(string: uri), q = c?.queryItems ?? []
+        worktreeId = c?.path ?? ""
         push = q.contains { $0.name == "push" }; amend = q.contains { $0.name == "amend" }
         build()
         let message = q.first { $0.name == "message" }?.value ?? ""

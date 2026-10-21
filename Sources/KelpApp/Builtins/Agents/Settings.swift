@@ -19,8 +19,7 @@ struct AgentsSettings: View {
     /// "2.1.310" is newer than "2.1.304" (numbers, not text; a build ahead of npm isn't behind).
     private func newer(_ v: (version: String?, latest: String?)?) -> Bool {
         guard let a = v?.version, let b = v?.latest else { return false }
-        let x = a.split(separator: ".").compactMap { Int($0) }, y = b.split(separator: ".").compactMap { Int($0) }
-        return y.lexicographicallyPrecedes(x) == false && x != y
+        return a.compare(b, options: .numeric) == .orderedAscending
     }
 
     var body: some View {
