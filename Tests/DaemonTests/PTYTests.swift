@@ -175,8 +175,8 @@ final class Box: @unchecked Sendable {
     p.write(big)
     #expect(Date().timeIntervalSince(t) < 1)         // queued, not written here (written here it would block for good)
     let done = DispatchSemaphore(value: 0)
-    Thread.detachNewThread { _ = p.size; _ = p.foregroundProgram; done.signal() }   // its own thread: a busy pool mustn't look like a stuck lock
-    #expect(done.wait(timeout: .now() + 2) == .success, "size / foregroundProgram waited on the stuck write")
+    Thread.detachNewThread { p.resize(cols: 100, rows: 30); _ = p.foregroundProgram; done.signal() }   // its own thread: a busy pool mustn't look like a stuck lock
+    #expect(done.wait(timeout: .now() + 2) == .success, "resize / foregroundProgram waited on the stuck write")
 }
 
 /// A terminal closes its fds once: finishing and being dropped both hang up, and a second close would hit whatever

@@ -58,7 +58,7 @@ let package = Package(
         .testTarget(name: "AgentDataTests", dependencies: ["AgentData", "TestSupport"]),
         .testTarget(name: "DaemonTests", dependencies: ["Daemon", "Agents", "TestSupport"]),
         .testTarget(name: "LSPKitTests", dependencies: ["LSPKit"]),
-        .testTarget(name: "IntegrationsTests", dependencies: ["Integrations"]),
+        .testTarget(name: "IntegrationsTests", dependencies: ["Integrations", "TestSupport"]),
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core", "TestSupport"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),

@@ -9,19 +9,13 @@ extension Daemon {
 
     /// Every process under a live session's PTY, by pid → session id; `only` limits it to one workspace.
     private func sessionProcesses(worktree only: String? = nil) -> (owner: [Int32: String], rows: [Int32: (cpu: Double, rss: Int)]) {
-        let roots = live.all.filter { only == nil || $0.snapshot.worktreeId == only }.map { ($0.pty.pid, $0.snapshot.id) }
-        guard !roots.isEmpty else { return ([:], [:]) }
-        var children: [Int32: [Int32]] = [:], rows: [Int32: (cpu: Double, rss: Int)] = [:]
-        for line in (Self.run(["/bin/ps", "-axo", "pid=,ppid=,pcpu=,rss="], path: "/bin:/usr/bin", timeout: 3) ?? "").split(whereSeparator: \.isNewline) {
+        var owner: [Int32: String] = [:], rows: [Int32: (cpu: Double, rss: Int)] = [:]
+        for ls in live.all where only == nil || ls.snapshot.worktreeId == only { for p in ls.pty.tree() { owner[p] = ls.snapshot.id } }
+        guard !owner.isEmpty else { return ([:], [:]) }
+        for line in (Self.run(["/bin/ps", "-axo", "pid=,pcpu=,rss="], path: "/bin:/usr/bin", timeout: 3) ?? "").split(whereSeparator: \.isNewline) {
             let f = line.split(separator: " ")
-            guard f.count == 4, let pid = Int32(f[0]), let ppid = Int32(f[1]) else { continue }
-            children[ppid, default: []].append(pid)
-            rows[pid] = (Double(f[2]) ?? 0, (Int(f[3]) ?? 0) * 1024)
-        }
-        var owner: [Int32: String] = [:]
-        for (pid, sid) in roots {
-            var stack = [pid]
-            while let p = stack.popLast() { owner[p] = sid; stack += children[p] ?? [] }
+            guard f.count == 3, let pid = Int32(f[0]) else { continue }
+            rows[pid] = (Double(f[1]) ?? 0, (Int(f[2]) ?? 0) * 1024)
         }
         return (owner, rows)
     }

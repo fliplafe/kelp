@@ -1,7 +1,5 @@
 import Foundation
 
-public struct JiraError: Error, CustomStringConvertible, Sendable { public var description: String }
-
 public struct JiraIssue: Codable, Sendable, Equatable {
     public var key: String, title: String, description: String, url: String
     public var status: String, statusCategory: String   // statusCategory: new | indeterminate | done
@@ -23,7 +21,7 @@ public struct JiraClient: Sendable {
     public func myself() async throws -> String {
         let d = try await request("GET", "/rest/api/3/myself")
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any],
-            let n = o["displayName"] as? String else { throw JiraError(description: "unexpected /myself response") }
+            let n = o["displayName"] as? String else { throw IntegrationError(description: "unexpected /myself response") }
         return n
     }
 
@@ -50,24 +48,17 @@ public struct JiraClient: Sendable {
     }
 
     func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Data {
-        guard let url = URL(string: site + path) else { throw JiraError(description: "bad Jira site URL") }
+        guard let url = URL(string: site + path) else { throw IntegrationError(description: "bad Jira site URL") }
         // The request carries the email and API token: never over plain http.
-        guard url.scheme?.lowercased() == "https" else { throw JiraError(description: "Jira needs an https:// address") }
-        var r = URLRequest(url: url); r.httpMethod = method
-        r.setValue("Basic " + Data("\(email):\(token)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
-        r.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body { r.httpBody = try JSONSerialization.data(withJSONObject: body); r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (d, resp) = try await URLSession.shared.data(for: r)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(code) else { throw JiraError(description: "Jira \(code): \(String(decoding: d.prefix(300), as: UTF8.self))") }
-        return d
+        guard url.scheme?.lowercased() == "https" else { throw IntegrationError(description: "Jira needs an https:// address") }
+        return try await basicAuthRequest("Jira", method, url, login: "\(email):\(token)", body: body)
     }
 
     // MARK: parsing
 
     public static func parseSearch(_ d: Data, site: String) throws -> [JiraIssue] {
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let issues = o["issues"] as? [[String: Any]] else {
-            throw JiraError(description: "unexpected search response")
+            throw IntegrationError(description: "unexpected search response")
         }
         return issues.compactMap { i in
             guard let key = i["key"] as? String, let f = i["fields"] as? [String: Any] else { return nil }
@@ -81,7 +72,7 @@ public struct JiraClient: Sendable {
 
     public static func parseTransitions(_ d: Data) throws -> [JiraTransition] {
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let ts = o["transitions"] as? [[String: Any]] else {
-            throw JiraError(description: "unexpected transitions response")
+            throw IntegrationError(description: "unexpected transitions response")
         }
         return ts.compactMap { t in
             guard let id = t["id"] as? String, let name = t["name"] as? String else { return nil }

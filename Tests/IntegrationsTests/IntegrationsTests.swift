@@ -102,8 +102,8 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
 
 @Test func linearParseErrors() {
     let err = #"{"errors":[{"message":"Authentication required","extensions":{"code":"AUTHENTICATION_ERROR"}}],"data":null}"#
-    #expect(throws: LinearError.self) { try LinearClient.parse([LinearTeam].self, from: d(err), at: "teams", "nodes") }
-    #expect(throws: LinearError.self) { try LinearClient.parse([LinearTeam].self, from: d(#"{"data":{"team":null}}"#), at: "team", "states") }
+    #expect(throws: IntegrationError.self) { try LinearClient.parse([LinearTeam].self, from: d(err), at: "teams", "nodes") }
+    #expect(throws: IntegrationError.self) { try LinearClient.parse([LinearTeam].self, from: d(#"{"data":{"team":null}}"#), at: "team", "states") }
 }
 
 @Test func linearStateFor() throws {
@@ -121,16 +121,9 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
 }
 
 @Test func issueRefBranchNames() {
-    #expect(IssueRef.branchName(123, title: "Fix the login crash on macOS Sonoma 14.5!") == "123-fix-the-login-crash-on-macos")
+    #expect(IssueRef.branchName("123", title: "Fix the login crash on macOS Sonoma 14.5!") == "123-fix-the-login-crash-on-macos")
     #expect(IssueRef.branchName("#45", title: "Café résumé — naïve") == "45-cafe-resume-naive")
     #expect(IssueRef.branchName("ENG-9", title: "") == "eng-9")
-    #expect(IssueRef.parse(fromBranch: "eng-123-foo") == "ENG-123")
-    #expect(IssueRef.parse(fromBranch: "alice/eng-123-fix-login") == "ENG-123")
-    #expect(IssueRef.parse(fromBranch: "123-foo") == "#123")
-    #expect(IssueRef.parse(fromBranch: "456") == "#456")
-    #expect(IssueRef.parse(fromBranch: "main") == nil)
-    #expect(IssueRef.parse(fromBranch: "v2-release") == nil)
-    #expect(IssueRef.parse(fromBranch: "123abc") == nil)
 }
 
 @Test func jiraParsing() throws {

@@ -50,7 +50,7 @@ extension SessionSend: Handled {
 /// A running one only: a size never wakes a paused agent (a wake gets the size it's shown at anyway).
 extension SessionResize: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        let (c, r) = Daemon.Launch.size(.obj(["cols": .int(cols ?? 0), "rows": .int(rows ?? 0)]))
+        let (c, r) = Daemon.Launch.size(cols: cols, rows: rows)
         d.existing(id)?.resize(cols: c, rows: r)
         return .null
     }
@@ -114,8 +114,8 @@ extension SessionRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { 
 extension SessionContext: Handled { func handle(_ d: Daemon) throws -> JSONValue { try d.printed(id, bytes: bytes ?? 24_000) } }
 
 /// Never re-inserts a deleted one (publish only updates).
-extension SessionMarkRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.markRead() != nil { d.publish(ls) }; return .null } }
-extension SessionMarkUnread: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.markUnread() != nil { d.publish(ls) }; return .null } }
+extension SessionMarkRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.setUnread(false) != nil { d.publish(ls) }; return .null } }
+extension SessionMarkUnread: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.setUnread(true) != nil { d.publish(ls) }; return .null } }
 
 extension SessionTurn: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {

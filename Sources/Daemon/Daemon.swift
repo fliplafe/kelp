@@ -18,7 +18,6 @@ public final class Daemon: Sendable {
         var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?
     }
     private let running = Locked(Running())
-    let extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue]
     let settings: SettingsStore
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
@@ -31,7 +30,6 @@ public final class Daemon: Sendable {
     let usageIndex: UsageIndex
     /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
     let agentHomes = Locked((claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot))
-    let lastMethod = Locked("")
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
     let claudeLimits = Locked<[String: (reading: ClaudeLimits.Reading, at: Date)]>([:])
     /// From the agents' own /usage screens, by agent id (UsageProbe).
@@ -44,14 +42,12 @@ public final class Daemon: Sendable {
     /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
     let deskLock = NSRecursiveLock()  // trusted-configs.json: read-modify-write under it
 
-    /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
-    public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {
+    public init(root: URL = Paths.root, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
         self.root = root
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
         self.socketPath = root.appendingPathComponent("kelp.sock").path
-        self.extra = extra
         self.settings = SettingsStore(root: root)
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
@@ -197,7 +193,7 @@ public final class Daemon: Sendable {
         if existing(session) == nil, (try? store.session(session))?.status == .exited {
             c.send(TerminalReplies.withoutQueries((try? liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
-        let (cols, rows) = Launch.size(size)
+        let (cols, rows) = Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
         guard let ls = try? liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
         ls.attach(c.id) { c.send($0) }   // queued under the session's lock: no live output gets ahead of it
         if !leftover.isEmpty { ls.userInput(leftover) }
@@ -267,17 +263,9 @@ public final class Daemon: Sendable {
         var cols: UInt16 = 120, rows: UInt16 = 32
         var argv: [String]?   // restart: reuse exactly
 
-        init() {}
-        init(_ p: JSONValue) {
-            model = p["model"]?.string; effort = p["effort"]?.string; resume = p["resume"]?.bool == true
-            prompt = p["prompt"]?.string; title = p["title"]?.string; profile = p["profile"]?.string; draft = p["draft"]?.bool == true
-            openURLs = p["openURLs"]?.bool == true
-            (cols, rows) = Self.size(p)
-        }
-
-        /// A terminal size from `{cols, rows}`: anything out of range is clamped, nothing (or 0) is 120 × 32.
-        static func size(_ p: JSONValue?) -> (cols: UInt16, rows: UInt16) {
-            let c = UInt16(clamping: p?["cols"]?.int ?? 0), r = UInt16(clamping: p?["rows"]?.int ?? 0)
+        /// A terminal size: anything out of range is clamped, nothing (or 0) is 120 × 32.
+        static func size(cols: Int?, rows: Int?) -> (cols: UInt16, rows: UInt16) {
+            let c = UInt16(clamping: cols ?? 0), r = UInt16(clamping: rows ?? 0)
             return (c > 0 ? c : 120, r > 0 ? r : 32)
         }
     }

@@ -23,7 +23,7 @@ extension Daemon {
             let branch = RemoteHost.of(r.path) != nil ? r.baseBranch : (try? Git.currentBranch(r.path)) ?? r.baseBranch
             if desks.isEmpty { try store.save(Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace 1", base: branch)) }
             for w in desks where w.branch != branch || w.note.isEmpty {
-                try store.updateWorktree(w.id) {
+                try store.update(Worktree.self, w.id) {
                     $0.branch = branch
                     if $0.note.isEmpty { $0.note = "Workspace 1" }   // was the project's "main" workspace
                 }
@@ -78,12 +78,14 @@ extension Daemon {
         while Date() < end, pids.contains(where: { kill($0, 0) == 0 }) { usleep(20_000) }
     }
 
-    func archiveDesk(_ w: Worktree, _ r: Repo) throws {
-        guard try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count > 1 else {
+    /// Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and unarchiving
+    /// finds everything where it was. A project keeps at least one desk.
+    func archive(_ w: Worktree, _ r: Repo) throws {
+        if isMain(w, r), try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count < 2 {
             throw RPCError.invalidParams("A project keeps at least one workspace.")
         }
         try pauseSessions(of: w.id)
-        try store.updateWorktree(w.id) { $0.archived = true }
+        try store.update(Worktree.self, w.id) { $0.archived = true }
         notify("event.changed", "worktree")
     }
 

@@ -18,9 +18,6 @@ extension Daemon {
         return (text, cfg, trustLock.withLock { knownDigests() }[repoPath] == Self.digest(text))
     }
 
-    /// Nothing to run counts as trusted.
-    func trusted(repoPath: String) -> Bool { configAndTrust(repoPath).trusted }
-
     /// trusted-configs.json is read and written under one lock: two projects trusted at once both stay trusted.
     func knownDigests() -> [String: String] {
         (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: trustFile))) ?? [:]

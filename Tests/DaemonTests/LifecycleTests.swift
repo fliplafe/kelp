@@ -6,11 +6,8 @@ import GitKit
 
 /// A daemon on a fresh home, a client, and the first workspace of one project.
 private func project() async throws -> (Daemon, RPCClient, Worktree, URL) {
-    let root = tmp(); let d = try Daemon(root: root); try d.start()
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
-    let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
-    return (d, c, w, root)
+    let p = try await world()
+    return (p.d, p.c, try await firstDesk(p), p.root)
 }
 
 private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
@@ -73,9 +70,9 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 /// A second daemon for the same home (launchd's KeepAlive, a CLI that couldn't connect) bows out instead of taking the
 /// socket and marking the first one's agents paused.
 @Test func oneDaemonPerHome() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let (d, c, root) = try daemon(); defer { d.stop() }
     #expect(throws: (any Error).self) { try Daemon(root: root).start() }
-    #expect(try await RPCClient(socket: root.appendingPathComponent("kelp.sock").path).call("ping").string == "pong")
+    #expect(try await c.call("ping").string == "pong")
 }
 
 /// `.kelp-remote` is Kelp's own marker in its own folder; one committed to a repository is just a file.
@@ -96,7 +93,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 
 /// JSON-RPC ids may be strings; a line that isn't a request still gets an answer when it has an id.
 @Test func stringIdsComeBackAsSent() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+    let (d, _, root) = try daemon(); defer { d.stop() }
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
     var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     Unix.writeAll(fd, Data((#"{"jsonrpc":"2.0","id":"a1","method":"ping"}"# + "\n" + #"{"jsonrpc":"2.0","id":7}"# + "\n").utf8))
@@ -112,8 +109,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 /// Big requests and replies on one connection, many at once: each line arrives whole (a Unix socket takes 8 KB at a
 /// time, and a reply written in pieces used to get another one in between — both were dropped and the calls hung).
 @Test func bigMessagesDontMixOnTheWire() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let (d, c, _) = try daemon(); defer { d.stop() }
     let big = JSONValue.obj(["blob": .string(String(repeating: "x", count: 300_000))])
     _ = try await c.call("ui.publish", .obj(["state": big]))
     try await withThrowingTaskGroup(of: Bool.self) { g in
@@ -160,16 +156,13 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     #expect(Daemon.run(["/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' y"], path: "/bin:/usr/bin", timeout: 5)?.count == 200_000)
 }
 
-/// Eighty requests stuck in slow work (git or ssh against a host that doesn't answer): the daemon still answers the
-/// next one. On the global pool (64 threads, shared with Swift's own tasks) everything stopped.
+/// Eighty pieces of slow work (git or ssh against a host that doesn't answer): the daemon still answers the next
+/// request. On the global pool (64 threads, shared with Swift's own tasks) everything stopped.
 @Test func aRequestIsAnsweredWhileManySlowOnesRun() async throws {
     let release = DispatchSemaphore(value: 0), held = 80
-    let root = tmp()
     let started = Locked(0)
-    let d = try Daemon(root: root, extra: ["test.slow": { d, _ in try await d.offload { started.withLock { $0 += 1 }; release.wait(); return .null } }])
-    try d.start(); defer { for _ in 0..<held { release.signal() }; d.stop() }
-    let slow = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(slow) }
-    for i in 0..<held { Unix.writeAll(slow, try Wire.line(RPCRequest(id: i, method: "test.slow"))) }
+    let (d, _, root) = try daemon(); defer { for _ in 0..<held { release.signal() }; d.stop() }
+    for _ in 0..<held { Task { try? await d.offload { started.withLock { $0 += 1 }; release.wait() } } }
     #expect(try await waitFor(10) { started.current == held })   // all of them running, holding their threads
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
     var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))

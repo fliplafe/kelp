@@ -73,8 +73,6 @@ public enum ProjectFiles {
     public static func fuzzyQuery(_ q: String) -> [Unicode.Scalar] { Array(q.precomposedStringWithCanonicalMapping.lowercased().unicodeScalars) }
 
     /// Fuzzy subsequence score for quick open (higher is better, nil = no match). Matches inside the file name win.
-    public static func fuzzyScore(_ candidate: String, _ query: String) -> Int? { fuzzyScore(FuzzyPath(candidate), fuzzyQuery(query)) }
-
     public static func fuzzyScore(_ c: FuzzyPath, _ q: [Unicode.Scalar]) -> Int? {
         if q.isEmpty { return 0 }
         let full = subsequenceScore(c.scalars[...], q), inName = subsequenceScore(c.scalars[c.name...], q).map { $0 + 100 }

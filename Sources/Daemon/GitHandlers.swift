@@ -148,9 +148,21 @@ extension CommentSend: Handled {
         let w = try d.cwd(forWorktree: id)
         let open = try d.store.comments(worktree: w.id).filter { $0.state == .open }
         guard !open.isEmpty else { return .int(0) }
-        _ = try SessionSend(id: session, text: ReviewMessage.compose(branch: w.branch, comments: open)).handle(d)
+        _ = try SessionSend(id: session, text: Self.message(branch: w.branch, comments: open)).handle(d)
         for var c in open { c.state = .sent; try d.store.save(c) }
         return .int(open.count)
+    }
+
+    /// File, lines, code quote, remark for each.
+    private static func message(branch: String, comments: [DiffComment]) -> String {
+        var s = "Review comments on branch \(branch). Please address each one:\n"
+        for (i, c) in comments.enumerated() {
+            let range = c.startLine == c.endLine ? "\(c.startLine)" : "\(c.startLine)-\(c.endLine)"
+            s += "\n\(i + 1). \(c.file):\(range)\n"
+            for l in c.quote.split(separator: "\n", omittingEmptySubsequences: false) { s += "   > \(l)\n" }
+            s += "   \(c.text)\n"
+        }
+        return s
     }
 }
 

@@ -10,7 +10,7 @@ extension Daemon.Launch {
         self.init()
         model = o.model; effort = o.effort; prompt = o.prompt; title = o.title; profile = o.profile
         draft = o.draft == true; openURLs = o.openURLs == true
-        (cols, rows) = Self.size(.obj(["cols": .int(o.cols ?? 0), "rows": .int(o.rows ?? 0)]))
+        (cols, rows) = Self.size(cols: o.cols, rows: o.rows)
     }
 }
 
@@ -33,7 +33,7 @@ extension SessionRestart: Handled {
         // just before is kept, in it and in the new session's title).
         let old: Session = try d.wakeLocks.withLock(id) {
             if let ls = d.existing(id) { Daemon.waitGone(ls.pty.terminate()) }
-            else { try d.store.updateSession(id) { if $0.status == .hibernated { $0.status = .exited } } }
+            else { try d.store.update(Session.self, id) { if $0.status == .hibernated { $0.status = .exited } } }
             guard let s = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
             return s
         }
@@ -159,7 +159,7 @@ extension TaskFromIssue: AsyncHandled {
         let wv = try await d.handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: -1)
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
         let (w, s) = try await d.offload { () throws -> (Worktree, Session) in
-            guard let w = try d.store.updateWorktree(try wv.req("id"), {
+            guard let w = try d.store.update(Worktree.self, try wv.req("id"), {
                 $0.issue = ref; $0.issueURL = url; $0.linearIssueId = linearId ?? ""
             }) else { throw RPCError.internalError("worktree vanished") }
             let cfg = d.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
@@ -169,7 +169,7 @@ extension TaskFromIssue: AsyncHandled {
             var o = Daemon.Launch()
             // Typed, not sent, unless asked: the issue's text is whoever filed it, not the user (it could tell the agent anything).
             o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
-            (o.cols, o.rows) = Daemon.Launch.size(.obj(["cols": .int(cols ?? 0), "rows": .int(rows ?? 0)]))
+            (o.cols, o.rows) = Daemon.Launch.size(cols: cols, rows: rows)
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
             return (w, try d.spawn(cwd: w.path, manifest: d.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
         }

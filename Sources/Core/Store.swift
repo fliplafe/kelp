@@ -100,21 +100,13 @@ public final class Store: Sendable {
     public func sessions() throws -> [Session] { try db.read { try Session.order(Column("createdAt")).fetchAll($0) } }
     public func session(_ id: String) throws -> Session? { try db.read { try Session.fetchOne($0, key: id) } }
     public func save<R: PersistableRecord>(_ r: R) throws { try db.write { try r.save($0) } }
-    /// Changes a workspace record in one write: read, change, save with nothing in between. Saving a copy read earlier
-    /// would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
+    /// Changes a record (a workspace, a session) in one write: read, change, save with nothing in between. Saving a copy
+    /// read earlier would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
     @discardableResult
-    public func updateWorktree(_ id: String, _ change: (inout Worktree) throws -> Void) throws -> Worktree? {
+    public func update<R: FetchableRecord & PersistableRecord>(_: R.Type, _ id: String, _ change: (inout R) throws -> Void) throws -> R? {
         try db.write { d in
-            guard var w = try Worktree.fetchOne(d, key: id) else { return nil }
-            try change(&w); try w.save(d); return w
-        }
-    }
-    /// `updateWorktree` for a session record.
-    @discardableResult
-    public func updateSession(_ id: String, _ change: (inout Session) throws -> Void) throws -> Session? {
-        try db.write { d in
-            guard var s = try Session.fetchOne(d, key: id) else { return nil }
-            try change(&s); try s.save(d); return s
+            guard var r = try R.fetchOne(d, key: id) else { return nil }
+            try change(&r); try r.save(d); return r
         }
     }
     /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).

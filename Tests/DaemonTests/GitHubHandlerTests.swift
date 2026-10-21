@@ -40,12 +40,7 @@ private let fakeGh: (log: String, script: String) = {
 }()
 private func calls() -> [String] { ((try? String(contentsOfFile: fakeGh.log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
 
-private func rig() async throws -> (d: Daemon, c: RPCClient, repo: Repo) {
-    _ = fakeGh
-    let root = tmp(); let d = try Daemon(root: root); try d.start()
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    return (d, c, try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self))
-}
+private func rig() async throws -> World { _ = fakeGh; return try await world() }
 
 @Test func theDaemonListsPullRequestsFromGh() async throws {
     let r = try await rig(); defer { r.d.stop() }
@@ -86,7 +81,7 @@ private func rig() async throws -> (d: Daemon, c: RPCClient, repo: Repo) {
 
 @Test func theBranchsPullRequestIsCachedForTwoMinutes() async throws {
     let r = try await rig(); defer { r.d.stop() }
-    let wt: Worktree = try await r.c.call("worktree.create", .obj(["repoId": .string(r.repo.id), "branch": "feat/x", "setup": false]), as: Worktree.self)
+    let wt = try await desk(r, "feat/x")
     let n0 = calls().filter { $0.contains("--head feat/x") }.count
     let first = try await r.c.call("github.branchPR", .obj(["worktreeId": .string(wt.id)]))
     #expect(first["number"]?.int == 7)
@@ -99,13 +94,9 @@ private func rig() async throws -> (d: Daemon, c: RPCClient, repo: Repo) {
     #expect(try await r.c.call("github.forge", .obj(["repoId": .string(r.repo.id)])).string == "github")
 }
 
-private func wtOf(_ r: (d: Daemon, c: RPCClient, repo: Repo), branch: String = "feat/x") async throws -> Worktree {
-    try await r.c.call("worktree.create", .obj(["repoId": .string(r.repo.id), "branch": .string(branch), "setup": false]), as: Worktree.self)
-}
-
 @Test func ciRunsJobsLogsAndRerunsGoThroughGh() async throws {
     let r = try await rig(); defer { r.d.stop() }
-    let wt = try await wtOf(r)
+    let wt = try await desk(r, "feat/x")
     let runs = try await r.c.call("ci.runs", .obj(["worktreeId": .string(wt.id)]))
     #expect(runs["branch"]?.string == "feat/x" && runs["runs"]?.array?.first?["id"]?.int == 99 && runs["runs"]?.array?.first?["conclusion"]?.string == "failure")
     let jobs = try await r.c.call("ci.jobs", .obj(["worktreeId": .string(wt.id), "run": 99])).array ?? []
@@ -159,7 +150,7 @@ private let fakeGlab: String = {
 @Test func onGitLabAPullRequestIsAMergeRequestNotAGhCall() async throws {
     let log = fakeGlab
     let r = try await rig(); defer { r.d.stop() }
-    let wt = try await wtOf(r, branch: "feat/mr")
+    let wt = try await desk(r, "feat/mr")
     // origin looks like GitLab; pushes go to a bare repository here.
     let bare = tmp().path
     try Git.run(["init", "-q", "--bare", bare], cwd: bare)

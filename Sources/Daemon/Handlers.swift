@@ -20,12 +20,15 @@ protocol Handled: RPCMethod {
 extension Handled {
     func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
 
-    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) throws -> JSONValue {
-        let m: Self
-        do { m = try (p == .null ? .object([:]) : p).decode(Self.self) }
+    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) throws -> JSONValue { try .from(decoded(p).handle(d, conn: conn)) }
+}
+
+extension RPCMethod {
+    /// The method's params as its type; a bad or missing field is the caller's error.
+    static func decoded(_ p: JSONValue) throws -> Self {
+        do { return try (p == .null ? .object([:]) : p).decode(Self.self) }
         catch DecodingError.keyNotFound(let k, _) { throw RPCError.invalidParams("missing \(k.stringValue)") }
         catch { throw RPCError.invalidParams("\(name): \(error)") }
-        return try .from(m.handle(d, conn: conn))
     }
 }
 
@@ -38,8 +41,6 @@ extension Daemon {
                                                           + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
-        if Self.debugWake { lastMethod.withLock { $0 = method } }
-        if let e = extra[method] { return try await e(self, p) }
         if let r = try refuseRemoteForge(method, p) { return r }
         return try await integrationErrors { try await dispatch(method, p, conn: conn) }
     }
@@ -70,8 +71,8 @@ extension Daemon {
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         if let t = Self.typed[method] { return try t.run(p, self, conn: conn) }   // also for notifications applied in order
-        // Not declared yet: config.* (the old settings names the Accounts pane still uses) and ui.* (relayed to the app as sent).
-        if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
+        // Not declared: ui.* (relayed to the app as sent).
+        if let r = try handleUI(method, p, conn: conn) { return r }
         throw RPCError.methodNotFound
     }
 }
@@ -97,7 +98,7 @@ extension GitDiscardHunk: Handled {
 
 extension WorktreeNote: Handled {
     func handle(_ d: Daemon) throws -> Done {
-        guard try d.store.updateWorktree(id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
+        guard try d.store.update(Worktree.self, id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
         d.notify("event.changed", "worktree"); return Done()
     }
 }
@@ -165,11 +166,7 @@ extension Daemon {
     /// Tokens in the context of a Claude Code conversation: the last reply's input (with cache) plus its output, or what a
     /// newer compaction left. `peak` is the most it held (a compaction's starting size counts), for telling the window.
     static func contextUsage(transcript url: URL) -> (used: Int, peak: Int, model: String)? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        let size = (try? h.seekToEnd()) ?? 0
-        try? h.seek(toOffset: size > 1 << 20 ? size - (1 << 20) : 0)   // a turn's tool results can be hundreds of KB
-        guard let data = try? h.readToEnd() else { return nil }
+        guard let data = tail(of: url, bytes: 1 << 20) else { return nil }   // a turn's tool results can be hundreds of KB
         var compacted: (pre: Int, post: Int)?
         for line in data.split(separator: 0x0A).reversed() {
             guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["isSidechain"] as? Bool != true else { continue }
@@ -188,11 +185,7 @@ extension Daemon {
 
     /// The text of the last assistant message in a Claude Code transcript (read from the file's tail).
     static func lastReply(transcript url: URL) -> String? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        let size = (try? h.seekToEnd()) ?? 0
-        try? h.seek(toOffset: size > 262_144 ? size - 262_144 : 0)
-        guard let data = try? h.readToEnd() else { return nil }
+        guard let data = tail(of: url, bytes: 262_144) else { return nil }
         for line in data.split(separator: 0x0A).reversed() {
             guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["type"] as? String == "assistant",
                   let content = (o["message"] as? [String: Any])?["content"] as? [[String: Any]] else { continue }
@@ -201,5 +194,14 @@ extension Daemon {
             if !text.isEmpty { return String(text.prefix(4000)) }
         }
         return nil
+    }
+
+    /// The file's last `bytes` (all of it when shorter); nil when it can't be opened.
+    static func tail(of url: URL, bytes: Int) -> Data? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
+        return (try? h.readToEnd()) ?? Data()
     }
 }

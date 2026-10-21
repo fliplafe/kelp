@@ -111,11 +111,3 @@ extension RepoClone: AsyncHandled {
     }
 }
 extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> JSONValue { Daemon.clones.cancel(id); return .null } }
-extension RepoCreate: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> JSONValue {
-        let dest = try Daemon.newFolder(name, in: parent)
-        try FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: false)
-        _ = try await d.offload { try Git.run(["init", "-q"], cwd: dest) }
-        return try await d.handle("repo.add", .obj(["path": .string(dest)]), conn: -1)
-    }
-}

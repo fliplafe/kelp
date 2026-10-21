@@ -80,10 +80,6 @@ extension Daemon {
         }
     }
 
-    /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
-    /// KELP_DEBUG_WAKE=1: log which request woke a paused session (a paused agent should wake only when opened).
-    static let debugWake = ProcessInfo.processInfo.environment["KELP_DEBUG_WAKE"] != nil
-
     /// The agent's "trust this folder?" is answered by Kelp only when that question is actually coming and the user already
     /// settled it: the agent doesn't trust the session's folder yet (else it asks nothing, and an armed answer could only
     /// ever press a different menu) but does trust the project's main checkout. Anything else, including a repository it
@@ -124,8 +120,8 @@ extension Daemon {
         return committed || pending
     }
 
+    /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
-        if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lastMethod.current)\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         let argv = resumeArgv(rec, m)
@@ -190,7 +186,7 @@ extension Daemon {
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(ls)
         // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
-        let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
+        let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
             if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
         }
         if renamed?.note == title { notify("event.changed", "worktree") }
@@ -200,7 +196,7 @@ extension Daemon {
             var b = base, n = 2
             while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
             if !base.isEmpty, (try? Git.renameBranch(w.path, from: w.branch, to: b)) != nil {
-                _ = try? store.updateWorktree(w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } }
+                _ = try? store.update(Worktree.self, w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } }
                 notify("event.changed", "worktree")
             }
         }
@@ -213,7 +209,7 @@ extension Daemon {
         let old = ls.snapshot.title
         let s = ls.update { if !$0.titleManual { $0.title = topic } }
         publish(ls)
-        let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
+        let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
             if (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = topic }
         }
         if renamed?.note == topic { notify("event.changed", "worktree") }

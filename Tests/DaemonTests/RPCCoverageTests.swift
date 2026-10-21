@@ -12,13 +12,8 @@ private struct Rig {
     }
 }
 private func rig() async throws -> Rig {
-    let root = tmp()
-    let d = try Daemon(root: root)
-    try d.start()
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
-    let wt: Worktree = try await c.call("worktree.create", .obj(["repoId": .string(repo.id), "branch": "feat/x", "setup": false]), as: Worktree.self)
-    return Rig(d: d, c: c, repo: repo, wt: wt)
+    let w = try await world()
+    return Rig(d: w.d, c: w.c, repo: w.repo, wt: try await desk(w, "feat/x"))
 }
 private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.write(toFile: r.wt.path + "/" + name, atomically: true, encoding: .utf8) }
 
@@ -185,14 +180,6 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     await #expect(throws: (any Error).self) {
         _ = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string("/tmp/definitely-not-a-repo-\(UUID().uuidString)")]))
     }
-}
-
-@Test func theLegacyConfigApiStillMapsToSettings() async throws {
-    let r = try await rig(); defer { r.d.stop() }
-    _ = try await r.c.call("config.set", .obj(["hibernateMinutes": 12, "ignored": 1]))
-    let cfg = try await r.c.call("config.get")
-    #expect(cfg["hibernateMinutes"] == .int(12))
-    #expect(try await r.c.call("settings.get")["sessions.hibernateMinutes"] == .int(12))
 }
 
 @Test func aRecipeFillsInTheBranchAndBase() async throws {

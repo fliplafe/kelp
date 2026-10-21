@@ -1,8 +1,6 @@
 import Foundation
 import GitKit
 
-public struct BitbucketError: Error, CustomStringConvertible, Sendable { public var description: String }
-
 /// Bitbucket Cloud pull requests (REST 2.0, Basic auth user:token). Shapes map onto `GitHub.PullRequest` so the UI is shared.
 public struct BitbucketClient: Sendable {
     public var user: String, token: String
@@ -11,22 +9,8 @@ public struct BitbucketClient: Sendable {
     /// "git@bitbucket.org:team/repo.git" / "https://bitbucket.org/team/repo" → ("team", "repo")
     /// Only when bitbucket.org is the remote's host: "https://example.com/bitbucket.org/x" or a fork named so isn't one.
     public static func slug(remote: String) -> (workspace: String, repo: String)? {
-        let rest: Substring
-        if let u = URL(string: remote), let host = u.host, u.scheme != nil {   // https://, ssh://
-            guard host.lowercased() == "bitbucket.org" else { return nil }
-            rest = Substring(u.path)
-        } else if let colon = remote.firstIndex(of: ":") {   // scp style: git@bitbucket.org:team/repo.git
-            let host = remote[..<colon].split(separator: "@").last.map(String.init) ?? ""
-            guard host.lowercased() == "bitbucket.org" else { return nil }
-            rest = remote[remote.index(after: colon)...]
-        } else { return nil }
-        return Self.slug(path: rest)
-    }
-
-    private static func slug(path: Substring) -> (workspace: String, repo: String)? {
-        var rest = path.drop { $0 == "/" }
-        if rest.hasSuffix(".git") { rest = rest.dropLast(4) }
-        let parts = rest.split(separator: "/")
+        guard let (host, path) = Git.webRepo(remote), host.lowercased() == "bitbucket.org" else { return nil }
+        let parts = path.split(separator: "/")
         return parts.count >= 2 ? (String(parts[0]), String(parts[1])) : nil
     }
 
@@ -45,7 +29,7 @@ public struct BitbucketClient: Sendable {
             "source": ["branch": ["name": source]], "destination": ["branch": ["name": destination]]
         ])
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let html = ((o["links"] as? [String: Any])?["html"] as? [String: Any])?["href"] as? String else { throw BitbucketError(description: "unexpected create response") }
+              let html = ((o["links"] as? [String: Any])?["html"] as? [String: Any])?["href"] as? String else { throw IntegrationError(description: "unexpected create response") }
         return html
     }
 
@@ -54,19 +38,13 @@ public struct BitbucketClient: Sendable {
     }
 
     func request(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Data {
-        guard let url = URL(string: "https://api.bitbucket.org/2.0" + path) else { throw BitbucketError(description: "bad URL") }
-        var r = URLRequest(url: url); r.httpMethod = method
-        r.setValue("Basic " + Data("\(user):\(token)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
-        if let body { r.httpBody = try JSONSerialization.data(withJSONObject: body); r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (d, resp) = try await URLSession.shared.data(for: r)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(code) else { throw BitbucketError(description: "Bitbucket \(code): \(String(decoding: d.prefix(300), as: UTF8.self))") }
-        return d
+        guard let url = URL(string: "https://api.bitbucket.org/2.0" + path) else { throw IntegrationError(description: "bad URL") }
+        return try await basicAuthRequest("Bitbucket", method, url, login: "\(user):\(token)", body: body)
     }
 
     public static func parsePullRequests(_ d: Data) throws -> [GitHub.PullRequest] {
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let vals = o["values"] as? [[String: Any]] else {
-            throw BitbucketError(description: "unexpected pullrequests response")
+            throw IntegrationError(description: "unexpected pullrequests response")
         }
         return vals.compactMap { v in
             guard let id = v["id"] as? Int else { return nil }

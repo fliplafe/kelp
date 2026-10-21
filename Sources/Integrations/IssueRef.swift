@@ -1,20 +1,26 @@
 import Foundation
 
-/// Maps between issue references (`#123`, `ENG-123`) and branch names (`123-fix-login`, `eng-123-fix-login`).
+/// Issue references (`#123`, `ENG-123`) as branch names (`123-fix-login`, `eng-123-fix-login`).
 public enum IssueRef {
     public static func branchName(_ ref: String, title: String) -> String {
         let words = title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
             .split { !($0.isASCII && ($0.isLetter || $0.isNumber)) }.prefix(6)
         return ([ref.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "#"))] + words.map(String.init)).joined(separator: "-")
     }
+}
 
-    public static func branchName(_ number: Int, title: String) -> String { branchName(String(number), title: title) }
+/// What Jira, Linear and Bitbucket say went wrong.
+public struct IntegrationError: Error, CustomStringConvertible, Sendable { public var description: String }
 
-    /// Last path component only, so `user/eng-123-foo` works. Keys need 2+ letters to skip things like `v2-...`.
-    public static func parse(fromBranch branch: String) -> String? {
-        let name = branch.split(separator: "/").last.map(String.init) ?? branch
-        if let m = name.firstMatch(of: #/^([A-Za-z]{2,})-(\d+)(?:-|$)/#) { return "\(m.1.uppercased())-\(m.2)" }
-        if let m = name.firstMatch(of: #/^(\d+)(?:-|$)/#) { return "#\(m.1)" }
-        return nil
-    }
+/// Jira's and Bitbucket's REST calls: Basic auth (`login` is "user:token"), a JSON body, a 2xx answer (else
+/// "<service> <code>: <start of the reply>").
+func basicAuthRequest(_ service: String, _ method: String, _ url: URL, login: String, body: [String: Any]?) async throws -> Data {
+    var r = URLRequest(url: url); r.httpMethod = method
+    r.setValue("Basic " + Data(login.utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+    r.setValue("application/json", forHTTPHeaderField: "Accept")
+    if let body { r.httpBody = try JSONSerialization.data(withJSONObject: body); r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+    let (d, resp) = try await URLSession.shared.data(for: r)
+    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    guard (200..<300).contains(code) else { throw IntegrationError(description: "\(service) \(code): \(String(decoding: d.prefix(300), as: UTF8.self))") }
+    return d
 }

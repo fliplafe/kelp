@@ -15,7 +15,7 @@ final class EventBox: @unchecked Sendable {
     try #"{"hibernateMinutes":5,"keepAwake":"off","profiles":[{"name":"Work","agent":"claude","dir":"/x"}],"other":1}"#
         .write(to: root.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
     let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let c = try client(root)
     let box = EventBox(); c.onNotification = { box.add($0, $1) }
 
     let s0 = try await c.call("settings.get")
@@ -41,13 +41,11 @@ final class EventBox: @unchecked Sendable {
 }
 
 @Test func uiRelayReachesTheApp() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let sock = root.appendingPathComponent("kelp.sock").path
-    let agent = try RPCClient(socket: sock)
+    let (d, agent, root) = try daemon(); defer { d.stop() }
     #expect(try await agent.call("ui.state") == .object([:]))
     await #expect(throws: RPCError.internalError("The Kelp app isn't running")) { try await agent.call("ui.open", .obj(["uri": "/a.swift"])) }
 
-    let app = try RPCClient(socket: sock)
+    let app = try client(root)
     let box = EventBox(); app.onNotification = { box.add($0, $1) }
     let state: JSONValue = .obj(["extensions": .array([.obj(["id": "git", "name": "Git", "enabled": true, "builtin": true])])])
     _ = try await app.call("ui.publish", .obj(["state": state]))
@@ -65,8 +63,7 @@ final class EventBox: @unchecked Sendable {
 
 /// What the app restores lives in the daemon: by key, by prefix, null deletes; a removed workspace takes its layout along.
 @Test func uiStateByKeyAndPrefix() async throws {
-    let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+    let (d, c, _) = try daemon(); defer { d.stop() }
     func get(_ k: String) async throws -> JSONValue { try await c.call("state.get", .obj(["key": .string(k)])) }
     func set(_ k: String, _ v: JSONValue) async throws { _ = try await c.call("state.set", .obj(["key": .string(k), "value": v])) }
     #expect(try await get("sidebar.order") == .null)

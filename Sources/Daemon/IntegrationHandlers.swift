@@ -68,9 +68,7 @@ extension Daemon {
     func integrationErrors<T>(_ body: () async throws -> T) async throws -> T {
         do { return try await body() }
         catch let e as GitHubError { throw RPCError.internalError(e.description) }
-        catch let e as LinearError { throw RPCError.internalError(e.description) }
-        catch let e as JiraError { throw RPCError.internalError(e.description) }
-        catch let e as BitbucketError { throw RPCError.internalError(e.description) }
+        catch let e as IntegrationError { throw RPCError.internalError(e.description) }
     }
 
 }

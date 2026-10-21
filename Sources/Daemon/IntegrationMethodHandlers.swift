@@ -13,13 +13,7 @@ protocol AsyncHandled: RPCMethod {
 extension AsyncHandled {
     func handle(_ d: Daemon, conn: Int) async throws -> Result { try await handle(d) }
 
-    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) async throws -> JSONValue {
-        let m: Self
-        do { m = try (p == .null ? .object([:]) : p).decode(Self.self) }
-        catch DecodingError.keyNotFound(let k, _) { throw RPCError.invalidParams("missing \(k.stringValue)") }
-        catch { throw RPCError.invalidParams("\(name): \(error)") }
-        return try .from(await m.handle(d, conn: conn))
-    }
+    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) async throws -> JSONValue { try .from(await decoded(p).handle(d, conn: conn)) }
 }
 
 extension Daemon {
@@ -84,7 +78,7 @@ extension GitHubIssues: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         let (_, path) = try d.repoPath(worktreeId: worktreeId, repoId: repoId)
         if GitLab.isGitLab(cwd: path) { return try .from(GitLab.issues(cwd: path, mine: filter == "mine")) }
-        return try .from(GitHub.issues(cwd: path, filter: filter == "mine" ? .mine : .open))
+        return try .from(GitHub.issues(cwd: path, mine: filter == "mine"))
     }
 }
 extension GitHubChecks: Handled {
@@ -147,7 +141,7 @@ extension GitHubPRCreate: AsyncHandled {
         } else {
             url = try await d.offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: draft) }
         }
-        try d.store.updateWorktree(w.id) { $0.prURL = url; $0.prNumber = Int(url.split(separator: "/").last ?? "") }
+        try d.store.update(Worktree.self, w.id) { $0.prURL = url; $0.prNumber = Int(url.split(separator: "/").last ?? "") }
         d.notify("event.changed", "worktree")
         await d.moveLinear(w, to: .inReview)
         await d.moveJira(w, toName: "review", category: "indeterminate")
@@ -165,7 +159,7 @@ extension GitHubPRMerge: AsyncHandled {
             try await d.offload { try GitLab.mergeMR(cwd: w.path, number: n, squash: how == "squash") }
         } else {
             let m = GitHub.MergeMethod(rawValue: how) ?? .squash
-            try await d.offload { try GitHub.mergePR(cwd: w.path, number: n, method: m, deleteBranch: false) }
+            try await d.offload { try GitHub.mergePR(cwd: w.path, number: n, method: m) }
         }
         await d.moveLinear(w, to: .done)
         await d.moveJira(w, toName: "done", category: "done")
@@ -263,6 +257,6 @@ extension Daemon {
     static let asyncTyped = Dictionary(uniqueKeysWithValues: ([GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,
         JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self,
-        AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self, RepoCreate.self]
+        AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self]
         as [any AsyncHandled.Type]).map { ($0.name, $0) })
 }

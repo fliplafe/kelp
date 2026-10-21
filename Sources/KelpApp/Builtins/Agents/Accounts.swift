@@ -15,15 +15,11 @@ struct AccountProfile: Codable, Hashable, Identifiable {
 
 @MainActor
 enum Accounts {
-    static var cached: [AccountProfile] = []
     static func load() async -> [AccountProfile] {
-        let v = await AppModel.shared.call("config.get")
-        cached = (try? v?["profiles"]?.decode([AccountProfile].self)) ?? []
-        return cached
+        (try? await AppModel.shared.call("settings.get")?["accounts.profiles"]?.decode([AccountProfile].self)) ?? []
     }
     static func save(_ list: [AccountProfile]) async {
-        cached = list
-        await AppModel.shared.call("config.set", .obj(["profiles": (try? JSONValue.from(list)) ?? .array([])]))
+        await AppModel.shared.call("settings.set", .obj(["key": "accounts.profiles", "value": (try? JSONValue.from(list)) ?? .array([])]))
     }
 }
 

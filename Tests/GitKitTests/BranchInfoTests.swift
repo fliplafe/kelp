@@ -72,9 +72,9 @@ import Testing
 
 @Test func fuzzyMatchesWholeCharacters() {
     let nfd = "cafe\u{301}/menu.txt", nfc = "caf\u{E9}/menu.txt"
-    #expect(ProjectFiles.fuzzyScore(nfd, "café") != nil && ProjectFiles.fuzzyScore(nfc, "cafe\u{301}") != nil)   // either way it's stored
-    #expect(ProjectFiles.fuzzyScore("旗祥/一覧.md", "日") == nil)   // 日's UTF-8 bytes are in 旗祥, the letter isn't
-    #expect(ProjectFiles.fuzzyScore("Отчёт/План.md", "план") != nil)
+    #expect(fuzzy(nfd, "café") != nil && fuzzy(nfc, "cafe\u{301}") != nil)   // either way it's stored
+    #expect(fuzzy("旗祥/一覧.md", "日") == nil)   // 日's UTF-8 bytes are in 旗祥, the letter isn't
+    #expect(fuzzy("Отчёт/План.md", "план") != nil)
 }
 
 @Test func aSparseCheckoutListsOnlyWhatsCheckedOut() throws {

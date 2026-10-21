@@ -22,12 +22,10 @@ extension Daemon {
         let bytes = max(0, min(bytes, 16 << 20))
         if let ls = existing(id) { return ls.tail(bytes) }
         // Only a session Kelp has: the id names a file, and "../../x" would name any .log the user can read.
-        guard (try? store.session(id)) != nil, let h = try? FileHandle(forReadingFrom: root.appendingPathComponent("history/\(id).log")) else {
+        guard (try? store.session(id)) != nil, let d = Self.tail(of: root.appendingPathComponent("history/\(id).log"), bytes: bytes) else {
             throw RPCError.invalidParams("no history for \(id)")
         }
-        let size = (try? h.seekToEnd()) ?? 0
-        try? h.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
-        return (try? h.readToEnd()) ?? Data()
+        return d
     }
 
     /// Transcript of a session written to ~/.kelp/handoff/<id>.md for the next agent to read. Claude Code's own

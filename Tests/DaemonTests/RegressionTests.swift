@@ -47,8 +47,8 @@ import Agents
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "stubborn"]), as: Session.self)
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
     _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "done"]))   // finished: it may be paused
-    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))
-    defer { Task { _ = try? await w.c.call("config.set", .obj(["hibernateMinutes": 0])) } }
+    try await hibernate(after: 0.03, w.c)
+    defer { Task { try? await hibernate(after: 0, w.c) } }
     #expect(try await waitFor(15) { try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated })
     #expect(try await waitFor(5) { kill(s.pid, 0) != 0 })
 }

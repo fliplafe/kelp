@@ -48,7 +48,6 @@ public enum GitHub {
         public var status: String?, url: String?
     }
     public enum PRFilter: Sendable { case open, mine, reviewRequested }
-    public enum IssueFilter: Sendable { case open, mine }
     public enum MergeMethod: String, Sendable { case squash, merge, rebase }
 
     static let prFields = "number,title,url,author,headRefName,isDraft,state,reviewDecision,statusCheckRollup"
@@ -87,8 +86,8 @@ public enum GitHub {
         try parsePullRequests(gh(["pr", "list", "--head", branch, "--state", "all", "-L", "1", "--json", prFields], cwd: cwd)).first
     }
 
-    public static func issues(cwd: String, filter: IssueFilter = .open) throws -> [Issue] {
-        let extra = filter == .mine ? ["--assignee", "@me"] : []
+    public static func issues(cwd: String, mine: Bool) throws -> [Issue] {
+        let extra = mine ? ["--assignee", "@me"] : []
         return try parseIssues(gh(["issue", "list", "-L", "100", "--json", "number,title,body,url,labels,assignees,state"] + extra, cwd: cwd))
     }
 
@@ -114,8 +113,8 @@ public enum GitHub {
         return String(decoding: out, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
     }
 
-    public static func mergePR(cwd: String, number: Int, method: MergeMethod = .squash, deleteBranch: Bool = false) throws {
-        try gh(["pr", "merge", String(number), "--\(method.rawValue)"] + (deleteBranch ? ["--delete-branch"] : []), cwd: cwd)
+    public static func mergePR(cwd: String, number: Int, method: MergeMethod) throws {
+        try gh(["pr", "merge", String(number), "--\(method.rawValue)"], cwd: cwd)
     }
 
     public static func projects(cwd: String) throws -> [Project] {

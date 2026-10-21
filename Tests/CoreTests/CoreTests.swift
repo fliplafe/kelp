@@ -236,7 +236,7 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     try s.save(w)
     await withTaskGroup(of: Void.self) { g in
         for i in 0..<200 {
-            g.addTask { _ = try? s.updateWorktree(w.id) { if i.isMultiple(of: 2) { $0.note += "n" } else { $0.prURL += "u" } } }
+            g.addTask { _ = try? s.update(Worktree.self, w.id) { if i.isMultiple(of: 2) { $0.note += "n" } else { $0.prURL += "u" } } }
         }
     }
     let after = try #require(try s.worktree(w.id))

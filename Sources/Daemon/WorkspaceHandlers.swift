@@ -9,7 +9,7 @@ extension RepoAdd: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         // A remote project's own folder: it is the project (git there would answer with the host's path).
         if let r = try d.store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return try .from(r) }
-        // An empty folder outside any repository (New Folder in Add Project's panel) is a new project, as repo.create makes.
+        // An empty folder outside any repository (New Folder in Add Project's panel) is a new project: `git init` there.
         if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true, (try? Git.root(of: path)) == nil {
             try Git.run(["init", "-q"], cwd: path)
         }
@@ -48,7 +48,7 @@ extension RepoRelocate: Handled {
         guard var r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let root = try Git.root(of: path), old = r.path
         r.path = root; try d.store.save(r)
-        for w in try d.store.worktrees(repo: r.id) where w.path == old { try d.store.updateWorktree(w.id) { $0.path = root } }
+        for w in try d.store.worktrees(repo: r.id) where w.path == old { try d.store.update(Worktree.self, w.id) { $0.path = root } }
         d.notify("event.changed", "repo")
         return try .from(r)
     }
@@ -113,13 +113,7 @@ extension WorktreeList: Handled {
 extension WorktreeArchive: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         guard let w = try d.store.worktree(id), let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-        if d.isMain(w, r) { try d.archiveDesk(w, r); return .null }
-        // Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and
-        // unarchiving finds everything where it was.
-        try d.pauseSessions(of: w.id)
-        try d.store.updateWorktree(w.id) { $0.archived = true }
-        d.notify("event.changed", "worktree")
-        return .null
+        try d.archive(w, r); return .null
     }
 }
 
@@ -146,7 +140,7 @@ extension WorktreeRemove: Handled {
 
 extension WorktreeUnarchive: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        guard try d.store.updateWorktree(id, { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
+        guard try d.store.update(Worktree.self, id, { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
         d.notify("event.changed", "worktree")
         return .null
     }

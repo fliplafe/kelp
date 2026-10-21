@@ -139,10 +139,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Keeps the log's own last `ringLimit` bytes, read from the file: after a wake the ring holds only what was printed
     /// since, and trimming to that would drop most of what the session showed before its pause.
     private func trimLogToItsTail() {
-        guard let u = logURL, let h = try? FileHandle(forReadingFrom: u) else { return }
-        defer { try? h.close() }
-        try? h.seek(toOffset: UInt64(max(0, logSize - Self.ringLimit)))
-        trimLog((try? h.readToEnd()) ?? Data())
+        guard let u = logURL, let tail = Daemon.tail(of: u, bytes: Self.ringLimit) else { return }
+        trimLog(tail)
     }
 
     private func trimLog(_ tail: Data) { try? log?.truncate(atOffset: 0); try? log?.write(contentsOf: tail); logSize = tail.count }
@@ -425,16 +423,11 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         record.workDir = w; return record
     }
 
-    func markRead() -> Session? {
+    /// The record when that changed it.
+    func setUnread(_ unread: Bool) -> Session? {
         lock.lock(); defer { lock.unlock() }
-        guard record.unread else { return nil }
-        record.unread = false; return record
-    }
-
-    func markUnread() -> Session? {
-        lock.lock(); defer { lock.unlock() }
-        guard !record.unread else { return nil }
-        record.unread = true; return record
+        guard record.unread != unread else { return nil }
+        record.unread = unread; return record
     }
 
     func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(min(max(0, n), Self.ringLimit)) }

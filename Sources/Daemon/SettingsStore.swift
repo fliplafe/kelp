@@ -69,21 +69,6 @@ final class SettingsStore: Sendable {
 }
 
 extension Daemon {
-    func handleSettings(_ method: String, _ p: JSONValue) throws -> JSONValue? {
-        switch method {
-        // The current app still speaks these with the old config.json keys; drop once it uses settings.*.
-        case "config.get":
-            var o: [String: JSONValue] = [:]
-            for (old, new) in SettingsStore.legacyKeys { o[old] = settings[new] }
-            return .object(o)
-        case "config.set":
-            if case .object(let o) = p { for (k, v) in o { if let key = SettingsStore.legacyKeys[k] { _ = try settings.set(key, v) } } }
-            settingsChanged()
-            return try handleSettings("config.get", .null)
-        default: return nil
-        }
-    }
-
     /// The settings as they are when it's their turn, one change after another: two sets close together can't announce
     /// themselves the wrong way round (the app takes each event as the whole of the settings).
     func settingsChanged() {

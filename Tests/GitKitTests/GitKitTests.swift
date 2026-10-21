@@ -125,11 +125,13 @@ func tempRepo() throws -> String {
     #expect(m == [SearchMatch(path: "src/main.swift", line: 2, text: "find the needle")])
 }
 
+func fuzzy(_ path: String, _ query: String) -> Int? { ProjectFiles.fuzzyScore(.init(path), ProjectFiles.fuzzyQuery(query)) }
+
 @Test func fuzzyPrefersFileNames() {
-    let a = ProjectFiles.fuzzyScore("Sources/KelpApp/AppDelegate.swift", "appdel")!
-    let b = ProjectFiles.fuzzyScore("Sources/a/p/p/d/e/l.swift", "appdel")!
+    let a = fuzzy("Sources/KelpApp/AppDelegate.swift", "appdel")!
+    let b = fuzzy("Sources/a/p/p/d/e/l.swift", "appdel")!
     #expect(a > b)
-    #expect(ProjectFiles.fuzzyScore("abc", "abd") == nil)
+    #expect(fuzzy("abc", "abd") == nil)
 }
 
 @Test func graphLanesFollowBranchesAndMerges() {

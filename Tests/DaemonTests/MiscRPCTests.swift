@@ -5,28 +5,11 @@ import GitKit
 import Agents
 @testable import Daemon
 
-struct World {
-    let d: Daemon, c: RPCClient, root: URL, repo: Repo
-}
-func world(agents: [AgentManifest] = []) async throws -> World {
-    let root = tmp(); let d = try Daemon(root: root)
-    if !agents.isEmpty {
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("agents"), withIntermediateDirectories: true)
-        for a in agents { try JSONEncoder().encode(a).write(to: root.appendingPathComponent("agents/\(a.id).json")) }
-    }
-    try d.start()
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    return World(d: d, c: c, root: root, repo: try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self))
-}
 /// A stand-in for an agent asking whether to trust the folder: TRUSTED-BY-KELP when Enter answers it, NOT-ANSWERED when
 /// nothing does within 4 s.
 func trustQuestionStandIn() -> String {
     #"stty -icanon -echo; printf 'Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n'; "#
         + #"if IFS= read -rsn1 -t 4 k && [[ -z "$k" ]]; then echo TRUSTED-BY-KELP; else echo NOT-ANSWERED; fi; sleep 30"#
-}
-
-func desk(_ w: World, _ branch: String) async throws -> Worktree {
-    try await w.c.call("worktree.create", .obj(["repoId": .string(w.repo.id), "branch": .string(branch), "setup": false]), as: Worktree.self)
 }
 
 @Test func anIdleSessionIsNotBusyAndDetachingNeverEndsIt() async throws {
@@ -200,11 +183,11 @@ func desk(_ w: World, _ branch: String) async throws -> Worktree {
 @Test func aSizeSentAsANotificationReachesTheTerminal() async throws {
     let w = try await world(); defer { w.d.stop() }
     let wt = try await desk(w, "size")
-    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "cat"]), as: Session.self)
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "read x; stty size; cat"]), as: Session.self)
     for cols in stride(from: 40, through: 200, by: 2) { w.c.notify("session.resize", .obj(["id": .string(s.id), "cols": .int(cols), "rows": 30])) }
     _ = try await w.c.call("ping")   // the notifications before it have been read
-    let live = try #require(w.d.existing(s.id))
-    #expect(try await waitFor(5) { live.pty.size?.cols == 200 })
+    _ = try await w.c.call("session.write", .obj(["id": .string(s.id), "text": "go\n"]))   // now it says its size, once
+    #expect(try await waitFor(5) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("30 200") == true })
 }
 
 @Test func aShortTurnIsNotCreditedWithThePreviousTurnsChanges() async throws {
@@ -293,9 +276,9 @@ func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let r: Session = try await w.c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
     #expect(try await shows(r.id))                                            // restart: same account
     _ = try await w.c.call("session.hook", .obj(["id": .string(r.id), "event": "done"]))   // finished: it may be paused
-    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": .double(0.03)]))
+    try await hibernate(after: 0.03, w.c)
     #expect(try await waitFor(15) { try await w.c.call("session.list", as: [Session].self).first { $0.id == r.id }?.status == .hibernated })
-    _ = try await w.c.call("config.set", .obj(["hibernateMinutes": 0]))
+    try await hibernate(after: 0, w.c)
     _ = try await w.c.call("session.attach", .obj(["id": .string(r.id)]))     // wake: same account
     let log = w.root.appendingPathComponent("history/\(r.id).log")   // both runs of this session: before the pause and after
     #expect(try await waitFor(10) { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").components(separatedBy: "ACCOUNT=\(dir)").count >= 3 })

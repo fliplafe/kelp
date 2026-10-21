@@ -69,5 +69,3 @@ public struct SessionLastReply: RPCMethod { public static let name = "session.la
 public struct RepoClone: RPCMethod { public static let name = "repo.clone"; public typealias Result = JSONValue; public var url: String, parent: String, id: String? }
 /// Stops clone `id` (its half-made folder is removed).
 public struct RepoCloneCancel: RPCMethod { public static let name = "repo.cloneCancel"; public typealias Result = JSONValue; public var id: String }
-/// A new empty project `name` in `parent` (`git init`) → the added project.
-public struct RepoCreate: RPCMethod { public static let name = "repo.create"; public typealias Result = JSONValue; public var parent: String, name: String }

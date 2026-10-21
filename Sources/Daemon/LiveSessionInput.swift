@@ -76,10 +76,7 @@ extension LiveSession {
     func readyForText() -> Bool { steering == nil && !draftWaiting && !trustQuestionOpen() && !menuOpen() }
 
     /// Type text into the agent, now (the gate is `submit`). Multi-line text goes as a bracketed paste so TUIs don't
-    /// submit each line.
-    func send(_ text: String, enter: Bool, paste: Bool = false) { lock.lock(); type(text, enter: enter, paste: paste); lock.unlock() }
-
-    /// `send`, the caller holding the lock: the write is queued under it, so the order of these calls is the order typed.
+    /// submit each line. The caller holds the lock: the write is queued under it, so the order of these calls is the order typed.
     /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is
     /// text, not a mode or command. Without it one line is typed, so `kelp send <id> /compact` still runs the command.
     func type(_ text: String, enter: Bool, paste: Bool) {
