@@ -70,17 +70,20 @@ extension Daemon {
     // MARK: keep awake
 
     /// keepAwake: "always" | "agents" (only while an agent is working) | "off".
+    /// "always" is Caffeine: the screen stays on too. Agents only need the Mac itself, so the screen may still sleep and lock.
     func applyKeepAwake() {
         let mode = settings["power.keepAwake"]?.string ?? "agents"
         let working = live.all.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }
-        let want = mode == "always" || (mode == "agents" && working)
+        let want = mode == "always" ? kIOPMAssertPreventUserIdleDisplaySleep
+            : mode == "agents" && working ? kIOPMAssertPreventUserIdleSystemSleep : nil
         sleepAssertion.withLock { held in   // the ticker and a settings change at once: one assertion
-            if want, held == 0 {
-                var id: IOPMAssertionID = 0
-                if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                                               "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { held = id }
-            } else if !want, held != 0 {
-                IOPMAssertionRelease(held); held = 0
+            guard held.type != want else { return }
+            if held.id != 0 { IOPMAssertionRelease(held.id); held = (0, nil) }
+            guard let want else { return }
+            var id: IOPMAssertionID = 0
+            let name = mode == "always" ? "Keep Mac Awake is on in Kelp" : "Kelp agents are working"
+            if IOPMAssertionCreateWithName(want as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), name as CFString, &id) == kIOReturnSuccess {
+                held = (id, want)
             }
         }
     }

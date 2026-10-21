@@ -22,7 +22,7 @@ public final class Daemon: Sendable {
     let settings: SettingsStore
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
-    let sleepAssertion = Locked<UInt32>(0)
+    let sleepAssertion = Locked<(id: UInt32, type: String?)>((0, nil))
     let usageCache = Locked<(at: Date, value: JSONValue)?>(nil)
     let prCache = Locked<[String: (at: Date, value: JSONValue)]>([:])   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.

@@ -1,4 +1,5 @@
 import Foundation
+import IOKit.pwr_mgt
 import Testing
 import Core
 @testable import Daemon
@@ -86,4 +87,20 @@ final class EventBox: @unchecked Sendable {
     _ = try await c.call("repo.remove", .obj(["id": .string(repo.id)]))   // its workspaces go with it
     #expect(try await get("layout/\(first.id)") == .null)
     #expect(try await get("layout/w1") != .null)
+}
+
+/// Keep Mac Awake as macOS sees it: "always" keeps the screen on (a system-sleep assertion alone lets it sleep and lock),
+/// "off" lets go.
+@Test func keepAwakeAlwaysHoldsTheDisplay() throws {
+    func held() -> [String] {
+        var all: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsByProcess(&all) == kIOReturnSuccess, let byPID = all?.takeRetainedValue() as? [NSNumber: [[String: Any]]] else { return [] }
+        return (byPID[NSNumber(value: getpid())] ?? []).compactMap { $0[kIOPMAssertionTypeKey] as? String }
+    }
+    let root = tmp()
+    let d = try Daemon(root: root)
+    _ = try d.settings.set("power.keepAwake", .string("always")); d.applyKeepAwake()
+    #expect(held() == [kIOPMAssertPreventUserIdleDisplaySleep])
+    _ = try d.settings.set("power.keepAwake", .string("off")); d.applyKeepAwake()
+    #expect(held().isEmpty)
 }
