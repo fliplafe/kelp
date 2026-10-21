@@ -86,7 +86,6 @@ extension SidebarController {
             }
         case .agent(let sid):
             menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
-            menu.add(String(localized: "Open to the Side")) { AgentActions.openToTheSide(sid) }
             menu.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
             menu.add(String(localized: "Restart")) { AgentActions.restart(sid) }
             menu.addItem(.separator())

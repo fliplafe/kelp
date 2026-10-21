@@ -54,14 +54,20 @@ extension EditorArea {
             // Ended while Kelp was closed (or deleted): nothing to show. Ended now: keep it, the tab offers Restart.
             if !known.contains(sid) || (!reconciledOnce && s?.status == .exited) { contents[t.id] = nil; layout.remove(t.id); changed = true }
         }
-        if layout.allTabs.isEmpty, layout.root != nil { layout = WorkspaceLayout(); changed = true }
+        if layout.allTabs.isEmpty, layout.root != nil { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual; changed = true }
         let shown = Set(layout.allTabs.filter { TabURI.scheme($0.uri) == "session" }.map { TabURI.body($0.uri) })
         closed = closed.filter { AppModel.shared.session($0).map { $0.status != .exited } ?? false }
         for s in mine where s.status != .exited && !shown.contains(s.id) && !closed.contains(s.id) {
             layout.add(TabURI.session(s.id)); changed = true
         }
         reconciledOnce = true
-        if changed || (start == nil && layout.allTabs.isEmpty) || view.subviews.isEmpty { render() } else {
+        if arrange() { changed = true }   // an agent started, paused, woke or ended: the panes follow
+        if changed || (start == nil && layout.allTabs.isEmpty) || view.subviews.isEmpty {
+            // Rebuilding the panes takes the keys from the terminal being typed in: they go back to the focused tab.
+            let typing = (view.window?.firstResponder as? NSView)?.isDescendant(of: view) == true
+            render()
+            if typing { focusSelected() }
+        } else {
             for gid in layout.root?.sessions ?? [] { refreshGroup(gid) }
         }
     }

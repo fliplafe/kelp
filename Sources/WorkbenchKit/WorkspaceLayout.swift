@@ -20,6 +20,8 @@ public struct WorkspaceLayout: Codable, Equatable {
     public var focused: String?
     /// Divider positions the user dragged: each split's shares, keyed by its children's first group ids.
     public var sizes: [String: [Double]]?
+    /// The panes are the user's (split or dragged by hand, or agents switched to tabs): agents aren't put side by side.
+    public var manual: Bool?
 
     public init() {}
 

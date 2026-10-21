@@ -180,16 +180,6 @@
         }
       }
     },
-    "%@ to the Right": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ справа"
-          }
-        }
-      }
-    },
     "%@ wants to merge %@%@%@": {
       "localizations": {
         "en": {
@@ -468,6 +458,16 @@
         }
       }
     },
+    "Agents as tabs. Click to put them side by side (⌃⌘T)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты во вкладках. Нажмите, чтобы поставить их рядом (⌃⌘T)"
+          }
+        }
+      }
+    },
     "Agents Side by Side": {
       "extractionState": "manual",
       "localizations": {
@@ -475,6 +475,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Агенты рядом"
+          }
+        }
+      }
+    },
+    "Agents side by side. Click to show them as tabs (⌃⌘T)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты рядом. Нажмите, чтобы показать их вкладками (⌃⌘T)"
           }
         }
       }
@@ -4724,16 +4734,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открыть настройки"
-          }
-        }
-      }
-    },
-    "Open to the Side": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Открыть рядом"
           }
         }
       }

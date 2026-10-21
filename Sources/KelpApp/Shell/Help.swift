@@ -36,8 +36,9 @@ enum Help {
     The **+** at the end of a pane's tabs opens an agent, a terminal, a browser or what extensions add. ⌘D splits right,
     ⇧⌘D down; drag a tab to an edge to split, between groups to move it. Dividers stay where you drag them (View ›
     Equalize Panes evens them out); ⌥⌘ arrows move to the pane on that side. ⇧⌘↩ lets the focused pane fill the area
-    and brings the others back. ⌃⌘T puts every agent of the workspace in a pane of its own, side by side (four make a
-    2×2 grid); ⌥-click an agent in the sidebar, or hold ⌥ in the **+** menu, to open one to the right.
+    and brings the others back. Agents open side by side, each in a pane of its own (four make a 2×2 grid); terminals and
+    files share one more pane. The button right of the search (⌃⌘T) shows them as tabs in one pane instead, and back;
+    splitting or dragging a tab to another pane arranges the panes by hand from then on.
     ⌘W closes a tab (in an empty workspace, the workspace). Edited files show a dot on their tab and in the window's close
     button; ⌘S saves.
 
@@ -62,7 +63,7 @@ enum Help {
 
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·
-    ⌃⌘T agents side by side · ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous pane · ⌥⌘←→↑↓ pane on that side ·
+    ⌃⌘T agents side by side / as tabs · ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous pane · ⌥⌘←→↑↓ pane on that side ·
     ⌃1…9 workspaces · ⌃⌘↓ / ⌃⌘↑ next / previous workspace · ⇧⌘U agent that needs you · ⌘F find · ⌥⌘R reveal in Finder ·
     ⌘0 sidebar · ⌥⌘0 right panel · ⌘S save · ⌘W close tab · ⇧⌘W close workspace. Shortcuts work on any keyboard layout.
     """

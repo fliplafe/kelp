@@ -221,8 +221,15 @@ private func sh(_ shell: String, _ cmd: String) throws -> String {
     #expect(l.root == .split(vertical: true, children: [.pane(ga), .pane(gb), .pane(gf)]))
     #expect(l.focused == gb)   // b was selected
     #expect(l.groups.count == 3)
+    let tiled = l
+    l.tile([a.id, b.id])
+    #expect(l == tiled)   // the same panes: their views and dividers stay
+    l.tile([])
+    #expect(l.root == .pane(gb) && l.groups[gb]?.tabs == [a, b, f] && l.groups[gb]?.selected == b.id)
+    l.tile([a.id, b.id])
     // Four panes make a 2×2 grid, five a row of three over a row of two.
-    let c = l.add("session:c", to: gf), d = l.add("session:d", to: gf)
+    let files = try #require(l.group(of: f.id))
+    let c = l.add("session:c", to: files), d = l.add("session:d", to: files)
     l.tile([a.id, b.id, c.id, d.id])
     guard case .split(false, let rows)? = l.root else { Issue.record("not in rows"); return }
     #expect(rows.map(\.sessions.count) == [3, 2])

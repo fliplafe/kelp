@@ -88,11 +88,6 @@ enum AgentActions {
         }
     }
 
-    /// The agent in a pane of its own to the right (⌥-click in the sidebar).
-    static func openToTheSide(_ sid: String) {
-        Workbench.open(TabURI.session(sid), split: .right, workspace: AppModel.shared.session(sid)?.worktreeId)
-    }
-
     static func copyContext(_ sid: String) {
         Task {
             guard let t = await AppModel.shared.call("session.context", .obj(["id": .string(sid)]))?.string else { return }

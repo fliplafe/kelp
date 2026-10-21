@@ -34,7 +34,7 @@ extension EditorArea {
             return
         }
         if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
-            if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); render() }
+            if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); arrange(); render() }
             select(t.id, focus: focus); return
         }
         if TabURI.scheme(uri) != "session", ExtensionRegistry.shared.tabProvider(for: uri) == nil {
@@ -43,7 +43,7 @@ extension EditorArea {
         var target: String? = layout.focusedGroup?.id
         if let split, let f = target { target = layout.newGroup(beside: f, vertical: split == .right); zoomed = nil }
         let t = layout.add(uri, to: target)
-        render()
+        arrange(); render()
         select(t.id, focus: focus)
     }
 
@@ -55,8 +55,8 @@ extension EditorArea {
         if let sid { closed.insert(sid) }
         contents[id] = nil
         layout.remove(id)
-        if layout.allTabs.isEmpty { layout = WorkspaceLayout() }
-        render(); focusSelected()
+        if layout.allTabs.isEmpty { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual }
+        arrange(); render(); focusSelected()
     }
 
     /// Sessions whose tab is on screen right now (the selected tab of each pane shown).
@@ -98,21 +98,39 @@ extension EditorArea {
     /// Moves the focused tab into a new group to the right / below.
     func splitFocused(_ dir: SplitDirection) {
         zoomed = nil
+        arrangedByHand()
         guard let g = layout.focusedGroup, let t = g.selectedTab else { return }
         if g.tabs.count == 1 { newTerminal(split: dir); return }   // nothing to move: open a terminal there, like a terminal app
         layout.split(t.id, from: g.id, vertical: dir == .right, before: false)
         render(); focusSelected()
     }
 
-    /// ⌃⌘T: every agent here in a pane of its own, side by side; terminals, commands and files share one more pane.
-    func tileAgents() {
+    /// Agents side by side, the default: each running agent in a pane of its own; terminals, commands, files and paused
+    /// or ended agents share one more (a paused agent shown would wake). Done as tabs come and go; true if panes moved.
+    @discardableResult
+    func arrange() -> Bool {
+        guard layout.manual != true else { return false }
         let agents = layout.allTabs.filter { t in
-            TabURI.scheme(t.uri) == "session" && !["shell", "custom"].contains(AppModel.shared.session(TabURI.body(t.uri))?.agent ?? "shell")
+            guard TabURI.scheme(t.uri) == "session", let s = AppModel.shared.session(TabURI.body(t.uri)) else { return false }
+            return !["shell", "custom"].contains(s.agent) && s.status != .exited && s.status != .hibernated
         }
-        guard !agents.isEmpty else { NSSound.beep(); return }
-        zoomed = nil
+        let old = layout
         layout.tile(agents.map(\.id))
-        render(); focusSelected()
+        return layout != old
+    }
+
+    /// The title bar's button and ⌃⌘T: agents side by side, or every tab back in one pane, arranged by hand from then on.
+    func toggleSideBySide() {
+        zoomed = nil
+        layout.manual = layout.manual == true ? nil : true
+        if layout.manual == true { layout.tile([]) } else { arrange() }
+        render(); focusSelected(); publishFocus()
+    }
+
+    /// A split or a tab dragged to another pane: the panes stay as the user puts them, agents no longer tile.
+    func arrangedByHand() {
+        guard layout.manual != true else { return }
+        layout.manual = true; publishFocus()
     }
 
     func tabMenu(_ id: String) -> NSMenu {
@@ -162,12 +180,6 @@ extension EditorArea {
                 self?.newAgent(a.id)
             }
             item.image = AgentCatalog.icon(a.id)
-            // With ⌥ held: the new agent in a pane of its own to the right.
-            let right = m.add(String(localized: "\(a.name) to the Right")) { [weak self] in
-                if let group { self?.layout.focused = group }
-                self?.newAgent(a.id, split: .right)
-            }
-            right.image = item.image; right.isAlternate = true; right.keyEquivalentModifierMask = .option
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }

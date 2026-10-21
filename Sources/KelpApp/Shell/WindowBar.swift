@@ -18,6 +18,7 @@ final class WindowBar: NSView {
     private let back = NSButton.titlebar("chevron.left", String(localized: "Back"), tip: "")
     private let forward = NSButton.titlebar("chevron.right", String(localized: "Forward"), tip: "")
     private let awake = NSButton.titlebar("cup.and.saucer", String(localized: "Keep Mac Awake"), tip: "")
+    private let sideBySide = NSButton.titlebar("rectangle.split.3x1", String(localized: "Agents Side by Side"), tip: "")
     private var info: BranchInfo?
 
     private var worktree: Worktree? { AppModel.shared.worktree(Workbench.shared.workspaceId) }
@@ -35,9 +36,10 @@ final class WindowBar: NSView {
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
         awake.target = self; awake.action = #selector(toggleAwake)
+        sideBySide.target = self; sideBySide.action = #selector(toggleSideBySide)
         back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
         let nav = NSStackView(views: [back, forward]); nav.spacing = 0
-        for v in [context, nav, search, awake] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [context, nav, search, awake, sideBySide] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         // Short of room, the search leaves the centre first, then narrows; only then does the path shorten.
         let wide = search.widthAnchor.constraint(equalToConstant: 280); wide.priority = .init(250)
         let center = search.centerXAnchor.constraint(equalTo: centerXAnchor); center.priority = .init(200)
@@ -51,12 +53,15 @@ final class WindowBar: NSView {
             nav.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
             awake.leadingAnchor.constraint(equalTo: search.trailingAnchor, constant: 6), awake.centerYAnchor.constraint(equalTo: centerYAnchor),
             awake.widthAnchor.constraint(equalToConstant: 28),   // the three cups differ in width; the search mustn't shift
-            awake.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
+            sideBySide.leadingAnchor.constraint(equalTo: awake.trailingAnchor, constant: 2), sideBySide.centerYAnchor.constraint(equalTo: centerYAnchor),
+            sideBySide.widthAnchor.constraint(equalToConstant: 28),
+            sideBySide.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
         track(owner: self) { [-1, 1].map { Workbench.visit($0).flatMap { AppModel.shared.worktree(Workbench.shared.visits[$0])?.displayName } } } changed: { [weak self] in
             self?.showNav(back: $0[0], forward: $0[1])
         }
         track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
+        track(owner: self) { Workbench.shared.sideBySide } changed: { [weak self] in self?.showSideBySide($0) }
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }
             self.info = nil; self.reload()
@@ -179,6 +184,14 @@ final class WindowBar: NSView {
     @objc private func goForward() { Workbench.goBack(1) }
 
     @objc private func toggleAwake() { ExtensionRegistry.shared.command("power.keepAwake")?.run([:]) }
+
+    /// Filled while the workspace puts its agents side by side; a click shows them as tabs in one pane, and back.
+    private func showSideBySide(_ on: Bool) {
+        sideBySide.image = .symbol(on ? "rectangle.split.3x1.fill" : "rectangle.split.3x1", String(localized: "Agents Side by Side"))
+        sideBySide.toolTip = on ? String(localized: "Agents side by side. Click to show them as tabs (⌃⌘T)")
+                                : String(localized: "Agents as tabs. Click to put them side by side (⌃⌘T)")
+    }
+    @objc private func toggleSideBySide() { ExtensionRegistry.shared.command("agents.sideBySide")?.run([:]) }
 
     @objc private func openPR() {
         guard let w = badgeFolder, let u = RowBadges.shared.prs[w.id]?["url"]?.string else { return }

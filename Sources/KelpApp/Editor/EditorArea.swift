@@ -144,16 +144,22 @@ final class EditorArea: NSViewController {
         g.strip.onMenu = { [weak self] id in self?.tabMenu(id) }
         g.strip.addMenu = { [weak self] in self?.newTabMenu(group: gid) ?? NSMenu() }
         g.strip.onUnzoom = { [weak self] in self?.toggleZoom() }
-        g.strip.onDropTab = { [weak self] id, index in self?.layout.move(id, to: gid, index: index); self?.render() }
+        g.strip.onDropTab = { [weak self] id, index in
+            guard let self else { return }
+            if layout.group(of: id) != gid { arrangedByHand() }   // into another pane's strip, not reordering its own
+            layout.move(id, to: gid, index: index); render()
+        }
         g.editorFrame = { [weak self] in self.map { $0.view.convert($0.view.bounds, to: nil) } }
         g.showOuterHint = { [weak self] edge in self?.showOuterHint(edge) }
         g.onDropOuter = { [weak self] id, edge in
             guard let self else { return }
+            arrangedByHand()
             layout.splitRoot(id, vertical: edge == .minX || edge == .maxX, before: edge == .minX || edge == .maxY)
             render(); focusSelected()
         }
         g.onDropTab = { [weak self] id, edge in
             guard let self else { return }
+            if edge != nil || layout.group(of: id) != gid { arrangedByHand() }
             switch edge {
             case nil: layout.move(id, to: gid)
             case .minX?: layout.split(id, from: gid, vertical: true, before: true)
@@ -280,6 +286,7 @@ final class EditorArea: NSViewController {
         let uri = layout.focusedGroup?.selectedTab?.uri ?? ""
         let wb = Workbench.shared
         if wb.focusedTab != uri { wb.focusedTab = uri }
+        if wb.sideBySide != (layout.manual != true) { wb.sideBySide = layout.manual != true }
         switch TabURI.scheme(uri) {
         case "session": wb.focusedSession = TabURI.body(uri)
         case "file": wb.focusedFile = TabURI.filePath(uri).path
