@@ -82,3 +82,27 @@ follows the parts it reads with `track { value } changed: { … }` (once now, th
 run-loop turn; `owner:` ends it with a tab). Events that carry data and have no value to re-read (a clone's progress
 line, a dev server's URL, an agent's status change as it happens) are direct calls when their one receiver is reachable,
 else a `NotificationCenter` name (`kelpGitChanged`: after a git action the window bar, diff tabs and sidebar badges re-read git).
+
+## What Kelp trusts (threat model)
+**Trusted: the user and every process running as the user.** The daemon's socket is the user's own (0600 in a 0700
+folder, the peer's uid checked); anything that reaches it — the app, the `kelp` CLI, an agent with `KELP_SOCKET`, a
+script — can do what the user can: start a session with any command, read terminals, write files. That is by design:
+agents run as the user and can run commands anyway. Kelp doesn't try to contain a hostile process of the same user
+(it could edit `~/.kelp`, drive the app with synthetic events, or skip Kelp entirely).
+
+**Not trusted: what came from someone else** — a cloned repository's files and branches, a pull request, an issue or
+review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the user:
+- `.kelp.yaml` runs nothing (setup, tabs, shared links, recipes, issueCommand) until the user trusts that exact text,
+  shown in Kelp's window; only the KelpApp next to the daemon may grant it (`scripts.trust`, checked by the connecting
+  program), so a repository's script or an agent's casual call can't.
+- An agent's "trust this folder?" is answered for the user only where the agent already trusts the project and the
+  branch doesn't change agent config (`.claude`, `.mcp.json`, …); a launch prompt never answers it or any startup menu.
+- Issue, review and CI-log text is typed into the agent, not sent: the user reads it before the agent acts on it.
+  Text typed for anyone is stripped of escape sequences and control keys (`LiveSession.typeable`).
+- Values go into shell commands as variables, never as command text (`ShellTemplate`); refs from clients that read as
+  options are refused; paths go to git as literal pathspecs after `--`.
+- The background usage probe only opens folders whose agent config matches the base branch (or has none).
+- A remote project's marker counts only under `~/.kelp/remote`; gh/glab don't run for remote projects.
+
+Tests run with their own `KELP_HOME`, agent config dirs, keychain service and git config, set as the test bundle
+loads (`Tests/TestSupportC`), so no test reads or writes the user's own.
