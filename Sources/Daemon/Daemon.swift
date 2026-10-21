@@ -303,13 +303,6 @@ public final class Daemon: Sendable {
         rec = ls.snapshot
         let sid = rec.id
         wire(ls)
-        ls.onFirstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
-        if !["shell", "custom"].contains(manifest.id) {
-            ls.onTopic = { [weak self] t in
-                guard let self else { return }
-                DispatchQueue.global(qos: .utility).async { self.retitle(session: sid, topic: t) }
-            }
-        }
         if o.openURLs, let wid = worktreeId {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
             ls.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(sid)])) }
         }
@@ -350,6 +343,15 @@ public final class Daemon: Sendable {
             if s.status == .exited { _ = live.remove(ls) }
         }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
+        // Naming follows the session however it started (created, or woken from a pause).
+        let sid = ls.snapshot.id
+        ls.onFirstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
+        if !["shell", "custom"].contains(ls.snapshot.agent ?? "custom") {
+            ls.onTopic = { [weak self] t in
+                guard let self else { return }
+                DispatchQueue.global(qos: .utility).async { self.retitle(session: sid, topic: t) }
+            }
+        }
     }
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.

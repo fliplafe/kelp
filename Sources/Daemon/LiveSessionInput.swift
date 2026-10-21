@@ -8,17 +8,13 @@ extension LiveSession {
     /// Caller holds the lock.
     func trustQuestionOpen() -> Bool {
         guard !dialogSettled else { return false }
-        let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
-        return Self.trustQuestion?.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
+        return StartupQuestion.trustAsked(StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self)))
     }
-    private static let trustQuestion = try? NSRegularExpression(pattern: AgentManifest.trust.pattern)
 
     /// A numbered menu with its cursor on screen ("❯ 1. Use this and all future MCP servers"). The input box's own "❯"
     /// is followed by text, not "1.", and once a menu is answered the newer cursor is the input box's. Caller holds the lock.
     func menuOpen() -> Bool {
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { return false }
-        return option.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil
+        StartupQuestion.menuOpen(StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self)))
     }
 
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.

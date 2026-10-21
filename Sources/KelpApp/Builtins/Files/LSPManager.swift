@@ -26,8 +26,39 @@ final class LSPManager {
 
     func language(_ path: String) -> LanguageSpec? { LanguageSpec.find(path, in: ExtensionRegistry.shared.all.languages) }
 
+    // Language servers run the project's own code — build scripts and proc macros (rust-analyzer), Package.swift
+    // (sourcekit-lsp), the TypeScript in its node_modules — so they start only in a project the user trusted for them, as
+    // VS Code's Workspace Trust does: a cloned repository's files don't act as the user just by being opened.
+
+    /// Projects whose language servers may run (the daemon's UI state: one list per KELP_HOME).
+    static let trustKey = "lsp.trusted"
+    func trusted(_ root: String) -> Bool {
+        root.hasPrefix(Paths.root.appendingPathComponent("scratch").path) || UIState.strings(Self.trustKey).contains(root)
+    }
+    /// Roots asked about this run, and what starts once the user trusts them (the tabs that wanted a server).
+    private var waiting: [String: [@MainActor () -> Void]] = [:]
+
+    /// True when `root` is trusted; else `start` runs once the user trusts it, asked once per project per run.
+    func whenTrusted(_ root: String, _ start: @escaping @MainActor () -> Void) -> Bool {
+        guard enabled else { return false }
+        if trusted(root) { return true }
+        let first = waiting[root] == nil
+        waiting[root, default: []].append(start)
+        if first {
+            let name = (root as NSString).lastPathComponent
+            Banner.show(String(localized: "Language servers run code from “\(name)” (build scripts, its own TypeScript…). Start them for this project?"),
+                        action: (String(localized: "Trust and Start"), { LSPManager.shared.trust(root) }))
+        }
+        return false
+    }
+
+    func trust(_ root: String) {
+        if !trusted(root) { UIState[Self.trustKey] = .array((UIState.strings(Self.trustKey) + [root]).map(JSONValue.string)) }
+        (waiting.removeValue(forKey: root) ?? []).forEach { $0() }
+    }
+
     func client(root: String, path: String) async -> LSPClient? {
-        guard enabled, let lang = language(path), let server = lang.server else { return nil }
+        guard enabled, trusted(root), let lang = language(path), let server = lang.server else { return nil }
         let argv = [server.command] + (server.args ?? [])
         let key = root + "|" + argv.joined(separator: " ")
         if let c = clients[key], c.isRunning { return c }

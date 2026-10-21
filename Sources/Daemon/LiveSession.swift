@@ -22,6 +22,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Being deleted: nothing it does may save its record again.
     private var discarded = false
     var isDiscarded: Bool { lock.withLock { discarded } }
+    /// The program exited and that was handled (its record final, its log closed).
+    var hasEnded: Bool { lock.withLock { ended } }
+    private var ended = false
 
     var onOutput: (@Sendable (String, Data, Set<Int>) -> Void)?
     var onStatus: (@Sendable (Session) -> Void)?
@@ -238,6 +241,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
 
     private func handleExit(_ code: Int32) {
         lock.lock()
+        ended = true
         if record.status == .hibernated { try? log?.close(); lock.unlock(); return }
         detector.exited()
         let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure

@@ -226,6 +226,8 @@ final class FileTab: SavableTab {
 
     private func startLSP() {
         let p = path, r = root
+        guard LSPManager.shared.language(p)?.server != nil,
+              LSPManager.shared.whenTrusted(r, { [weak self] in self?.startLSP() }) else { return }   // asked once per project
         Task { [weak self] in
             guard let c = await LSPManager.shared.client(root: r, path: p), let e = self?.editor, let lang = LSPManager.shared.language(p) else { return }
             c.open(p, text: e.text, languageId: lang.id)

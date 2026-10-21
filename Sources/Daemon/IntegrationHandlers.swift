@@ -15,19 +15,6 @@ extension Daemon {
         return v
     }
 
-    /// `{name}` from `vars` in one pass over the template: a value is never searched again, so a title holding "{body}"
-    /// stays as written whatever order the names come in.
-    static func fill(_ template: String, _ vars: [String: String]) -> String {
-        var out = "", rest = Substring(template)
-        while let open = rest.firstIndex(of: "{"), let close = rest[open...].firstIndex(of: "}") {
-            out += rest[..<open]
-            let name = String(rest[rest.index(after: open)..<close])
-            out += vars[name] ?? String(rest[open...close])
-            rest = rest[rest.index(after: close)...]
-        }
-        return out + rest
-    }
-
     func repoPath(_ p: JSONValue) throws -> (Repo, String) {
         if let wid = p["worktreeId"]?.string, let w = try store.worktree(wid), let r = try store.repo(w.repoId) { return (r, w.path) }
         guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }

@@ -161,7 +161,7 @@ extension TaskFromIssue: AsyncHandled {
             }) else { throw RPCError.internalError("worktree vanished") }
             let cfg = d.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
             let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
-            var text = cfg.issueCommand.map { Daemon.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
+            var text = cfg.issueCommand.map { Recipes.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
             var o = Daemon.Launch()
             // Typed, not sent, unless asked: the issue's text is whoever filed it, not the user (it could tell the agent anything).

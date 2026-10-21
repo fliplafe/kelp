@@ -205,7 +205,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// An issue's text is put in once: a title that says "{body}" stays as written, in any order of the names.
 @Test func issueTemplatesFillEachPlaceholderOnce() {
     let vars = ["title": "Use {body} here", "body": "BODY", "ref": "#7"]
-    #expect(Daemon.fill("{ref}: {title}\n{body} {unknown}", vars) == "#7: Use {body} here\nBODY {unknown}")
+    #expect(Recipes.fill("{ref}: {title}\n{body} {unknown}", vars) == "#7: Use {body} here\nBODY {unknown}")
 }
 
 /// Text sent to a paused agent wakes it and goes in once it is ready, not into a program still starting (which, like
@@ -330,7 +330,8 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     #expect(try await waitFor(10) { w.d.existing(s.id)?.snapshot.status == .working })
     let ls = try #require(w.d.existing(s.id))
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
-    try await Task.sleep(for: .milliseconds(500))   // its last words and exit handled (no event to wait on: it's out of the table)
+    #expect(try await waitFor(10) { ls.hasEnded })   // its last words and exit handled
+    await withCheckedContinuation { done in ls.inOrder { done.resume() } }   // and any status change that queued
     #expect(try w.d.store.session(s.id)?.status == .hibernated, "store \(String(describing: try? w.d.store.session(s.id)?.status)) live \(ls.snapshot.status) \(ls.tail(300).count)")
 }
 
@@ -350,14 +351,16 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// A draft (an issue's brief) to a program that takes no pastes isn't submitted line by line: it arrives as one line,
 /// still waiting for Return.
 @Test func aDraftToAPlainProgramIsNotSubmittedLineByLine() async throws {
-    let plain = AgentManifest(id: "plain", name: "Plain", command: "/bin/bash", args: ["-c", #"echo ready; read -r l; echo "SUBMITTED"; sleep 30"#, "x"])
+    let plain = AgentManifest(id: "plain", name: "Plain", command: "/bin/bash", args: ["-c", #"echo ready; read -r l; echo "GOT[$l]"; sleep 30"#, "x"])
     let w = try await world(agents: [plain]); defer { w.d.stop() }
     let r = try await w.c.call("task.fromIssue", .obj(["repoId": .string(w.repo.id), "ref": "#8", "title": "Two lines", "body": "first\nsecond", "agent": "plain"]))
     let s = try #require(r["session"]).decode(Session.self)
     func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
     #expect(try await waitFor(10) { try await screen().contains("second") })   // typed
-    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "", "enter": false]))   // a barrier: queued after it
-    #expect(!(try await screen()).contains("SUBMITTED"))
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "", "enter": true]))   // the user's Return
+    #expect(try await waitFor(10) { try await screen().contains("GOT[") })
+    let shown = try await screen()
+    #expect(shown.contains("GOT[Two lines  first second  (Issue: )]"), "\(shown)")   // one line: submitted early it'd read GOT[Two lines]
 }
 
 /// Opening a paused session doesn't wait for another session that takes its time to stop (an agent ignoring the
@@ -375,9 +378,51 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(other.id)]))
     let archiving = Task { try await w.c.call("worktree.archive", .obj(["id": .string(slow.id)])) }   // ~2 s: a ignores SIGTERM
     try await Task.sleep(for: .milliseconds(300))
-    let start = Date()
     _ = try await w.c.call("session.attach", .obj(["id": .string(b.id)]))   // wakes b
-    #expect(Date().timeIntervalSince(start) < 1.2, "\(Date().timeIntervalSince(start)) s")
+    #expect(kill(a.pid, 0) == 0)   // a still stopping: b's wake didn't wait for it
     _ = try await archiving.value
     #expect(kill(a.pid, 0) != 0)
+}
+
+/// .kelp.yaml written on Windows (CRLF) reads like any other: each key on its own line, no "\r" in a command.
+@Test func aKelpYamlWithCRLFLineEndingsReadsLineByLine() {
+    let c = RepoConfig.parse("setup: npm ci\r\nrun: npm start\r\ntabs: claude, shell\r\n")
+    #expect(c.setup == "npm ci" && c.tabs == ["claude", "shell"])
+    #expect(c.scripts == [RepoConfig.Script(name: "run", command: "npm start")])
+}
+
+/// A recipe fills each placeholder once: an issue's body that says "{url}" stays as written (in any order of the names).
+@Test func recipesFillEachPlaceholderOnce() {
+    for _ in 0..<20 {   // Dictionary order changes from run to run: the old loop got this right only sometimes
+        let brief = Recipes.render("issue", config: RepoConfig(), vars: ["title": "T", "body": "see {url} and {title}", "url": "U"])
+        #expect(brief == "T\n\nsee {url} and {title}\n\n(Issue: U)")
+    }
+}
+
+/// A woken session still follows the topic its agent sets (Claude Code's terminal title), as one that was never paused.
+@Test func aWokenSessionStillFollowsItsAgentsTopic() async throws {
+    let script = #"echo up; sleep 1.5; printf '\033]0;* Fixing the login bug\007'; sleep 30"#
+    let titled = AgentManifest(id: "titled", name: "Titled", command: "/bin/bash", args: ["-c", script, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [titled]); defer { w.d.stop() }
+    let wt = try await desk(w, "topics")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "titled"]), as: Session.self)
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))   // paused before it named its topic
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    _ = try await w.c.call("session.attach", .obj(["id": .string(s.id)]))      // woken: it runs again and names it
+    #expect(try await waitFor(10) { try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.title == "Fixing the login bug" })
+}
+
+/// The hidden usage probe never answers a question its copy of the agent asks (trust this folder? use the project's new
+/// MCP servers?): it presses nothing and gives up, where /usage and Enter would have picked the default, "Yes".
+@Test func theUsageProbePressesNothingOnAQuestion() throws {
+    for question in [#"Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n"#,
+                     #"New MCP server found in .mcp.json: tools\n\xe2\x9d\xaf 1. Use this and all future MCP servers\n  2. Continue without\n"#] {
+        let pressed = tmp().path + "-pressed"
+        let script = "stty -icanon -echo; printf '\(question)'; IFS= read -rsn1 k && touch \(pressed); sleep 30"
+        let probe = Daemon.PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
+                                     shown: { $0.contains("% used") }, parse: { _ in [] })
+        let (readings, _) = Daemon.probe(probe, argv: ["/bin/bash", "-c", script], cwd: NSTemporaryDirectory())
+        #expect(readings.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: pressed), "a key reached: \(question)")
+    }
 }

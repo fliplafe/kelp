@@ -129,6 +129,10 @@ extension Daemon {
         // Ready: the prompt is drawn and output went quiet (or it failed and said so).
         guard screen.wait(20, until: { (p.ready($0) && screen.quietFor > 1) || $0.contains("Error:") }),
               p.ready(StatusDetector.stripANSI(screen.text)) else { return ([], StatusDetector.stripANSI(screen.text)) }
+        // Nobody watches this copy: a question on screen (trust this folder? use the project's new MCP servers?) is left
+        // unanswered and the probe gives up. Typing /usage and Enter there would pick its default, usually "Yes".
+        let drawn = StatusDetector.stripANSI(String(screen.text.suffix(3000)))
+        if StartupQuestion.trustAsked(drawn) || StartupQuestion.menuOpen(drawn) { return ([], drawn) }
         pty.write(Data("/usage".utf8)); Thread.sleep(forTimeInterval: 0.6); pty.write(Data("\r".utf8))
         _ = screen.wait(20) { p.shown($0) && screen.quietFor > 1.5 }
         pty.write(Data("\u{1B}".utf8))
