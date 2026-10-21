@@ -12,6 +12,14 @@ extension EditorArea {
         createSession(p, split: split)
     }
     func newTerminal(split: SplitDirection? = nil) { createSession(["worktreeId": .string(workspaceId), "agent": "shell"], split: split) }
+    /// A terminal attached to tmux session `name` (started if tmux has none); the tab already attached to it, if there is one.
+    func newTmux(_ name: String, split: SplitDirection? = nil) {
+        let name = Tmux.name(name)
+        if let s = AppModel.shared.sessions.first(where: { $0.worktreeId == workspaceId && $0.status != .exited && Tmux.session($0.argv) == name }) {
+            open(TabURI.session(s.id), split: split); return
+        }
+        createSession(["worktreeId": .string(workspaceId), "tmux": .string(name)], split: split)
+    }
     /// `cwd`: run it in another folder (a remote project's runs on its host), as a tab here.
     func run(command: String?, title: String? = nil, cwd: String? = nil, split: SplitDirection? = nil) {
         guard let command, !command.isEmpty else { newTerminal(split: split); return }

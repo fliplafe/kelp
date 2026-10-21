@@ -108,6 +108,7 @@ settings.set
 state.get
 state.set
 task.fromIssue
+tmux.list
 usage.get
 usage.report
 workspace.create

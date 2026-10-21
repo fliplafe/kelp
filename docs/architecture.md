@@ -27,6 +27,10 @@ contributions, the command palette and settings.
   `session:<id>`, `file:<path>#L12`, `diff:<path>`, `https://…`, `ext:<extension>/<view>`.
   Groups of tabs split right/down; drag tabs between groups or onto an edge to split.
   The model (`WorkspaceLayout`, `TabURI`) is in WorkbenchKit, a library with tests and no AppKit, like VS Code's `common/`.
+- **tmux session**: a terminal tab running `tmux new-session -A -s <name>` (`terminal:?tmux=<name>`, `session.create`'s
+  `tmux`), picked from the sessions tmux has on the workspace's machine (`tmux.list`; a remote project's host) in
+  File › Attach to tmux Session or "+". tmux keeps the session: after the daemon restarts the tab comes back paused and
+  attaches again when shown, and closing it only detaches.
 
 ## Contribution points (built-in Swift extensions and `extension.json` folders use the same ones)
 | Point | Where it shows |

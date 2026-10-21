@@ -75,6 +75,7 @@ enum Builtins {
                 editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string)
             },
             cmd("terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
+            cmd("terminal.tmux", "Attach to tmux Session…") { QuickOpen.shared.showTmux() },
             cmd("terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
             cmd("terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
             cmd("agents.sideBySide", "Agents Side by Side", "ctrl+cmd+t") { editor?.toggleSideBySide() },

@@ -45,11 +45,18 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private let keys = NSTextField(labelWithString: "")
     private var all: [Item] = []
     private var commandsOnly = false
+    /// The tmux sessions listed instead of the palette (`showTmux`); nil for the palette.
+    private var tmux: [Tmux.Session]?
+    private var tmuxLoad: Task<Void, Never>?
 
     func show(commandsOnly: Bool) {
         if panel == nil { build() }
         self.commandsOnly = commandsOnly
         list(query: "")
+        present()
+    }
+
+    private func present() {
         if let w = NSApp.mainWindow {
             let f = w.frame
             panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 120))
@@ -61,6 +68,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     /// The palette's own list (not a setting's choices), with `query` typed.
     private func list(query: String) {
         stopChoosing()
+        tmuxLoad?.cancel(); tmux = nil
         field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands")
         // The keys it knows, under the list (they're not written anywhere else).
         keys.stringValue = String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests")
@@ -307,6 +315,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     private func filter() {
         let q = field.stringValue
+        if let t = tmux { setRows(tmuxItems(t, q), grouped: false); return }
         let pool = commandsOnly && choosing == nil ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
         if !commandsOnly, choosing == nil, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
         if q.isEmpty {
@@ -440,6 +449,54 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             if r.location != NSNotFound { s.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .bold), range: r) }
         }
         return s
+    }
+}
+
+// MARK: tmux
+
+extension QuickOpen {
+    /// File › Attach to tmux Session, the "+" menu: the sessions tmux has on this workspace's machine, the last used first.
+    /// Typing filters them by name, and a name that isn't one starts that session. Each opens as a terminal attached to it.
+    func showTmux() {
+        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        if panel == nil { build() }
+        stopChoosing(); filesLoad?.cancel(); prSearch?.cancel(); tmuxLoad?.cancel()
+        commandsOnly = false; recents = []; all = []; tmux = []
+        field.placeholderString = String(localized: "Attach to a tmux session, or type a name for a new one")
+        keys.stringValue = String(localized: "↑↓ Select    ↩ Attach    ⇧↩ Attach in a Split")
+        field.stringValue = ""
+        filter()
+        present()
+        tmuxLoad = Task {
+            let found = await AppModel.shared.call(TmuxList(worktreeId: wid)) ?? []
+            guard !Task.isCancelled, tmux != nil else { return }
+            tmux = found; filter()
+        }
+    }
+
+    /// The sessions matching what's typed, that exact name first; then a new session by that name, or by the project's.
+    private func tmuxItems(_ sessions: [Tmux.Session], _ q: String) -> [Item] {
+        func item(_ name: String, icon: String, detail: String) -> Item {
+            var c = URLComponents(); c.scheme = "terminal"; c.queryItems = [URLQueryItem(name: "tmux", value: name)]
+            let uri = c.string ?? "terminal:"
+            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { Workbench.open(uri) }, split: { Workbench.open(uri, split: .right) })
+        }
+        let found = sessions.compactMap { s -> (Item, Int)? in
+            guard let score = s.name == q ? 1000 : Self.wordScore(s.name, q) else { return nil }
+            let detail = [s.windows == 1 ? String(localized: "1 window") : String(localized: "\(s.windows) windows"),
+                          s.attached > 0 ? String(localized: "attached") : nil, shortAgo(s.activity)].compactMap { $0 }.joined(separator: " · ")
+            return (item(s.name, icon: "terminal", detail: detail), score)
+        }.sorted { $0.1 > $1.1 }.map(\.0)
+        var new = Tmux.name(q)
+        if new.isEmpty {   // the project's name, numbered while tmux has a session by it
+            let w = AppModel.shared.worktree(Workbench.shared.workspaceId)
+            let base = Tmux.name(AppModel.shared.repo(w?.repoId)?.name ?? "kelp").lowercased().replacingOccurrences(of: " ", with: "-")
+            new = base
+            var n = 2
+            while sessions.contains(where: { $0.name == new }) { new = "\(base)-\(n)"; n += 1 }
+        }
+        guard !sessions.contains(where: { $0.name == new }) else { return found }
+        return found + [item(new, icon: "plus", detail: String(localized: "New tmux session"))]
     }
 }
 

@@ -22,6 +22,11 @@ enum AgentCatalog {
         if let d = SettingsStore.shared.string("agents.default"), installed.contains(where: { $0.id == d }) { return d }
         return installed.first?.id ?? "claude"
     }
+    /// Whether to offer tmux sessions in a workspace: tmux is on this Mac, or the project is on a host (which usually has
+    /// it; tmux.list says so when it hasn't).
+    @MainActor static func hasTmux(_ w: Worktree?) -> Bool {
+        AgentAvailability.shared.ids.contains("tmux") || w.flatMap { RemoteHost.of($0.path) } != nil
+    }
     /// The default agent, nil while no agent CLI is found (nothing to start).
     @MainActor static var startable: String? { installed(all).isEmpty ? nil : defaultAgent }
     @MainActor static func name(_ id: String?) -> String {
@@ -77,7 +82,9 @@ final class AgentAvailability {
                 for await r in g { if let r { all.append(r) } }
                 return all
             }
-            let ok = Set(found.map(\.id)), now = Date().timeIntervalSince1970
+            // Not an agent: "tmux" among the ids only says there's a tmux here to attach to (AgentCatalog.hasTmux).
+            let tmux = (try? LoginPath.resolve("tmux")) != nil
+            let ok = Set(found.map(\.id) + (tmux ? ["tmux"] : [])), now = Date().timeIntervalSince1970
             let keep = Dictionary(found.map { ($0.binary, ran[$0.binary] ?? now) }) { a, _ in a }
             await MainActor.run {
                 let me = AgentAvailability.shared

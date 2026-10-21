@@ -26,7 +26,9 @@ extension Daemon {
     func launchEnv(_ m: AgentManifest, _ rec: Session) -> [String: String] {
         var env = m.resolvedEnv
         if let name = rec.profile, let prof = profile(name, agent: m.id) { env[prof.key] = prof.dir }
-        env["KELP_SESSION"] = rec.id; env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
+        // Not into tmux: its server keeps the first client's environment for every pane, whichever tab they're shown in.
+        if Tmux.session(rec.argv) == nil { env["KELP_SESSION"] = rec.id }
+        env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         env["PATH"] = childPath
         return env
     }
@@ -47,6 +49,12 @@ extension Daemon {
         return nil
     }
 
+    /// Paused rather than ended when its program stops with the daemon or sits idle, and back where it was when woken: an
+    /// agent that resumes its conversation, a tmux terminal (tmux keeps the session, the wake attaches again).
+    static func resumable(_ s: Session, _ manifests: [AgentManifest]) -> Bool {
+        Tmux.session(s.argv) != nil || manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
+    }
+
     /// Pause agents that have sat idle (done / waiting) for `hibernateMinutes` with nobody watching.
     func hibernateIdle() {
         let minutes = settings.number("sessions.hibernateMinutes") ?? 0
@@ -56,7 +64,7 @@ extension Daemon {
         }
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        let candidates = idle.filter { ls in manifests.first { $0.id == ls.snapshot.agent }?.resumeArgs.isEmpty == false }
+        let candidates = idle.filter { Self.resumable($0.snapshot, manifests) }
         // Off the ticker: waiting for programs to exit (up to 3 s each) must not hold up status for everyone else.
         let start = pausingIdle.withLock { busy -> Bool in
             guard !busy, !candidates.isEmpty else { return false }

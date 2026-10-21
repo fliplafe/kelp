@@ -48,6 +48,7 @@ final class StartView: NSView, NSTextFieldDelegate {
             rows += tiles
         }
         var others = [StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") }]
+        if AgentCatalog.hasTmux(w) { others.append(StartRow(image: .symbol("rectangle.split.3x1"), title: String(localized: "tmux Session"), shortcut: nil) { QuickOpen.shared.showTmux() }) }
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
             let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)

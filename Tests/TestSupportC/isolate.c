@@ -28,6 +28,7 @@ __attribute__((constructor)) static void kelp_isolate(void) {
     put("CODEX_HOME", "/codex");
     const char *path = getenv("PATH");
     setenv("KELP_LOGIN_PATH", path ? path : "/usr/bin:/bin", 1);   // no login shell, so no profile runs
+    setenv("TMUX_TMPDIR", root, 1); unsetenv("TMUX");   // a tmux server of the tests' own, never the user's sessions
     char service[96];
     snprintf(service, sizeof service, "dev.kelp.tests.%s.%d", root + 8, (int)getpid());
     setenv("KELP_KEYCHAIN_SERVICE", service, 1);

@@ -76,10 +76,10 @@ public final class Daemon: Sendable {
             throw RPCError.internalError("another kelpd is already running for \(root.path)")
         }
         running.withLock { $0.instanceLock = lockFD }
-        // Sessions from a previous daemon run lost their PTYs; resumable agents come back as paused, the rest as exited.
+        // Sessions from a previous daemon run lost their PTYs; resumable ones come back as paused, the rest as exited.
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         for var s in (try? store.sessions()) ?? [] where s.status != .exited {
-            let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first { $0.id == s.agent }
-            s.status = (m?.resumeArgs.isEmpty == false) ? .hibernated : .exited
+            s.status = Self.resumable(s, manifests) ? .hibernated : .exited
             s.progress = nil   // what ran there isn't getting any further
             try? store.save(s)
         }
@@ -327,7 +327,8 @@ public final class Daemon: Sendable {
         if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
             // A command line (`.custom`: zsh -lc "…") goes to sh there: the host may have no zsh.
             let onHost = manifest.id == "custom" && argv.count == 3 && argv[1] == "-lc" ? ["sh", "-c", argv[2]] : argv
-            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(manifest.id == "shell" ? nil : onHost)]
+            let loginShell = manifest.id == "shell" && Tmux.session(argv) == nil
+            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [remote.command(loginShell ? nil : onHost)]
         }
         guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
         return [try LoginPath.resolve(exe)] + run.dropFirst()

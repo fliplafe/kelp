@@ -78,7 +78,7 @@ extension AppDelegate {
     /// File: new workspaces, agents and tabs, projects, saving and closing.
     private func fileMenu(_ b: MenuBuilder) {
         let file = b.sub("File")
-        b.add(file, "workspace.new", "agents.new", "terminal.new")
+        b.add(file, "workspace.new", "agents.new", "terminal.new", "terminal.tmux")
         let with = NSMenu()
         for a in AgentCatalog.installed(AgentCatalog.all) { with.add(a.name) { Self.run("agents.new", ["agent": .string(a.id)]) } }
         with.addItem(.separator())

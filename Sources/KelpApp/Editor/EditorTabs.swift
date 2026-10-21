@@ -24,6 +24,7 @@ extension EditorArea {
             newAgent(q?.path.isEmpty == false ? q?.path : nil, prompt: q?.queryItems?.first { $0.name == "prompt" }?.value, split: split); return
         case "terminal":
             let q = URLComponents(string: uri)
+            if let name = q?.queryItems?.first(where: { $0.name == "tmux" })?.value { newTmux(name, split: split); return }
             run(command: q?.queryItems?.first { $0.name == "cmd" }?.value, title: q?.queryItems?.first { $0.name == "title" }?.value, split: split); return
         default: break
         }
@@ -183,6 +184,12 @@ extension EditorArea {
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
+        if AgentCatalog.hasTmux(AppModel.shared.worktree(workspaceId)) {
+            m.add(String(localized: "tmux Session…"), symbol: "rectangle.split.3x1") { [weak self] in
+                if let group { self?.layout.focused = group }
+                QuickOpen.shared.showTmux()
+            }
+        }
         let ctx = IDEContext.current
         let editors = ExtensionRegistry.shared.all.editors
         if !editors.isEmpty { m.addItem(.separator()) }

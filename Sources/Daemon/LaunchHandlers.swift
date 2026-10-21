@@ -20,7 +20,32 @@ extension SessionCreate: Handled {
         var dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
         if let worktreeId, dir == nil { dir = try d.cwd(forWorktree: worktreeId).path }
         guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
-        return try .from(d.spawn(cwd: dir, manifest: d.manifest(agent, command: command), worktreeId: worktreeId, Daemon.Launch(self)))
+        var o = Daemon.Launch(self)
+        if let tmux {   // a terminal running tmux: the record keeps the argv that attaches again (Tmux.session)
+            let name = Tmux.name(tmux)
+            guard !name.isEmpty else { throw RPCError.invalidParams("Name the tmux session.") }
+            o.argv = Tmux.argv(name)
+            if o.title == nil { o.title = "tmux \(name)" }
+        }
+        return try .from(d.spawn(cwd: dir, manifest: d.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
+                                 worktreeId: worktreeId, o))
+    }
+}
+
+extension TmuxList: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        let w = try d.cwd(forWorktree: worktreeId)
+        let list = ["list-sessions", "-F", Tmux.format]
+        // On the host for a remote project, through its login shell as its terminals are (tmux is on that PATH).
+        let argv = try RemoteHost.of(w.path).map { [RemoteHost.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + list)] }
+            ?? [LoginPath.resolve("tmux")] + list
+        var env = ProcessInfo.processInfo.environment; env["PATH"] = d.childPath
+        let r = try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: 30)
+        let err = String(decoding: r.stderr, as: UTF8.self)
+        if r.status == 0 { return Tmux.parse(String(decoding: r.stdout, as: UTF8.self)) }
+        if Tmux.noServer(err) { return [] }
+        let why = err.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw RPCError.invalidParams(r.timedOut ? "tmux didn't answer." : why.isEmpty ? "tmux list-sessions failed (exit code \(r.status))." : why)
     }
 }
 
@@ -182,6 +207,6 @@ extension TaskFromIssue: AsyncHandled {
 }
 
 extension Daemon {
-    static let launchMethods: [any Handled.Type] = [SessionCreate.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
+    static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
         SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self]
 }

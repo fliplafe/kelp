@@ -15,11 +15,20 @@ public protocol LaunchOptions {
     var rows: Int? { get }
 }
 
-/// A session in `worktreeId`'s folder, or in `cwd` (which wins): agent `agent`, else the shell command `command`.
+/// A session in `worktreeId`'s folder, or in `cwd` (which wins): agent `agent`, else the shell command `command`;
+/// `tmux`: a terminal attached to that tmux session, started if there is none (see `Tmux`).
 public struct SessionCreate: RPCMethod, LaunchOptions {
     public static let name = "session.create"; public typealias Result = JSONValue
-    public var cwd: String?, worktreeId: String?, agent: String?, command: String?
+    public var cwd: String?, worktreeId: String?, agent: String?, command: String?, tmux: String?
     public var model: String?, effort: String?, prompt: String?, title: String?, profile: String?, draft: Bool?, openURLs: Bool?, cols: Int?, rows: Int?
+}
+
+/// The tmux sessions on the workspace's machine (a remote project's host), the last used first; none while tmux runs
+/// no server there.
+public struct TmuxList: RPCMethod {
+    public static let name = "tmux.list"; public typealias Result = [Tmux.Session]
+    public var worktreeId: String
+    public init(worktreeId: String) { self.worktreeId = worktreeId }
 }
 
 /// The same command in the same folder, resuming its conversation unless `resume` is false.
