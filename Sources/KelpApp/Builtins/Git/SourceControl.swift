@@ -50,19 +50,14 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])
     private var roots: [Node] = [], graphRoots: [Node] = []
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
-    var watcher: FileWatcher?
-    let pending = Debounce()
-    /// Something changed while the panel was out of the window.
-    var stale = false
+    /// The workspace's git and its branch's CI, watched while the panel is on screen (the daemon pushes changes).
+    let gitWatch = Watched(.git), ciWatch = Watched(.ci)
     var busy = false { didSet { updateCommitButton() } }
     let stats = NSTextField(labelWithString: "")
     let ciRow = CIStatusRow()
     var ciRuns: [CIRuns.Run] = []
     /// Where each failed run broke ("job › step"), read once: a finished run doesn't change.
     var ciFailures: [Int: String] = [:]
-    var ciPoll: Task<Void, Never>?
-    /// After a push: the run that was newest then, until a newer one shows up (or the deadline passes).
-    var ciAwaiting: (old: Int?, until: Date)?
 
     // MARK: view
 
@@ -114,6 +109,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         view = v
         updateHeader()   // NSButton's own "Button" title must not show while the branch loads
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] in self?.apply($0) }
+        track(owner: self) { [weak self] in AppModel.shared.ci[self?.worktreeId ?? ""] } changed: { [weak self] in self?.applyCI($0) }
         track(owner: self) { FileIcon.revision } changed: { [weak self] _ in
             for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
         }

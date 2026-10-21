@@ -1,45 +1,17 @@
 import Foundation
 import Core
 
-/// The number on the Source Control icon: files changed in the workspace on screen. It watches the folder itself, since
-/// the panel is only built once it's shown; the open panel reports what it read so the two agree.
+/// The workspace on screen's git, watched for as long as it's on screen (the daemon pushes it when its files change):
+/// the number on the Source Control icon, the window bar's branch chip and Source Control itself read `AppModel.git`.
 @MainActor
-@Observable
 final class ChangedFiles {
     static let shared = ChangedFiles()
-    private(set) var count = 0
-    @ObservationIgnored private var wid: String?
-    @ObservationIgnored private var watcher: FileWatcher?
-    @ObservationIgnored private let pending = Debounce()
-    /// The Source Control panel, once built: while it shows this workspace its own reloads report the count.
-    @ObservationIgnored weak var panel: SourceControlController?
+    private let watched = Watched(.git)
+
+    /// Files changed in the workspace on screen.
+    var count: Int { AppModel.shared.git[Workbench.shared.workspaceId ?? ""]?.changes?.count ?? 0 }
 
     private init() {
-        // The path too: on launch the workspace is known before the daemon has listed its folder.
-        track { [Workbench.shared.workspaceId, AppModel.shared.worktree(Workbench.shared.workspaceId)?.path] } changed: { [weak self] in
-            self?.bind($0[0], path: $0[1])
-        }
+        track { Workbench.shared.workspaceId } changed: { [weak self] in self?.watched.key = $0 }
     }
-
-    private func bind(_ id: String?, path: String?) {
-        wid = id; count = 0
-        watcher = path.flatMap { FileWatcher(root: $0) { [weak self] in if Git.touchesStatus($0) { self?.scheduleReload() } } }
-        reload()
-    }
-
-    private func scheduleReload() { pending.after(0.4) { [weak self] in self?.reload() } }
-
-    private func reload() {
-        guard let wid, panel?.workspace != wid else { return }
-        Task {
-            let ch = await AppModel.shared.quiet(GitStatus(id: wid))   // a count on an icon; Source Control says what failed
-            report(wid, ch?.count ?? 0)
-            // Source Control isn't reading (not built, or out of the window): open diffs, the window bar and the sidebar
-            // badges still hear that git changed.
-            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
-        }
-    }
-
-    /// Source Control read the status already.
-    func report(_ id: String, _ n: Int) { if id == wid, n != count { count = n } }
 }

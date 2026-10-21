@@ -16,8 +16,19 @@ final class AppModel {
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var sessions: [Session] = []
-    /// How full each agent's conversation is (0…1), read when its status changes and while it works (Claude Code transcripts).
+    /// How full each agent's conversation is (0…1), pushed when its status changes and while it works (`WatchTopic.context`).
     var contextShare: [String: Double] = [:]
+    /// What the daemon pushes for what's watched (`watch(_:_:)`), by worktree id where it has one.
+    var git: [String: GitEvent] = [:]
+    var ports: [String: [PortsList.Port]] = [:]
+    var activity: ActivityEvent?
+    var ci: [String: CIEvent] = [:]
+    var prs: [String: GitHub.PullRequest] = [:]
+    var limits: UsageGet.Result?
+    /// How many of the app's views watch each topic and key: the daemon is told on the first and after the last.
+    @ObservationIgnored var watching: [WatchStart: Int] = [:]
+    /// `event.repo` / `event.worktree` / `event.removed` handled so far, per id: a list asked for before one may be older.
+    @ObservationIgnored var recordEvents: [String: Int] = [:]
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
     /// `event.session`s handled so far, per session: a list asked for before one of them may be older than it.
@@ -135,7 +146,7 @@ final class AppModel {
         if connected { connections += 1 }
         published = nil; publishRefused = false   // a new daemon knows nothing yet
         publishUIState()
-        watchContext()
+        for w in watching.keys { c.notify(w) }   // what the views watch, told to this daemon too
     }
 
     static let noService = String(localized: "Kelp's background service isn't running.")
@@ -212,21 +223,24 @@ final class AppModel {
     private func refreshOnce() async {
         // Assign only what changed: every assignment re-renders the views that read it. Quiet: a failed read keeps the
         // lists on screen, and a dropped connection says so itself (and refreshes again once it's back).
-        if let r = await quiet(RepoList()), r != repos { repos = r }
-        if let w = await quiet(WorktreeList()), w != worktrees { worktrees = w }
+        let records = recordEvents
+        func newer() -> Set<String> { Set(recordEvents.keys.filter { recordEvents[$0] != records[$0] }) }
+        if let r = await quiet(RepoList()) { let m = Self.merge(list: r, local: repos, newer: newer()); if m != repos { repos = m } }
+        if let w = await quiet(WorktreeList()) { let m = Self.merge(list: w, local: worktrees, newer: newer()); if m != worktrees { worktrees = m } }
         let before = sessionEvents
         if let s = await quiet(SessionList()) {
             let merged = Self.merge(list: s, local: sessions, newer: Set(sessionEvents.keys.filter { sessionEvents[$0] != before[$0] }))
             if merged != sessions { sessions = merged }
         }
+        syncContextWatches()
     }
 
-    /// The daemon's list, except sessions in `newer`: an event about them came while the list was on its way (on the
-    /// same connection, so after the list was read, or as it was), and what it said stays.
-    static func merge(list: [Session], local: [Session], newer: Set<String>) -> [Session] {
+    /// The daemon's list, except records in `newer`: an event about them came while the list was on its way (on the
+    /// same connection, so after the list was read, or as it was), and what it said stays; one removed meanwhile stays out.
+    static func merge<T: Identifiable & Equatable>(list: [T], local: [T], newer: Set<T.ID>) -> [T] {
         let kept = Dictionary(local.filter { newer.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let listed = Set(list.map(\.id))
-        return list.map { kept[$0.id] ?? $0 } + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
+        return list.compactMap { newer.contains($0.id) ? kept[$0.id] : $0 } + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
     }
 
     /// The daemon's events, handled on the main actor.
@@ -241,13 +255,15 @@ final class AppModel {
             let old = sessions.first { $0.id == s.id }
             if old != s { upsert(s) }   // views follow `sessions`
             (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
-            if old?.status != s.status, s.agent != "shell" { readContext(s.id) }
+            if old?.status != s.status { syncContextWatches() }
         case DevServerEvent.name:
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
             // The keys stay where they are: the page comes while you may be typing.
             if let e = event(DevServerEvent.self), e.worktree == Workbench.shared.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
-        case ChangedEvent.name:
-            Task { await refresh() }
+        case ChangedEvent.name: break   // the records themselves follow (event.repo / event.worktree / event.removed)
+        case Repo.name, Worktree.name, RemovedEvent.name: record(method, p)
+        case GitEvent.name, PortsEvent.name, ActivityEvent.name, CIEvent.name, PREvent.name, ContextEvent.name, LimitsEvent.name:
+            watched(method, p)
         case CloneEvent.name:
             if let e = event(CloneEvent.self) { CloneSheet.cloneProgress(id: e.id, line: e.line) }
         case SettingsEvent.name:
@@ -257,32 +273,6 @@ final class AppModel {
         default: break
         }
     }
-
-    /// No answer (not Claude Code, ended, just compacted by an older Claude Code) takes the ring away.
-    private func readContext(_ id: String) {
-        Task {
-            guard let usage = await quiet(SessionContextWindow(id: id)) else { return }   // no reply at all: the ring stays
-            let share = usage.flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }
-            if abs((contextShare[id] ?? -1) - (share ?? -1)) > 0.01 { contextShare[id] = share }
-        }
-    }
-
-    /// Agents already running when the app opens, and every working one now and then: a long turn fills the context too.
-    private func watchContext() {
-        guard contextWatch == nil else { return }
-        contextWatch = Task { [weak self] in
-            var first = true
-            while !Task.isCancelled, let self {
-                // Not while no window shows the rings (each read is a 1 MB transcript tail per working agent).
-                if first || NSApp.occlusionState.contains(.visible) {
-                    for s in sessions where s.agent != "shell" && s.status != .exited && (first || s.status == .working) { readContext(s.id) }
-                }
-                first = false
-                try? await Task.sleep(for: .seconds(15))
-            }
-        }
-    }
-    @ObservationIgnored private var contextWatch: Task<Void, Never>?
 
     // MARK: calls
 

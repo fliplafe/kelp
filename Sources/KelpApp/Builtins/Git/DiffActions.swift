@@ -18,7 +18,7 @@ extension DiffViewController {
         Task {
             await AppModel.shared.call(GitHunk(id: wid, file: path, hunk: i, reverse: staged, header: h.header, fingerprint: h.fingerprint))
             await load()
-            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+            AppModel.shared.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
         }
     }
     /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
@@ -38,7 +38,7 @@ extension DiffViewController {
                 let m = GitDiscardHunk(id: wid, file: path, hunk: h, header: header, fingerprint: print)
                 if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
                 await self.load()
-                NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+                AppModel.shared.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
             }
         }
     }

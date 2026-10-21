@@ -27,7 +27,7 @@ extension SharedAppModel {
     rig.show(vc, 320, 700)
     vc.view.layoutSubtreeIfNeeded()
     #expect(vc.worktreeId == rig.workspace.id)   // it follows the workspace on screen by itself
-    vc.reloadAll()                               // now that it's in a window
+    vc.followWatches()                           // now that it is in a window: watches the workspace, the daemon pushes its git
     let outline = try #require(outlines(in: vc.view).first)
     func rows() -> [String] { (0..<outline.numberOfRows).flatMap { (outline.view(atColumn: 0, row: $0, makeIfNecessary: true)).map(texts) ?? [] } }
     for _ in 0..<100 where !rows().contains("staged.txt") { try await Task.sleep(for: .milliseconds(50)) }

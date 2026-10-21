@@ -16,3 +16,14 @@ import Core
     #expect(merged.first?.status == .done)
     #expect(AppModel.merge(list: [stale, other], local: [done], newer: []) == [stale, other])   // nothing newer: the list
 }
+
+/// Workspaces follow `event.worktree` / `event.removed`: one renamed or removed while the list was on its way keeps what the
+/// event said — a removed one doesn't come back from the older list.
+@MainActor
+@Test func aListOnItsWayDoesntBringBackARemovedWorkspace() {
+    let kept = Worktree(repoId: "r", branch: "main", path: "/p", note: "Workspace 1")
+    var renamed = kept; renamed.note = "Renamed"
+    let removed = Worktree(repoId: "r", branch: "main", path: "/p", note: "Workspace 2")
+    let merged = AppModel.merge(list: [kept, removed], local: [renamed], newer: [kept.id, removed.id])
+    #expect(merged == [renamed])
+}

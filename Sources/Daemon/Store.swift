@@ -1,10 +1,21 @@
 import Foundation
+import os
 import GRDB
 import Core
 
 /// SQLite persistence for repos, worktrees, sessions and diff comments.
 public final class Store: Sendable {
     public let db: DatabaseQueue
+
+    /// A project or workspace record written (as it is now) or deleted.
+    public enum Change: Sendable { case repo(Repo), worktree(Worktree), repoRemoved(String), worktreeRemoved(String) }
+    /// Told of every one, after its write: every write goes through here, so the daemon pushes them from one place.
+    public let changed = OSAllocatedUnfairLock<(@Sendable (Change) -> Void)?>(initialState: nil)
+    private func report(_ r: Any, removed: Bool = false) {
+        guard let tell = changed.withLock({ $0 }) else { return }
+        if let x = r as? Repo { tell(removed ? .repoRemoved(x.id) : .repo(x)) }
+        if let x = r as? Worktree { tell(removed ? .worktreeRemoved(x.id) : .worktree(x)) }
+    }
 
     public init(path: String? = nil) throws {
         // WAL: every status, summary and UI-state change is a write, and the rollback journal fsynced each one twice.
@@ -103,19 +114,21 @@ public final class Store: Sendable {
     public func worktree(_ id: String) throws -> Worktree? { try db.read { try Worktree.fetchOne($0, key: id) } }
     public func sessions() throws -> [Session] { try db.read { try Session.order(Column("createdAt")).fetchAll($0) } }
     public func session(_ id: String) throws -> Session? { try db.read { try Session.fetchOne($0, key: id) } }
-    public func save<R: PersistableRecord>(_ r: R) throws { try db.write { try r.save($0) } }
+    public func save<R: PersistableRecord>(_ r: R) throws { try db.write { try r.save($0) }; report(r) }
     /// Changes a record (a workspace, a session) in one write: read, change, save with nothing in between. Saving a copy
     /// read earlier would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
     @discardableResult
     public func update<R: FetchableRecord & PersistableRecord>(_: R.Type, _ id: String, _ change: (inout R) throws -> Void) throws -> R? {
-        try db.write { d in
+        let r: R? = try db.write { d in
             guard var r = try R.fetchOne(d, key: id) else { return nil }
             try change(&r); try r.save(d); return r
         }
+        if let r { report(r) }
+        return r
     }
     /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).
-    public func update<R: PersistableRecord>(_ r: R) throws { try db.write { try r.update($0) } }
-    public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) } }
+    public func update<R: PersistableRecord>(_ r: R) throws { try db.write { try r.update($0) }; report(r) }
+    public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) }; report(r, removed: true) }
     public func comments(worktree: String) throws -> [DiffComment] {
         try db.read { try DiffComment.filter(Column("worktreeId") == worktree).fetchAll($0) }
     }

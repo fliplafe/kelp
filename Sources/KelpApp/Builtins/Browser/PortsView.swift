@@ -8,8 +8,7 @@ final class PortsView: NSView {
     var onOpen: ((String) -> Void)?
     private let list = NSStackView()
     private let hint = NSTextField(wrappingLabelWithString: "")
-    private var timer: Timer?
-    private var shown: [Int] = []
+    private var shown: [Int]?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -22,29 +21,30 @@ final class PortsView: NSView {
         NSLayoutConstraint.activate([stack.topAnchor.constraint(equalTo: topAnchor, constant: 40), stack.centerXAnchor.constraint(equalTo: centerXAnchor),
                                      stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460), stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -40),
                                      hint.widthAnchor.constraint(lessThanOrEqualToConstant: 460)])
+        track(owner: self) { [weak self] in self?.ports.key.flatMap { AppModel.shared.ports[$0] } } changed: { [weak self] in self?.show($0) }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        timer?.invalidate(); timer = nil
-        guard window != nil else { return }
-        reload()
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.reload() } }
-    }
-    override var isHidden: Bool { didSet { if !isHidden { reload() } } }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); follow() }
+    override var isHidden: Bool { didSet { follow() } }
 
-    private func reload() {
-        guard !isHidden, let wid = Workbench.shared.workspaceId else { return }
-        Task {
-            let ports = await AppModel.shared.quiet(PortsList(worktreeId: wid), timeout: 10) ?? []   // asked again in 3 s
-            let numbers = ports.map(\.port)
-            guard numbers != shown else { return }
-            shown = numbers
-            list.arrangedSubviews.forEach { $0.removeFromSuperview() }
-            for p in ports { list.addArrangedSubview(row(p, workspace: wid)) }
-            hint.isHidden = !ports.isEmpty
-        }
+    /// Watched while it shows: the daemon looks every few seconds and says when the ports changed.
+    private func follow() {
+        let wid = window != nil && !isHidden ? Workbench.shared.workspaceId : nil
+        guard wid != ports.key else { return }
+        ports.key = wid; shown = nil
+        show(wid.flatMap { AppModel.shared.ports[$0] })
+    }
+    private let ports = Watched(.ports)
+
+    private func show(_ found: [PortsList.Port]?) {
+        guard let wid = ports.key, let found else { return }
+        let numbers = found.map(\.port)
+        guard numbers != shown else { return }
+        shown = numbers
+        list.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for p in found { list.addArrangedSubview(row(p, workspace: wid)) }
+        hint.isHidden = !found.isEmpty
     }
 
     private func row(_ p: PortsList.Port, workspace wid: String) -> NSView {
@@ -55,7 +55,7 @@ final class PortsView: NSView {
         let copy = ClosureButton(title: String(localized: "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(address, forType: .string) }
         let stop = ClosureButton(title: String(localized: "Stop")) { [weak self] in
             Task {
-                if await AppModel.shared.call(PortsStop(worktreeId: wid, pid: Int(p.pid))) != nil { self?.shown = []; self?.reload() }
+                if await AppModel.shared.call(PortsStop(worktreeId: wid, pid: Int(p.pid))) != nil { AppModel.shared.watchAgain(.ports, wid) }
             }
         }
         for b in [copy, stop] { b.bezelStyle = .push; b.controlSize = .small }

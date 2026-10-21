@@ -1,57 +1,51 @@
 import AppKit
 import Core
 
-/// Reading the workspace's status, history and remote state from the daemon.
+/// The workspace's status, history and remote state: git and CI as the daemon pushes them while the panel is on screen
+/// (`gitWatch`, `ciWatch`), the graph read when the branches moved.
 extension SourceControlController {
     func bind(_ wid: String?) {
         guard wid != worktreeId else { return }
         worktreeId = wid; changes = []; info = nil; commits = []; unpushed = []; commitFiles = [:]; openCommits = []; limit = 200
-        ciPoll?.cancel(); ciRuns = []; ciAwaiting = nil; ciRow.show([], failure: nil)
+        ciRuns = []; ciRow.show([], failure: nil)
         message.string = ""; messageChanged()
-        watcher = AppModel.shared.worktree(wid).flatMap { w in FileWatcher(root: w.path) { [weak self] in if Git.touchesStatus($0) { self?.scheduleReload() } } }
-        ChangedFiles.shared.panel = self
-        rebuild(); reloadAll()
+        rebuild()
+        followWatches()
+        apply(AppModel.shared.git[wid ?? ""])
     }
 
-    /// The workspace this panel shows and keeps the Source Control badge of; out of the window it reads nothing,
-    /// so the badge counts by itself.
-    var workspace: String? { view.window == nil ? nil : worktreeId }
+    /// Watched only while on screen: swapped out of the inspector, it reads no git.
+    func followWatches() {
+        let shown = view.window != nil ? worktreeId : nil
+        gitWatch.key = shown
+        ciWatch.key = info?.upstream != nil ? shown : nil   // no upstream: no CI line
+    }
 
-    private func scheduleReload() { pending.after(0.4) { [weak self] in self?.reloadAll() } }
+    override func viewDidDisappear() { super.viewDidDisappear(); followWatches() }
 
-    func reloadAll() {
-        // Swapped out of the inspector: no git until it shows again.
-        guard view.window != nil else { stale = true; return }
-        stale = false
-        guard let wid = worktreeId, AppModel.shared.client != nil else { return }   // reconnecting reloads it
-        Task {
-            do {
-                let m = AppModel.shared
-                let ch = try await m.get(GitStatus(id: wid))
-                let br = try await m.get(GitBranches(id: wid))
-                guard wid == worktreeId else { return }   // another workspace is shown now: its own reload is on its way
-                let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
-                    || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
-                let changed = ch != changes || br != info
-                // A push (or a publish) starts CI: wait for its run to show up.
-                if let old = info, br.upstream != nil, br.current == old.current, old.upstream == nil || (br.ahead ?? 0) < (old.ahead ?? 0) {
-                    ciAwaiting = (ciRuns.first?.id, Date().addingTimeInterval(45))
-                }
-                changes = ch; info = br; showError(nil)
-                ChangedFiles.shared.report(wid, ch.count)
-                updateHeader(); updateCommitButton()
-                let stats = ch.isEmpty ? nil : await m.quiet(GitLineStats(id: wid))   // the "+6 −2" beside the header
-                guard wid == worktreeId else { return }
-                showStats(stats)
-                if graphStale || commits.isEmpty { loadCI(); await loadGraph() } else if changed { rebuildChanges() }
-            } catch {
-                guard wid == worktreeId else { return }
-                changes = []; info = nil; commits = []
-                showError((error as? RPCError)?.message ?? "\(error)")
-                updateHeader(); rebuild()
-            }
-            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+    /// Refresh, and after an action: read git again now rather than on the next file event.
+    func reloadAll() { if let wid = worktreeId { AppModel.shared.watchAgain(.git, wid) } }
+
+    /// What the daemon read: the lists, the header, and the graph when the branches moved.
+    func apply(_ e: GitEvent?) {
+        guard let e, e.worktree == worktreeId else { return }
+        if let error = e.error {
+            changes = []; info = nil; commits = []
+            showError(error); updateHeader(); rebuild(); followWatches()
+            return
         }
+        guard let ch = e.changes, let br = e.branches else { return }
+        let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
+            || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
+        let changed = ch != changes || br != info
+        // A push (or a publish) starts CI: look for its run now and for a while.
+        let pushed = info.map { old in br.upstream != nil && br.current == old.current && (old.upstream == nil || (br.ahead ?? 0) < (old.ahead ?? 0)) } ?? false
+        changes = ch; info = br; showError(nil)
+        updateHeader(); updateCommitButton()
+        showStats(ch.isEmpty ? nil : e.stats)   // the "+6 −2" beside the header
+        followWatches()
+        if pushed { AppModel.shared.watchAgain(.ci, e.worktree) }
+        if graphStale || commits.isEmpty { Task { await loadGraph() } } else if changed { rebuildChanges() }
     }
 
     /// Nothing git can show here: say why instead of an empty commit box.
@@ -75,35 +69,23 @@ extension SourceControlController {
         empty.attributedStringValue = s
     }
 
-    /// Shown again (another panel was on screen): what CI did meanwhile.
-    override func viewDidAppear() {
-        super.viewDidAppear()
-        if stale { reloadAll() }
-        if !ciRuns.isEmpty { loadCI() }
-    }
+    /// Shown again (another panel was on screen): watched again, and what changed meanwhile comes at once.
+    override func viewDidAppear() { super.viewDidAppear(); followWatches() }
 
-    /// The CI line under Commit. While a run goes on, or a push's run hasn't shown up yet, it looks again
-    /// as long as the panel is on screen. No upstream, no gh / glab, no runs: no line.
-    private func loadCI() {
-        ciPoll?.cancel()
-        guard let wid = worktreeId, info?.upstream != nil else { ciRuns = []; ciRow.show([], failure: nil); return }
-        ciPoll = Task { [weak self] in
-            let r = await AppModel.shared.tryCall(CIRunsList(worktreeId: wid))
-            guard let self, !Task.isCancelled, wid == worktreeId else { return }
-            ciRuns = r.value?.runs ?? []
-            let latest = CIRuns.latest(ciRuns)
-            ciRow.show(latest, failure: nil)
-            if let failed = latest.first(where: \.failed) {
-                if ciFailures[failed.id] == nil { ciFailures[failed.id] = await failurePlace(wid, run: failed.id) }
-                guard !Task.isCancelled, wid == worktreeId else { return }
-                ciRow.show(latest, failure: ciFailures[failed.id])
-            }
-            let waiting = ciAwaiting.map { self.ciRuns.first?.id == $0.old && Date() < $0.until } ?? false
-            if !waiting { ciAwaiting = nil }
-            guard waiting || latest.contains(where: { $0.status != "completed" }) else { return }
-            try? await Task.sleep(for: .seconds(waiting ? 5 : 10))
-            guard !Task.isCancelled, view.window != nil else { return }
-            loadCI()
+    /// The CI line under Commit, as the daemon pushes it (it looks again while a run goes on, and for a while after a
+    /// push). No upstream, no gh / glab, no runs: no line.
+    func applyCI(_ e: CIEvent?) {
+        guard let e, e.worktree == worktreeId else { return }
+        ciRuns = e.result?.runs ?? []
+        let latest = CIRuns.latest(ciRuns)
+        ciRow.show(latest, failure: nil)
+        guard let failed = latest.first(where: \.failed) else { return }
+        if let known = ciFailures[failed.id] { ciRow.show(latest, failure: known); return }
+        let wid = e.worktree
+        Task {
+            ciFailures[failed.id] = await failurePlace(wid, run: failed.id)
+            guard wid == worktreeId, CIRuns.latest(ciRuns) == latest else { return }
+            ciRow.show(latest, failure: ciFailures[failed.id])
         }
     }
 

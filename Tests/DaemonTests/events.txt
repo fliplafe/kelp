@@ -1,7 +1,17 @@
+event.activity
 event.changed
+event.ci
 event.clone
+event.context
 event.devserver
+event.git
+event.limits
 event.output
+event.ports
+event.pr
+event.removed
+event.repo
 event.session
 event.settings
 event.ui
+event.worktree

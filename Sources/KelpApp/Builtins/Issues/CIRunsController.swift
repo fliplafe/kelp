@@ -34,7 +34,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private var worktree: String?
     private var shownLog = "", shownJob: (job: CIRuns.Job, run: Int)?
     private var branchName = ""
-    private var poll: Task<Void, Never>?
+    /// The branch's runs, watched while the panel shows: the daemon looks again while one runs, and says when they changed.
+    private let ciWatch = Watched(.ci)
     private var autoOpened = Set<Int>()
 
     override func loadView() {
@@ -88,7 +89,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload(); self?.loadPages() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.follow(); self?.loadPages() }
+        track(owner: self) { [weak self] in AppModel.shared.ci[self?.worktree ?? ""] } changed: { [weak self] in self?.apply($0) }
     }
 
     /// From origin, not gh: there even when gh or glab isn't set up.
@@ -119,27 +121,29 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     // MARK: loading
 
-    /// Shown again (another panel was on screen): what ran meanwhile.
-    override func viewDidAppear() { super.viewDidAppear(); if !runs.isEmpty { reload() } }
+    /// Watched while on screen: shown again (another panel was on screen), what ran meanwhile comes at once.
+    override func viewDidAppear() { super.viewDidAppear(); follow() }
+    override func viewDidDisappear() { super.viewDidDisappear(); follow() }
+    private func follow() { ciWatch.key = view.window != nil ? worktree : nil }
 
-    private func reload() {
-        guard let w = worktree else { return }
-        poll?.cancel()
+    /// Refresh, and after starting runs: the daemon reads them now, and keeps looking for a while.
+    private func reload() { if let w = worktree { AppModel.shared.watchAgain(.ci, w) } }
+
+    private func apply(_ e: CIEvent?) {
+        guard let e, e.worktree == worktree else { return }
         Task {
-            let r = await AppModel.shared.tryCall(CIRunsList(worktreeId: w))
-            guard w == worktree else { return }
-            if let e = r.error {
+            if let error = e.error {
                 branch.stringValue = ""; workflowsButton.isHidden = true
-                show(note: e, setup: Forge.setup(for: e)); return
+                show(note: error, setup: Forge.setup(for: error)); return
             }
-            branchName = r.value?.branch ?? ""
+            branchName = e.result?.branch ?? ""
             branch.stringValue = branchName
             // What was open stays open across a refresh, its jobs read again.
             let openRuns = Set(runs.filter { outline.isItemExpanded($0) }.compactMap(\.id))
             let openJobs = Set(runs.flatMap { $0.children ?? [] }.filter { outline.isItemExpanded($0) }.compactMap(\.id))
             let selected = (outline.item(atRow: outline.selectedRow) as? Item)?.id
-            runs = (r.value?.runs ?? []).map { Item(.run($0)) }
-            workflows = r.value?.workflows ?? []
+            runs = (e.result?.runs ?? []).map { Item(.run($0)) }
+            workflows = e.result?.workflows ?? []
             workflowsButton.isHidden = workflows.isEmpty
             show(note: runs.isEmpty ? String(localized: "No CI runs on \(branchName) yet.") : nil)
             outline.reloadData()
@@ -152,17 +156,6 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             // with its log (once, so closing it sticks).
             let failing = Set(CIRuns.latest(runs.compactMap { if case .run(let r) = $0.kind { r } else { nil } }).filter(\.failed).map(\.id))
             if let item = runs.first(where: { failing.contains($0.id ?? -1) }), let id = item.id, autoOpened.insert(id).inserted { await expand(item, openFailed: true) }
-            pollWhileRunning()
-        }
-    }
-
-    /// Something still running: look again in a while, as long as the panel is on screen.
-    private func pollWhileRunning() {
-        guard runs.contains(where: { if case .run(let r) = $0.kind { r.status != "completed" } else { false } }) else { return }
-        poll = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(10))
-            guard !Task.isCancelled, self?.view.window != nil else { return }
-            self?.reload()
         }
     }
 
@@ -221,7 +214,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func rerun(_ w: String, run: Int) {
         Task {
             if await AppModel.shared.call(CIRerun(worktreeId: w, run: run)) != nil {
-                Banner.show(String(localized: "Re-running the failed jobs")); try? await Task.sleep(for: .seconds(2)); reload()
+                Banner.show(String(localized: "Re-running the failed jobs")); reload()
             }
         }
     }
@@ -257,7 +250,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             var inputs: [String: String] = [:]
             for (k, v) in fields { inputs[k] = (v as? NSPopUpButton)?.titleOfSelectedItem ?? (v as? NSTextField)?.stringValue ?? "" }
             if await AppModel.shared.call(CIDispatch(worktreeId: w, workflow: wf.file, branch: branchName, inputs: inputs)) != nil {
-                Banner.show(String(localized: "Started \(wf.name)")); try? await Task.sleep(for: .seconds(3)); reload()
+                Banner.show(String(localized: "Started \(wf.name)")); reload()
             }
         }
     }

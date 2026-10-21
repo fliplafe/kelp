@@ -90,7 +90,6 @@ final class SidebarCell: NSTableCellView {
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.
     private func updateBadges() {
         let w = folder
-        if let w { RowBadges.shared.refresh(w.id) }
         let c = w.flatMap { RowBadges.changes(RowBadges.shared.stats[$0.id]) }
         let p = w.flatMap { RowBadges.pr(RowBadges.shared.prs[$0.id]) }
         if let c { changes.attributedTitle = c; changes.toolTip = String(localized: "Not committed yet — click for the changes") }

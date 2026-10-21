@@ -10,7 +10,6 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     private let total = NSTextField(labelWithString: "")
     private let empty = NSTextField(labelWithString: String(localized: "No sessions running."))
     private var rows: [Row] = []
-    private var timer: Timer?
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("a")); col.resizingMask = .autoresizingMask
@@ -31,29 +30,29 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
         view = v
     }
 
-    override func viewDidAppear() {
-        super.viewDidAppear()
-        reload()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.reload() } }
-    }
-    override func viewDidDisappear() { super.viewDidDisappear(); timer?.invalidate(); timer = nil }
+    /// Watched while the panel shows: the daemon measures every two seconds and says when it changed.
+    override func viewDidAppear() { super.viewDidAppear(); watched.key = ""; show(AppModel.shared.activity) }
+    override func viewDidDisappear() { super.viewDidDisappear(); watched.key = nil }
+    private let watched = Watched(.activity)
 
-    private func reload() {
-        Task {
-            let m = AppModel.shared
-            let read = await m.tryCall(SessionUsage())
-            let usage = read.value ?? []
-            // Couldn't measure: say why where "No sessions running." would be, not that nothing runs.
-            empty.stringValue = read.error.map { String(localized: "Couldn't measure the sessions: \($0)") } ?? String(localized: "No sessions running.")
-            rows = usage.compactMap { u in
-                guard let s = m.session(u.session) else { return nil }
-                return Row(session: s, cpu: u.cpu, memory: u.memory, processes: u.processes)
-            }
-            let cpu = rows.reduce(0) { $0 + $1.cpu }, mem = rows.reduce(0) { $0 + $1.memory }
-            total.stringValue = rows.isEmpty ? "" : String(localized: "\(rows.count) sessions · CPU \(Self.percent(cpu)) · \(Self.bytes(mem))")
-            empty.isHidden = !rows.isEmpty
-            table.reloadData()
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        track(owner: self) { AppModel.shared.activity } changed: { [weak self] in self?.show($0) }
+    }
+
+    private func show(_ e: ActivityEvent?) {
+        guard let e else { return }
+        let m = AppModel.shared
+        // Couldn't measure: say why where "No sessions running." would be, not that nothing runs.
+        empty.stringValue = e.error.map { String(localized: "Couldn't measure the sessions: \($0)") } ?? String(localized: "No sessions running.")
+        rows = (e.usage ?? []).compactMap { u in
+            guard let s = m.session(u.session) else { return nil }
+            return Row(session: s, cpu: u.cpu, memory: u.memory, processes: u.processes)
         }
+        let cpu = rows.reduce(0) { $0 + $1.cpu }, mem = rows.reduce(0) { $0 + $1.memory }
+        total.stringValue = rows.isEmpty ? "" : String(localized: "\(rows.count) sessions · CPU \(Self.percent(cpu)) · \(Self.bytes(mem))")
+        empty.isHidden = !rows.isEmpty
+        table.reloadData()
     }
 
     static func percent(_ cpu: Double) -> String { cpu < 10 ? String(format: "%.1f%%", cpu) : "\(Int(cpu.rounded()))%" }

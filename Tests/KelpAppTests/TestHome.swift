@@ -39,7 +39,7 @@ final class AppRig {
         workspace = w
         let m = AppModel.shared, wb = Workbench.shared
         saved = (m.client, m.repos, m.worktrees, wb.workspaceId)
-        m.client = client; m.repos = [project]; m.worktrees = [workspace]; wb.workspaceId = workspace.id
+        m.client = client; m.listen(client); m.repos = [project]; m.worktrees = [workspace]; wb.workspaceId = workspace.id
     }
 
     func write(_ name: String, _ text: String) throws { try text.write(toFile: repo + "/" + name, atomically: true, encoding: .utf8) }

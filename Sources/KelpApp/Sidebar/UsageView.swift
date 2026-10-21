@@ -30,18 +30,11 @@ struct UsageView: View {
                 bars.padding(.horizontal, 14).padding(.vertical, 10)
             }
         }
-        .onChange(of: AgentAvailability.shared.ids) { Task { await load() } }
-        .task {
-            // Look again soon until the daemon answers (at launch) and has read the agents' /usage (seconds, the first time).
-            var quick = 12
-            while !Task.isCancelled {
-                await load()
-                let waiting = quick > 0 && !rows.contains { $0.id == "claude" }
-                quick -= 1
-                // Every 20 s: cheap (the daemon answers from memory), and a plan read after a turn shows up soon.
-                try? await Task.sleep(for: .seconds(waiting ? (rows.isEmpty ? 1 : 8) : 20))
-            }
-        }
+        // Watched while shown: the daemon says when a plan read or the token count changed.
+        .onAppear { AppModel.shared.watch(.limits); load() }
+        .onDisappear { AppModel.shared.unwatch(.limits) }
+        .onChange(of: AppModel.shared.limits) { load() }
+        .onChange(of: AgentAvailability.shared.ids) { load() }
     }
 
     private var bars: some View {
@@ -137,9 +130,8 @@ struct UsageView: View {
 
     static func tint(_ u: Double, quiet: Color = .secondary) -> Color { u >= 0.9 ? .red : u >= 0.7 ? .orange : quiet }
 
-    private func load() async {
-        // The poll awaits each answer: without a timeout one lost reply froze the limits for good ("Read 36m ago; not since").
-        guard let u = await AppModel.shared.quiet(UsageGet(), timeout: 60) else { return }
+    private func load() {
+        guard let u = AppModel.shared.limits else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }

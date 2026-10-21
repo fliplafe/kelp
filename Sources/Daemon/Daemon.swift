@@ -39,6 +39,7 @@ public final class Daemon: Sendable {
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
+    let watches = Watches()   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
@@ -58,6 +59,7 @@ public final class Daemon: Sendable {
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
         RemoteHost.controlDir = ssh.path
         RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
+        self.store.changed.withLock { $0 = { [weak self] c in self?.recordChanged(c) } }   // records go to the clients as they change
     }
 
     /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
@@ -133,6 +135,7 @@ public final class Daemon: Sendable {
         let pids = live.all.flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] }
         Self.waitGone(pids)
         lsp.stopAll()
+        watches.stopAll()
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }
@@ -191,6 +194,7 @@ public final class Daemon: Sendable {
                 }
             }
             clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
+            watches.drop(c.id)
             live.all.forEach { $0.detach(c.id) }
             lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
             c.close()

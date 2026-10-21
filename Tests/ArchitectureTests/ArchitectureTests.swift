@@ -97,3 +97,24 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
         .filter { f in !allowed.contains { f.hasPrefix($0 + ":") } }
     #expect(found == [])
 }
+
+/// The app doesn't ask the daemon again and again: views watch (`watch.start`) and the daemon pushes what changed.
+/// A clock left in the app is the app's own, each listed with why; a new one that polls the daemon belongs in a watch.
+@Test func theAppDoesntPollTheDaemon() throws {
+    let clocks: [String: String] = [
+        "AppDelegate.swift": "a finished agent counts as read after a second on screen; a 30 ms wait for the window at launch",
+        "Sidebar/SidebarController.swift": "relative times on the rows (\"now\" becomes \"1m\")",
+        "AppModel.swift": "connecting: waiting for the socket, retries and backoff",
+        "Notifier.swift": "a notification's summary waits a moment for the agent's last line",
+        "Shell/Latency.swift": "\"Loading…\" only once a wait is long enough to notice",
+        "Builtins/Agents/UsageTab.swift": "a \"still reading\" hint after 3 s",
+        "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
+        "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
+        "Builtins/Files/LSPManager.swift": "an idle language server is stopped after a minute",
+        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list",
+        "DevAids.swift": "the snapshot and typing aids for tests"
+    ]
+    let found = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])
+        .filter { m in !clocks.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
+    #expect(found == [], "a clock asking the daemon: watch a topic instead (WatchTopic)")
+}

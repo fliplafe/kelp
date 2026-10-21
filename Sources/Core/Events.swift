@@ -10,7 +10,9 @@ public protocol RPCEvent: Codable, Sendable {
 
 /// Every event the daemon sends.
 public let rpcEvents: [any RPCEvent.Type] = [Session.self, OutputEvent.self, DevServerEvent.self, ChangedEvent.self, CloneEvent.self,
-                                              SettingsEvent.self, UIEvent.self]
+                                              SettingsEvent.self, UIEvent.self, Repo.self, Worktree.self, RemovedEvent.self,
+                                              GitEvent.self, PortsEvent.self, ActivityEvent.self, CIEvent.self, PREvent.self, ContextEvent.self,
+                                              LimitsEvent.self]
 
 /// A session's record changed: the record is the event.
 extension Session: RPCEvent { public static let name = "event.session" }
@@ -29,7 +31,8 @@ public struct DevServerEvent: RPCEvent {
     public init(worktree: String, url: String, session: String) { self.worktree = worktree; self.url = url; self.session = session }
 }
 
-/// Projects or workspaces changed: read the lists again. The params are just the word.
+/// Projects or workspaces changed: read the lists again. The params are just the word. Still sent for clients that read
+/// lists; the changed records themselves come as `event.repo` / `event.worktree` / `event.removed`.
 public enum ChangedEvent: String, RPCEvent {
     public static let name = "event.changed"
     case repo, worktree

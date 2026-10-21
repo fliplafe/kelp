@@ -2,20 +2,26 @@ import AppKit
 import Core
 
 /// What the sidebar shows beside a folder: lines not committed yet and the branch's PR. Desks share their project's
-/// folder, so the project row carries it; a workspace on its own branch (a worktree) carries its own.
-/// Read once a minute for folders on screen, and when Source Control sees a change.
+/// folder, so the project row carries it; a workspace on its own branch (a worktree) carries its own. Every folder the
+/// sidebar lists is watched: the daemon pushes its git when its files change, and its PR (gh, once a minute).
 @MainActor
-@Observable
 final class RowBadges {
     static let shared = RowBadges()
-    private(set) var stats: [String: LineStats] = [:]   // worktree id → changes
-    private(set) var prs: [String: GitHub.PullRequest] = [:]     // worktree id → its branch's PR
-    @ObservationIgnored private var asked: [String: Date] = [:]
+    /// Worktree id → changes / its branch's PR (observed through AppModel).
+    var stats: [String: LineStats] { AppModel.shared.git.compactMapValues(\.stats) }
+    var prs: [String: GitHub.PullRequest] { AppModel.shared.prs }
+    private var folders = Set<String>()
 
     private init() {
-        NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { n in
-            MainActor.assumeIsolated { if let id = n.object as? String { RowBadges.shared.refresh(id, force: true) } }
-        }
+        track { Set(AppModel.shared.repos.compactMap { Self.folder(project: $0.id)?.id } + AppModel.shared.worktrees.compactMap { Self.folder(workspace: $0.id)?.id }) }
+            changed: { [weak self] in self?.follow($0) }
+    }
+
+    private func follow(_ now: Set<String>) {
+        let m = AppModel.shared
+        for id in now.subtracting(folders) { m.watch(.git, id); m.watch(.pr, id) }
+        for id in folders.subtracting(now) { m.unwatch(.git, id); m.unwatch(.pr, id) }
+        folders = now
     }
 
     /// The worktree whose folder a row stands for (nil: the row has none of its own).
@@ -26,20 +32,8 @@ final class RowBadges {
     }
     static func folder(workspace id: String) -> Worktree? {
         let m = AppModel.shared
-        guard let w = m.worktree(id), w.path != m.repo(w.repoId)?.path else { return nil }
+        guard let w = m.worktree(id), !w.archived, w.path != m.repo(w.repoId)?.path else { return nil }
         return w
-    }
-
-    func refresh(_ wid: String, force: Bool = false) {
-        guard force || Date().timeIntervalSince(asked[wid] ?? .distantPast) > 60, AppModel.shared.client != nil else { return }
-        asked[wid] = Date()
-        Task {
-            let m = AppModel.shared
-            let s = await m.quiet(GitLineStats(id: wid))
-            if s != stats[wid] { stats[wid] = s }
-            let pr = await m.quiet(GitHubBranchPR(worktreeId: wid)) ?? nil
-            if pr != prs[wid] { prs[wid] = pr }
-        }
     }
 
     /// "+6 −2" in green and red (text shades: NSColor.textGreen); a side with nothing changed is left out ("+6", not "+6 −0").

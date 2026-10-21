@@ -18,7 +18,8 @@ final class WindowBar: NSView {
     private let forward = NSButton.titlebar("chevron.right", String(localized: "Forward"), tip: "")
     private let awake = NSButton.titlebar("cup.and.saucer", String(localized: "Keep Mac Awake"), tip: "")
     private let sideBySide = NSButton.titlebar("rectangle.split.3x1", String(localized: "Agents Side by Side"), tip: "")
-    private var info: BranchInfo?
+    /// The branch chip: the workspace on screen's git, as the daemon pushes it (ChangedFiles watches it).
+    private var info: BranchInfo? { AppModel.shared.git[Workbench.shared.workspaceId ?? ""]?.branches }
 
     private var worktree: Worktree? { AppModel.shared.worktree(Workbench.shared.workspaceId) }
     /// The folder the sidebar keeps the pull request for: a desk shares its project's.
@@ -65,20 +66,10 @@ final class WindowBar: NSView {
         track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
         track(owner: self) { Workbench.shared.sideBySide } changed: { [weak self] in self?.showSideBySide($0) }
         track(owner: self) { SettingsStore.shared.bool("workbench.sideBySideButton") ?? true } changed: { [weak self] in self?.sideBySide.isHidden = !$0 }
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
-            guard let self else { return }
-            self.info = nil; self.reload()
-            if let f = self.badgeFolder { RowBadges.shared.refresh(f.id) }
-        }
         track(owner: self) { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.update() }
+        // A branch switched anywhere (a terminal too) moves the workspace's refs: the daemon pushes it.
+        track(owner: self) { [weak self] in self?.info } changed: { [weak self] _ in self?.update() }
         track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.update() }
-        // Source Control saw a change, or Kelp comes back (a branch may have been switched in a terminal meanwhile).
-        NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated { if let self, n.object as? String == self.worktree?.id { self.reload() } }
-        }
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reload() }
-        }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -91,15 +82,6 @@ final class WindowBar: NSView {
         b.font = .ui(12); b.imagePosition = .imageLeading; b.imageHugsTitle = true
         if let symbol { b.image = Glyph.image(symbol, size: 13) ?? .symbol(symbol, ""); b.symbolConfiguration = .init(pointSize: 11, weight: .regular) }
         return b
-    }
-
-    private func reload() {
-        guard let w = worktree, AppModel.shared.client != nil else { update(); return }
-        Task {
-            let i = await AppModel.shared.quiet(GitBranches(id: w.id))   // the branch chip; Source Control says what failed
-            guard w.id == worktree?.id else { return }
-            info = i; update()
-        }
     }
 
     private func update() {
@@ -147,7 +129,7 @@ final class WindowBar: NSView {
     private func switchBranch(_ m: GitSwitch) {
         Task {
             if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
-            NotificationCenter.default.post(name: .kelpGitChanged, object: m.id)
+            AppModel.shared.watchAgain(.git, m.id)   // the chip now, not on the next file event
         }
     }
 

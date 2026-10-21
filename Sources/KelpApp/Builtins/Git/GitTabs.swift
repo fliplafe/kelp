@@ -29,15 +29,16 @@ final class DiffTab: TabContent {
         _ = controller.view
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
-        observer = NotificationCenter.default.addObserver(forName: .kelpGitChanged, object: nil, queue: .main) { [weak self] n in
-            MainActor.assumeIsolated {
-                guard let self, (n.object as? String) == self.worktreeId, self.commit == nil else { return }
-                if self.controller.view.window == nil { self.controller.stale = true } else { self.controller.reload() }
-            }
+        // Its workspace's git, pushed when its files change (a commit's diff doesn't change): read the diff again.
+        guard commit == nil else { return }
+        gitWatch.key = worktreeId
+        var shown = false   // the first value is what was just loaded
+        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] _ in
+            guard let self, shown else { shown = true; return }
+            if controller.view.window == nil { controller.stale = true } else { controller.reload() }
         }
     }
-    private var observer: NSObjectProtocol?
-    isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    private let gitWatch = Watched(.git)
 
     func focus() { controller.view.window?.makeFirstResponder(controller.view) }
 
@@ -161,5 +162,3 @@ enum GitCommit {
         return true
     }
 }
-
-extension Notification.Name { static let kelpGitChanged = Notification.Name("kelp.git.changed") }

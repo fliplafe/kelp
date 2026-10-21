@@ -110,7 +110,7 @@ final class FileTab: SavableTab {
         let real = Paths.real(p) ?? p
         watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in
             guard paths.contains(where: { $0 == real || $0 == p }) else { return }
-            self?.diskChanged()
+            MainActor.assumeIsolated { self?.diskChanged() }   // delivered on main
         }
         track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
     }

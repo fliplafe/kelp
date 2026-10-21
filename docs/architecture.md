@@ -85,12 +85,22 @@ and folds, the last workspace — is in the daemon's database (`state.get` / `st
 workspace DB: each `KELP_HOME` has its own, and removing a workspace removes its layout. Per-Mac view preferences
 (panel sizes, inline diffs…) stay in UserDefaults.
 
+The app doesn't ask the daemon again and again: it watches. Records come as they change — `event.session`,
+`event.repo`, `event.worktree`, `event.removed` (every write of the store reports itself, `Store.changed`) — and the
+lists are read once, at connect. What has no record of its own is a topic a view watches while it's on screen
+(`watch.start` / `watch.stop`, `WatchTopic`): a workspace's git (read when its files change, FSEvents in the daemon), its
+ports, every session's CPU and memory, the branch's CI runs and pull request, an agent's context, the plan limits. The
+daemon reads a topic once for all its watchers, only while someone watches, and pushes it (`event.git`, `event.ports`…)
+only when it changed; the app counts its watchers (`AppModel.watch`, `Watched`) and keeps what came in observed state
+(`AppModel.git`, `.ports`…). Watching what's watched again (`watchAgain`) reads it now: after a commit or a push.
+Clocks left in the app are its own (relative times, "still loading" hints, reconnecting) — ArchitectureTests lists them.
+
 Inside the app there is one way to learn that something changed, like Zed's observed entities: state — anything with
 a current value (sessions, settings, text size, the editor theme, the tab on screen) — is `@Observable`, and AppKit code
 follows the parts it reads with `track { value } changed: { … }` (once now, then after each change, on the next
 run-loop turn; `owner:` ends it with a tab). Events that carry data and have no value to re-read (a clone's progress
 line, a dev server's URL, an agent's status change as it happens) are direct calls when their one receiver is reachable,
-else a `NotificationCenter` name (`kelpGitChanged`: after a git action the window bar, diff tabs and sidebar badges re-read git).
+else a `NotificationCenter` name.
 
 ## Concurrency and ordering (the daemon)
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,

@@ -125,6 +125,8 @@ ui.publish
 ui.state
 usage.get
 usage.report
+watch.start
+watch.stop
 workspace.create
 worktree.archive
 worktree.create
