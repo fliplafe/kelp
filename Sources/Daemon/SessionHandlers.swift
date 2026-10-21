@@ -31,10 +31,10 @@ extension SessionDetach: Handled {
 extension SessionWrite: Handled {
     static var inOrder: Bool { true }   // keystrokes
     func handle(_ d: Daemon) throws -> Done {
-        let s = try d.liveSession(id)
-        if let base64, let data = Data(base64Encoded: base64) { s.userInput(data) }
-        else if let text { s.pty.write(Data(text.utf8)) }
-        else { throw RPCError.invalidParams("missing text") }
+        let data: Data
+        if let base64, let b = Data(base64Encoded: base64) { data = b } else if let text { data = Data(text.utf8) } else { throw RPCError.invalidParams("missing text") }
+        let typed = base64 != nil   // keystrokes count as the user's typing; text goes to the program as it is
+        try d.whenRunning(id) { s in if typed { s.userInput(data) } else { s.pty.write(data) } }
         return Done()
     }
 }
@@ -44,8 +44,10 @@ extension SessionSend: Handled {
     static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
         // Still starting (woken just now, by this send or anyone else), a question open, an unread draft in the box, or
-        // text still waiting ahead: queued, and typed once the program is ready for it (`LiveSession.submit`).
-        try d.liveSession(id).submit(text, enter: enter != false)
+        // text still waiting ahead: queued, and typed once the program is ready for it (`LiveSession.submit`). A paused
+        // one wakes on its lane, not here on the reader thread.
+        let text = text, enter = enter != false
+        try d.whenRunning(id) { $0.submit(text, enter: enter) }
         return Done()
     }
 }

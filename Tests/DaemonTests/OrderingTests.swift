@@ -1,6 +1,8 @@
 import Foundation
+import os
 import Testing
 import Core
+import Agents
 @testable import Daemon
 
 /// `calls` written to the daemon in one write, as one connection sends them back to back; every line read (events
@@ -79,4 +81,27 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     }
     #expect(heard(loud).contains("event.settings"))
     #expect(heard(quiet).isEmpty)
+}
+
+/// A send to a paused agent wakes it (git, files, a spawn) off the connection's reader thread: what that connection sends
+/// next is answered meanwhile, and the text still reaches the agent once it's up. It used to wake on the reader thread,
+/// so the app's next calls — and its main thread, once the socket filled — waited out the wake.
+@Test func aSendToAPausedAgentDoesntHoldUpItsConnection() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "stty -echo; echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "lane")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    try await hibernate(after: 0.03, w.c)   // ~2 s
+    func status() async throws -> AgentStatus? { try await w.c.call(SessionList()).first { $0.id == s.id }?.status }
+    #expect(try await waitFor(15) { try await status() == .hibernated })
+    try await hibernate(after: 0, w.c)
+    // A wake that takes 2 s: its lock held elsewhere (as an idle pause holds it).
+    let held = OSAllocatedUnfairLock(initialState: false)
+    Thread.detachNewThread { w.d.wakeLocks.withLock(s.id) { held.withLock { $0 = true }; Thread.sleep(forTimeInterval: 2) } }
+    #expect(try await waitFor(5) { held.withLock { $0 } })
+    let start = Date()
+    let lines = try sendAtOnce(w.root, [(SessionSend.name, .obj(["id": .string(s.id), "text": "hello-lane"])), (Ping.name, .null)])
+    #expect(lines.contains { $0["id"]?.int == 2 && $0["result"] == "pong" })
+    #expect(Date().timeIntervalSince(start) < 1.8, "the ping waited for the wake")
+    #expect(try await waitFor(15) { try await w.c.call(SessionRead(id: s.id)).contains("hello-lane") })
 }
