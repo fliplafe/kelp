@@ -89,7 +89,7 @@ extension Git {
     /// Files a commit changed against its first parent: `[(status letter, path)]`.
     /// `-z`: "M\0path\0" or, renamed or copied, "R100\0old\0new\0".
     public static func commitFiles(_ path: String, commit: String) throws -> [FileChange] {
-        var f = try run(["show", "--format=", "--name-status", "-z", "-M", "--diff-merges=first-parent", commit], cwd: path)
+        var f = try run(["show", "--format=", "--name-status", "-z", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path)
             .split(separator: "\0").map(String.init)[...]
         var out: [FileChange] = []
         while let s = f.popFirst()?.first {

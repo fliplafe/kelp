@@ -49,7 +49,7 @@ extension Git {
         // Only a merge started here is ever aborted here: one the user had under way is refused, untouched.
         guard !isMerging(target) else { throw GitError(args: ["merge", branch], status: 1, stderr: "a merge is already in progress in \(target)") }
         do {
-            try run(["merge", "--no-edit", branch], cwd: target)
+            try run(["merge", "--no-edit", rev(branch)], cwd: target)
             return MergeResult(merged: true, conflicts: [])
         } catch {
             let c = try status(target).filter(\.conflicted).map(\.path)
@@ -60,7 +60,7 @@ extension Git {
     }
 
     public static func log(_ path: String, base: String? = nil, limit: Int = 50) throws -> [(hash: String, subject: String)] {
-        let range = base.map { ["\($0)..HEAD"] } ?? []
+        let range = try base.map { ["\(try rev($0))..HEAD"] } ?? []
         return try run(["log", "--format=%h%x09%s", "-n\(limit)"] + range, cwd: path)
             .split(separator: "\n").compactMap { l in
                 let p = l.split(separator: "\t", maxSplits: 1); return p.count == 2 ? (String(p[0]), String(p[1])) : nil

@@ -504,3 +504,20 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     // git grep -z (remote projects, or no ripgrep) writes NUL after the line number too.
     #expect(ProjectFiles.parseGrep("a:b.txt\u{0}3\u{0}x: y\n") == [SearchMatch(path: "a:b.txt", line: 3, text: "x: y")])
 }
+
+/// Every GitKit call that takes a revision or branch name refuses one that git would read as an option, wherever the
+/// name came from: none reaches git (a file named by --output= stays as it was).
+@Test func revisionsThatReadAsOptionsAreRefusedEverywhere() throws {
+    let repo = try tempRepo()
+    let victim = NSTemporaryDirectory() + "victim-\(UUID().uuidString).txt"
+    try "keep\n".write(toFile: victim, atomically: true, encoding: .utf8)
+    let evil = "--output=" + victim
+    #expect(throws: GitError.self) { _ = try Git.log(repo, base: evil) }
+    #expect(throws: GitError.self) { _ = try Git.diff(repo, source: .branch(base: evil)) }
+    #expect(throws: GitError.self) { _ = try Git.diff(repo, source: .commit(evil)) }
+    #expect(throws: GitError.self) { _ = try Git.commitFiles(repo, commit: evil) }
+    #expect(throws: GitError.self) { try Git.renameBranch(repo, from: "main", to: evil) }
+    let into = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("wt-\(UUID().uuidString)")
+    #expect(throws: GitError.self) { _ = try Git.addWorktree(repo: repo, branch: "x", base: evil, into: into, copyFiles: []) }
+    #expect(try String(contentsOfFile: victim, encoding: .utf8) == "keep\n")
+}

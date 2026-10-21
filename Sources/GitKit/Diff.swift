@@ -148,9 +148,9 @@ extension Git {
         case .unstaged: break
         case .staged: a.append("--cached")
         case .allUncommitted: a.append("HEAD")
-        case .branch(let base): a.append("\(base)...HEAD")
-        case .commit(let c): a = ["show", "--format=", "-M", "--diff-merges=first-parent"] + common + [c]
-        case .since(let tree): a += [tree, try snapshotTree(path)]   // two trees: new files included, nothing staged
+        case .branch(let base): a.append("\(try rev(base))...HEAD")
+        case .commit(let c): a = ["show", "--format=", "-M", "--diff-merges=first-parent"] + common + [try rev(c)]
+        case .since(let tree): a += [try rev(tree), try snapshotTree(path)]   // two trees: new files included, nothing staged
         }
         if let file { a += ["--"] + literal([file]) }
         var diffs = parseDiff(try runData(a, cwd: path))

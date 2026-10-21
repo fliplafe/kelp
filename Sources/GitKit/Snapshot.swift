@@ -21,7 +21,7 @@ extension Git {
     public static func changesSince(tree: String, cwd: String) throws -> [(path: String, added: Int, removed: Int)] {
         let now = try snapshotTree(cwd)
         guard now != tree else { return [] }
-        return try run(["diff", "--numstat", "--no-renames", "-z", tree, now], cwd: cwd).split(separator: "\0").compactMap { line in
+        return try run(["diff", "--numstat", "--no-renames", "-z", rev(tree), now], cwd: cwd).split(separator: "\0").compactMap { line in
             let f = line.split(separator: "\t", maxSplits: 2)
             guard f.count == 3 else { return nil }
             return (String(f[2]), Int(f[0]) ?? 0, Int(f[1]) ?? 0)

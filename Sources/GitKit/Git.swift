@@ -62,6 +62,13 @@ public enum Git {
     /// the daemon's `ref`.
     public static func isRevision(_ name: String) -> Bool { !name.isEmpty && !name.hasPrefix("-") }
 
+    /// `name` as a revision or branch argument, wherever it came from (a client, the database, git's own output): every
+    /// GitKit call that puts one where git reads options goes through this, so none can become an option.
+    static func rev(_ name: String) throws -> String {
+        guard isRevision(name) else { throw GitError(args: [name], status: 1, stderr: "“\(name)” isn't a branch or commit name.") }
+        return name
+    }
+
     /// Default branch: origin/HEAD if set, else current branch of the main checkout.
     public static func defaultBranch(repo: String) -> String {
         if let s = try? run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd: repo) {

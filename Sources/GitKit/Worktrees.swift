@@ -12,7 +12,7 @@ extension Git {
         var path = dir.appendingPathComponent(slug(branch)).path, n = 2
         while FileManager.default.fileExists(atPath: path) { path = dir.appendingPathComponent("\(slug(branch))-\(n)").path; n += 1 }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try run(["worktree", "add", "-b", branch, path, base], cwd: repo)
+        try run(["worktree", "add", "-b", rev(branch), path, rev(base)], cwd: repo)
         let fm = FileManager.default
         for f in Array(Set(copyFiles + includedIgnoredFiles(repo: repo))) {
             let src = (repo as NSString).appendingPathComponent(f), dst = (path as NSString).appendingPathComponent(f)
@@ -54,7 +54,7 @@ extension Git {
     }
 
     public static func renameBranch(_ path: String, from old: String, to new: String) throws {
-        try run(["branch", "-m", old, new], cwd: path)
+        try run(["branch", "-m", rev(old), rev(new)], cwd: path)
     }
 
     public static func branchExists(_ repo: String, _ b: String) -> Bool {
@@ -71,7 +71,7 @@ extension Git {
     public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false) throws {
         try checkRemovable(repo: repo, path: path, branch: branch, force: force, dropCommits: dropCommits)
         try run(["worktree", "remove", "--force", path], cwd: repo)
-        if let branch { try run(["branch", "-D", branch], cwd: repo) }
+        if let branch { try run(["branch", "-D", rev(branch)], cwd: repo) }
     }
 
     /// What `removeWorktree` would refuse, without removing anything.

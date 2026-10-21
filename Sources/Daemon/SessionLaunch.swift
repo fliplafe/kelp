@@ -119,7 +119,7 @@ extension Daemon {
     static let agentConfigSpecs = agentConfig.flatMap { [":(glob)**/" + $0, ":(glob)**/" + $0 + "/**"] }
     static func changesAgentConfig(_ path: String, base: String) -> Bool {
         guard Git.isRevision(base) else { return true }   // a base that reads as an option can't be compared: the user is asked
-        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfigSpecs, cwd: path)) == nil   // exit 1: differs
+        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfigSpecs, cwd: path)) == nil   // exit 1: differs (base: checked above)
         let pending = (try? Git.run(["status", "--porcelain", "--"] + agentConfigSpecs, cwd: path))?.isEmpty != true
         return committed || pending
     }

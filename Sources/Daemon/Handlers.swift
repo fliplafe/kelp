@@ -135,7 +135,7 @@ extension RepoRemoveWorktrees: Handled {
             }
             do {
                 try Git.run(["worktree", "remove", p], cwd: r.path)   // no --force: git keeps one with changes, untracked files or a lock
-                if let b = w.branch { _ = try? Git.run(["branch", "-d", b], cwd: r.path) }   // -d: only if its commits are on another branch
+                if let b = w.branch, Git.isRevision(b) { _ = try? Git.run(["branch", "-d", b], cwd: r.path) }   // -d: only if its commits are on another branch
                 out.removed.append(p)
             } catch let e as GitError { out.kept[p] = e.message }
         }
