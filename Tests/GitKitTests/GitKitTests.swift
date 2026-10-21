@@ -517,3 +517,18 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(throws: GitError.self) { _ = try Git.addWorktree(repo: repo, branch: "x", base: evil, into: into, copyFiles: []) }
     #expect(try String(contentsOfFile: victim, encoding: .utf8) == "keep\n")
 }
+
+/// A folder that came with its own .git/config (a download, not a clone): what Kelp runs by itself must not start its programs.
+@Test func aReposOwnConfigRunsNoProgramOnStatusOrDiff() throws {
+    let repo = try tempRepo()
+    let ran = repo + "/ran", script = repo + "/x.sh"
+    try "#!/bin/sh\ntouch '\(ran)'\ncat \"$1\" 2>/dev/null\n".write(toFile: script, atomically: true, encoding: .utf8)
+    chmod(script, 0o755)
+    try Git.run(["config", "core.fsmonitor", script], cwd: repo)
+    try Git.run(["config", "diff.x.textconv", script], cwd: repo)
+    try "*.txt diff=x\n".write(toFile: repo + "/.git/info/attributes", atomically: true, encoding: .utf8)
+    try "a\nB\nc\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+    #expect(try Git.status(repo).contains { $0.path == "f.txt" })
+    #expect(try Git.diff(repo, source: .unstaged).first?.hunks.isEmpty == false)
+    #expect(!FileManager.default.fileExists(atPath: ran))
+}

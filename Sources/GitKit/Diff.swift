@@ -141,8 +141,9 @@ extension Git {
     }
 
     public static func diff(_ path: String, source: DiffSource, file: String? = nil) throws -> [FileDiff] {
-        // Fixed prefixes and no external tool: a user's diff.noprefix / diff.mnemonicPrefix / diff.external don't change the output.
-        let common = ["--no-color", "--no-ext-diff", "-U3", "--src-prefix=a/", "--dst-prefix=b/"]
+        // Fixed prefixes and no external tool or textconv: a user's diff.noprefix / diff.mnemonicPrefix / diff.external don't
+        // change the output, and a repo's own config can't run a program on every diff shown (nor give a patch that won't apply).
+        let common = ["--no-color", "--no-ext-diff", "--no-textconv", "-U3", "--src-prefix=a/", "--dst-prefix=b/"]
         var a = ["diff"] + common
         switch source {
         case .unstaged: break

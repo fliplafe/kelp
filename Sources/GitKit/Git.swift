@@ -30,7 +30,9 @@ public enum Git {
         // minutes: far past any real fetch or push, short of a thread lost for good.
         var args = args, executable = executable, cwd = cwd
         if executable == "/usr/bin/git" {
-            args = ["-c", "core.quotePath=false"] + args   // paths as they are, not C-quoted ("\321\204…" for "ф")
+            // Paths as they are, not C-quoted ("\321\204…" for "ф"). No fsmonitor: a folder's own .git/config (one that
+            // came in a download, not a clone) would otherwise have every status Kelp runs start its program.
+            args = ["-c", "core.quotePath=false", "-c", "core.fsmonitor=false"] + args
             if let r = RemoteHost.of(cwd) {   // a remote project: the same git, on its host
                 args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]
                 executable = RemoteHost.ssh; cwd = NSHomeDirectory()
