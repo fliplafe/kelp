@@ -108,6 +108,21 @@ extension Workbench {
         }
     }
 
+    /// Files and folders from Finder (dropped on the window or the Dock icon, `open -a Kelp <path>`): a folder becomes a
+    /// project, a file opens as a tab (`open`: in that editor area, else wherever ⌘O would).
+    static func open(files urls: [URL], with open: @MainActor (String) -> Void = { Workbench.open($0) }) {
+        for u in urls {
+            var dir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) else { continue }
+            if dir.boolValue { addProject(path: u.path) } else { open(TabURI.file(u.path)) }
+        }
+    }
+
+    /// The files a drag carries (from Finder or the Files panel).
+    static func files(_ s: NSDraggingInfo) -> [URL] {
+        s.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+
     /// New isolated workspace in the project on screen (or the first one).
     static func newWorkspace(repo: String? = nil) {
         Task {

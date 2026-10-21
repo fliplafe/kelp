@@ -82,12 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What opens Kelp waits for the projects and the last workspace to be on screen.
     func application(_ app: NSApplication, open urls: [URL]) {
         if pendingOpens != nil { pendingOpens? += urls; return }
-        for u in urls {
-            if u.scheme == "kelp" { KelpLinks.handle(u); continue }
-            var dir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) else { continue }
-            if dir.boolValue { Workbench.addProject(path: u.path) } else { Workbench.open(TabURI.file(u.path)) }
-        }
+        for u in urls where u.scheme == "kelp" { KelpLinks.handle(u) }
+        Workbench.open(files: urls.filter(\.isFileURL))
     }
 
     /// Right-click on the Dock icon: the agents waiting for you, like Mail's dock menu offers what's new.

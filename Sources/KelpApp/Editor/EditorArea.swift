@@ -174,6 +174,10 @@ final class EditorArea: NSViewController {
             }
             render(); focusSelected()
         }
+        g.onDropFiles = { [weak self] urls in
+            self?.layout.focused = gid
+            Workbench.open(files: urls) { self?.open($0) }
+        }
         groupViews[gid] = g
         return g
     }

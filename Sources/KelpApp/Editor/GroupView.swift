@@ -18,6 +18,8 @@ final class GroupView: NSView {
         }
     }
     var onDropTab: ((String, NSRectEdge?) -> Void)?   // nil edge = into this group
+    /// Files from Finder or the Files panel, dropped on a tab that isn't a terminal (a terminal types their paths).
+    var onDropFiles: (([URL]) -> Void)?
     /// Dropped right at an outer side of the whole editor area: a split along all of it.
     var onDropOuter: ((String, NSRectEdge) -> Void)?
     /// The editor area's frame in window coordinates, and a hint drawn across it (nil: none).
@@ -48,7 +50,7 @@ final class GroupView: NSView {
             ring.topAnchor.constraint(equalTo: container.topAnchor, constant: 1), ring.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -1),
             ring.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 1), ring.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -1)
         ])
-        registerForDraggedTypes([.kelpTab])
+        registerForDraggedTypes([.kelpTab, .fileURL])
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -105,14 +107,20 @@ final class GroupView: NSView {
     }
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { draggingUpdated(s) }
     override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation {
-        guard s.draggingPasteboard.string(forType: .kelpTab) != nil else { return [] }
+        guard s.draggingPasteboard.string(forType: .kelpTab) != nil else {
+            guard !Workbench.files(s).isEmpty else { return [] }
+            showHint(nil); return .copy
+        }
         if let o = outerEdge(s) { hint.isHidden = true; showOuterHint?(o); return .move }
         showOuterHint?(nil); showHint(edge(s)); return .move
     }
     override func draggingExited(_ s: NSDraggingInfo?) { hint.isHidden = true; showOuterHint?(nil) }
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
         hint.isHidden = true; showOuterHint?(nil)
-        guard let id = s.draggingPasteboard.string(forType: .kelpTab) else { return false }
+        guard let id = s.draggingPasteboard.string(forType: .kelpTab) else {
+            let files = Workbench.files(s)
+            onDropFiles?(files); return !files.isEmpty
+        }
         if let o = outerEdge(s) { onDropOuter?(id, o); return true }
         onDropTab?(id, edge(s)); return true
     }

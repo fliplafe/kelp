@@ -42,7 +42,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebarItem = sb
         [sb, content, inspectorItem].forEach(split.addSplitViewItem)
         split.splitView.autosaveName = "main.split"
-        let root = NSViewController(); root.view = NSView(); root.addChild(split)
+        let root = NSViewController(); root.view = DropRoot(); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
         root.view.pin(split.view)
@@ -240,6 +240,19 @@ final class EdgeTrigger: NSView {
     }
     override func mouseEntered(with e: NSEvent) { onEnter?() }
     override func hitTest(_ p: NSPoint) -> NSView? { nil }   // clicks go to whatever is under it
+}
+
+/// Files and folders dropped where nothing else takes them (the empty workspace, the window bar, the inspector): as if
+/// dropped on the Dock icon.
+@MainActor
+private final class DropRoot: NSView {
+    init() { super.init(frame: .zero); registerForDraggedTypes([.fileURL]) }
+    required init?(coder: NSCoder) { fatalError() }
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { Workbench.files(s).isEmpty ? [] : .copy }
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
+        let files = Workbench.files(s)
+        Workbench.open(files: files); return !files.isEmpty
+    }
 }
 
 /// Holds one editor area per recently used workspace, so switching back is instant (terminals stay attached).
