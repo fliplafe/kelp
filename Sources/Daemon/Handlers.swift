@@ -11,17 +11,21 @@ extension JSONValue {
 }
 
 /// A method declared in Core (`RPCMethod`) that the daemon answers: params decoded, result encoded, run through `offload`.
+/// `handle(_:conn:)` for the few that need the asking connection (attach, detach, ui.publish); the rest write `handle(_:)`.
 protocol Handled: RPCMethod {
     func handle(_ d: Daemon) throws -> Result
+    func handle(_ d: Daemon, conn: Int) throws -> Result
 }
 
 extension Handled {
-    static func run(_ p: JSONValue, _ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
+
+    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) throws -> JSONValue {
         let m: Self
         do { m = try (p == .null ? .object([:]) : p).decode(Self.self) }
         catch DecodingError.keyNotFound(let k, _) { throw RPCError.invalidParams("missing \(k.stringValue)") }
         catch { throw RPCError.invalidParams("\(name): \(error)") }
-        return try .from(m.handle(d))
+        return try .from(m.handle(d, conn: conn))
     }
 }
 
@@ -29,13 +33,13 @@ extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods as [any Handled.Type]).map { ($0.name, $0) })
+                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
         if let e = extra[method] { return try await e(self, p) }
         do {
-            if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self) } }
+            if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self, conn: conn) } }
             if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
             if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await offload({ [self] in try handleHistory(method, p) }) { return r }
@@ -67,119 +71,13 @@ extension Daemon {
     }
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
+        if let t = Self.typed[method] { return try t.run(p, self, conn: conn) }   // also for notifications applied in order
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
         case "ping": return "pong"
         case "daemon.shutdown":
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.stop(); exit(0) }
             return .null
-
-        // MARK: repos
-        case "repo.add":
-            // A remote project's own folder: it is the project (git there would answer with the host's path).
-            let path: String = try p.req("path")
-            if let r = try store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return try .from(r) }
-            // An empty folder outside any repository (New Folder in Add Project's panel) is a new project, as repo.create makes.
-            if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true, (try? Git.root(of: path)) == nil {
-                try Git.run(["init", "-q"], cwd: path)
-            }
-            let root = try Git.root(of: path)
-            if let r = try store.repos().first(where: { $0.path == root }) { return try .from(r) }
-            let r = Repo(name: p["name"]?.string ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
-            try store.save(r); try syncMainWorkspaces(); notify("event.changed", "repo")
-            return try .from(r)
-        case "repo.list": return try .from(store.repos())
-        case "scratch.ensure":   // → the scratch project's workspace (made, with its own git repo, the first time)
-            let dir = root.appendingPathComponent("scratch")
-            if !FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
-                try Paths.ensure(dir); try Git.run(["init", "-q"], cwd: dir.path)
-            }
-            let path = try Git.root(of: dir.path)
-            var r = try store.repos().first { $0.path == path }
-            if r == nil { let n = Repo(name: "Scratch", path: path, baseBranch: Git.defaultBranch(repo: path)); try store.save(n); try syncMainWorkspaces(); r = n }
-            guard let repo = r, let w = try store.worktrees(repo: repo.id).first(where: { !$0.archived }) else { throw RPCError.internalError("no scratch workspace") }
-            notify("event.changed", "repo")
-            return try .from(w)
-        case "repo.relocate":   // the project's folder moved: point it (and its desks) at the new place
-            guard var r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
-            let root = try Git.root(of: p.req("path")), old = r.path
-            r.path = root; try store.save(r)
-            for w in try store.worktrees(repo: r.id) where w.path == old { try store.updateWorktree(w.id) { $0.path = root } }
-            notify("event.changed", "repo"); return try .from(r)
-        case "repo.remove":   // its workspaces go with it, and so do their agents: none keeps working out of sight
-            guard let r = try store.repo(p.req("id")) else { throw RPCError.invalidParams("no repo") }
-            let desks = Set(try store.worktrees(repo: r.id).map(\.id))
-            for s in try store.sessions() where desks.contains(s.worktreeId ?? "") { discard(s) }
-            try store.delete(r); notify("event.changed", "repo"); return .null
-
-        // MARK: worktrees
-        case "workspace.create":
-            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            return try .from(createDesk(in: r))
-        case "worktree.create":
-            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let auto = try nextWorkspace(in: r)
-            let branch = try ref(p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
-            let base = try ref(p["base"]?.string.flatMap { $0.isEmpty ? nil : $0 }) ?? r.baseBranch
-            let path = try Git.addWorktree(repo: r.path, branch: branch, base: base,
-                                           into: Self.worktreesDir(root, r), copyFiles: r.copyFiles)
-            let w = Worktree(repoId: r.id, branch: branch, path: path, note: p["note"]?.string ?? (p["branch"] == nil ? auto.name : ""), base: base)
-            try store.save(w)
-            var result = try JSONValue.from(w)
-            // Everything .kelp.yaml does waits for the user's trust in this version of the file, not only `setup`: `tabs`
-            // starts agents and `shared` links folders, and a freshly cloned repository wrote that file, not the user.
-            // Checked and used from one read.
-            let read = configAndTrust(r.path), cfg = read.config, trustedConfig = read.trusted
-            if trustedConfig {
-                Git.linkShared(cfg.shared, repo: r.path, worktree: path)
-                if p["tabs"]?.bool != false { for t in cfg.tabs { _ = try? spawn(cwd: path, manifest: manifest(t, command: nil), worktreeId: w.id) } }
-            }
-            let asks = cfg.setup != nil || !cfg.tabs.isEmpty || !cfg.shared.isEmpty
-            if asks, p["setup"]?.bool != false, !trustedConfig, case .object(var o) = result {
-                o["setupNeedsTrust"] = true; result = .object(o)   // the app asks, then scripts.trust + scripts.run "setup"
-            } else if let setup = cfg.setup, p["setup"]?.bool != false {
-                var o = Launch(); o.title = "setup"
-                let s = try spawn(cwd: path, manifest: .custom(setup), worktreeId: w.id, o)
-                if case .object(var o) = result { o["setupSession"] = .string(s.id); result = .object(o) }
-            }
-            notify("event.changed", "worktree")
-            return result
-        case "worktree.list":
-            try syncMainWorkspaces()
-            return try .from(store.worktrees(repo: p["repoId"]?.string).filter { p["archived"]?.bool == true || !$0.archived })
-        case "worktree.archive", "worktree.remove":
-            guard let w = try store.worktree(p.req("id")), let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-            if isMain(w, r) {
-                if method == "worktree.archive" { try archiveDesk(w, r) } else { try removeDesk(w, r) }
-                return .null
-            }
-            guard method == "worktree.remove" else {
-                // Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and
-                // unarchiving finds everything where it was.
-                try pauseSessions(of: w.id)
-                try store.updateWorktree(w.id) { $0.archived = true }
-                notify("event.changed", "worktree"); return .null
-            }
-            let force = p["force"]?.bool == true, drop = p["dropCommits"]?.bool == true
-            if FileManager.default.fileExists(atPath: w.path) {
-                // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
-                // writing can't have its work deleted under it.
-                try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
-                try pauseSessions(of: w.id)
-                try Git.removeWorktree(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
-            } else { try pauseSessions(of: w.id) }
-            for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
-            try store.delete(w)
-            notify("event.changed", "worktree"); return .null
-        case "worktree.unarchive":
-            guard try store.updateWorktree(p.req("id"), { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
-            notify("event.changed", "worktree"); return .null
-        case "worktree.unmerged":   // {id} → commits on its branch that no other branch or remote has (lost if it's deleted)
-            let w = try cwd(forWorktree: p.req("id"))
-            guard let r = try store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return .int(0) }
-            return .int(try Git.onlyOnBranch(repo: r.path, w.branch))
-        case "worktree.dirty":
-            return .bool(try Git.isDirty(cwd(forWorktree: p.req("id")).path))
 
         // MARK: sessions
         case "session.create":
@@ -189,67 +87,6 @@ extension Daemon {
             guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
             let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
             return try .from(spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p)))
-        case "session.list":
-            let live = try store.sessions().map { s -> Session in existing(s.id)?.snapshot ?? s }
-            return try .from(live.filter { p["worktreeId"]?.string == nil || $0.worktreeId == p["worktreeId"]?.string })
-        case "session.attach":
-            let id = try p.req("id")
-            if existing(id) == nil, try store.session(id)?.status == .exited {   // ended: what it last printed, from its log
-                return .obj(["history": .string(TerminalReplies.withoutQueries(try liveSessionOrLog(id, bytes: LiveSession.ringLimit)).base64EncodedString())])
-            }
-            // Showing a tab isn't reading it: the app marks it read once it was looked at (or typed into).
-            return .obj(["history": .string(try liveSession(id).attach(conn).base64EncodedString())])
-        case "session.detach": existing(try p.req("id"))?.detach(conn); return .null
-        case "session.write":
-            let s = try liveSession(p.req("id"))
-            if let b = p["base64"]?.string, let d = Data(base64Encoded: b) { s.userInput(d) }
-            else { s.pty.write(Data(try p.req("text").utf8)) }
-            return .null
-        case "session.send":   // text, then Enter after a beat so TUIs treat it as a submit, not a paste
-            let id: String = try p.req("id"), text: String = try p.req("text"), enter = p["enter"]?.bool != false
-            let wasRunning = existing(id) != nil
-            let ls = try liveSession(id)
-            // Woken just now: typed once it is ready (drawn, quiet, no question open), as a launch prompt is; typed at once,
-            // it would land in a program still starting.
-            // Or behind text still waiting (a launch prompt, an earlier send): in the order sent, none replacing another.
-            if wasRunning, !ls.hasPendingInput { ls.send(text, enter: enter) } else { ls.queuePrompt(text, draft: !enter) }
-            return .null
-        case "session.resize":
-            let (cols, rows) = Launch.size(p)
-            // A running one only: a size never wakes a paused agent (a wake gets the size it's shown at anyway).
-            existing(try p.req("id"))?.resize(cols: cols, rows: rows); return .null
-        case "session.kill":
-            // Under wakeLock, as waking is: a paused session marked ended here can't be woken halfway through, nor this kill
-            // land on the old copy while a wake starts a new one.
-            try wakeLock.withLock {
-                if let ls = lock.withLock({ live[(p["id"]?.string ?? "")] }) { ls.pty.terminate() }
-                else if var s = try store.session(p.req("id")), s.status == .hibernated { s.status = .exited; publish(s) }   // don't wake just to kill
-            }
-            return .null
-        case "session.choose":   // {id, answer: allow | deny} → false when no menu is on screen to answer
-            guard let s = existing(try p.req("id"))?.choose(try p.req("answer")) else { return .bool(false) }
-            publish(s); return .bool(true)
-        case "agent.setSecret":   // {agent, key, value}: kept in the login keychain by the daemon, which reads it at launch
-            let account = AgentManifest.secretAccount(agent: try p.req("agent"), key: try p.req("key"))
-            if let v = p["value"]?.string, !v.isEmpty { try Keychain.set(v, account: account) } else { Keychain.delete(account) }
-            return .null
-        case "ports.list": return try .from(ports(worktree: p.req("worktreeId")))   // {worktreeId} → servers its sessions run
-        case "session.usage": return try .from(usage())   // → [{session, cpu, memory, processes}], busiest first
-        case "ports.stop":   // {worktreeId, pid}: only a process one of the workspace's sessions started
-            let pid = Int32(clamping: p["pid"]?.int ?? 0)
-            guard pid > 0, ports(worktree: try p.req("worktreeId")).contains(where: { $0.pid == pid }) else { throw RPCError.invalidParams("That process isn't running in this workspace.") }
-            kill(pid, SIGTERM); return .null
-        case "session.busy":   // a shell running something in the foreground: closing it would stop that program
-            return existing(try p.req("id"))?.pty.foregroundProgram.map { .string($0) } ?? .null
-        case "session.read", "session.context":   // context: the bounded transcript for "Copy Context"
-            let d = try liveSessionOrLog(p.req("id"), bytes: p["bytes"]?.int ?? (method == "session.context" ? 24_000 : 8192))
-            // Lossy on purpose: a byte window can cut a UTF-8 sequence, and the rest of the text still matters.
-            // swiftlint:disable:next optional_data_string_conversion
-            return .string(StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)))
-        case "session.markUnread", "session.markRead":
-            let ls = existing(try p.req("id"))
-            if let r = method == "session.markRead" ? ls?.markRead() : ls?.markUnread() { publish(r) }   // never re-inserts a deleted one
-            return .null
         case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
             guard let ls = existing(try p.req("id")) else { return .null }
             if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
@@ -258,13 +95,6 @@ extension Daemon {
             let event: String = try p.req("event")
             ls.hook(event == "done" && Hooks.hasBackgroundWork(p) ? "working" : event,
                     trigger: p["trigger"]?.string, message: p["notification"]?["message"]?.string); return .null
-        case "session.turn":   // the agent's last turn: files it changed and how long it took (nil before its first turn ends)
-            guard let ls = existing(try p.req("id")) else { return .null }
-            return .obj(["turn": ls.lastTurn.flatMap { try? JSONValue.from($0) } ?? .null, "hasBase": .bool(ls.turnBase != nil)])
-        case "session.lastReply":   // the agent's last message, from its transcript (Claude Code), for summaries
-            guard let t = existing(try p.req("id")).flatMap(transcript(of:)) else { return .null }
-            return Self.lastReply(transcript: t).map { .string($0) } ?? .null
-
         default: throw RPCError.methodNotFound
         }
     }
