@@ -82,7 +82,7 @@ extension Daemon {
     /// keepAwake: "always" | "agents" (only while an agent is working) | "off".
     func applyKeepAwake() {
         let mode = settings["power.keepAwake"]?.string ?? "agents"
-        lock.lock(); let working = live.values.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }; lock.unlock()
+        let working = live.all.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }
         let want = mode == "always" || (mode == "agents" && working)
         sleepAssertion.withLock { held in   // the ticker and a settings change at once: one assertion
             if want, held == 0 {

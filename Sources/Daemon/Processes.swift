@@ -9,7 +9,7 @@ extension Daemon {
 
     /// Every process under a live session's PTY, by pid → session id; `only` limits it to one workspace.
     private func sessionProcesses(worktree only: String? = nil) -> (owner: [Int32: String], rows: [Int32: (cpu: Double, rss: Int)]) {
-        let roots = lock.withLock { live.values.filter { only == nil || $0.snapshot.worktreeId == only }.map { ($0.pty.pid, $0.snapshot.id) } }
+        let roots = live.all.filter { only == nil || $0.snapshot.worktreeId == only }.map { ($0.pty.pid, $0.snapshot.id) }
         guard !roots.isEmpty else { return ([:], [:]) }
         var children: [Int32: [Int32]] = [:], rows: [Int32: (cpu: Double, rss: Int)] = [:]
         for line in (Self.run(["/bin/ps", "-axo", "pid=,ppid=,pcpu=,rss="], path: "/bin:/usr/bin", timeout: 3) ?? "").split(whereSeparator: \.isNewline) {

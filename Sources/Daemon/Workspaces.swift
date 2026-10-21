@@ -54,7 +54,7 @@ extension Daemon {
         // starting a second one (on the same log, in a folder about to be removed).
         try wakeLock.withLock {
             for s in try store.sessions() where s.worktreeId == wid {
-                guard let ls = lock.withLock({ () -> LiveSession? in let l = live[s.id]; live[s.id] = nil; return l }) else { continue }
+                guard let ls = live.remove(s.id) else { continue }
                 if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
                     publish(ls.markHibernated())
                 } else {

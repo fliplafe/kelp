@@ -5,12 +5,12 @@ import Agents
 import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
-public final class Daemon: @unchecked Sendable {   // `live` under lock; who is connected is `clients` (lock order there)
+public final class Daemon: @unchecked Sendable {   // listenFD, ticker, instanceLock: set in start, before any other thread
+    /// Running sessions and who is connected each keep their own lock; the order they're taken in is in `Clients`.
     public let store: Store
     let socketPath: String
     let root: URL
-    let lock = NSLock()
-    var live: [String: LiveSession] = [:]
+    let live = SessionTable()
     let clients = Clients()
     private var listenFD: Int32 = -1
     private var instanceLock: Int32 = -1   // flock on kelpd.lock: one daemon per KELP_HOME
@@ -102,15 +102,14 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
         acceptSource = src
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in lock.lock(); let all = Array(live.values); lock.unlock(); all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
+        t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
         t.resume(); ticker = t
     }
     private var acceptSource: DispatchSourceRead?
 
     public func stop() {
         acceptSource?.cancel(); ticker?.cancel()
-        let all = lock.withLock { Array(live.values) }
-        all.forEach { $0.pty.kill() }
+        live.all.forEach { $0.pty.kill() }
         clients.everyone().forEach { $0.hangUp() }
         if acceptSource == nil { close(listenFD) }   // else its cancel handler closes it
         unlink(socketPath)
@@ -171,7 +170,7 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
                 }
             }
             clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
-            lock.withLock { Array(live.values) }.forEach { $0.detach(c.id) }
+            live.all.forEach { $0.detach(c.id) }
             c.close()
         }
     }
@@ -237,12 +236,12 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
     // MARK: sessions
 
     /// A running session, without waking a paused one.
-    func existing(_ id: String) -> LiveSession? { lock.withLock { live[id] } }
+    func existing(_ id: String) -> LiveSession? { live[id] }
 
     func liveSession(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
-        if let s = lock.withLock({ live[id] }) { return s }
+        if let s = live[id] { return s }
         return try wakeLock.withLock {   // paused sessions wake on first use
-            if let s = lock.withLock({ live[id] }) { return s }
+            if let s = live[id] { return s }
             return try wake(id, cols: cols, rows: rows)
         }
     }
@@ -313,7 +312,7 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
         }
         // The record first: a program nobody has a record of could be neither seen nor stopped.
         do { try store.save(rec) } catch { ls.discard(); throw error }
-        lock.lock(); live[rec.id] = ls; lock.unlock()
+        live.add(ls)
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
@@ -345,7 +344,7 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
             // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
             // The turn bookkeeping gets each change, in order.
             publish(ls.snapshot); ls.noteTurn(s.status)
-            if s.status == .exited { lock.withLock { if live[s.id] === ls { live[s.id] = nil } } }
+            if s.status == .exited { _ = live.remove(ls) }
         }
         if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
     }
@@ -355,7 +354,7 @@ public final class Daemon: @unchecked Sendable {   // `live` under lock; who is 
     /// are gone (it would restart an agent for a deleted project and save the record again).
     func discard(_ s: Session) {
         wakeLock.withLock {
-            let ls = lock.withLock { live.removeValue(forKey: s.id) }
+            let ls = live.remove(s.id)
             if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
             try? store.delete(s)
             try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))

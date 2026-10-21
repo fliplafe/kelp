@@ -51,7 +51,7 @@ extension Daemon {
     func hibernateIdle() {
         let minutes = settings.number("sessions.hibernateMinutes") ?? 0
         guard minutes > 0 else { return }
-        let idle = lock.withLock { Array(live.values) }.filter { ls in
+        let idle = live.all.filter { ls in
             [.done, .waiting, .idle].contains(ls.snapshot.status) && !ls.isAttached && ls.idleSeconds > minutes * 60
         }
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
@@ -73,12 +73,7 @@ extension Daemon {
     /// log. Taken out of `live` only if nobody attached since the check.
     private func pauseIdle(_ ls: LiveSession) {
         wakeLock.withLock {
-            let id = ls.snapshot.id
-            let taken = lock.withLock { () -> Bool in
-                guard live[id] === ls, !ls.isAttached else { return false }
-                live[id] = nil; return true
-            }
-            guard taken else { return }
+            guard live.remove(ls, if: { !$0.isAttached }) else { return }
             let s = ls.markHibernated()
             Self.waitGone(ls.pty.terminate())   // SIGKILL after 2 s for what ignores the hangup: a wake must not start a second copy
             publish(s)
@@ -133,7 +128,7 @@ extension Daemon {
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
         wire(ls)
-        lock.withLock { live[rec.id] = ls }
+        live.add(ls)
         publish(ls.snapshot)
         ls.start()
         return ls

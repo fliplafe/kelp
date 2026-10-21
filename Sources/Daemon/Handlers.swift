@@ -78,7 +78,7 @@ extension DaemonInfo: Handled {
     func handle(_ d: Daemon) throws -> Result {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
-                      liveSessions: d.lock.withLock { d.live.values.filter { $0.snapshot.status != .exited }.count })
+                      liveSessions: d.live.all.filter { $0.snapshot.status != .exited }.count)
     }
 }
 

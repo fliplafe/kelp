@@ -4,8 +4,8 @@ import Core
 /// Who is connected to the socket: each client, which of them are raw byte pipes (`kelp attach`), which is Kelp's window
 /// (and what it last said it shows). Under a lock of its own.
 ///
-/// Lock order in the daemon, outermost first: `Daemon.wakeLock` → `Daemon.lock` (sessions) → `Clients` → a session's own
-/// lock → a `Connection`'s. `attachIfConnected` holds this one while it subscribes, and the reader's cleanup takes it
+/// Lock order in the daemon, outermost first: `Daemon.wakeLock` → `SessionTable` → `Clients` → a session's own lock →
+/// a `Connection`'s. (A session's lock is never held while another is taken: output, status and hooks call out after.) `attachIfConnected` holds this one while it subscribes, and the reader's cleanup takes it
 /// first, so a connection is either subscribed and then cleaned up, or never subscribed.
 final class Clients: Sendable {
     private struct State {
