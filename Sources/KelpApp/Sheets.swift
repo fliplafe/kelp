@@ -55,9 +55,11 @@ enum AgentActions {
     static func stop(_ ids: [String]) {
         let one = ids.count == 1
         let a = NSAlert(); a.messageText = one ? String(localized: "Stop this agent?") : String(localized: "Stop \(ids.count) agents?")
-        a.informativeText = (one ? String(localized: "Its session ends") : String(localized: "Their sessions end")) + ". " + String(localized: "Conversations can be resumed from Session History.")
+        a.informativeText = (one ? String(localized: "Its session ends") : String(localized: "Their sessions end"))
+            + ". " + String(localized: "Conversations can be resumed from Session History.")
         // The button says what it stops (destructive: red).
-        a.addButton(withTitle: one ? String(localized: "Stop Agent") : String(localized: "Stop \(ids.count) Agents")).hasDestructiveAction = true; a.addButton(withTitle: String(localized: "Cancel"))
+        a.addButton(withTitle: one ? String(localized: "Stop Agent") : String(localized: "Stop \(ids.count) Agents")).hasDestructiveAction = true
+        a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             for id in ids { await AppModel.shared.call("session.kill", .obj(["id": .string(id)])) }

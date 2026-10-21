@@ -27,8 +27,11 @@ public enum CIRuns {
 
     public static func runs(cwd: String, branch: String) throws -> [Run] {
         if GitLab.isGitLab(cwd: cwd) { return try gitlabRuns(cwd: cwd, branch: branch) }
-        struct RawRun: Decodable { var databaseId: Int, displayTitle: String, workflowName: String?, name: String?, status: String, conclusion: String?, event: String, url: String, createdAt: String }
-        let d = try GitHub.gh(["run", "list", "--branch", branch, "-L", "20", "--json", "databaseId,displayTitle,workflowName,name,status,conclusion,event,url,createdAt"], cwd: cwd)
+        struct RawRun: Decodable {
+            var databaseId: Int, displayTitle: String, workflowName: String?, name: String?, status: String, conclusion: String?, event: String, url: String, createdAt: String
+        }
+        let d = try GitHub.gh(["run", "list", "--branch", branch, "-L", "20", "--json", "databaseId,displayTitle,workflowName,name,status,conclusion,event,url,createdAt"],
+            cwd: cwd)
         return try JSONDecoder().decode([RawRun].self, from: d).map {
             Run(id: $0.databaseId, title: $0.displayTitle, workflow: $0.workflowName ?? $0.name ?? "", status: $0.status,
                 conclusion: $0.conclusion.flatMap { $0.isEmpty ? nil : $0 }, event: $0.event, url: $0.url, createdAt: $0.createdAt)

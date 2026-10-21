@@ -139,7 +139,8 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
         _ = try await request("initialize", .obj([
             "processId": .int(Int(ProcessInfo.processInfo.processIdentifier)), "rootUri": .string(uri),
             "workspaceFolders": .array([.obj(["uri": .string(uri), "name": .string((root as NSString).lastPathComponent)])]),
-            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]), "completion": .obj(["completionItem": .obj(["snippetSupport": false])]),
+            "capabilities": .obj(["textDocument": .obj(["publishDiagnostics": .obj([:]), "definition": .obj([:]),
+                                                   "completion": .obj(["completionItem": .obj(["snippetSupport": false])]),
                                                    "documentSymbol": .obj(["hierarchicalDocumentSymbolSupport": true])])])
         ]))
         notify("initialized", .obj([:]))
@@ -181,7 +182,9 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
     public func completion(_ path: String, line: Int, column: Int) async throws -> [(label: String, detail: String?, insert: String)] {
         let r = try await request("textDocument/completion", at(path, line, column))
         let items = r.array ?? r["items"]?.array ?? []
-        return items.prefix(200).map { ($0["label"]?.string ?? "", $0["detail"]?.string, $0["insertText"]?.string ?? $0["textEdit"]?["newText"]?.string ?? $0["label"]?.string ?? "") }
+        return items.prefix(200).map {
+            ($0["label"]?.string ?? "", $0["detail"]?.string, $0["insertText"]?.string ?? $0["textEdit"]?["newText"]?.string ?? $0["label"]?.string ?? "")
+        }
     }
 
     /// The innermost function, method, class or module around a 1-based line (the test at the cursor).

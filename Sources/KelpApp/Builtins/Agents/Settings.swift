@@ -90,7 +90,9 @@ struct AgentsSettings: View {
             } else { Text(versions.isEmpty ? String(localized: "Checking…") : String(localized: "Not installed")).foregroundStyle(.secondary) }
             Spacer()
             if v?.version == nil, let cmd = m.install { Button("Install…") { run(cmd, String(localized: "Install \(m.name)")) }.help(cmd) }
-            else if let cmd = m.update { Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd) }
+            else if let cmd = m.update {
+                Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd)
+            }
         }
         // The agents of SSH projects run on their hosts: the same command there, one terminal per host.
         if let cmd = m.update, !hosts.isEmpty {

@@ -10,7 +10,8 @@ final class MarkdownTab: NSViewController {
     let url: URL
     private let web = WKWebView()
     private let links = PreviewLinks()
-    private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")], trackingMode: .selectOne, target: nil, action: nil)
+    private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")],
+        trackingMode: .selectOne, target: nil, action: nil)
     private let split = NSSplitView()
     private var renderTask: Task<Void, Never>?
     /// Edited while the preview was hidden (Edit mode): rendered when it shows.
@@ -36,8 +37,10 @@ final class MarkdownTab: NSViewController {
         heading.target = self; heading.action = #selector(headingPicked(_:))
         heading.bezelStyle = .texturedRounded
         let bar = NSStackView(views: [heading, b("bold", String(localized: "Bold (⌘B)"), #selector(bold)), b("italic", String(localized: "Italic (⌘I)"), #selector(italic)),
-                                      b("chevron.left.forwardslash.chevron.right", String(localized: "Code"), #selector(code)), b("link", String(localized: "Link (⌘K)"), #selector(link)),
-                                      b("list.bullet", String(localized: "Bulleted list"), #selector(bullets)), b("list.number", String(localized: "Numbered list"), #selector(numbered)),
+                                      b("chevron.left.forwardslash.chevron.right", String(localized: "Code"), #selector(code)),
+                                      b("link", String(localized: "Link (⌘K)"), #selector(link)),
+                                      b("list.bullet", String(localized: "Bulleted list"), #selector(bullets)),
+                                      b("list.number", String(localized: "Numbered list"), #selector(numbered)),
                                       b("checklist", String(localized: "Task list"), #selector(tasks)), b("tablecells", String(localized: "Table"), #selector(table)),
                                       NSView(), mode])
         bar.spacing = 4; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
@@ -72,7 +75,9 @@ final class MarkdownTab: NSViewController {
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             let text = editor.text, base = url.deletingLastPathComponent(), dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let html = await Task.detached { MarkdownHTML.page(body: MarkdownHTML.render(text), baseURL: base, dark: dark) + (MarkdownHTML.mermaid(for: text, dark: dark) ?? "") }.value
+            let html = await Task.detached {
+                MarkdownHTML.page(body: MarkdownHTML.render(text), baseURL: base, dark: dark) + (MarkdownHTML.mermaid(for: text, dark: dark) ?? "")
+            }.value
             guard !Task.isCancelled else { return }
             // Keep the reader's place across re-renders (scrollY is always a number, so the async call can't trap on nil).
             let y = (try? await web.evaluateJavaScript("window.scrollY")) as? Double ?? 0

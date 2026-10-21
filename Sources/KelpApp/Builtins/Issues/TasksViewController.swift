@@ -19,7 +19,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private var jiraJQL = "project = ENG AND statusCategory != Done ORDER BY priority DESC"
 
     override func loadView() {
-        source.addItems(withTitles: [String(localized: "Pull Requests"), String(localized: "Issues"), String(localized: "Linear"), String(localized: "Jira"), String(localized: "Projects")])
+        source.addItems(withTitles: [String(localized: "Pull Requests"), String(localized: "Issues"),
+            String(localized: "Linear"), String(localized: "Jira"), String(localized: "Projects")])
         source.selectItem(at: 0); source.target = self; source.action = #selector(sourceChanged)
         filter.target = self; filter.action = #selector(filterChanged)
         let refresh = NSButton(image: .symbol("arrow.clockwise", String(localized: "Refresh")), target: self, action: #selector(reload))
@@ -174,7 +175,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
     static func checksText(_ r: JSONValue) -> String {
         let c = r["checks"]; let f = c?["failed"]?.int ?? 0, p = c?["pending"]?.int ?? 0, ok = c?["passed"]?.int ?? 0
-        if f > 0 { return String(localized: " · ✕ \(f) failing") }; if p > 0 { return String(localized: " · ◌ \(p) pending") }; return ok > 0 ? String(localized: " · ✓ checks passed") : ""
+        if f > 0 { return String(localized: " · ✕ \(f) failing") }
+        if p > 0 { return String(localized: " · ◌ \(p) pending") }
+        return ok > 0 ? String(localized: " · ✓ checks passed") : ""
     }
     func tableViewSelectionDidChange(_ n: Notification) { showDetail(table.selectedRow >= 0 ? rows[table.selectedRow] : nil) }
 
@@ -202,7 +205,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             detail.addArrangedSubview(jiraTransitions(key, current: r["status"]?.string ?? ""))
             detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: false, jira: true) })
             let body = r["description"]?.string ?? ""
-            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
+            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)),
+                color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         case 1, 2:
             let linear = source.indexOfSelectedItem == 2
             let ref = linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
@@ -210,7 +214,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             if linear { detail.addArrangedSubview(statePicker(r)) }
             detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: linear) })
             let body = (linear ? r["description"]?.string : r["body"]?.string) ?? ""
-            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)), color: body.isEmpty ? .secondaryLabelColor : .labelColor))
+            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)),
+                color: body.isEmpty ? .secondaryLabelColor : .labelColor))
         default:
             detail.addArrangedSubview(label(r["title"]?.string ?? "", size: 17, weight: .semibold))
             detail.addArrangedSubview(label(String(localized: "Status: \(r["status"]?.string ?? "—")"), color: .secondaryLabelColor))
@@ -245,7 +250,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 let icon = bucket == "pass" ? "✓" : bucket == "fail" ? "✕" : bucket == "pending" ? "◌" : "–"
                 let row = NSStackView(views: [label("\(icon)  \(c["name"]?.string ?? "")", color: bucket == "fail" ? .systemRed : .labelColor)]); row.spacing = 8
                 if bucket == "fail", let run = c["runId"]?.int, let wt {
-                    row.addArrangedSubview(button(String(localized: "Fix with Agent"), "wrench.and.screwdriver") { [weak self] in self?.fixCheck(c["name"]?.string ?? "", run, wt) })
+                    row.addArrangedSubview(button(String(localized: "Fix with Agent"), "wrench.and.screwdriver") { [weak self] in
+                        self?.fixCheck(c["name"]?.string ?? "", run, wt)
+                    })
                 }
                 checksBox.addArrangedSubview(row)
             }
@@ -278,7 +285,11 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
         let sink = ClosureTarget { [weak pop, weak self] in
             guard let id = pop?.selectedItem?.representedObject as? String else { return }
-            Task { if await AppModel.shared.call("jira.transition", .obj(["key": .string(key), "id": .string(id)])) != nil { self?.status.stringValue = String(localized: "Moved \(key)") } }
+            Task {
+                if await AppModel.shared.call("jira.transition", .obj(["key": .string(key), "id": .string(id)])) != nil {
+                    self?.status.stringValue = String(localized: "Moved \(key)")
+                }
+            }
         }
         pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
         let row = NSStackView(views: [NSTextField(labelWithString: String(localized: "Status:")), pop]); row.spacing = 6
@@ -329,7 +340,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
     private func merge(_ n: Int, _ wt: Worktree?) {
-        let a = NSAlert(); a.messageText = String(localized: "Squash and merge #\(n)?"); a.addButton(withTitle: String(localized: "Merge")); a.addButton(withTitle: String(localized: "Cancel"))
+        let a = NSAlert()
+        a.messageText = String(localized: "Squash and merge #\(n)?"); a.addButton(withTitle: String(localized: "Merge")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             var p: [String: JSONValue] = ["pr": .int(n)]

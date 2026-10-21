@@ -184,7 +184,8 @@ final class EditorArea: NSViewController {
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(Self.disambiguated(model.tabs.map { t in
             if let c = contents[t.id] {
-                return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip, edited: c.isEdited, meter: c.meter, progress: c.progress)
+                return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip,
+                    edited: c.isEdited, meter: c.meter, progress: c.progress)
             }
             return Self.placeholder(t)
         }, model.tabs), selected: model.selectedTab?.id)

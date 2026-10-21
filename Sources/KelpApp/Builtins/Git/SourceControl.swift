@@ -198,7 +198,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     func updateCommitButton() {
         let staged = changes.contains { $0.staged && !$0.conflicted }
         let branch = info?.current ?? "HEAD"
-        placeholder.stringValue = staged || changes.isEmpty ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
+        placeholder.stringValue = staged || changes.isEmpty
+            ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
         guard let cb = commitButton else { return }
         let next = changes.isEmpty ? nextStep : nil
         // What a commit takes: the staged files, or all of them when none are staged.

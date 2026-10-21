@@ -332,7 +332,8 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
     #expect(try await waitFor(10) { ls.hasEnded })   // its last words and exit handled
     await withCheckedContinuation { done in ls.inOrder { done.resume() } }   // and any status change that queued
-    #expect(try w.d.store.session(s.id)?.status == .hibernated, "store \(String(describing: try? w.d.store.session(s.id)?.status)) live \(ls.snapshot.status) \(ls.tail(300).count)")
+    #expect(try w.d.store.session(s.id)?.status == .hibernated,
+        "store \(String(describing: try? w.d.store.session(s.id)?.status)) live \(ls.snapshot.status) \(ls.tail(300).count)")
 }
 
 /// A branch that adds agent config in a subfolder (sub/.claude, sub/.mcp.json) changes agent config too: a session can

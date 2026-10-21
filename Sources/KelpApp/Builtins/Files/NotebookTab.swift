@@ -36,7 +36,8 @@ final class NotebookTab: NSViewController {
     func reload() {
         guard let d = FileManager.default.contents(atPath: url.path), let body = NotebookHTML.render(d) else {
             let why = String(localized: "This notebook can't be read (is it valid nbformat 4 JSON?).")
-            web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>", baseURL: nil)
+            web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>",
+                baseURL: nil)
             return
         }
         let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua

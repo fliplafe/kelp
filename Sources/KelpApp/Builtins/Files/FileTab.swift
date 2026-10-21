@@ -63,7 +63,8 @@ final class FileTab: SavableTab {
         }
         // Moved or deleted (often by an agent) since the tab was opened: say so, never an empty buffer ⌘S would write.
         guard let data = FileManager.default.contents(atPath: p) else {
-            view = Self.message(FileManager.default.fileExists(atPath: p) ? String(localized: "Couldn't read this file.") : String(localized: "File not found — it was moved or deleted.")); return
+            view = Self.message(FileManager.default.fileExists(atPath: p)
+                ? String(localized: "Couldn't read this file.") : String(localized: "File not found — it was moved or deleted.")); return
         }
         guard let text = String(data: data, encoding: .utf8) else { view = Self.message(String(localized: "Binary file — open it with another app.")); return }
         let e = CodeEditor(text: text, url: url, editable: data.count <= CodeEditor.readOnlyLimit)

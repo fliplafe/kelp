@@ -76,7 +76,8 @@ extension AppDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 guard let g = v.allSubviews(of: GhosttyTerminalView.self).first, let p = g.location(of: t),
                       let e = NSEvent.mouseEvent(with: .mouseMoved, location: g.convert(p, to: nil), modifierFlags: [], timestamp: 0,
-                                                 windowNumber: v.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { print("TERM_HOVER no", t); return }
+                                                 windowNumber: v.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)
+                      else { print("TERM_HOVER no", t); return }
                 g.mouseMoved(with: e); print("TERM_HOVER", t, p)
             }
         }
@@ -129,7 +130,8 @@ extension AppDelegate {
             func walk(_ m: NSMenu) {
                 for i in m.items where !i.isSeparatorItem {
                     if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s) }; continue }
-                    if i.title.range(of: "[А-яЁё]", options: .regularExpression) == nil, i.title.range(of: "[a-z]{3}", options: .regularExpression) != nil { print("UNTRANSLATED", i.title) }
+                    if i.title.range(of: "[А-яЁё]", options: .regularExpression) == nil,
+                        i.title.range(of: "[a-z]{3}", options: .regularExpression) != nil { print("UNTRANSLATED", i.title) }
                 }
             }
             NSApp.mainMenu.map(walk)
@@ -167,7 +169,9 @@ extension AppDelegate {
                                          context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { return }
         var v: NSView? = label
         while let x = v {
-            for a in x.trackingAreas where a.options.contains(.mouseMoved) { (a.owner as? NSResponder)?.mouseMoved(with: e); print("MOVE", text, "→", type(of: a.owner as Any)); return }
+            for a in x.trackingAreas where a.options.contains(.mouseMoved) {
+                (a.owner as? NSResponder)?.mouseMoved(with: e); print("MOVE", text, "→", type(of: a.owner as Any)); return
+            }
             v = x.superview
         }
         print("MOVE nothing tracks", text)
@@ -270,7 +274,8 @@ extension AppDelegate {
         v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
         let size = v.bounds.size
         guard let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
-                                                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                                                       space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return }
         ctx.scaleBy(x: scale, y: scale)
         var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }

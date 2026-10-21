@@ -29,7 +29,8 @@ class StubURL: URLProtocol, @unchecked Sendable {
             while s.hasBytesAvailable { let n = s.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }
             body = String(decoding: data, as: UTF8.self)
         } else if let d = r.httpBody { body = String(decoding: d, as: UTF8.self) }
-        let sent = Sent(method: r.httpMethod ?? "GET", path: (r.url?.path ?? "") + (r.url?.query.map { "?" + $0 } ?? ""), auth: r.value(forHTTPHeaderField: "Authorization"), body: body)
+        let sent = Sent(method: r.httpMethod ?? "GET", path: (r.url?.path ?? "") + (r.url?.query.map { "?" + $0 } ?? ""),
+            auth: r.value(forHTTPHeaderField: "Authorization"), body: body)
         let route = Self.lock.withLock { Self.log[host, default: []].append(sent); return Self.routes[host] }
         let (code, text) = route?(sent) ?? (500, "")
         let response: URLResponse = HTTPURLResponse(url: r.url ?? URL(fileURLWithPath: "/"), statusCode: code, httpVersion: nil, headerFields: nil) ?? URLResponse()
@@ -123,7 +124,9 @@ private func basic(_ user: String, _ pass: String) -> String { "Basic " + Data("
         do { try await BitbucketClient(user: "u", token: "t").merge(workspace: "w", repo: "r", id: 3); Issue.record("should have thrown") }
         catch let e as BitbucketError { #expect(e.description == "Bitbucket 403: forbidden") }
         StubURL.serve("api.bitbucket.org") { _ in (200, #"{"unexpected":true}"#) }
-        await #expect(throws: BitbucketError.self) { _ = try await BitbucketClient(user: "u", token: "t").createPR(workspace: "w", repo: "r", title: "", body: "", source: "a", destination: "b") }
+        await #expect(throws: BitbucketError.self) {
+            _ = try await BitbucketClient(user: "u", token: "t").createPR(workspace: "w", repo: "r", title: "", body: "", source: "a", destination: "b")
+        }
     }
 }
 

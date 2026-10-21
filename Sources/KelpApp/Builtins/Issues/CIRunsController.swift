@@ -63,7 +63,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     override func loadView() {
         branch.font = .ui(12, weight: .semibold); branch.lineBreakMode = .byTruncatingMiddle
         let refresh = button("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reload() }
-        workflowsButton.image = .symbol("play.circle", String(localized: "Run Workflow…")); workflowsButton.isBordered = false; workflowsButton.toolTip = String(localized: "Run Workflow…")
+        workflowsButton.image = .symbol("play.circle", String(localized: "Run Workflow…")); workflowsButton.isBordered = false
+        workflowsButton.toolTip = String(localized: "Run Workflow…")
         workflowsButton.contentTintColor = .secondaryLabelColor; workflowsButton.target = self; workflowsButton.action = #selector(runWorkflow)
         workflowsButton.isHidden = true
         let header = NSStackView(views: [NSImageView(image: .symbol("arrow.triangle.branch")), branch, NSView(), workflowsButton, refresh])
@@ -96,7 +97,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let v = NSView()
         for x in [header, split, note] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: v.topAnchor), header.leadingAnchor.constraint(equalTo: v.leadingAnchor), header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            header.topAnchor.constraint(equalTo: v.topAnchor), header.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 32),   // else it and the split share the height
             split.topAnchor.constraint(equalTo: header.bottomAnchor), split.bottomAnchor.constraint(equalTo: v.bottomAnchor),
             split.leadingAnchor.constraint(equalTo: v.leadingAnchor), split.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -236,7 +238,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             if !input.options.isEmpty {
                 let p = NSPopUpButton(); p.addItems(withTitles: input.options); p.selectItem(withTitle: input.defaultValue); control = p
             } else {
-                let f = NSTextField(string: input.defaultValue); f.placeholderString = input.description; f.widthAnchor.constraint(equalToConstant: 220).isActive = true; control = f
+                let f = NSTextField(string: input.defaultValue); f.placeholderString = input.description
+                f.widthAnchor.constraint(equalToConstant: 220).isActive = true; control = f
             }
             fields.append((input.name, control))
             form.addRow(with: [NSTextField(labelWithString: input.name + (input.required ? " *" : "")), control])

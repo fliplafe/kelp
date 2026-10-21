@@ -71,7 +71,9 @@ enum Builtins {
             ])
         ]
         c.commands = [
-            CommandSpec(id: "agents.new", title: "New Agent", extensionId: "kelp.agents", key: "opt+cmd+t") { args in editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string) },
+            CommandSpec(id: "agents.new", title: "New Agent", extensionId: "kelp.agents", key: "opt+cmd+t") { args in
+                editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string)
+            },
             cmd("kelp.agents", "terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
             cmd("kelp.agents", "terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
             cmd("kelp.agents", "terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
@@ -171,7 +173,9 @@ enum Builtins {
                 if let w = Workbench.shared.workspaceId { PRActions.create(worktree: w) }
             },
             CommandSpec(id: "git.push", title: "Git: Push", extensionId: "kelp.git") { _ in
-                if let w = Workbench.shared.workspaceId { Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show(String(localized: "Pushed")) } } }
+                if let w = Workbench.shared.workspaceId {
+                    Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show(String(localized: "Pushed")) } }
+                }
             }
         ]
         return c

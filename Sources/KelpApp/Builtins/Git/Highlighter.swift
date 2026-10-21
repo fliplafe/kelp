@@ -7,7 +7,8 @@ enum Highlighter {
         let c = ["if", "else", "for", "while", "return", "break", "continue", "switch", "case", "default", "struct", "class", "enum", "static",
                  "const", "void", "int", "char", "bool", "true", "false", "null", "nil", "new", "this", "self", "import", "include"]
         return [
-            "swift": ["func", "let", "var", "guard", "async", "await", "protocol", "extension", "public", "private", "internal", "final", "init", "try", "throws", "in", "where", "some", "actor"] + c,
+            "swift": ["func", "let", "var", "guard", "async", "await", "protocol", "extension", "public", "private", "internal",
+                "final", "init", "try", "throws", "in", "where", "some", "actor"] + c,
             "ts": ["function", "const", "let", "var", "async", "await", "export", "import", "from", "interface", "type", "extends", "implements", "undefined", "typeof"] + c,
             "js": ["function", "const", "let", "var", "async", "await", "export", "import", "from", "undefined", "typeof"] + c,
             "py": ["def", "class", "import", "from", "as", "with", "lambda", "yield", "None", "True", "False", "elif",

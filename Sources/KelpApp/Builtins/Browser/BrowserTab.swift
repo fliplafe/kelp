@@ -108,7 +108,11 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         store.fetchDataRecords(ofTypes: types) { [weak self] records in
             guard self != nil else { return }
             let mine = records.filter { host == $0.displayName || host.hasSuffix("." + $0.displayName) }
-            store.removeData(ofTypes: types, for: mine) { [weak self] in MainActor.assumeIsolated { Banner.show(String(localized: "Cleared \(host)'s cookies and data")); self?.web.reload() } }
+            store.removeData(ofTypes: types, for: mine) { [weak self] in
+                MainActor.assumeIsolated {
+                    Banner.show(String(localized: "Cleared \(host)'s cookies and data")); self?.web.reload()
+                }
+            }
         }
     }
 

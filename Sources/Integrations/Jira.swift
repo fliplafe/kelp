@@ -22,7 +22,8 @@ public struct JiraClient: Sendable {
 
     public func myself() async throws -> String {
         let d = try await request("GET", "/rest/api/3/myself")
-        guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let n = o["displayName"] as? String else { throw JiraError(description: "unexpected /myself response") }
+        guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any],
+            let n = o["displayName"] as? String else { throw JiraError(description: "unexpected /myself response") }
         return n
     }
 

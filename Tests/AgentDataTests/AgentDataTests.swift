@@ -51,7 +51,8 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
         ["type": "ai-title", "aiTitle": "AI title", "sessionId": "s3"],
         ["type": "custom-title", "customTitle": "Named by hand", "sessionId": "s3"]
     ])
-    try write(p, "s4.jsonl", [user("<command-name>/goal</command-name>\n<command-message>goal</command-message>\n<command-args>ship it</command-args>", "2026-10-15T09:00:00Z", sid: "s4")])
+    try write(p, "s4.jsonl", [user("<command-name>/goal</command-name>\n<command-message>goal</command-message>\n<command-args>ship it</command-args>",
+        "2026-10-15T09:00:00Z", sid: "s4")])
     try write(p, "s1/subagents/agent-a.jsonl", [user("sub", "2026-10-18T11:00:00.000Z", sid: "s1")])
     try write(p, "empty.jsonl", [["type": "mode", "mode": "normal"]])
 

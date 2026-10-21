@@ -343,7 +343,9 @@ final class WelcomeView: NSView {
             ? String(localized: "Pick a workspace in the sidebar, or press ⌘N for a new one — a clean desk in the project for one task and its agents.")
             : String(localized: "Add a project folder. Each task gets its own workspace: agents, terminals and files side by side."))
         body.alignment = .center; body.textColor = .secondaryLabelColor
-        let button = ClosureButton(title: hasRepos ? String(localized: "New Workspace") : String(localized: "Add Project…")) { hasRepos ? Workbench.newWorkspace() : Workbench.addProject() }
+        let button = ClosureButton(title: hasRepos ? String(localized: "New Workspace") : String(localized: "Add Project…")) {
+            hasRepos ? Workbench.newWorkspace() : Workbench.addProject()
+        }
         button.bezelStyle = .push; button.keyEquivalent = "\r"; button.controlSize = .large
         let stack = NSStackView(views: [icon, title, body, button])
         stack.orientation = .vertical; stack.spacing = 10; stack.setCustomSpacing(18, after: body)

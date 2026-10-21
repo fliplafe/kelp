@@ -127,7 +127,8 @@ final class WindowBar: NSView {
         for b in info.local { m.add(b) { [weak self] in self?.switchBranch(["branch": .string(b)], wid) }.state = b == info.current ? .on : .off }
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
-            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")), !name.isEmpty else { return }
+            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
+                !name.isEmpty else { return }
             self?.switchBranch(["branch": .string(name), "create": true], wid)
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branch.bounds.height + 4), in: branch)

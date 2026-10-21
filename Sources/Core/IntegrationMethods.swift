@@ -9,9 +9,13 @@ public struct GitHubBranchPR: RPCMethod { public static let name = "github.branc
 public struct GitHubForge: RPCMethod { public static let name = "github.forge"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String? }
 public struct GitHubStatus: RPCMethod { public static let name = "github.status"; public typealias Result = JSONValue }
 /// `filter`: mine, else open.
-public struct GitHubIssues: RPCMethod { public static let name = "github.issues"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, filter: String? }
+public struct GitHubIssues: RPCMethod {
+    public static let name = "github.issues"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, filter: String?
+}
 public struct GitHubChecks: RPCMethod { public static let name = "github.checks"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, pr: Int? }
-public struct GitHubFailedLog: RPCMethod { public static let name = "github.failedLog"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, runId: Int? }
+public struct GitHubFailedLog: RPCMethod {
+    public static let name = "github.failedLog"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, runId: Int?
+}
 public struct GitHubReviewComments: RPCMethod {
     public static let name = "github.reviewComments"; public typealias Result = JSONValue; public var worktreeId: String?, repoId: String?, pr: Int?
 }

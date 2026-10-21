@@ -144,7 +144,8 @@ final class StatusMark: NSView {
             return
         }
         if s == .working {
-            image.image = .symbol(compacting ? "arrow.down.right.and.arrow.up.left" : "ellipsis.circle", compacting ? String(localized: "Compacting its conversation") : s?.words ?? "")
+            image.image = .symbol(compacting ? "arrow.down.right.and.arrow.up.left" : "ellipsis.circle",
+                compacting ? String(localized: "Compacting its conversation") : s?.words ?? "")
             image.symbolConfiguration = .init(pointSize: size - 2, weight: .regular); image.contentTintColor = .secondaryLabelColor
             if compacting, !still {
                 image.wantsLayer = true

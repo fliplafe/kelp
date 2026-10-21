@@ -184,11 +184,13 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             }
             for w in AppModel.shared.worktrees where !w.archived {
                 let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
-                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)", action: { Workbench.show(workspace: w.id) }))
+                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)",
+                                  action: { Workbench.show(workspace: w.id) }))
             }
             for s in AppModel.shared.sessions where s.status != .exited {
                 let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s), detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
+                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s),
+                                  detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
                                   action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                                   session: s))
             }
@@ -245,14 +247,16 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             .sorted { ($0.statusAt ?? $0.createdAt) > ($1.statusAt ?? $1.createdAt) }
         var out = (queue + rest).prefix(6).map { s -> Item in
             let w = m.worktree(s.worktreeId)
-            return Item(kind: s.status.words, icon: "terminal", title: AgentCatalog.displayName(s), detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
+            return Item(kind: s.status.words, icon: "terminal", title: AgentCatalog.displayName(s),
+                        detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
                         action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                         session: s)
         }
         var seen: Set<String> = []   // each workspace once, at its last visit
         for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && seen.insert(id).inserted {
             guard let w = m.worktree(id) else { continue }
-            out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))
+            out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName,
+                            detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))
             if out.count >= 10 { break }
         }
         recents = out
@@ -391,7 +395,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             let v = NSStackView(views: [h]); v.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 0, right: 10)
             return v
         }
-        let img = NSImageView(image: it.image ?? (it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage()))
+        let img = NSImageView(image: it.image ??
+            (it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage()))
         img.contentTintColor = .secondaryLabelColor
         // An agent: its state while there's something to see (as on its tab), else its own icon.
         let lead: NSView

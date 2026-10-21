@@ -231,10 +231,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             let t = NSMutableAttributedString(string: letter + "  ", attributes: [.font: NSFont.ui(10, weight: .bold), .foregroundColor: color])
             // The name, its counts, then its folder in grey, shown only when all of it fits: a cut folder ("So…") says nothing.
             let dir = (d.path as NSString).deletingLastPathComponent
-            t.append(NSAttributedString(string: (d.path as NSString).lastPathComponent + "  ", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
+            t.append(NSAttributedString(string: (d.path as NSString).lastPathComponent + "  ",
+                attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
             t.append(RowBadges.changes(added: d.additions, removed: d.deletions))
             let full = NSMutableAttributedString(attributedString: t)
-            if !dir.isEmpty { full.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])) }
+            if !dir.isEmpty {
+                full.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
+            }
             let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingTail
             for s in [t, full] { s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length)) }
             let v = FitLabel(labelWithAttributedString: t); v.full = full; v.short = t; v.toolTip = d.path

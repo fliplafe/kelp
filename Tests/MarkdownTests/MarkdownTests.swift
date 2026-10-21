@@ -82,7 +82,8 @@ private func r(_ md: String) -> String { MarkdownHTML.render(md) }
     #expect(r("[x *y*](https://a.b/c?d=1&e=2 \"T\")") == #"<p data-line="1"><a href="https://a.b/c?d=1&amp;e=2" title="T">x <em>y</em></a></p>"#)
     #expect(r("![alt *t*](img/a.png)") == #"<p data-line="1"><img src="img/a.png" alt="alt t"></p>"#)
     #expect(r("<https://x.io> and <me@x.io>") == #"<p data-line="1"><a href="https://x.io">https://x.io</a> and <a href="mailto:me@x.io">me@x.io</a></p>"#)
-    #expect(r("see https://x.io/a_(b). or www.y.com,") == #"<p data-line="1">see <a href="https://x.io/a_(b)">https://x.io/a_(b)</a>. or <a href="http://www.y.com">www.y.com</a>,</p>"#)
+    #expect(r("see https://x.io/a_(b). or www.y.com,")
+        == #"<p data-line="1">see <a href="https://x.io/a_(b)">https://x.io/a_(b)</a>. or <a href="http://www.y.com">www.y.com</a>,</p>"#)
     #expect(r("[ref] and [t][Ref]\n\n[ref]: /r \"tt\"") == #"<p data-line="1"><a href="/r" title="tt">ref</a> and <a href="/r" title="tt">t</a></p>"#)
     #expect(r("[x](javascript:alert(1))").contains(##"href="#""##))
 }

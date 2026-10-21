@@ -39,7 +39,8 @@ private func folder(_ files: [String: String]) throws -> URL {
 }
 
 @MainActor @Test func aManifestFolderBecomesContributions() throws {
-    let d = try folder(["extension.json": #"{"id":"t.one","name":"One","contributes":{"commands":[{"title":"Hi","terminal":"echo hi"}],"panels":[{"id":"p","title":"P","web":"p.html"}]}}"#])
+    let d = try folder(["extension.json":
+        #"{"id":"t.one","name":"One","contributes":{"commands":[{"title":"Hi","terminal":"echo hi"}],"panels":[{"id":"p","title":"P","web":"p.html"}]}}"#])
     let (info, c) = DeclarativeExtension.load(d, checkRequirements: false)
     #expect(info.id == "t.one" && info.error == nil && info.unavailable == nil)
     #expect(c.commands.map(\.title) == ["Hi"])

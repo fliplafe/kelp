@@ -144,7 +144,8 @@ struct UsageView: View {
     private static func codex(_ u: JSONValue) -> [Line] {
         guard let x = u["codex"]?.array?.first else { return [] }
         let now = Date().timeIntervalSince1970
-        return [(String(localized: "5 hours"), "primaryUsedPercent", "primaryResetsAt"), (String(localized: "Week"), "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
+        return [(String(localized: "5 hours"), "primaryUsedPercent", "primaryResetsAt"),
+                (String(localized: "Week"), "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
             guard let p = x[used]?.number else { return nil }
             let t = x[reset]?.number ?? 0, expired = t > 0 && t < now
             return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.until(t) : nil)

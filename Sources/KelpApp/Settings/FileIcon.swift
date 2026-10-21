@@ -38,7 +38,8 @@ enum FileIcon {
         if loaded?.key != key {
             var theme: IconTheme?
             if let spec = ExtensionRegistry.shared.all.iconThemes.first(where: { $0.id == id }) {
-                do { theme = try IconTheme(contentsOf: spec.file) } catch { Banner.show(String(localized: "File icon theme “\(spec.label)”: \(error.localizedDescription)"), style: .error) }
+                do { theme = try IconTheme(contentsOf: spec.file) }
+                catch { Banner.show(String(localized: "File icon theme “\(spec.label)”: \(error.localizedDescription)"), style: .error) }
             }
             loaded = (key, theme)
         }

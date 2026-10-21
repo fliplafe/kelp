@@ -68,7 +68,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         // Grouped like Finder's: open, create, change, locate, hand to the agent.
         let m = NSMenu()
         for group in [[("Open", #selector(openSelected))],
-                      [("New File", #selector(newFile)), (String(localized: "New Folder…"), #selector(newFolder)), (String(localized: "New from Template…"), #selector(newFromTemplate))],
+                      [("New File", #selector(newFile)),
+                       (String(localized: "New Folder…"), #selector(newFolder)), (String(localized: "New from Template…"), #selector(newFromTemplate))],
                       [("Rename", #selector(rename)), (String(localized: "Move to Trash"), #selector(trashSelected)), (String(localized: "Quick Look"), #selector(togglePreview))],
                       [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)), (String(localized: "Copy Relative Path"), #selector(copyRelativePath))],
                       [("Send to Agent", #selector(insertPath)), ("Copy Web Link", #selector(copyWebLink))]] {
@@ -300,7 +301,9 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     /// Like Finder's new folder: "untitled" appears with its name selected; type one and it opens.
     @objc private func newFile() {
         let u = Self.free(URL(fileURLWithPath: root).appendingPathComponent(selectedDir).appendingPathComponent("untitled"), word: nil)
-        guard FileManager.default.createFile(atPath: u.path, contents: Data()) else { Banner.show(String(localized: "Couldn't create a file in /\(selectedDir)."), style: .error); return }
+        guard FileManager.default.createFile(atPath: u.path, contents: Data()) else {
+            Banner.show(String(localized: "Couldn't create a file in /\(selectedDir)."), style: .error); return
+        }
         let undoName = String(localized: "New File")
         undoManager?.registerUndo(withTarget: self) { $0.trash([u], undo: undoName) }; undoManager?.setActionName(undoName)
         let rel = String(u.path.dropFirst(root.count + 1))
@@ -323,7 +326,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let a = NSAlert(); a.messageText = String(localized: "New from Template"); a.accessoryView = box
         a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
-            guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty, let text = try? String(contentsOf: all[pop.indexOfSelectedItem], encoding: .utf8) else { return }
+            guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty,
+                let text = try? String(contentsOf: all[pop.indexOfSelectedItem], encoding: .utf8) else { return }
             var file = name.stringValue; if (file as NSString).pathExtension.isEmpty { file += ".md" }
             let title = (file as NSString).deletingPathExtension.replacingOccurrences(of: "-", with: " ")
             let body = Templates.expand(text, vars: ["branch": worktree?.branch ?? "", "title": title, "repo": repo?.name ?? ""])
@@ -337,7 +341,10 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
 
     @objc private func newFolder() {
         guard let name = prompt(String(localized: "New folder"), String(localized: "In /\(selectedDir)")), !name.isEmpty else { return }
-        do { try FileManager.default.createDirectory(at: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).appendingPathComponent(name), withIntermediateDirectories: true) }
+        do {
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).appendingPathComponent(name),
+                withIntermediateDirectories: true)
+        }
         catch { showError(error) }
         reloadTree()   // empty folders are invisible to git; it appears once it has a file
     }

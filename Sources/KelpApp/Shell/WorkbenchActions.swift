@@ -281,7 +281,8 @@ enum WorkspaceActions {
                 let a = NSAlert(); a.messageText = String(localized: "Close “\(w.displayName)”?")
                 a.informativeText = (running.count == 1 ? String(localized: "1 running agent stops. Files in the project are not touched.")
                     : String(localized: "\(running.count) running agents stop. Files in the project are not touched."))
-                a.addButton(withTitle: running.count == 1 ? String(localized: "Stop Agent and Close") : String(localized: "Stop \(running.count) Agents and Close")).hasDestructiveAction = true
+                a.addButton(withTitle: running.count == 1 ? String(localized: "Stop Agent and Close")
+                    : String(localized: "Stop \(running.count) Agents and Close")).hasDestructiveAction = true
                 a.addButton(withTitle: String(localized: "Cancel"))
                 guard await runSheet(a) == .alertFirstButtonReturn else { return }
             }
@@ -317,7 +318,8 @@ enum WorkspaceActions {
         guard !closing.isEmpty else { NSSound.beep(); return }
         let running = m.sessions.filter { s in closing.contains { $0.id == s.worktreeId } && s.status != .exited && s.status != .hibernated }
         let a = NSAlert(); a.messageText = closing.count == 1 ? String(localized: "Close 1 workspace?") : String(localized: "Close \(closing.count) workspaces?")
-        a.informativeText = (running.isEmpty ? "" : running.count == 1 ? String(localized: "1 running session stops. ") : String(localized: "\(running.count) running sessions stop. "))
+        a.informativeText = (running.isEmpty ? "" : running.count == 1 ? String(localized: "1 running session stops. ")
+            : String(localized: "\(running.count) running sessions stop. "))
             + String(localized: "Files in the projects are not touched.") + (closing.count < ws.count ? " " + String(localized: "Each project keeps one workspace.") : "")
         let close = a.addButton(withTitle: running.isEmpty ? String(localized: "Close")
             : running.count == 1 ? String(localized: "Stop 1 Session and Close") : String(localized: "Stop \(running.count) Sessions and Close"))

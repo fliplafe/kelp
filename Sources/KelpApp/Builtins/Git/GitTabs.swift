@@ -120,7 +120,8 @@ final class CommitMessageTab: TabContent {
         let staged = changes.filter { $0.staged && !$0.conflicted }
         let files = staged.isEmpty ? changes.filter { !$0.conflicted } : staged
         var lines = [message, ""]
-        lines.append(files.isEmpty ? "# No changes to commit." : (staged.isEmpty ? "# All changes" : "# Staged changes") + (branch.map { String(localized: " on “\($0)”") } ?? "") + ":")
+        lines.append(files.isEmpty ? "# No changes to commit."
+            : (staged.isEmpty ? "# All changes" : "# Staged changes") + (branch.map { String(localized: " on “\($0)”") } ?? "") + ":")
         lines += files.map { "#\t" + SourceControlController.letter($0, staged.isEmpty ? .changes : .staged).0 + "  " + $0.path }
         text.string = lines.joined(separator: "\n")
         text.setSelectedRange(NSRange(location: (message as NSString).length, length: 0))

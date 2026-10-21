@@ -62,9 +62,13 @@ public struct SessionHook: RPCMethod {
 }
 
 /// A summary from the UI (the agent's own last reply), and optionally a better status guess.
-public struct SessionAnnotate: RPCMethod { public static let name = "session.annotate"; public typealias Result = JSONValue; public var id: String, summary: String?, status: String? }
+public struct SessionAnnotate: RPCMethod {
+    public static let name = "session.annotate"; public typealias Result = JSONValue; public var id: String, summary: String?, status: String?
+}
 /// The prompt for action `name` in workspace `id`, the project's own wording if it has one (and is trusted).
-public struct RecipeRender: RPCMethod { public static let name = "recipe.render"; public typealias Result = JSONValue; public var id: String, name: String, vars: [String: String]? }
+public struct RecipeRender: RPCMethod {
+    public static let name = "recipe.render"; public typealias Result = JSONValue; public var id: String, name: String, vars: [String: String]?
+}
 /// [{id, version, latest}] for the agents on this Mac.
 public struct AgentsVersions: RPCMethod { public static let name = "agents.versions"; public typealias Result = JSONValue }
 public struct Ping: RPCMethod { public static let name = "ping"; public typealias Result = JSONValue }

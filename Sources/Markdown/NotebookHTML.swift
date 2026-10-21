@@ -43,7 +43,9 @@ public enum NotebookHTML {
             let d = o["data"] as? [String: Any] ?? [:]
             for (mime, tag) in [("image/png", "png"), ("image/jpeg", "jpeg")] {
                 // Decoded and encoded again: only base64 reaches the attribute, whatever the file holds.
-                if let b = d[mime] { return "<img class=\"nb-img\" src=\"data:image/\(tag);base64,\(Data(base64Encoded: text(b), options: .ignoreUnknownCharacters)?.base64EncodedString() ?? "")\">" }
+                if let b = d[mime] {
+                    return "<img class=\"nb-img\" src=\"data:image/\(tag);base64,\(Data(base64Encoded: text(b), options: .ignoreUnknownCharacters)?.base64EncodedString() ?? "")\">"
+                }
             }
             if let svg = d["image/svg+xml"] {   // inline SVG would run scripts; show it as an image instead
                 let b64 = Data(text(svg).utf8).base64EncodedString()

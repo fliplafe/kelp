@@ -49,7 +49,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             Task { @MainActor in
                 if !off {
                     let c = UNMutableNotificationContent()
-                    c.title = String(localized: "Kelp can reach you"); c.body = String(localized: "This is how you'll hear that an agent finished or needs you."); c.sound = .default
+                    c.title = String(localized: "Kelp can reach you")
+                    c.body = String(localized: "This is how you'll hear that an agent finished or needs you."); c.sound = .default
                     try? await center.add(UNNotificationRequest(identifier: "kelp-test", content: c, trigger: nil))
                 }
                 done(!off)
@@ -122,7 +123,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if NSApp.isActive, (NSApp.delegate as? AppDelegate)?.isViewing(session: s.id) == true { return }
         let wt = AppModel.shared.worktree(s.worktreeId)
         let c = UNMutableNotificationContent()
-        c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you") : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
+        c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you")
+            : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
         c.subtitle = wt?.branch ?? ""
         c.body = s.summary.isEmpty ? (s.status == .waiting ? String(localized: "Waiting for your answer") : String(localized: "Ready for review")) : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]

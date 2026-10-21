@@ -76,7 +76,8 @@ final class OnboardingSheet: NSWindowController {
             agents.addArrangedSubview(grid)
         }
         if found.isEmpty {
-            let none = NSTextField(wrappingLabelWithString: String(localized: "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ")
+            let none = NSTextField(wrappingLabelWithString:
+                                   String(localized: "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ")
                                    + String(localized: "or from Settings › Agents, and it shows up here."))
             none.textColor = .secondaryLabelColor; none.preferredMaxLayoutWidth = 410
             agents.addArrangedSubview(none)
@@ -93,7 +94,8 @@ final class OnboardingSheet: NSWindowController {
 
     func testNotification() {
         (NSApp.delegate as? AppDelegate)?.notifier.sendTest { [weak self] ok in
-            self?.notifyStatus.stringValue = ok ? String(localized: "Sent. If no banner appeared, check Focus.") : String(localized: "Turned off for Kelp in System Settings › Notifications.")
+            self?.notifyStatus.stringValue = ok
+                ? String(localized: "Sent. If no banner appeared, check Focus.") : String(localized: "Turned off for Kelp in System Settings › Notifications.")
             self?.notifyStatus.textColor = ok ? .secondaryLabelColor : .systemRed
         }
     }

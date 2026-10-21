@@ -6,7 +6,8 @@ import Quartz
 @MainActor
 enum Preview {
     static let pdf: Set<String> = ["pdf"]
-    static let quickLook: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp", "svg", "ico", "mov", "mp4", "mp3", "wav", "key", "pages", "numbers", "docx", "xlsx", "pptx", "zip"]
+    static let quickLook: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp", "svg", "ico",
+        "mov", "mp4", "mp3", "wav", "key", "pages", "numbers", "docx", "xlsx", "pptx", "zip"]
 
     static func canPreview(_ url: URL) -> Bool {
         let e = url.pathExtension.lowercased(); return pdf.contains(e) || quickLook.contains(e)

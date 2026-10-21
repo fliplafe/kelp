@@ -38,7 +38,9 @@ extension Git {
         guard let sep = s.firstIndex(where: { $0 == "/" || $0 == ":" }) else { return nil }
         let host = String(s[..<sep])
         var path = String(s[s.index(after: sep)...])
-        if hasScheme, s[sep] == ":", let first = path.split(separator: "/").first, Int(first) != nil { path = path.split(separator: "/").dropFirst().joined(separator: "/") }   // ssh port
+        if hasScheme, s[sep] == ":", let first = path.split(separator: "/").first, Int(first) != nil {
+            path = path.split(separator: "/").dropFirst().joined(separator: "/")
+        }   // ssh port
         if path.hasSuffix(".git") { path.removeLast(4) }
         path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !host.isEmpty, path.contains("/") else { return nil }

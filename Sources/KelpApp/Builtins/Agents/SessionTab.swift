@@ -59,7 +59,8 @@ final class SessionTab: TabContent {
             a.addButton(withTitle: String(localized: "Stop Agent")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         } else if session?.agent == "shell", let program = busy(sid) {
-            let a = NSAlert(); a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
+            let a = NSAlert()
+            a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }

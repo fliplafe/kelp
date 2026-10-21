@@ -69,7 +69,9 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
                     + #""branchName":"eng-1","state":{"id":"s","name":"Todo","type":"unstarted"},"team":{"id":"t","key":"ENG","name":"Eng"}}]}}}}"#)
             }
             if body.contains("teams {") { return (200, #"{"data":{"teams":{"nodes":[{"id":"t","key":"ENG","name":"Eng"}]}}}"#) }
-            if body.contains("states {") { return (200, #"{"data":{"team":{"states":{"nodes":[{"id":"s1","name":"Todo","type":"unstarted"},{"id":"s2","name":"In Progress","type":"started"}]}}}}"#) }
+            if body.contains("states {") {
+                return (200, #"{"data":{"team":{"states":{"nodes":[{"id":"s1","name":"Todo","type":"unstarted"},{"id":"s2","name":"In Progress","type":"started"}]}}}}"#)
+            }
             if body.contains("issueUpdate") { return (200, #"{"data":{"issueUpdate":{"success":true}}}"#) }
             return (400, #"{"errors":[{"message":"unexpected"}]}"#)
         }

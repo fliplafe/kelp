@@ -182,7 +182,9 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     let moved = try makeRepo()
     let repo = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string(moved)]), as: Repo.self)
     #expect(URL(fileURLWithPath: repo.path).resolvingSymlinksInPath().path == URL(fileURLWithPath: moved).resolvingSymlinksInPath().path)
-    await #expect(throws: (any Error).self) { _ = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string("/tmp/definitely-not-a-repo-\(UUID().uuidString)")])) }
+    await #expect(throws: (any Error).self) {
+        _ = try await r.c.call("repo.relocate", .obj(["id": .string(r.repo.id), "path": .string("/tmp/definitely-not-a-repo-\(UUID().uuidString)")]))
+    }
 }
 
 @Test func theLegacyConfigApiStillMapsToSettings() async throws {

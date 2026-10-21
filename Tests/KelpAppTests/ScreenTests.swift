@@ -40,7 +40,9 @@ private func texts(_ v: NSView) -> [String] {
 }
 
 private let project = Repo(id: "r1", name: "Atlas", path: "/tmp/kelp-screen-atlas")
-private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree { Worktree(id: id, repoId: "r1", branch: branch, path: "/tmp/kelp-screen-atlas/\(id)", note: note) }
+private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree {
+    Worktree(id: id, repoId: "r1", branch: branch, path: "/tmp/kelp-screen-atlas/\(id)", note: note)
+}
 
 // AppModel.shared is shared with the other screen tests: one at a time.
 extension SharedAppModel {

@@ -36,7 +36,9 @@ struct IntegrationsSettings: View {
                         }
                     } }.disabled(jiraSite.isEmpty || jiraEmail.isEmpty || jiraToken.isEmpty)
                     Button("Disconnect") { Task {
-                        if await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])) != nil { jiraStatus = String(localized: "Not connected") }
+                        if await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])) != nil {
+                            jiraStatus = String(localized: "Not connected")
+                        }
                     } }
                 }
                 Text("API token from id.atlassian.com › Security. Stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
@@ -46,7 +48,9 @@ struct IntegrationsSettings: View {
                 TextField("Username or email", text: $bbUser)
                 SecureField("API token / app password", text: $bbToken)
                 Button("Save") { Task {
-                    if await AppModel.shared.call("bitbucket.setCredentials", .obj(["user": .string(bbUser), "token": .string(bbToken)])) != nil { bbStatus = String(localized: "Saved"); bbToken = "" }
+                    if await AppModel.shared.call("bitbucket.setCredentials", .obj(["user": .string(bbUser), "token": .string(bbToken)])) != nil {
+                        bbStatus = String(localized: "Saved"); bbToken = ""
+                    }
                 } }
                     .disabled(bbUser.isEmpty || bbToken.isEmpty)
                 Text("Used for pull requests in repos whose origin is on bitbucket.org.").font(.caption).foregroundStyle(.secondary)
@@ -76,6 +80,8 @@ struct IntegrationsSettings: View {
         }
     }
     private func connect() async {
-        if let me = await AppModel.shared.call("linear.setKey", .obj(["key": .string(key)])) { linearStatus = String(localized: "Connected as \(me["name"]?.string ?? "")"); key = "" }
+        if let me = await AppModel.shared.call("linear.setKey", .obj(["key": .string(key)])) {
+            linearStatus = String(localized: "Connected as \(me["name"]?.string ?? "")"); key = ""
+        }
     }
 }

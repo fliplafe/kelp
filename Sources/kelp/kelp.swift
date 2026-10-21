@@ -239,7 +239,8 @@ func plist() -> String {
             let progress = flag("--progress").flatMap { Int($0) }, kind = flag("--kind"), msg = args.joined(separator: " ")
             _ = try await c.call(SessionReport(id: id, state: state, message: msg.isEmpty ? nil : msg, progress: progress, kind: kind))
         case ("terminal", "read"):
-            show(try await c.call("session.read", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")), "bytes": .int(args.dropFirst().first.flatMap(Int.init) ?? 8192)])))
+            show(try await c.call("session.read", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")),
+                "bytes": .int(args.dropFirst().first.flatMap(Int.init) ?? 8192)])))
         case ("terminal", "send"):
             let enter = !has("--no-enter")
             guard args.count >= 2 else { fail("terminal send <session> <text>") }
@@ -271,7 +272,8 @@ func plist() -> String {
                 print("\(f["path"]?.string ?? "")  +\(count("add")) -\(count("del"))")
             }
         case ("commit", _):
-            show(try await c.call("git.commit", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "message": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "all": true])))
+            show(try await c.call("git.commit", .obj(["id": try await currentWorktree(c)["id"] ?? .null,
+                "message": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "all": true])))
         case ("merge", _): show(try await c.call("git.merge", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
         case ("push", _): show(try await c.call("git.push", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
         case ("comment", "add"):
@@ -280,7 +282,8 @@ func plist() -> String {
             let id = try await currentWorktree(c)["id"] ?? .null, text = args.dropFirst(2).joined(separator: " ")
             show(try await c.call("comment.add", .obj(["id": id, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(text)])))
         case ("comment", "send"):
-            show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null,
+                "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         default: print(usage)
         }
     }

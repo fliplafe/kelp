@@ -42,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ExtensionRegistry.shared.reload()   // settings (disabled extensions) are known now
             AgentAvailability.shared.refresh(force: true)
             _ = await Accounts.load()
-            let pick = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_WORKTREE"].flatMap { b in AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b } }
+            let pick = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_WORKTREE"].flatMap { b in
+                AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b }
+            }
             let last = UIState["workbench.lastWorkspace"]?.string.flatMap { AppModel.shared.worktree($0) }
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))

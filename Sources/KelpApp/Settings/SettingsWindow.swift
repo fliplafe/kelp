@@ -94,7 +94,8 @@ private struct SearchResults: View {
         let q = query.lowercased()
         let hits = ExtensionRegistry.shared.all.settings.flatMap { s in
             // In English and as shown (a Russian search finds Russian titles).
-            s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " " + loc($0.description ?? "")).lowercased().contains(q) }.map { (s, $0) }
+            s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " " + loc($0.description ?? "")).lowercased().contains(q) }
+                .map { (s, $0) }
         }
         let keys = KeyBindings.entries().contains { KeyBindings.matches($0, query) }
         Form {
@@ -324,7 +325,8 @@ private struct ExtensionsSettings: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "vsix") ?? .zip]) { result in
             guard case .success(let url) = result else { return }
             Task {
-                do { try await registry.install(url) } catch { Banner.show(String(localized: "Couldn't install \(url.lastPathComponent): \(error.localizedDescription)"), style: .error) }
+                do { try await registry.install(url) }
+                catch { Banner.show(String(localized: "Couldn't install \(url.lastPathComponent): \(error.localizedDescription)"), style: .error) }
             }
         }
     }

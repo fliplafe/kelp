@@ -119,7 +119,8 @@ extension SourceControlController {
         }
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
-            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")), !name.isEmpty else { return }
+            guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
+                !name.isEmpty else { return }
             self?.run("git.switch", ["branch": .string(name), "create": true])
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branchButton.bounds.height + 4), in: branchButton)
