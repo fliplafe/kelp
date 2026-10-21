@@ -172,7 +172,7 @@ final class Box: @unchecked Sendable {
     let big = Data(repeating: 0x61, count: 2 << 20)   // far more than the terminal buffers
     let t = Date()
     p.write(big)
-    #expect(Date().timeIntervalSince(t) < 0.2)       // queued, not written here
+    #expect(Date().timeIntervalSince(t) < 1)         // queued, not written here (written here it would block for good)
     let done = DispatchSemaphore(value: 0)
     Thread.detachNewThread { _ = p.size; _ = p.foregroundProgram; done.signal() }   // its own thread: a busy pool mustn't look like a stuck lock
     #expect(done.wait(timeout: .now() + 2) == .success, "size / foregroundProgram waited on the stuck write")

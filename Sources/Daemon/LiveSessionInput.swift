@@ -73,7 +73,10 @@ extension LiveSession {
     /// Without it one line is typed, so `kelp send <id> /compact` still runs the command.
     func send(_ text: String, enter: Bool, paste: Bool = false) {
         let takesPastes = lock.withLock { detector.input(); typedYet = true; return pasteMode }
-        let text = Self.typeable(text)
+        var text = Self.typeable(text)
+        // Not to be sent (a draft: an issue's text, say) to a program that takes no pastes: each newline would submit a
+        // line of it. One line instead, so nothing goes before the user presses Return.
+        if !enter, !takesPastes { text = text.replacingOccurrences(of: "\n", with: " ") }
         // A program that never asked for pastes (a plain line reader) has no modes to trip: it gets the text as is.
         let body = (paste || text.contains("\n")) && takesPastes ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
         // One after another, Enter included: two quick sends must arrive as text, Enter, text, Enter, not text, text, Enter, Enter.

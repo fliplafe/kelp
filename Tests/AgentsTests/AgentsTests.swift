@@ -288,3 +288,16 @@ import Core
     for key in ["KELP_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"] { #expect(env[key]?.hasPrefix("/tmp/kr-") == true, "\(key)") }
     #expect(env["KELP_KEYCHAIN_SERVICE"]?.hasPrefix("dev.kelp.tests.") == true && env["GIT_CONFIG_GLOBAL"] == "/dev/null")
 }
+
+/// Paused (or ended) stays so: what the program prints or reports while it's being stopped doesn't make it "working"
+/// again (which would then be saved as ended, and the session couldn't resume).
+@Test func aPausedSessionStaysPausedWhileItsProgramStops() throws {
+    let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })
+    var d = StatusDetector(manifest: codex)
+    d.input(at: Date(timeIntervalSince1970: 0))   // typed into: the heuristics are on
+    d.override(.hibernated)
+    d.output("Saving the conversation before quitting", at: Date(timeIntervalSince1970: 100))
+    #expect(d.status == .hibernated)
+    d.program("working"); d.hook("done")
+    #expect(d.status == .hibernated)
+}

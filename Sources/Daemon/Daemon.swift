@@ -314,7 +314,7 @@ public final class Daemon: Sendable {
             ls.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(sid)])) }
         }
         // The record first: a program nobody has a record of could be neither seen nor stopped.
-        do { try store.save(rec) } catch { ls.discard(); throw error }
+        do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
         live.add(ls)
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)

@@ -820,3 +820,46 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     }
     #expect(try w.d.store.worktrees(repo: r.id).count == 1)
 }
+
+/// A hookless agent that was typed into and is still printing when its workspace is archived comes back paused, not
+/// ended: what it prints while it stops doesn't count.
+@Test func aBusyHooklessAgentArchivedStaysResumable() async throws {
+    let script = "trap 'echo Saving the conversation before quitting; exit 0' HUP TERM; echo ready; while :; do echo working on the next step; sleep 0.2; done"
+    let chatty = AgentManifest(id: "chatty", name: "Chatty", command: "/bin/bash", args: ["-c", script, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [chatty]); defer { w.d.stop() }
+    let wt = try await desk(w, "busy")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "chatty"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("go\r".utf8).base64EncodedString())]))   // its heuristics on
+    #expect(try await waitFor(10) { w.d.existing(s.id)?.snapshot.status == .working })
+    let ls = try #require(w.d.existing(s.id))
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    try await Task.sleep(for: .milliseconds(500))   // its last words and exit handled (no event to wait on: it's out of the table)
+    #expect(try w.d.store.session(s.id)?.status == .hibernated, "store \(String(describing: try? w.d.store.session(s.id)?.status)) live \(ls.snapshot.status) \(ls.tail(300).count)")
+}
+
+/// A branch that adds agent config in a subfolder (sub/.claude, sub/.mcp.json) changes agent config too: a session can
+/// start in that subfolder, and the agent reads its config there.
+@Test func agentConfigInASubfolderCounts() throws {
+    let repo = try makeRepo()
+    #expect(!Daemon.changesAgentConfig(repo, base: "main"))
+    try Git.run(["checkout", "-qb", "pr"], cwd: repo)
+    try FileManager.default.createDirectory(atPath: repo + "/sub/.claude", withIntermediateDirectories: true)
+    try "{}".write(toFile: repo + "/sub/.claude/settings.json", atomically: true, encoding: .utf8)
+    #expect(Daemon.changesAgentConfig(repo, base: "main"))   // not committed yet
+    try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "sub config"], cwd: repo)
+    #expect(Daemon.changesAgentConfig(repo, base: "main"))   // committed on the branch
+}
+
+/// A draft (an issue's brief) to a program that takes no pastes isn't submitted line by line: it arrives as one line,
+/// still waiting for Return.
+@Test func aDraftToAPlainProgramIsNotSubmittedLineByLine() async throws {
+    let plain = AgentManifest(id: "plain", name: "Plain", command: "/bin/bash", args: ["-c", #"echo ready; read -r l; echo "SUBMITTED"; sleep 30"#, "x"])
+    let w = try await world(agents: [plain]); defer { w.d.stop() }
+    let r = try await w.c.call("task.fromIssue", .obj(["repoId": .string(w.repo.id), "ref": "#8", "title": "Two lines", "body": "first\nsecond", "agent": "plain"]))
+    let s = try #require(r["session"]).decode(Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    #expect(try await waitFor(10) { try await screen().contains("second") })   // typed
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "", "enter": false]))   // a barrier: queued after it
+    #expect(!(try await screen()).contains("SUBMITTED"))
+}

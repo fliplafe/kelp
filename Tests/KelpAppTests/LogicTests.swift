@@ -98,8 +98,10 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     let d = Debounce()
     var ran: [Int] = []
     for i in 1...3 { d.after(0.05) { ran.append(i) } }
-    for _ in 0..<100 where ran.isEmpty { try await Task.sleep(for: .milliseconds(50)) }   // waits for it, however busy the Mac
-    try await Task.sleep(for: .milliseconds(100))   // and a little longer: nothing else may run after the last call
+    // A control scheduled after the burst, with a longer delay: once it ran, any other call of the burst would have too.
+    let after = Debounce(); var settled = false
+    after.after(0.1) { settled = true }
+    for _ in 0..<100 where !settled { try await Task.sleep(for: .milliseconds(50)) }   // however busy the Mac
     #expect(ran == [3])
     d.after(0.05) { ran.append(4) }; d.cancel()
     let later = Debounce(); var control = false

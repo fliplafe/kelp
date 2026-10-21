@@ -60,7 +60,11 @@ extension Daemon {
         Self.clones.set(id, proc)
         let status: (Int32, Process.TerminationReason) = try await withCheckedThrowingContinuation { c in
             proc.terminationHandler = { c.resume(returning: ($0.terminationStatus, $0.terminationReason)) }
-            do { try proc.run() } catch { proc.terminationHandler = nil; c.resume(throwing: error) }
+            do { try proc.run() } catch {
+                proc.terminationHandler = nil
+                try? FileManager.default.removeItem(atPath: dest)   // claimed above, nothing written: a retry finds the name free
+                c.resume(throwing: error)
+            }
         }
         Self.clones.set(id, nil)
         err.fileHandleForReading.readabilityHandler = nil

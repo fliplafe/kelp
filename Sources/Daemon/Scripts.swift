@@ -40,7 +40,9 @@ extension Daemon {
 
     /// KelpApp beside this daemon (one bundle, or one build folder); KELP_APP_EXECUTABLE stands in for it in tests.
     static var appExecutable: String {
+        #if DEBUG   // tests stand in for the app; a release build takes no word for it from whoever started kelpd
         if let e = ProcessInfo.processInfo.environment["KELP_APP_EXECUTABLE"] { return URL(fileURLWithPath: e).resolvingSymlinksInPath().path }
+        #endif
         let me = Bundle.main.executableURL?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return me.deletingLastPathComponent().appendingPathComponent("KelpApp").resolvingSymlinksInPath().path
     }

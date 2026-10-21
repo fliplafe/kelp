@@ -25,8 +25,12 @@ public struct StatusDetector: Sendable {
         regexes = manifest.waitingPatterns.compactMap { try? NSRegularExpression(pattern: $0) }
     }
 
+    /// Paused or ended: nothing the program still prints (or reports) as it's stopped changes that. A pause that read as
+    /// "working" again would be saved as ended, and the session couldn't resume.
+    private var settled: Bool { status == .hibernated || status == .exited }
+
     public mutating func output(_ chunk: String, at now: Date = Date()) {
-        guard !hooked else { return }   // the agent reports itself: nothing here is read (tick checks the same)
+        guard !hooked, !settled else { return }   // the agent reports itself: nothing here is read (tick checks the same)
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
         // Redraws with no words (spinners, timers, borders) aren't the agent doing anything.
@@ -54,6 +58,7 @@ public struct StatusDetector: Sendable {
     /// Hook event: "working" | "waiting" | "done". Once seen, heuristics are off for this session.
     public mutating func hook(_ event: String) {
         hooked = true
+        guard !settled else { return }
         switch event {
         case "working": status = .working
         case "waiting": status = .waiting
@@ -65,6 +70,7 @@ public struct StatusDetector: Sendable {
     /// OSC 7501 report from the agent itself: as good as a hook, heuristics are off from here.
     public mutating func program(_ state: String) {
         hooked = true
+        guard !settled else { return }
         switch state {
         case "idle", "clear": status = .idle
         case "working": status = .working

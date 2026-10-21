@@ -90,6 +90,11 @@ extension Daemon {
     /// has never seen or one on a remote host, is the user's to answer.
     func trustAnswered(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
         guard m.autoAnswers.contains(AgentManifest.trust) else { return m }
+        var out = m
+        out.autoAnswers.removeAll { $0 == AgentManifest.trust }
+        // A remote project's question is always the user's: decided before any git (over ssh, under wakeLock, for a host
+        // that may not answer).
+        guard RemoteHost.of(cwd) == nil else { return out }
         // The project only counts for its own workspace's folder: any other cwd passed with its worktreeId is just a folder.
         // (A workspace on another branch of a trusted project is trusted the way Claude trusts a folder, whatever is checked
         // out in it.)
@@ -102,20 +107,19 @@ extension Daemon {
         // The config the agent will read: the session's variables over the daemon's own (a kelpd started from a shell
         // passes on that shell's CLAUDE_CONFIG_DIR), as PTY builds its environment.
         let env = ProcessInfo.processInfo.environment.merging(env) { $1 }
-        let expectedAndSettled = RemoteHost.of(cwd) == nil && !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
+        let expectedAndSettled = !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
             && project.map { AgentTrust.trusts(agent: m.id, folders: [$0], env: env) } == true
-        guard !expectedAndSettled else { return m }
-        var out = m
-        out.autoAnswers.removeAll { $0 == AgentManifest.trust }
-        return out
+        return expectedAndSettled ? m : out
     }
 
     /// What a trusted folder lets an agent run on its own: hooks, MCP servers, its settings. A branch (someone else's PR)
     /// that changes these against the base asks the user, though the project is trusted; so does one Kelp can't compare.
     static let agentConfig = [".claude", ".mcp.json", ".codex", ".gemini", ".cursor"]
+    /// At any depth: a session can start in a folder inside the workspace, and the agent reads that folder's config.
+    static let agentConfigSpecs = agentConfig.flatMap { [":(glob)**/" + $0, ":(glob)**/" + $0 + "/**"] }
     static func changesAgentConfig(_ path: String, base: String) -> Bool {
-        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfig, cwd: path)) == nil   // exit 1: differs
-        let pending = (try? Git.run(["status", "--porcelain", "--"] + agentConfig, cwd: path))?.isEmpty != true
+        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfigSpecs, cwd: path)) == nil   // exit 1: differs
+        let pending = (try? Git.run(["status", "--porcelain", "--"] + agentConfigSpecs, cwd: path))?.isEmpty != true
         return committed || pending
     }
 
