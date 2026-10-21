@@ -2,9 +2,6 @@ import Foundation
 
 public struct TokenCounts: Codable, Sendable, Equatable {
     public var input = 0, output = 0, cacheWrite = 0, cacheRead = 0
-    public init(input: Int = 0, output: Int = 0, cacheWrite: Int = 0, cacheRead: Int = 0) {
-        self.input = input; self.output = output; self.cacheWrite = cacheWrite; self.cacheRead = cacheRead
-    }
     public var total: Int { input + output + cacheWrite + cacheRead }
     public static func + (a: Self, b: Self) -> Self {
         Self(input: a.input + b.input, output: a.output + b.output, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead)
@@ -17,9 +14,6 @@ public struct TokenCounts: Codable, Sendable, Equatable {
 /// USD per million tokens.
 public struct Pricing: Sendable, Equatable {
     public var input, output, cacheWrite, cacheRead: Double
-    public init(input: Double, output: Double, cacheWrite: Double, cacheRead: Double) {
-        self.input = input; self.output = output; self.cacheWrite = cacheWrite; self.cacheRead = cacheRead
-    }
     public func cost(_ t: TokenCounts) -> Double {
         (Double(t.input) * input + Double(t.output) * output + Double(t.cacheWrite) * cacheWrite + Double(t.cacheRead) * cacheRead) / 1_000_000
     }
@@ -42,13 +36,11 @@ public struct Pricing: Sendable, Equatable {
         ("gpt-5", .init(input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0.125))
     ]
 
-    public static func forModel(_ model: String) -> Pricing? {
-        let m = model.lowercased()
-        return table.first { m.contains($0.match) }?.price
-    }
-
     /// 0 for unknown models.
-    public static func cost(model: String, tokens: TokenCounts) -> Double { forModel(model)?.cost(tokens) ?? 0 }
+    public static func cost(model: String, tokens: TokenCounts) -> Double {
+        let m = model.lowercased()
+        return table.first { m.contains($0.match) }?.price.cost(tokens) ?? 0
+    }
 }
 
 /// Claude Code's usage over a stretch of time; the numbers come from `UsageIndex`.
@@ -59,9 +51,6 @@ public enum ClaudeUsage {
         public var tokens: TokenCounts
         public var estimatedCostUSD: Double
         public var models: [String]
-        public init(start: Date, end: Date, tokens: TokenCounts, estimatedCostUSD: Double, models: [String]) {
-            self.start = start; self.end = end; self.tokens = tokens; self.estimatedCostUSD = estimatedCostUSD; self.models = models
-        }
     }
 
     public static let blockLength: TimeInterval = 5 * 3600
@@ -71,17 +60,13 @@ public struct CodexLimits: Sendable, Equatable {
     public var primaryUsedPercent: Double?, primaryResetsAt: Date?
     public var secondaryUsedPercent: Double?, secondaryResetsAt: Date?
     public var observedAt: Date
-    public init(primaryUsedPercent: Double? = nil, primaryResetsAt: Date? = nil, secondaryUsedPercent: Double? = nil, secondaryResetsAt: Date? = nil, observedAt: Date) {
-        self.primaryUsedPercent = primaryUsedPercent; self.primaryResetsAt = primaryResetsAt
-        self.secondaryUsedPercent = secondaryUsedPercent; self.secondaryResetsAt = secondaryResetsAt; self.observedAt = observedAt
-    }
 }
 
 public enum CodexUsage {
-    /// Newest `rate_limits` snapshot from `token_count` events in the `files` most recently modified rollouts.
-    public static func latest(root: URL = CodexHistory.defaultRoot, files: Int = 10) -> CodexLimits? {
+    /// Newest `rate_limits` snapshot from `token_count` events in the 10 most recently modified rollouts.
+    public static func latest(root: URL = CodexHistory.defaultRoot) -> CodexLimits? {
         func mtime(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
-        return CodexHistory.rollouts(root).map { ($0, mtime($0)) }.sorted { $0.1 > $1.1 }.prefix(files)
+        return CodexHistory.rollouts(root).map { ($0, mtime($0)) }.sorted { $0.1 > $1.1 }.prefix(10)
             .compactMap { latest(in: $0.0) }.max { $0.observedAt < $1.observedAt }
     }
 

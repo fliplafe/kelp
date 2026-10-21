@@ -50,7 +50,7 @@ private extension Data {
     defer { close(peer) }
     await #expect(throws: RPCError.self) { try await client.call("usage.get", timeout: 0.2) }
     // The late reply finds nobody waiting (no second resume), and the next call still gets its own.
-    let late = try Wire.line(RPCResponse(id: 1, result: .null)), next = try Wire.line(RPCResponse(id: 2, result: "ok"))
+    let late = try Wire.line(JSONValue.obj(["id": 1, "result": .null])), next = try Wire.line(JSONValue.obj(["id": 2, "result": "ok"]))
     DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { Unix.writeAll(peer, late + next) }
     #expect(try await client.call("ping", timeout: 5).string == "ok")
 }
@@ -216,7 +216,7 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
         old.close()
         let fresh = try RPCClient(socket: path)
         let peer = accept(server, nil, nil)
-        DispatchQueue.global().async { Unix.writeAll(peer, (try? Wire.line(RPCResponse(id: 1, result: .string("r\(round)")))) ?? Data()) }
+        DispatchQueue.global().async { Unix.writeAll(peer, (try? Wire.line(JSONValue.obj(["id": 1, "result": .string("r\(round)")]))) ?? Data()) }
         #expect(try await fresh.call("ping", timeout: 5).string == "r\(round)")
         fresh.close(); close(peer); close(oldPeer)
     }

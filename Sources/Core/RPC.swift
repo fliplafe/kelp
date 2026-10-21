@@ -20,17 +20,6 @@ public struct RPCError: Codable, Error, Sendable, Equatable {
     public static let methodNotFound = RPCError(code: -32601, message: "method not found")
 }
 
-public struct RPCResponse: Codable, Sendable {
-    public var jsonrpc = "2.0"
-    public var id: Int?
-    public var result: JSONValue?
-    public var error: RPCError?
-    /// Server-pushed notifications reuse the request shape; responses carry `id`.
-    public init(id: Int?, result: JSONValue? = nil, error: RPCError? = nil) {
-        self.id = id; self.result = result; self.error = error
-    }
-}
-
 /// A line on the wire: either a response (has `result`/`error`) or a notification/request (has `method`).
 public struct RPCMessage: Codable, Sendable {
     public var id: Int?

@@ -6,7 +6,6 @@ import Foundation
 public final class UsageIndex: @unchecked Sendable {   // files under lock
     public struct Tally: Codable, Sendable, Equatable {
         public var tokens = TokenCounts(); public var cost = 0.0
-        public init(tokens: TokenCounts = TokenCounts(), cost: Double = 0) { self.tokens = tokens; self.cost = cost }
     }
     struct FileState: Codable {
         var offset: UInt64; var born: Double
@@ -121,7 +120,7 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
         // `"type":"assistant"` is the line's own type; the first "type" in a line is usually the message's ("message").
         guard line.range(of: assistant) != nil, let usage = object(line, after: "\"usage\":"),
               let u = try? JSONSerialization.jsonObject(with: usage) as? [String: Any],
-              let ts = field(line, "timestamp").flatMap(parseTime) else { return nil }
+              let ts = JSONL.date(field(line, "timestamp"))?.timeIntervalSince1970 else { return nil }
         let model = field(line, "model") ?? "unknown"
         guard model != "<synthetic>" else { return nil }
         func n(_ k: String) -> Int { (u[k] as? NSNumber)?.intValue ?? 0 }
@@ -147,9 +146,6 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
     }
 
     static let assistant = Data("\"type\":\"assistant\"".utf8)
-    // Format styles are values (Sendable): shared freely, unlike the formatters these replace.
-    static let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-    static func parseTime(_ s: String) -> TimeInterval? { ((try? iso.parse(s)) ?? (try? Date.ISO8601FormatStyle().parse(s)))?.timeIntervalSince1970 }
     static func day(_ t: TimeInterval) -> String { day(Date(timeIntervalSince1970: t)) }
     static func day(_ d: Date) -> String { Date.ISO8601FormatStyle(timeZone: .current).year().month().day().format(d) }   // local "yyyy-MM-dd"
 }

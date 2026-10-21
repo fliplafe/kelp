@@ -7,7 +7,6 @@ usage: kelp <command>
   status                               repos, worktrees and sessions at a glance
   repo add [path] | repo list
   worktree create <branch> [--repo id] [--base b] | list | current | note <text> | remove <id> [--force] [--drop-commits] | archive <id>
-  agent list                           (use `kelp session new --agent <id>`)
   session new [--agent id] [--worktree id] [--cmd "..."] [--split right|down] [--wait] | list
                                        --split opens its tab beside yours; --wait prints its id, then exits with
                                        its command's exit code when it ends

@@ -129,15 +129,15 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     let m = TokenCounts(input: 1_000_000, output: 1_000_000, cacheWrite: 1_000_000, cacheRead: 1_000_000)
     #expect(abs(Pricing.cost(model: "claude-opus-5-5", tokens: m) - 29.2) < 1e-9)
     #expect(abs(Pricing.cost(model: "claude-opus-5-5[1m]", tokens: TokenCounts(input: 500, output: 100)) - 0.004) < 1e-12)
-    #expect(Pricing.forModel("claude-opus-4-8")?.input == 5)
-    #expect(Pricing.forModel("claude-sonnet-4-6")?.input == 3)
-    #expect(Pricing.forModel("claude-sonnet-5-5")?.input == 2)
-    #expect(Pricing.forModel("claude-fable-5-1")?.cacheRead == 0.25)
-    #expect(Pricing.forModel("claude-fable-5")?.cacheRead == 1)
-    #expect(Pricing.forModel("claude-haiku-4-5")?.input == 1)
-    #expect(Pricing.forModel("gpt-5.1-codex-mini")?.input == 0.25)
-    #expect(Pricing.forModel("gpt-5.2-codex")?.output == 14)
-    #expect(Pricing.forModel("gpt-5.5")?.input == 1.25)
+    #expect(Pricing.cost(model: "claude-opus-4-8", tokens: TokenCounts(input: 1_000_000)) == 5)
+    #expect(Pricing.cost(model: "claude-sonnet-4-6", tokens: TokenCounts(input: 1_000_000)) == 3)
+    #expect(Pricing.cost(model: "claude-sonnet-5-5", tokens: TokenCounts(input: 1_000_000)) == 2)
+    #expect(Pricing.cost(model: "claude-fable-5-1", tokens: TokenCounts(cacheRead: 1_000_000)) == 0.25)
+    #expect(Pricing.cost(model: "claude-fable-5", tokens: TokenCounts(cacheRead: 1_000_000)) == 1)
+    #expect(Pricing.cost(model: "claude-haiku-4-5", tokens: TokenCounts(input: 1_000_000)) == 1)
+    #expect(Pricing.cost(model: "gpt-5.1-codex-mini", tokens: TokenCounts(input: 1_000_000)) == 0.25)
+    #expect(Pricing.cost(model: "gpt-5.2-codex", tokens: TokenCounts(output: 1_000_000)) == 14)
+    #expect(Pricing.cost(model: "gpt-5.5", tokens: TokenCounts(input: 1_000_000)) == 1.25)
     #expect(Pricing.cost(model: "llama-3", tokens: m) == 0)
 }
 
@@ -247,9 +247,9 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func timesAndDaysReadTheWayTranscriptsWriteThem() throws {
-    let a = try #require(UsageIndex.parseTime("2026-10-20T10:15:30.250Z")), b = try #require(UsageIndex.parseTime("2026-10-20T10:15:30Z"))
+    let a = try #require(JSONL.date("2026-10-20T10:15:30.250Z")?.timeIntervalSince1970), b = try #require(JSONL.date("2026-10-20T10:15:30Z")?.timeIntervalSince1970)
     #expect(abs(a - b - 0.25) < 0.001)   // with and without fractional seconds
-    #expect(UsageIndex.parseTime("not a time") == nil)
+    #expect(JSONL.date("not a time") == nil)
     var c = Calendar.current; c.timeZone = .current
     let noon = try #require(c.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 12)))
     #expect(UsageIndex.day(noon) == "2026-03-07")   // the local day, zero-padded

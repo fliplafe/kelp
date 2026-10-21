@@ -58,28 +58,11 @@ import Core
     #expect(!Hooks.hasBackgroundWork(.obj([:])))   // older Claude Code: no field
 }
 
-@Test func trustMenuPicksYes() {
-    // Claude Code 2026: cursor starts on "No, exit".
-    let claude = """
-     Quick safety check: Is this a project you created or one you trust?
-
-     ❯ No, exit
-       Yes, I trust this folder
-
-     Enter to confirm · Esc to cancel
-    """
-    #expect(AgentManifest.AutoAnswer.menuKeys(screen: claude, choose: "(?i)(yes|trust)") == "\u{1B}[B\r")
-    // Older layout: cursor already on yes.
-    let older = "Do you trust the files in this folder?\n\n❯ 1. Yes, proceed\n  2. No, exit\n"
-    #expect(AgentManifest.AutoAnswer.menuKeys(screen: older, choose: "(?i)(yes|trust)") == "\r")
-    #expect(AgentManifest.AutoAnswer.menuKeys(screen: "Do you trust this folder? (loading)", choose: "(?i)yes") == nil)
-}
-
 @Test func stripKeepsWordGapsFromCursorMoves() {
     let raw = "\u{1B}[2GQuick\u{1B}[8Gsafety\u{1B}[15Gcheck: one\u{1B}[30Gyou trust?\n\u{1B}[2G\u{1B}[38;2;177;185;249m❯\u{1B}[4GNo,\u{1B}[8Gexit\u{1B}[39m\n\u{1B}[4GYes,\u{1B}[9GI\u{1B}[11Gtrust\n"
     let t = StatusDetector.stripANSI(raw)
     #expect(t.contains("one you trust"))
-    #expect(AgentManifest.AutoAnswer.menuKeys(screen: t, choose: "(?i)(yes|trust)") == "\u{1B}[B\r")
+    #expect(AgentManifest.AutoAnswer.optionAtCursor(t) == "No, exit")
 }
 
 @Test func cursorOptionHandlesCRLF() {

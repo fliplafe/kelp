@@ -7,23 +7,7 @@ public enum TerminalTitle {
     static let starts = ["\u{1B}]0;", "\u{1B}]2;"]
 
     /// Titles set in a chunk of output, in order. `carry` keeps a sequence cut off at the end of one read for the next.
-    public static func scan(_ chunk: String, carry: inout String) -> [String] {
-        var s = carry + chunk
-        carry = ""
-        var out: [String] = []
-        while let r = starts.compactMap({ s.range(of: $0) }).min(by: { $0.lowerBound < $1.lowerBound }) {
-            let body = s[r.upperBound...]
-            guard let end = body.firstIndex(where: { $0 == "\u{07}" || $0 == "\u{1B}" }) else {
-                if body.utf8.count < 512 { carry = String(s[r.lowerBound...]) }   // unfinished: wait for the rest
-                return out
-            }
-            out.append(String(body[..<end]))
-            s = String(body[body.index(after: end)...])
-        }
-        // "…\u{1B}]" at the very end: the start of a sequence the next read completes.
-        if let i = s.lastIndex(of: "\u{1B}"), starts.contains(where: { $0.hasPrefix(String(s[i...])) }) { carry = String(s[i...]) }
-        return out
-    }
+    public static func scan(_ chunk: String, carry: inout String) -> [String] { oscBodies(chunk, starts: starts, limit: 512, carry: &carry) }
 
     /// The topic in a title, without the spinner in front; nil when it only names the program (`names`: its id and
     /// name) or the folder, or reads like a path.
@@ -33,4 +17,24 @@ public enum TerminalTitle {
         guard !t.isEmpty, t.count <= 80, !t.contains("/"), !t.contains("~") else { return nil }
         return names.contains { $0.count >= 2 && low.contains($0.lowercased()) } ? nil : t
     }
+}
+
+/// The bodies of OSC sequences opened by one of `starts` (BEL or ESC ends one), in order. `carry` keeps a sequence cut
+/// off at the end of one read for the next; one still open after `limit` bytes is dropped.
+func oscBodies(_ chunk: String, starts: [String], limit: Int, carry: inout String) -> [String] {
+    var s = carry + chunk
+    carry = ""
+    var out: [String] = []
+    while let r = starts.compactMap({ s.range(of: $0) }).min(by: { $0.lowerBound < $1.lowerBound }) {
+        let body = s[r.upperBound...]
+        guard let end = body.firstIndex(where: { $0 == "\u{07}" || $0 == "\u{1B}" }) else {
+            if body.utf8.count < limit { carry = String(s[r.lowerBound...]) }   // unfinished: wait for the rest
+            return out
+        }
+        out.append(String(body[..<end]))
+        s = String(body[body.index(after: end)...])
+    }
+    // "…\u{1B}]" at the very end: the start of a sequence the next read completes.
+    if let i = s.lastIndex(of: "\u{1B}"), starts.contains(where: { $0.hasPrefix(String(s[i...])) }) { carry = String(s[i...]) }
+    return out
 }

@@ -2,17 +2,12 @@ import Foundation
 import Testing
 @testable import Core
 
-@Test func extensionGuideMatchesDocs() throws {
-    let doc = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("docs/extensions.md")
-    #expect(ExtensionGuide.markdown == (try String(contentsOf: doc, encoding: .utf8)), "regenerate Sources/Core/ExtensionGuide.swift from docs/extensions.md")
-}
-
 /// The starter's list command must print one JSON object per line using only stock tools.
 @Test func scaffoldedExtensionWorks() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kx-\(UUID().uuidString.prefix(8))")
     let folder = try IDE.scaffoldExtension(id: "files", name: nil, description: "Top-level files", in: dir)
-    #expect(try String(contentsOf: dir.appendingPathComponent("EXTENSIONS.md"), encoding: .utf8) == ExtensionGuide.markdown)
+    #expect(try String(contentsOf: dir.appendingPathComponent("EXTENSIONS.md"), encoding: .utf8) == IDE.extensionGuide)
+    #expect(IDE.extensionGuide.hasPrefix("# Writing Kelp extensions"))   // found in Core's resource bundle
     #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("README.md").path))
     let m = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: folder.appendingPathComponent("extension.json")))
     #expect(m["id"] == "files" && m["description"] == "Top-level files")

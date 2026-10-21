@@ -156,8 +156,6 @@ final class ExtensionRegistry {
     /// Live reload while someone (often an agent) edits an extension.
     func watch() {
         try? FileManager.default.createDirectory(at: Self.userDir, withIntermediateDirectories: true)
-        let guide = Self.userDir.appendingPathComponent("EXTENSIONS.md")
-        if (try? String(contentsOf: guide, encoding: .utf8)) != ExtensionGuide.markdown { try? ExtensionGuide.markdown.write(to: guide, atomically: true, encoding: .utf8) }
         let pending = Debounce()
         watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in pending.after(0.3) { self?.reload() } }
     }

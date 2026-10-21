@@ -12,10 +12,6 @@ public struct AgentSessionInfo: Codable, Sendable, Equatable, Identifiable {
     /// Exact for small files; extrapolated from the head and tail for large ones.
     public var messageCount: Int
     public var path: URL
-    public init(agent: Agent, id: String, cwd: String, title: String, started: Date, updated: Date, messageCount: Int, path: URL) {
-        self.agent = agent; self.id = id; self.cwd = cwd; self.title = title
-        self.started = started; self.updated = updated; self.messageCount = messageCount; self.path = path
-    }
 }
 
 public enum ClaudeHistory {
@@ -144,14 +140,14 @@ public enum History {
     }
 
     // Limit: byte match, so other casings and JSON-escaped text (quotes, newlines) miss; decode + normalize if that bites.
-    /// Sessions whose transcript bytes contain `query` (as typed or lowercased), reading at most `maxBytes` per file.
-    public static func fullTextSearch(query: String, in sessions: [AgentSessionInfo], limit: Int = 50, maxBytes: Int = 2 << 20) -> [AgentSessionInfo] {
+    /// Sessions whose transcript bytes contain `query` (as typed or lowercased), reading at most 2 MB per file.
+    public static func fullTextSearch(query: String, in sessions: [AgentSessionInfo], limit: Int = 50) -> [AgentSessionInfo] {
         let needles = Set([query, query.lowercased()]).filter { !$0.isEmpty }.map { Data($0.utf8) }
         guard !needles.isEmpty else { return [] }
         var out: [AgentSessionInfo] = []
         for s in sessions where out.count < limit {
             guard let h = try? FileHandle(forReadingFrom: s.path) else { continue }
-            let data = (try? h.read(upToCount: maxBytes)) ?? nil
+            let data = (try? h.read(upToCount: 2 << 20)) ?? nil
             try? h.close()
             if let data, needles.contains(where: { data.range(of: $0) != nil }) { out.append(s) }
         }
@@ -171,7 +167,7 @@ enum JSONL {
     static let chunk = 64 * 1024
 
     /// Complete lines from the first and last `chunk` bytes (or the whole file if small) and the fraction of bytes read.
-    static func headAndTail(_ url: URL, chunk: Int = chunk) -> (lines: [Data], covered: Double)? {
+    static func headAndTail(_ url: URL) -> (lines: [Data], covered: Double)? {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }
         guard let size = try? h.seekToEnd(), size > 0, (try? h.seek(toOffset: 0)) != nil else { return nil }
