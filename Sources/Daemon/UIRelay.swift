@@ -10,10 +10,10 @@ extension Daemon {
         case "ui.publish":
             guard let state = p["state"], case .object = state else { throw RPCError.invalidParams("state must be an object") }
             // Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
-            guard lock.withLock({ conns[conn]?.peer }) == Self.appExecutable else { throw RPCError.invalidParams("Only Kelp's window publishes its state.") }
-            lock.withLock { uiState = state; appConns.insert(conn) }
+            guard clients.peer(conn) == Self.appExecutable else { throw RPCError.invalidParams("Only Kelp's window publishes its state.") }
+            clients.publishUI(state, from: conn)
             return .null
-        case "ui.state": return lock.withLock { uiState }
+        case "ui.state": return clients.uiState
         case "ui.open":
             _ = try p.req("uri")
             if let s = p["split"], s != "right", s != "down" { throw RPCError.invalidParams("split must be \"right\" or \"down\"") }
@@ -26,7 +26,7 @@ extension Daemon {
     }
 
     private func relay(_ action: String, _ p: JSONValue) throws -> JSONValue {
-        let apps = lock.withLock { appConns.subtracting(rawConns) }
+        let apps = clients.apps
         guard !apps.isEmpty else { throw RPCError.internalError("The Kelp app isn't running") }
         var params: [String: JSONValue] = if case .object(let o) = p { o } else { [:] }
         params["action"] = .string(action)

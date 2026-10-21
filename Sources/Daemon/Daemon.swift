@@ -5,21 +5,18 @@ import Agents
 import AgentData
 
 /// The long-running process: owns PTYs, state and the JSON-RPC socket.
-public final class Daemon: @unchecked Sendable {   // mutable state (live, appConns…) under lock
+public final class Daemon: @unchecked Sendable {   // `live` under lock; who is connected is `clients` (lock order there)
     public let store: Store
     let socketPath: String
     let root: URL
     let lock = NSLock()
     var live: [String: LiveSession] = [:]
-    var conns: [Int: Connection] = [:]
-    private var nextConn = 1
+    let clients = Clients()
     private var listenFD: Int32 = -1
     private var instanceLock: Int32 = -1   // flock on kelpd.lock: one daemon per KELP_HOME
     private var ticker: DispatchSourceTimer?
     let extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue]
     let settings: SettingsStore
-    var appConns = Set<Int>()               // connections that called ui.publish: they get event.ui
-    var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = Locked<UInt32>(0)
@@ -31,7 +28,6 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     let usageIndex: UsageIndex
     /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
     var agentHomes = (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot)
-    var rawConns = Set<Int>()
     let lastMethod = Locked("")
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
     let claudeLimits = Locked<[String: (reading: ClaudeLimits.Reading, at: Date)]>([:])
@@ -113,9 +109,9 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
 
     public func stop() {
         acceptSource?.cancel(); ticker?.cancel()
-        lock.lock(); let all = Array(live.values); let cs = Array(conns.values); lock.unlock()
+        let all = lock.withLock { Array(live.values) }
         all.forEach { $0.pty.kill() }
-        cs.forEach { $0.hangUp() }
+        clients.everyone().forEach { $0.hangUp() }
         if acceptSource == nil { close(listenFD) }   // else its cancel handler closes it
         unlink(socketPath)
         if instanceLock >= 0 { close(instanceLock); instanceLock = -1 }
@@ -138,9 +134,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     }
 
     private func serve(_ fd: Int32) {
-        let c = lock.withLock { () -> Connection in
-            let c = Connection(id: nextConn, fd: fd); nextConn += 1; conns[c.id] = c; return c
-        }
+        let c = clients.add(fd: fd)
         Thread.detachNewThread { [self] in
             var lb = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
@@ -176,10 +170,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
                     Task { await self.respond(req, conn: c) }
                 }
             }
-            lock.lock(); conns[c.id] = nil; let all = Array(live.values)
-            if appConns.remove(c.id) != nil, appConns.isEmpty { uiState = .object([:]) }
-            lock.unlock()
-            all.forEach { $0.detach(c.id) }
+            clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
+            lock.withLock { Array(live.values) }.forEach { $0.detach(c.id) }
             c.close()
         }
     }
@@ -189,8 +181,8 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
     /// An ended session shows what it last printed (from its log), then the attach ends.
     private func stream(_ c: Connection, session: String, size: JSONValue?, leftover: Data) {
-        lock.withLock { _ = rawConns.insert(c.id) }   // before waking: its status events must not land in the byte stream
-        defer { lock.withLock { _ = rawConns.remove(c.id) } }
+        clients.setRaw(c.id, true)   // before waking: its status events must not land in the byte stream
+        defer { clients.setRaw(c.id, false) }
         if existing(session) == nil, (try? store.session(session))?.status == .exited {
             c.send(TerminalReplies.withoutQueries((try? liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
@@ -209,9 +201,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
 
     /// Output to attached connections: raw ones get bytes, the rest a JSON event.
     func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
-        let (raw, json): ([Connection], Set<Int>) = lock.withLock {
-            (subs.filter { rawConns.contains($0) }.compactMap { conns[$0] }, subs.subtracting(rawConns))
-        }
+        let (raw, json) = clients.split(subs)
         raw.forEach { $0.send(data) }
         if !json.isEmpty { notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: json) }
     }
@@ -224,10 +214,9 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
         if req.method == "session.attach", !req.isNotification, let sid = req.params?["id"]?.string,
            existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
            let ls = try? await offload({ [self] in try liveSession(sid) }) {
-            // Under the lock the reader's cleanup takes: a connection that closed while the session woke isn't subscribed
-            // (it would count as watching for good, and the session would never pause).
-            lock.withLock {
-                guard conns[c.id] != nil else { return }
+            // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
+            // watching for good, and the session would never pause).
+            clients.ifConnected(c.id) {
                 _ = ls.attach(c.id) { history in
                     if let d = try? Wire.line(Reply(id: id, result: .obj(["history": .string(history.base64EncodedString())]), error: nil)) { c.send(d) }
                 }
@@ -242,8 +231,7 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
 
     func notify(_ method: String, _ params: JSONValue, to only: Set<Int>? = nil) {
         guard let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
-        lock.lock(); let targets = conns.filter { !rawConns.contains($0.key) && only?.contains($0.key) != false }.map(\.value); lock.unlock()
-        targets.forEach { $0.send(d) }
+        clients.targets(only).forEach { $0.send(d) }
     }
 
     // MARK: sessions
