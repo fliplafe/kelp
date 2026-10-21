@@ -235,8 +235,8 @@ private final class InspectorView: NSView {
     override func viewDidUnhide() { super.viewDidUnhide(); onShow?() }
 }
 
-/// The icon row's capsule: a soft fill behind the panel icons.
-private final class CapsuleStack: NSStackView {
+/// A soft capsule behind a row of icons: the inspector's panels, a pane's new-agent and "+" buttons.
+final class CapsuleStack: NSStackView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() { layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor }
     override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2 }

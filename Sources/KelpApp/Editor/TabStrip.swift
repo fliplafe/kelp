@@ -31,10 +31,10 @@ final class TabStrip: NSView {
     private let stack = NSStackView()
     private let scroll = NSScrollView()
     private let overflow = NSButton()
-    private let add = NSButton()
-    /// The default agent, one click away beside "+" (no list to pick from).
-    private let newAgent = NSButton()
-    private let adds = NSStackView()
+    private let add = CapsuleSegment()
+    /// The default agent, one click away beside "+" (no list to pick from); the two share one capsule.
+    private let newAgent = CapsuleSegment()
+    private let adds = CapsuleStack()
     private var items: [Item] = []
     private var selectedId: String?
     private var buttons: [TabButton] = []
@@ -56,13 +56,12 @@ final class TabStrip: NSView {
         unzoom.contentTintColor = .controlAccentColor; unzoom.symbolConfiguration = .init(pointSize: 11, weight: .medium)
         unzoom.toolTip = String(localized: "Show all panes (⇧⌘↩)"); unzoom.target = self; unzoom.action = #selector(unzoomTapped); unzoom.isHidden = true
         // The one way to add a tab, in each pane (like Safari's "+"); the empty workspace offers the same choices.
-        add.image = .symbol("plus", String(localized: "New Tab")); add.bezelStyle = .recessed; add.showsBorderOnlyWhileMouseInside = true
-        add.contentTintColor = .secondaryLabelColor
+        add.image = .symbol("plus", String(localized: "New Tab")); add.contentTintColor = .secondaryLabelColor
         add.symbolConfiguration = .init(pointSize: 12, weight: .medium); add.toolTip = String(localized: "New tab: an agent (⌥⌘T), a terminal (⌘T), a browser…")
         add.target = self; add.action = #selector(addTapped)
-        newAgent.bezelStyle = .recessed; newAgent.showsBorderOnlyWhileMouseInside = true; newAgent.imageScaling = .scaleNone
-        newAgent.target = self; newAgent.action = #selector(newAgentTapped); newAgent.isHidden = true
+        newAgent.imageScaling = .scaleNone; newAgent.target = self; newAgent.action = #selector(newAgentTapped); newAgent.isHidden = true
         adds.setViews([newAgent, add], in: .leading); adds.spacing = 0; adds.detachesHiddenViews = true
+        adds.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
         let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6; trailing.detachesHiddenViews = true
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
@@ -81,8 +80,8 @@ final class TabStrip: NSView {
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             trailing.centerYAnchor.constraint(equalTo: centerYAnchor), adds.centerYAnchor.constraint(equalTo: centerYAnchor),
-            overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 26), add.heightAnchor.constraint(equalToConstant: 26),
-            newAgent.widthAnchor.constraint(equalToConstant: 26), newAgent.heightAnchor.constraint(equalToConstant: 26),
+            overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 24), add.heightAnchor.constraint(equalToConstant: 24),
+            newAgent.widthAnchor.constraint(equalToConstant: 24), newAgent.heightAnchor.constraint(equalToConstant: 24),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
@@ -115,7 +114,7 @@ final class TabStrip: NSView {
         // Before super.layout(): set after it, the constant only took effect on the next pass, so a tab whose title
         // grew (a page finishing loading) stayed clipped until something else laid the strip out.
         let natural = stack.fittingSize.width
-        let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - (newAgent.isHidden ? 26 : 52)
+        let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - adds.fittingSize.width
         let x = max(0, min(natural, room))
         if abs((addLead?.constant ?? 0) - x) > 0.5 { addLead?.constant = x }
         overflow.isHidden = natural <= room + 1
@@ -180,6 +179,22 @@ final class TabStrip: NSView {
 /// An NSControl, not a plain view: under a transparent title bar the window server moves the window on a drag over
 /// anything but controls, whatever `mouseDownCanMoveWindow` says, so a dragged tab would take the window with it.
 @MainActor
+/// A button in a capsule: a soft fill under the pointer, like the inspector's panel icons.
+private final class CapsuleSegment: NSButton {
+    private var hover = false { didSet { needsDisplay = true } }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        title = ""; imagePosition = .imageOnly; isBordered = false; wantsLayer = true
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(hover ? 0.08 : 0).cgColor }
+    override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2 }
+    override func mouseEntered(with e: NSEvent) { hover = true }
+    override func mouseExited(with e: NSEvent) { hover = false }
+}
+
 private final class TabButton: NSControl, NSDraggingSource {
     weak var strip: TabStrip?
     private var item: TabStrip.Item?
