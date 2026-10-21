@@ -81,8 +81,10 @@ public enum CIRuns {
         try GitHub.gh(["run", "rerun", String(run), "--failed"], cwd: cwd)
     }
 
+    /// `workflow` is a file name from the repository: after `--`, so one named "-F….yml" is a name, not an option.
     public static func dispatch(cwd: String, workflow: String, branch: String, inputs: [String: String]) throws {
-        try GitHub.gh(["workflow", "run", workflow, "--ref", branch] + inputs.sorted { $0.key < $1.key }.flatMap { ["-f", "\($0.key)=\($0.value)"] }, cwd: cwd)
+        let fields = inputs.sorted { $0.key < $1.key }.flatMap { ["-f", "\($0.key)=\($0.value)"] }
+        try GitHub.gh(["workflow", "run", "--ref", branch] + fields + ["--", workflow], cwd: cwd)
     }
 
     /// `.github/workflows/*.yml` that can be started by hand, read just far enough for their inputs.

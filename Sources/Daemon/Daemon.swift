@@ -40,8 +40,8 @@ public final class Daemon: Sendable {
     let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()
-    /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
+    /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
     let deskLock = NSRecursiveLock()  // trusted-configs.json: read-modify-write under it
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.

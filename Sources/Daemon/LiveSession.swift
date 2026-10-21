@@ -22,6 +22,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Being deleted: nothing it does may save its record again.
     private var discarded = false
     var isDiscarded: Bool { lock.withLock { discarded } }
+    /// Drawn and quiet once (or 25 s up): text typed before then could land in a program still starting.
+    var hasStartedUp: Bool { lock.withLock { startedUp } }
+    private var startedUp = false
     /// The program exited and that was handled (its record final, its log closed).
     var hasEnded: Bool { lock.withLock { ended } }
     private var ended = false
@@ -328,10 +331,10 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         var prompt: (text: String, draft: Bool)?
         // Never while a question is open: its Enter would be the prompt's, and the default option is usually "Yes". Kelp
         // leaves those to the user on purpose (trusting a project, its new MCP servers); the prompt waits.
-        if let p = pendingPrompts.first, steering == nil, !trustQuestionOpen(), !menuOpen() {
-            let quiet = lastOutputAt.map { Date().timeIntervalSince($0) > 1.5 } ?? false
-            if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompts.removeFirst() }
-        }
+        let quiet = Date().timeIntervalSince(lastOutputAt ?? started) > 1.5   // a program that prints nothing (cat) is quiet too
+        let settled = (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25
+        if settled { startedUp = true }
+        if let p = pendingPrompts.first, settled, steering == nil, !trustQuestionOpen(), !menuOpen() { prompt = p; pendingPrompts.removeFirst() }
         lock.unlock()
         if let prompt { send(prompt.text, enter: !prompt.draft, paste: true) }   // a task's text: never keys
     }

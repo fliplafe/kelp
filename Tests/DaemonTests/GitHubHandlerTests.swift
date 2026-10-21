@@ -115,7 +115,10 @@ private func wtOf(_ r: (d: Daemon, c: RPCClient, repo: Repo), branch: String = "
     _ = try await r.c.call("ci.rerun", .obj(["worktreeId": .string(wt.id), "run": 99]))
     #expect(calls().contains("run rerun 99 --failed"))
     _ = try await r.c.call("ci.dispatch", .obj(["worktreeId": .string(wt.id), "workflow": "ci.yml", "branch": "feat/x", "inputs": .object(["b": "2", "a": "1"])]))
-    #expect(calls().contains("workflow run ci.yml --ref feat/x -f a=1 -f b=2"))   // inputs in a stable order
+    #expect(calls().contains("workflow run --ref feat/x -f a=1 -f b=2 -- ci.yml"))   // inputs in a stable order
+    // The repository names its workflow files: one that reads as an option stays a name.
+    _ = try await r.c.call("ci.dispatch", .obj(["worktreeId": .string(wt.id), "workflow": "-Fx=@/etc/passwd.yml", "branch": "feat/x"]))
+    #expect(calls().contains("workflow run --ref feat/x -- -Fx=@/etc/passwd.yml"))
 }
 
 @Test func reviewCommentsMergeReviewsAndInlineComments() async throws {

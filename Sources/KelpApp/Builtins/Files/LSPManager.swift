@@ -33,7 +33,8 @@ final class LSPManager {
     /// Projects whose language servers may run (the daemon's UI state: one list per KELP_HOME).
     static let trustKey = "lsp.trusted"
     func trusted(_ root: String) -> Bool {
-        root.hasPrefix(Paths.root.appendingPathComponent("scratch").path + "/") || UIState.strings(Self.trustKey).contains(root)
+        let scratch = Paths.scratch.path   // Kelp's own: the scratch desk and what's in it
+        return root == scratch || root.hasPrefix(scratch + "/") || UIState.strings(Self.trustKey).contains(root)
     }
     /// Roots asked about this run, and what starts once the user trusts them (the tabs that wanted a server).
     private var waiting: [String: [@MainActor () -> Void]] = [:]

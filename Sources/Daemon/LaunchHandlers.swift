@@ -26,13 +26,16 @@ extension SessionCreate: Handled {
 
 extension SessionRestart: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        guard let old = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
+        guard try d.store.session(id) != nil else { throw RPCError.invalidParams("no session") }
         // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
         // Under its wake lock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
-        // If the new one can't start, the old one still ends as Ended.
-        try d.wakeLocks.withLock(old.id) {
-            if let ls = d.existing(old.id) { Daemon.waitGone(ls.pty.terminate()) }
-            else if old.status == .hibernated { var s = old; s.status = .exited; try d.store.update(s) }
+        // If the new one can't start, the old one still ends as Ended. The record is read there, as it is then (a rename
+        // just before is kept, in it and in the new session's title).
+        let old: Session = try d.wakeLocks.withLock(id) {
+            if let ls = d.existing(id) { Daemon.waitGone(ls.pty.terminate()) }
+            else { try d.store.updateSession(id) { if $0.status == .hibernated { $0.status = .exited } } }
+            guard let s = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
+            return s
         }
         let m = try d.manifest(old.agent, command: nil, fallbackArgv: old.argv)
         var o = Daemon.Launch(self); o.title = old.titleManual ? old.title : nil

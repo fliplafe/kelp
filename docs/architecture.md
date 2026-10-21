@@ -105,6 +105,8 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
   presses anything while its copy of the agent asks a question.
 - Language servers run a project's own code (build scripts, `Package.swift`, its `node_modules`' TypeScript): none
   starts in a project until the user trusts it for them (a banner on its first file, like VS Code's Workspace Trust).
+- Links clicked in a Markdown or notebook preview open web pages, the repo's plain files (as tabs) and mail only: a
+  link to an app the repo ships (files from `git clone` carry no quarantine) or to another app's scheme is refused.
 - A remote project's marker counts only under `~/.kelp/remote`; gh/glab don't run for remote projects.
 
 Tests run with their own `KELP_HOME`, agent config dirs, keychain service and git config, set as the test bundle

@@ -61,7 +61,14 @@ private extension Data {
     let first = try Unix.listen(path)
     #expect(throws: (any Error).self) { try Unix.listen(path) }
     close(first)
-    let again = try Unix.listen(path)   // the file is still there, nobody behind it
+    // The file is still there, nobody behind it: taken over. (A process being started elsewhere in the test run holds a
+    // copy of every fd for a moment, so not necessarily on the first try.)
+    var again: Int32 = -1
+    for _ in 0..<100 where again < 0 {
+        again = (try? Unix.listen(path)) ?? -1
+        if again < 0 { usleep(20_000) }
+    }
+    #expect(again >= 0)
     close(again); unlink(path)
 }
 

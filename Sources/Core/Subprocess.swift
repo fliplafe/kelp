@@ -34,15 +34,17 @@ public enum Subprocess {
             _ = fcntl(w.fileDescriptor, F_SETNOSIGPIPE, 1)
             Thread.detachNewThread { try? w.write(contentsOf: stdin); try? w.close() }
         }
-        var timedOut = false
+        var timedOut = false, ended = true
         if exited.wait(timeout: .now() + timeLimit) == .timedOut {
             timedOut = true
             stopTree(p.processIdentifier)
-            _ = exited.wait(timeout: .now() + 5)   // SIGKILL comes 2 s after SIGTERM
+            // SIGKILL comes 2 s after SIGTERM; one stuck in the kernel (a hung network mount) may outlast even that.
+            ended = exited.wait(timeout: .now() + 5) == .success
         }
         // What's still in the pipes arrives at once; only a child holding them open would make this wait run out.
         _ = out.done.wait(timeout: .now() + 2); _ = err.done.wait(timeout: .now() + 2)
-        return Output(status: p.terminationStatus, stdout: out.data, stderr: err.data, timedOut: timedOut)
+        // Its status only once it has exited: asking a Process still running raises, and would take the daemon down.
+        return Output(status: ended ? p.terminationStatus : -1, stdout: out.data, stderr: err.data, timedOut: timedOut)
     }
 
     /// `run` without holding the caller's thread (for async callers: the app's main actor, the cooperative pool).

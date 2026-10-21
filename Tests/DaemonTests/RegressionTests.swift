@@ -448,3 +448,15 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     #expect(kill(job, 0) != 0 && kill(a.pid, 0) != 0)
     #expect(try w.d.store.session(a.id)?.status == .hibernated)
 }
+
+/// Text sent to a session that is still starting waits until it's ready, however it came to be starting (just created,
+/// or woken by someone else a moment before): typed at once, a program that flushes its input on startup loses it.
+@Test func textForAStartingSessionWaitsUntilItIsReady() async throws {
+    let script = "echo booting; sleep 1.5; perl -MPOSIX -e 'tcflush(0, POSIX::TCIFLUSH)'; echo ready; read -r line; echo GOT:$line; sleep 30"
+    let slow = AgentManifest(id: "slow2", name: "Slow", command: "/bin/bash", args: ["-c", script, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [slow]); defer { w.d.stop() }
+    let wt = try await desk(w, "starting")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "slow2"]), as: Session.self)
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))   // running, but still booting
+    #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
+}

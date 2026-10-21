@@ -1787,6 +1787,16 @@
         }
       }
     },
+    "Copy Link": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать ссылку"
+          }
+        }
+      }
+    },
     "Copy Fix": {
       "localizations": {
         "ru": {
@@ -3565,6 +3575,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Строки с # не попадут в коммит. ⌘↩ — закоммитить."
+          }
+        }
+      }
+    },
+    "Links from a preview open web pages and files only, not “%@”.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ссылки из превью открывают только веб-страницы и файлы, а не «%@»."
           }
         }
       }

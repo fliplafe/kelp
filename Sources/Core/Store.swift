@@ -109,6 +109,14 @@ public final class Store: Sendable {
             try change(&w); try w.save(d); return w
         }
     }
+    /// `updateWorktree` for a session record.
+    @discardableResult
+    public func updateSession(_ id: String, _ change: (inout Session) throws -> Void) throws -> Session? {
+        try db.write { d in
+            guard var s = try Session.fetchOne(d, key: id) else { return nil }
+            try change(&s); try s.save(d); return s
+        }
+    }
     /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).
     public func update<R: PersistableRecord>(_ r: R) throws { try db.write { try r.update($0) } }
     public func delete<R: PersistableRecord>(_ r: R) throws { try db.write { _ = try r.delete($0) } }
