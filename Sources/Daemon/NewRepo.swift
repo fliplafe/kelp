@@ -13,22 +13,6 @@ extension Daemon {
     }
     static let clones = Clones()
 
-    func handleNewRepo(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
-        switch method {
-        case "repo.clone":   // {url, parent, id} → the added repo
-            let id = p["id"]?.string ?? UUID().uuidString
-            let dest = try await clone(p.req("url"), into: p.req("parent"), id: id, conn: conn)
-            return try await handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
-        case "repo.cloneCancel": Self.clones.cancel(try p.req("id")); return .null
-        case "repo.create":   // {parent, name} → the added repo
-            let dest = try Self.newFolder(p.req("name"), in: p.req("parent"))
-            try FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: false)
-            _ = try await offload { try Git.run(["init", "-q"], cwd: dest) }
-            return try await handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
-        default: return nil
-        }
-    }
-
     /// "git@github.com:me/app.git", "https://gitlab.com/me/app" → "app".
     static func repoName(_ url: String) -> String {
         var n = url.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: { "/:".contains($0) }).last.map(String.init) ?? ""
@@ -52,7 +36,7 @@ extension Daemon {
     /// Makes the folder, or fails if anything is there already: of two clones racing for one name, exactly one gets it.
     static func claim(_ dest: String) -> Bool { mkdir(dest, 0o755) == 0 }
 
-    private func clone(_ url: String, into parent: String, id: String, conn: Int) async throws -> String {
+    func clone(_ url: String, into parent: String, id: String, conn: Int) async throws -> String {
         let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty, !url.hasPrefix("-") else { throw RPCError.invalidParams("Enter the repository's URL.") }
         let dest = try Self.newFolder(Self.repoName(url), in: parent)
@@ -112,5 +96,22 @@ final class CloneLog: Sendable {
         var m = f.replacingOccurrences(of: #"^(fatal|error|ERROR): ?"#, with: "", options: .regularExpression)
         m = m.prefix(1).uppercased() + m.dropFirst()
         return m
+    }
+}
+
+extension RepoClone: AsyncHandled {
+    func handle(_ d: Daemon) async throws -> JSONValue { try await handle(d, conn: -1) }
+    func handle(_ d: Daemon, conn: Int) async throws -> JSONValue {
+        let dest = try await d.clone(url, into: parent, id: id ?? UUID().uuidString, conn: conn)
+        return try await d.handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
+    }
+}
+extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> JSONValue { Daemon.clones.cancel(id); return .null } }
+extension RepoCreate: AsyncHandled {
+    func handle(_ d: Daemon) async throws -> JSONValue {
+        let dest = try Daemon.newFolder(name, in: parent)
+        try FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: false)
+        _ = try await d.offload { try Git.run(["init", "-q"], cwd: dest) }
+        return try await d.handle("repo.add", .obj(["path": .string(dest)]), conn: -1)
     }
 }

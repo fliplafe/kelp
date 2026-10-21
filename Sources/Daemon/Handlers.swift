@@ -45,8 +45,7 @@ extension Daemon {
     private func dispatch(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         do {
             if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self, conn: conn) } }
-            if let t = Self.asyncTyped[method] { return try await t.run(p, self) }
-            if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
+            if let t = Self.asyncTyped[method] { return try await t.run(p, self, conn: conn) }
             return try await offload { [self] in try handleSync(method, p, conn: conn) }
         }
         catch let e as GitError { throw RPCError.internalError(e.message) }

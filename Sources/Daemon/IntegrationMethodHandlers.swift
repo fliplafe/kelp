@@ -4,17 +4,21 @@ import GitKit
 import Integrations
 
 /// A method that waits on a web API (Linear, Jira, Bitbucket): async, with its gh / git calls through `offload`.
+/// `handle(_:conn:)` for one that reports progress to the asking connection (repo.clone).
 protocol AsyncHandled: RPCMethod {
     func handle(_ d: Daemon) async throws -> Result
+    func handle(_ d: Daemon, conn: Int) async throws -> Result
 }
 
 extension AsyncHandled {
-    static func run(_ p: JSONValue, _ d: Daemon) async throws -> JSONValue {
+    func handle(_ d: Daemon, conn: Int) async throws -> Result { try await handle(d) }
+
+    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) async throws -> JSONValue {
         let m: Self
         do { m = try (p == .null ? .object([:]) : p).decode(Self.self) }
         catch DecodingError.keyNotFound(let k, _) { throw RPCError.invalidParams("missing \(k.stringValue)") }
         catch { throw RPCError.invalidParams("\(name): \(error)") }
-        return try .from(await m.handle(d))
+        return try .from(await m.handle(d, conn: conn))
     }
 }
 
@@ -258,6 +262,6 @@ extension Daemon {
     static let asyncTyped = Dictionary(uniqueKeysWithValues: ([GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,
         JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self,
-        AgentsVersions.self, TaskFromIssue.self]
+        AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self, RepoCreate.self]
         as [any AsyncHandled.Type]).map { ($0.name, $0) })
 }

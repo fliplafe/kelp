@@ -61,3 +61,10 @@ public struct SessionMarkUnread: RPCMethod { public static let name = "session.m
 public struct SessionTurn: RPCMethod { public static let name = "session.turn"; public typealias Result = JSONValue; public var id: String }
 /// The agent's last message, from its transcript.
 public struct SessionLastReply: RPCMethod { public static let name = "session.lastReply"; public typealias Result = JSONValue; public var id: String }
+
+/// Clones `url` into a new folder in `parent` → the added project; progress comes as `event.clone` {id, line}.
+public struct RepoClone: RPCMethod { public static let name = "repo.clone"; public typealias Result = JSONValue; public var url: String, parent: String, id: String? }
+/// Stops clone `id` (its half-made folder is removed).
+public struct RepoCloneCancel: RPCMethod { public static let name = "repo.cloneCancel"; public typealias Result = JSONValue; public var id: String }
+/// A new empty project `name` in `parent` (`git init`) → the added project.
+public struct RepoCreate: RPCMethod { public static let name = "repo.create"; public typealias Result = JSONValue; public var parent: String, name: String }
