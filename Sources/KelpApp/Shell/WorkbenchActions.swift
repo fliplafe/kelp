@@ -448,8 +448,7 @@ enum PRActions {
         a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            guard let r = await AppModel.shared.call("github.pr-create", .obj(["worktreeId": .string(wid)])) else { return }
-            let url = r.string ?? r["url"]?.string ?? ""
+            guard let url = await AppModel.shared.call(GitHubPRCreate(worktreeId: wid))?.url else { return }
             Banner.show(url.isEmpty ? String(localized: "Pull request created") : String(localized: "Pull request created: \(url)"))
             if let u = URL(string: url), !url.isEmpty { Workbench.open(u.absoluteString) }
         }

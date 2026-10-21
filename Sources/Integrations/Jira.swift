@@ -1,15 +1,8 @@
 import Foundation
 import Core
 
-public struct JiraIssue: Codable, Sendable, Equatable {
-    public var key: String, title: String, description: String, url: String
-    public var status: String, statusCategory: String   // statusCategory: new | indeterminate | done
-    public var type: String, project: String
-}
-
-public struct JiraTransition: Codable, Sendable, Equatable { public var id: String, name: String, toCategory: String }
-
-/// Jira Cloud REST v3 with an API token (Basic auth email:token), stored by the caller in the keychain.
+/// Jira Cloud REST v3 with an API token (Basic auth email:token), stored by the caller in the keychain. Its values
+/// (`JiraIssue`, `JiraTransition`) are Core's.
 public struct JiraClient: Sendable {
     public var site: String, email: String, token: String
     public init(site: String, email: String, token: String) {

@@ -15,38 +15,8 @@ public struct GitHubError: Error, CustomStringConvertible, Sendable {
 }
 
 /// GitHub via the `gh` CLI; auth is whatever `gh auth` has. Every call takes the repo checkout `cwd`
-/// so gh resolves owner/repo from its remotes. Blocking — call off the main thread.
-public enum GitHub {
-    public struct PullRequest: Codable, Sendable, Equatable {
-        public struct Checks: Codable, Sendable, Equatable { public var passed = 0, failed = 0, pending = 0 }
-        public var number: Int, title: String, url: String, author: String, headRefName: String
-        public var isDraft: Bool, state: String
-        public var reviewDecision: String?
-        public var checks: Checks
-    }
-    public struct Issue: Codable, Sendable, Equatable {
-        public var number: Int, title: String, body: String, url: String
-        public var labels: [String], assignees: [String], state: String
-    }
-    public struct Check: Codable, Sendable, Equatable {
-        /// `bucket` is gh's category of `state`: pass, fail, pending, skipping, cancel.
-        public var name: String, state: String, bucket: String, workflow: String, link: String
-        public var runId: Int?
-    }
-    public struct ReviewComment: Codable, Sendable, Equatable {
-        /// path/line are nil for top-level review bodies.
-        public var path: String?, line: Int?
-        public var body: String, author: String
-        public var url: String?
-    }
-    public struct Project: Codable, Sendable, Equatable {
-        public var number: Int, title: String, url: String
-    }
-    public struct ProjectItem: Codable, Sendable, Equatable {
-        /// `type` is Issue, PullRequest or DraftIssue; drafts have no url.
-        public var title: String, type: String
-        public var status: String?, url: String?
-    }
+/// so gh resolves owner/repo from its remotes. Blocking — call off the main thread. Its values are Core's.
+extension GitHub {
     public enum PRFilter: Sendable { case open, mine, reviewRequested }
     public enum MergeMethod: String, Sendable { case squash, merge, rebase }
 

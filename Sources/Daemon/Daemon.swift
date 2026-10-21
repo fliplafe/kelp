@@ -24,7 +24,7 @@ public final class Daemon: Sendable {
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
     let usageCache = OSAllocatedUnfairLock<(at: Date, value: JSONValue)?>(initialState: nil)
-    let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: JSONValue)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
+    let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: GitHub.PullRequest?)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.
     let longContextModels = OSAllocatedUnfairLock<Set<String>?>(initialState: nil)
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).

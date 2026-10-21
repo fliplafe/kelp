@@ -1,20 +1,7 @@
 import Foundation
 import Core
 
-public struct LinearUser: Codable, Sendable, Equatable {
-    public var id: String, name: String
-    public var email: String?
-}
-public struct LinearTeam: Codable, Sendable, Equatable { public var id: String, key: String, name: String }
-/// `type` is Linear's state category: triage, backlog, unstarted, started, completed, canceled.
-public struct LinearState: Codable, Sendable, Equatable { public var id: String, name: String, type: String }
-public struct LinearIssue: Codable, Sendable, Equatable {
-    public var id: String, identifier: String, title: String
-    public var description: String?
-    public var url: String
-    public var state: LinearState, team: LinearTeam, branchName: String
-}
-
+/// Linear's GraphQL API (its values, `LinearIssue`…, are Core's).
 public struct LinearClient: Sendable {
     public enum StateKind: Sendable { case inProgress, inReview, done }
 

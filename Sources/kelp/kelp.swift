@@ -281,39 +281,34 @@ func plist() -> String {
     /// `github …`, `linear …`.
     static func forge(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
         switch (cmd, sub) {
-        case ("github", "prs"), ("github", "issues"):
-            var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
-            if let f = flag("--filter") { p["filter"] = .string(f) }
-            for x in try await c.call("github.\(sub ?? "")", .object(p)).array ?? [] {
-                print("#\(x["number"]?.int ?? 0)  \(x["title"]?.string ?? "")  \(x["url"]?.string ?? "")")
-            }
+        case ("github", "prs"):
+            for x in try await c.call(GitHubPRs(repoId: try await currentRepoID(c), filter: flag("--filter"))) { print("#\(x.number)  \(x.title)  \(x.url)") }
+        case ("github", "issues"):
+            for x in try await c.call(GitHubIssues(repoId: try await currentRepoID(c), filter: flag("--filter"))) { print("#\(x.number)  \(x.title)  \(x.url)") }
         case ("github", "checks"):
             let w = try await currentWorktree(c)
             let pr = args.first.flatMap(Int.init) ?? w["prNumber"]?.int ?? 0
-            for x in try await c.call("github.checks", .obj(["worktreeId": w["id"] ?? .null, "pr": .int(pr)])).array ?? [] {
-                print("\(x["bucket"]?.string ?? "")\t\(x["name"]?.string ?? "")\t\(x["link"]?.string ?? "")")
-            }
+            for x in try await c.call(GitHubChecks(worktreeId: w["id"]?.string, pr: pr)) { print("\(x.bucket)\t\(x.name)\t\(x.link)") }
         case ("github", "pr-create"):
-            let w = try await currentWorktree(c)
-            var p: [String: JSONValue] = ["worktreeId": w["id"] ?? .null]
-            if let t = flag("--title") { p["title"] = .string(t) }
-            if has("--draft") { p["draft"] = true }
-            show(try await c.call("github.pr-create", .object(p))["url"] ?? .null)
+            let wid = try await currentWorktree(c)["id"]?.string ?? ""
+            show(.string(try await c.call(GitHubPRCreate(worktreeId: wid, title: flag("--title"), draft: has("--draft") ? true : nil)).url))
         case ("github", "pr-merge"):
-            show(try await c.call("github.pr-merge", .obj(["worktreeId": try await currentWorktree(c)["id"] ?? .null, "method": .string(flag("--method") ?? "squash")])))
+            let wid = try await currentWorktree(c)["id"]?.string ?? ""
+            show(try .from(try await c.call(GitHubPRMerge(worktreeId: wid, method: flag("--method") ?? "squash"))))
         case ("github", "issue"), ("linear", "start"):   // kelp github issue 123 | kelp linear start ENG-123
             let repo = try await currentRepoID(c)
             guard let ref = args.first else { fail("issue number / identifier required") }
             var p: [String: JSONValue] = ["repoId": .string(repo), "agent": .string(flag("--agent") ?? "claude")]
             if cmd == "github" {
                 let n = Int(ref.trimmingCharacters(in: CharacterSet(charactersIn: "#"))) ?? 0
-                let open = try await c.call("github.issues", .obj(["repoId": .string(repo)])).array ?? []
-                guard let i = open.first(where: { $0["number"]?.int == n }) else { fail("issue #\(n) not found among open issues") }
-                p["ref"] = .string("#\(n)"); p["title"] = i["title"] ?? ""; p["body"] = i["body"] ?? ""; p["url"] = i["url"] ?? ""
+                let open = try await c.call(GitHubIssues(repoId: repo))
+                guard let i = open.first(where: { $0.number == n }) else { fail("issue #\(n) not found among open issues") }
+                p["ref"] = .string("#\(n)"); p["title"] = .string(i.title); p["body"] = .string(i.body); p["url"] = .string(i.url)
             } else {
-                let mine = try await c.call("linear.issues").array ?? []
-                guard let i = mine.first(where: { $0["identifier"]?.string?.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
-                p["ref"] = i["identifier"] ?? ""; p["title"] = i["title"] ?? ""; p["body"] = i["description"] ?? ""; p["url"] = i["url"] ?? ""; p["linearId"] = i["id"] ?? ""
+                let mine = try await c.call(LinearIssues())
+                guard let i = mine.first(where: { $0.identifier.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
+                p["ref"] = .string(i.identifier); p["title"] = .string(i.title); p["body"] = .string(i.description ?? ""); p["url"] = .string(i.url)
+                p["linearId"] = .string(i.id)
             }
             if has("--send") { p["draft"] = false }
             let r = try await c.call("task.fromIssue", .object(p))
@@ -321,12 +316,10 @@ func plist() -> String {
             if !has("--send") { print("The issue's text is typed into the agent, not sent: look it over in Kelp and press Return.") }
             if r["setupNeedsTrust"]?.bool == true { print("Its .kelp.yaml setup didn't run: open the project in Kelp to look at it and trust it.") }
         case ("linear", "tasks"):
-            for x in try await c.call("linear.issues").array ?? [] {
-                print("\(x["identifier"]?.string ?? "")  [\(x["state"]?["name"]?.string ?? "")]  \(x["title"]?.string ?? "")")
-            }
+            for x in try await c.call(LinearIssues()) { print("\(x.identifier)  [\(x.state.name)]  \(x.title)") }
         case ("linear", "login"):
             guard let k = args.first else { fail("linear login <api-key>") }
-            show(try await c.call("linear.setKey", .obj(["key": .string(k)])))
+            show(try .from(try await c.call(LinearSetKey(key: k))))
         default: print(usage)
         }
     }

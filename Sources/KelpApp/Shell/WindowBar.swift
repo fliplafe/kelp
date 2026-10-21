@@ -197,7 +197,7 @@ final class WindowBar: NSView {
     @objc private func toggleSideBySide() { ExtensionRegistry.shared.command("agents.sideBySide")?.run([:]) }
 
     @objc private func openPR() {
-        guard let w = badgeFolder, let u = RowBadges.shared.prs[w.id]?["url"]?.string else { return }
+        guard let w = badgeFolder, let u = RowBadges.shared.prs[w.id]?.url else { return }
         Workbench.open(u, workspace: worktree?.id)
     }
 }

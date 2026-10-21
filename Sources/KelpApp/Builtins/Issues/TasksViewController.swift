@@ -13,7 +13,20 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     let status = NSTextField(labelWithString: "")
     let table = NSTableView()
     private let detail = NSStackView()
-    var rows: [JSONValue] = []
+    /// What the selected source lists.
+    enum Row {
+        case pr(GitHub.PullRequest), issue(GitHub.Issue), linear(LinearIssue), jira(JiraIssue), item(GitHub.ProjectItem)
+        var url: String? {
+            switch self {
+            case .pr(let p): p.url
+            case .issue(let i): i.url
+            case .linear(let l): l.url
+            case .jira(let j): j.url
+            case .item(let i): i.url
+            }
+        }
+    }
+    var rows: [Row] = []
     private var repoId: String?
     private var projectOwner: String?
     private var jiraJQL = "project = ENG AND statusCategory != Done ORDER BY priority DESC"
@@ -72,7 +85,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func nameSources() {
         guard let repoId else { return }
         Task {
-            let forge = (try? await AppModel.shared.client?.call("github.forge", .obj(["repoId": .string(repoId)])))?.string
+            let forge = try? await AppModel.shared.client?.call(GitHubForge(repoId: repoId))
             source.item(at: 0)?.title = forge == "gitlab" ? String(localized: "Merge Requests") : String(localized: "Pull Requests")
         }
     }
@@ -86,8 +99,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case 2:
             filter.addItems(withTitles: [String(localized: "My issues")])
             Task {   // team boards
-                for t in (try? await AppModel.shared.client?.call("linear.teams").array) ?? [] {
-                    filter.addItem(withTitle: String(localized: "Team: \(t["name"]?.string ?? "")")); filter.lastItem?.representedObject = t["id"]?.string
+                for t in (try? await AppModel.shared.client?.call(LinearTeams())) ?? [] {
+                    filter.addItem(withTitle: String(localized: "Team: \(t.name)")); filter.lastItem?.representedObject = t.id
                 }
             }
         default: filter.addItems(withTitles: [String(localized: "Loading projects…")])
@@ -110,28 +123,29 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         let src = source.indexOfSelectedItem, f = filter.indexOfSelectedItem
         Task {
             defer { slow.cancel() }
-            var rows: [JSONValue] = []
+            var rows: [Row] = []
             do {
                 let c = AppModel.shared.client
                 switch src {
-                case 0: rows = try await c?.call("github.prs", .obj(["repoId": .string(repoId), "filter": .string(["open", "mine", "review"][max(0, f)])])).array ?? []
-                case 1: rows = try await c?.call("github.issues", .obj(["repoId": .string(repoId), "filter": .string(f == 1 ? "mine" : "open")])).array ?? []
+                case 0: rows = (try await c?.call(GitHubPRs(repoId: repoId, filter: ["open", "mine", "review"][max(0, f)])) ?? []).map(Row.pr)
+                case 1: rows = (try await c?.call(GitHubIssues(repoId: repoId, filter: f == 1 ? "mine" : "open")) ?? []).map(Row.issue)
                 case 2:
                     let team = filter.selectedItem?.representedObject as? String
-                    rows = try await c?.call("linear.issues", team.map { .obj(["teamId": .string($0)]) }).array ?? []
-                    if team != nil { rows.sort { ($0["state"]?["name"]?.string ?? "") < ($1["state"]?["name"]?.string ?? "") } }
+                    var issues = try await c?.call(LinearIssues(teamId: team)) ?? []
+                    if team != nil { issues.sort { $0.state.name < $1.state.name } }
+                    rows = issues.map(Row.linear)
                 case 3:
-                    rows = try await c?.call("jira.issues", .object(f == 1 ? ["jql": .string(jiraJQL)] : [:])).array ?? []
+                    rows = (try await c?.call(JiraIssues(jql: f == 1 ? jiraJQL : nil)) ?? []).map(Row.jira)
                 default:
                     if filter.itemTitles.first == String(localized: "Loading projects…") {
-                        let ps = try await c?.call("github.projects", .obj(["repoId": .string(repoId)])).array ?? []
+                        let ps = try await c?.call(GitHubProjects(repoId: repoId)) ?? []
                         filter.removeAllItems()
-                        for p in ps { filter.addItem(withTitle: p["title"]?.string ?? ""); filter.lastItem?.tag = p["number"]?.int ?? 0 }
-                        projectOwner = ps.first?["url"]?.string.flatMap { URL(string: $0)?.pathComponents.dropFirst(2).first }
+                        for p in ps { filter.addItem(withTitle: p.title); filter.lastItem?.tag = p.number }
+                        projectOwner = ps.first.flatMap { URL(string: $0.url)?.pathComponents.dropFirst(2).first }
                     }
                     if let owner = projectOwner, let n = filter.selectedItem?.tag {
-                        rows = (try await c?.call("github.projectItems", .obj(["owner": .string(owner), "number": .int(n)])).array ?? [])
-                            .sorted { ($0["status"]?.string ?? "~") < ($1["status"]?.string ?? "~") }
+                        rows = (try await c?.call(GitHubProjectItems(owner: owner, number: n)) ?? [])
+                            .sorted { ($0.status ?? "~") < ($1.status ?? "~") }.map(Row.item)
                     } else { rows = [] }
                 }
                 // Switched project or list meanwhile: these rows belong to the old one.
@@ -157,24 +171,22 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     func numberOfRows(in t: NSTableView) -> Int { rows.count }
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
-        let r = rows[row]
-        let (title, sub): (String, String) = switch source.indexOfSelectedItem {
-        case 0: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", "\(r["author"]?.string ?? "") · \(r["headRefName"]?.string ?? "")\(Self.checksText(r))")
-        case 1: ("#\(r["number"]?.int ?? 0)  \(r["title"]?.string ?? "")", (r["labels"]?.array ?? []).compactMap(\.string).joined(separator: ", "))
-        case 2: ("\(r["identifier"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["state"]?["name"]?.string ?? "") · \(r["team"]?["name"]?.string ?? "")")
-        case 3: ("\(r["key"]?.string ?? "")  \(r["title"]?.string ?? "")", "\(r["status"]?.string ?? "") · \(r["type"]?.string ?? "") · \(r["project"]?.string ?? "")")
-        default: (r["title"]?.string ?? "", "\(r["status"]?.string ?? String(localized: "No status")) · \(r["type"]?.string ?? "")")
+        let (title, sub): (String, String) = switch rows[row] {
+        case .pr(let p): ("#\(p.number)  \(p.title)", "\(p.author) · \(p.headRefName)\(Self.checksText(p.checks))")
+        case .issue(let i): ("#\(i.number)  \(i.title)", i.labels.joined(separator: ", "))
+        case .linear(let l): ("\(l.identifier)  \(l.title)", "\(l.state.name) · \(l.team.name)")
+        case .jira(let j): ("\(j.key)  \(j.title)", "\(j.status) · \(j.type) · \(j.project)")
+        case .item(let i): (i.title, "\(i.status ?? String(localized: "No status")) · \(i.type)")
         }
         let t1 = NSTextField(labelWithString: title); t1.font = .ui(13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
         let t2 = NSTextField(labelWithString: sub); t2.font = .ui(11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingTail
         let s = NSStackView(views: [t1, t2]); s.orientation = .vertical; s.alignment = .leading; s.spacing = 2
         return s
     }
-    static func checksText(_ r: JSONValue) -> String {
-        let c = r["checks"]; let f = c?["failed"]?.int ?? 0, p = c?["pending"]?.int ?? 0, ok = c?["passed"]?.int ?? 0
-        if f > 0 { return String(localized: " · ✕ \(f) failing") }
-        if p > 0 { return String(localized: " · ◌ \(p) pending") }
-        return ok > 0 ? String(localized: " · ✓ checks passed") : ""
+    static func checksText(_ c: GitHub.PullRequest.Checks) -> String {
+        if c.failed > 0 { return String(localized: " · ✕ \(c.failed) failing") }
+        if c.pending > 0 { return String(localized: " · ◌ \(c.pending) pending") }
+        return c.passed > 0 ? String(localized: " · ✓ checks passed") : ""
     }
     func tableViewSelectionDidChange(_ n: Notification) { showDetail(table.selectedRow >= 0 ? rows[table.selectedRow] : nil) }
 
@@ -188,46 +200,49 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         b.bezelStyle = .rounded; return b
     }
 
-    private func showDetail(_ r: JSONValue?) {
+    private func showDetail(_ r: Row?) {
         detail.arrangedSubviews.forEach { $0.removeFromSuperview() }
         guard let r else {
             detail.addArrangedSubview(label(rows.isEmpty ? "" : String(localized: "Select an item"), color: .secondaryLabelColor)); return
         }
-        let url = r["url"]?.string
-        switch source.indexOfSelectedItem {
-        case 0: prDetail(r)
-        case 3:
-            let key = r["key"]?.string ?? ""
-            detail.addArrangedSubview(label("\(key)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
-            detail.addArrangedSubview(jiraTransitions(key, current: r["status"]?.string ?? ""))
-            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: false, jira: true) })
-            let body = r["description"]?.string ?? ""
-            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)),
-                color: body.isEmpty ? .secondaryLabelColor : .labelColor))
-        case 1, 2:
-            let linear = source.indexOfSelectedItem == 2
-            let ref = linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
-            detail.addArrangedSubview(label("\(ref)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
-            if linear { detail.addArrangedSubview(statePicker(r)) }
-            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(r, linear: linear) })
-            let body = (linear ? r["description"]?.string : r["body"]?.string) ?? ""
-            detail.addArrangedSubview(label(body.isEmpty ? String(localized: "No description.") : String(body.prefix(6000)),
-                color: body.isEmpty ? .secondaryLabelColor : .labelColor))
-        default:
-            detail.addArrangedSubview(label(r["title"]?.string ?? "", size: 17, weight: .semibold))
-            detail.addArrangedSubview(label(String(localized: "Status: \(r["status"]?.string ?? "—")"), color: .secondaryLabelColor))
+        switch r {
+        case .pr(let p): prDetail(p)
+        case .jira(let j):
+            detail.addArrangedSubview(label("\(j.key)  \(j.title)", size: 17, weight: .semibold))
+            detail.addArrangedSubview(jiraTransitions(j.key, current: j.status))
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(ref: j.key, title: j.title, body: j.description, url: j.url) })
+            body(j.description)
+        case .issue(let i):
+            detail.addArrangedSubview(label("#\(i.number)  \(i.title)", size: 17, weight: .semibold))
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(ref: "#\(i.number)", title: i.title, body: i.body, url: i.url) })
+            body(i.body)
+        case .linear(let l):
+            detail.addArrangedSubview(label("\(l.identifier)  \(l.title)", size: 17, weight: .semibold))
+            detail.addArrangedSubview(statePicker(l))
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in
+                self?.startTask(ref: l.identifier, title: l.title, body: l.description ?? "", url: l.url)
+            })
+            body(l.description ?? "")
+        case .item(let i):
+            detail.addArrangedSubview(label(i.title, size: 17, weight: .semibold))
+            detail.addArrangedSubview(label(String(localized: "Status: \(i.status ?? "—")"), color: .secondaryLabelColor))
         }
-        if let url, let u = URL(string: url) { detail.addArrangedSubview(button(String(localized: "Open on the Web"), "safari") { NSWorkspace.shared.open(u) }) }
+        if let url = r.url, let u = URL(string: url) { detail.addArrangedSubview(button(String(localized: "Open on the Web"), "safari") { NSWorkspace.shared.open(u) }) }
+    }
+
+    private func body(_ text: String) {
+        detail.addArrangedSubview(label(text.isEmpty ? String(localized: "No description.") : String(text.prefix(6000)),
+            color: text.isEmpty ? .secondaryLabelColor : .labelColor))
     }
 
     private func worktreeFor(branch: String) -> Worktree? { AppModel.shared.worktrees.first { $0.branch == branch && !$0.archived } }
 
-    private func prDetail(_ r: JSONValue) {
-        let n = r["number"]?.int ?? 0, branch = r["headRefName"]?.string ?? ""
-        detail.addArrangedSubview(label("#\(n)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
-        let author = r["author"]?.string ?? "", draft = r["isDraft"]?.bool == true ? String(localized: " · draft") : ""
-        let decision = r["reviewDecision"]?.string.map { " · " + $0.lowercased().replacingOccurrences(of: "_", with: " ") } ?? ""
-        detail.addArrangedSubview(label(String(localized: "\(author) wants to merge \(branch)\(draft)\(decision)"), color: .secondaryLabelColor))
+    private func prDetail(_ r: GitHub.PullRequest) {
+        let n = r.number, branch = r.headRefName
+        detail.addArrangedSubview(label("#\(n)  \(r.title)", size: 17, weight: .semibold))
+        let draft = r.isDraft ? String(localized: " · draft") : ""
+        let decision = r.reviewDecision.map { " · " + $0.lowercased().replacingOccurrences(of: "_", with: " ") } ?? ""
+        detail.addArrangedSubview(label(String(localized: "\(r.author) wants to merge \(branch)\(draft)\(decision)"), color: .secondaryLabelColor))
         let wt = worktreeFor(branch: branch)
         let actions = NSStackView(); actions.spacing = 8
         if let wt {
@@ -240,15 +255,14 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         detail.addArrangedSubview(label(String(localized: "Checks"), weight: .semibold)); detail.addArrangedSubview(checksBox)
         guard let repoId else { return }
         Task {
-            let checks = (try? await AppModel.shared.client?.call("github.checks", .obj(["repoId": .string(repoId), "pr": .int(n)])).array) ?? []
+            let checks = (try? await AppModel.shared.client?.call(GitHubChecks(repoId: repoId, pr: n))) ?? []
             if checks.isEmpty { checksBox.addArrangedSubview(label(String(localized: "No checks reported."), color: .secondaryLabelColor)) }
             for c in checks {
-                let bucket = c["bucket"]?.string ?? ""
-                let icon = bucket == "pass" ? "✓" : bucket == "fail" ? "✕" : bucket == "pending" ? "◌" : "–"
-                let row = NSStackView(views: [label("\(icon)  \(c["name"]?.string ?? "")", color: bucket == "fail" ? .systemRed : .labelColor)]); row.spacing = 8
-                if bucket == "fail", let run = c["runId"]?.int, let wt {
+                let icon = c.bucket == "pass" ? "✓" : c.bucket == "fail" ? "✕" : c.bucket == "pending" ? "◌" : "–"
+                let row = NSStackView(views: [label("\(icon)  \(c.name)", color: c.bucket == "fail" ? .systemRed : .labelColor)]); row.spacing = 8
+                if c.bucket == "fail", let run = c.runId, let wt {
                     row.addArrangedSubview(button(String(localized: "Fix with Agent"), "wrench.and.screwdriver") { [weak self] in
-                        self?.fixCheck(c["name"]?.string ?? "", run, wt)
+                        self?.fixCheck(c.name, run, wt)
                     })
                 }
                 checksBox.addArrangedSubview(row)
@@ -256,18 +270,18 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 
-    private func statePicker(_ r: JSONValue) -> NSView {
-        let pop = NSPopUpButton(); pop.addItem(withTitle: r["state"]?["name"]?.string ?? String(localized: "State"))
+    private func statePicker(_ r: LinearIssue) -> NSView {
+        let pop = NSPopUpButton(); pop.addItem(withTitle: r.state.name)
         Task {
-            guard let team = r["team"]?["id"]?.string, let states = try? await AppModel.shared.client?.call("linear.states", .obj(["teamId": .string(team)])).array else { return }
+            guard let states = try? await AppModel.shared.client?.call(LinearStates(teamId: r.team.id)) else { return }
             pop.removeAllItems()
-            for s in states { pop.addItem(withTitle: s["name"]?.string ?? ""); pop.lastItem?.representedObject = s["id"]?.string }
-            pop.selectItem(withTitle: r["state"]?["name"]?.string ?? "")
+            for s in states { pop.addItem(withTitle: s.name); pop.lastItem?.representedObject = s.id }
+            pop.selectItem(withTitle: r.state.name)
         }
-        let id = r["id"]?.string ?? ""
+        let id = r.id
         let sink = ClosureTarget { [weak pop] in
             guard let sid = pop?.selectedItem?.representedObject as? String else { return }
-            Task { await AppModel.shared.call("linear.setState", .obj(["issueId": .string(id), "stateId": .string(sid)])) }
+            Task { await AppModel.shared.call(LinearSetState(issueId: id, stateId: sid)) }
         }
         pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
         let row = NSStackView(views: [NSTextField(labelWithString: String(localized: "State:")), pop]); row.spacing = 6
@@ -277,13 +291,13 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func jiraTransitions(_ key: String, current: String) -> NSView {
         let pop = NSPopUpButton(); pop.addItem(withTitle: current.isEmpty ? String(localized: "Status") : current)
         Task {
-            let ts = (try? await AppModel.shared.client?.call("jira.transitions", .obj(["key": .string(key)])).array) ?? []
-            for t in ts { pop.addItem(withTitle: "→ " + (t["name"]?.string ?? "")); pop.lastItem?.representedObject = t["id"]?.string }
+            let ts = (try? await AppModel.shared.client?.call(JiraTransitions(key: key))) ?? []
+            for t in ts { pop.addItem(withTitle: "→ " + t.name); pop.lastItem?.representedObject = t.id }
         }
         let sink = ClosureTarget { [weak pop, weak self] in
             guard let id = pop?.selectedItem?.representedObject as? String else { return }
             Task {
-                if await AppModel.shared.call("jira.transition", .obj(["key": .string(key), "id": .string(id)])) != nil {
+                if await AppModel.shared.call(JiraTransitionIssue(key: key, id: id)) != nil {
                     self?.status.stringValue = String(localized: "Moved \(key)")
                 }
             }
@@ -295,10 +309,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     /// The default agent starts on the issue in the workspace on screen, its text typed in but not sent: whoever filed the
     /// issue wrote it, so the user reads it before the agent acts on it.
-    private func startTask(_ r: JSONValue, linear: Bool, jira: Bool = false) {
-        let ref = jira ? (r["key"]?.string ?? "") : linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
-        let body = ((linear || jira) ? r["description"] : r["body"])?.string ?? ""
-        let brief = ["Work on \(ref): \(r["title"]?.string ?? "")", body, r["url"]?.string ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    private func startTask(ref: String, title: String, body: String, url: String) {
+        let brief = ["Work on \(ref): \(title)", body, url].filter { !$0.isEmpty }.joined(separator: "\n\n")
         guard let editor = Workbench.editor else { NSSound.beep(); return }
         editor.newAgent(nil, prompt: brief, extra: ["draft": true])
     }
@@ -314,20 +326,20 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func fixCheck(_ name: String, _ run: Int, _ wt: Worktree) {
         guard let repoId else { return }
         Task {
-            let log = (await AppModel.shared.call("github.failedLog", .obj(["repoId": .string(repoId), "runId": .int(run)])))?.string ?? ""
+            let log = await AppModel.shared.call(GitHubFailedLog(repoId: repoId, runId: run)) ?? ""
             await sendRecipe("fixCI", wt, ["check": name, "error": log])
         }
     }
     private func sendReview(_ n: Int, _ wt: Worktree) {
         guard let repoId else { return }
         Task {
-            let cs = (try? await AppModel.shared.client?.call("github.reviewComments", .obj(["repoId": .string(repoId), "pr": .int(n)])).array) ?? []
+            let cs = (try? await AppModel.shared.client?.call(GitHubReviewComments(repoId: repoId, pr: n))) ?? []
             guard !cs.isEmpty else { status.stringValue = String(localized: "No review comments"); return }
             var parts: [String] = []
             for (i, c) in cs.enumerated() {
-                let line: String = c["line"]?.int.map { ":\($0)" } ?? ""
-                let loc: String = c["path"]?.string.map { $0 + line } ?? String(localized: "General")
-                parts.append("\(i + 1). \(loc) (\(c["author"]?.string ?? "")):\n   \(c["body"]?.string ?? "")")
+                let line: String = c.line.map { ":\($0)" } ?? ""
+                let loc: String = c.path.map { $0 + line } ?? String(localized: "General")
+                parts.append("\(i + 1). \(loc) (\(c.author)):\n   \(c.body)")
             }
             let text = parts.joined(separator: "\n\n")
             await sendRecipe("review", wt, ["comments": text])
@@ -338,9 +350,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         a.messageText = String(localized: "Squash and merge #\(n)?"); a.addButton(withTitle: String(localized: "Merge")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            var p: [String: JSONValue] = ["pr": .int(n)]
-            if let wt { p["worktreeId"] = .string(wt.id) } else if let w = AppModel.shared.worktrees.first(where: { $0.repoId == repoId }) { p["worktreeId"] = .string(w.id) }
-            if await AppModel.shared.call("github.pr-merge", .object(p)) != nil { status.stringValue = String(localized: "Merged #\(n)"); reload() }
+            // The merge runs in a workspace of the project (gh needs a checkout); the PR's own if it has one.
+            guard let wid = wt?.id ?? AppModel.shared.worktrees.first(where: { $0.repoId == repoId })?.id else { NSSound.beep(); return }
+            if await AppModel.shared.call(GitHubPRMerge(worktreeId: wid, pr: n)) != nil { status.stringValue = String(localized: "Merged #\(n)"); reload() }
         }
     }
 }

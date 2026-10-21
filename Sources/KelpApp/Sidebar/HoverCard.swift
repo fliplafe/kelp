@@ -51,7 +51,7 @@ final class CardModel {
     let repo: Repo?
     var worktrees: [RepoWorktreeSizes.Item]?
     var changes: LineStats?
-    var pr: JSONValue?
+    var pr: GitHub.PullRequest?
     var turn: String?
     var context: (used: Int, window: Int)?
     var ports: [Int] = []
@@ -81,8 +81,7 @@ final class CardModel {
             if let repo { worktrees = (try? await c.call(RepoWorktreeSizes(id: repo.id))) ?? []; return }
             if !agentOnly {
                 changes = try? await c.call(GitLineStats(id: workspaceId))
-                let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(workspaceId)]))
-                if p?["number"] != nil { pr = p }
+                if let p = (try? await c.call(GitHubBranchPR(worktreeId: workspaceId))) ?? nil { pr = p }
                 ports = ((try? await c.call(PortsList(worktreeId: workspaceId))) ?? []).map(\.port)
             }
             guard agentOnly, let a = agents.first else { return }
@@ -143,17 +142,16 @@ struct CardView: View {
 
 /// "#123 Fix login · Open · ✓ 5 checks": a PR in GitHub's own colours (open green, draft grey, merged purple, closed red).
 struct PRLine: View {
-    let pr: JSONValue
+    let pr: GitHub.PullRequest
     var body: some View {
-        let state = pr["isDraft"]?.bool == true ? String(localized: "Draft") : (pr["state"]?.string ?? "").capitalized
+        let state = pr.isDraft ? String(localized: "Draft") : pr.state.capitalized
         let color: Color = state == String(localized: "Draft") ? .secondary : state == "Merged" ? .purple : state == "Closed" ? .red : .green
-        let checks = pr["checks"]
-        let failed = checks?["failed"]?.int ?? 0, pending = checks?["pending"]?.int ?? 0, passed = checks?["passed"]?.int ?? 0
+        let failed = pr.checks.failed, pending = pr.checks.pending, passed = pr.checks.passed
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Image(systemName: state == "Merged" ? "arrow.triangle.merge" : "arrow.triangle.pull").foregroundStyle(color)
-                Text("#\(pr["number"]?.int ?? 0)").font(.callout.monospacedDigit())
-                Text(pr["title"]?.string ?? "").font(.callout).lineLimit(1)
+                Text("#\(pr.number)").font(.callout.monospacedDigit())
+                Text(pr.title).font(.callout).lineLimit(1)
             }
             HStack(spacing: 6) {
                 Text(state).foregroundStyle(color)

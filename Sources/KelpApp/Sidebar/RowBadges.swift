@@ -9,7 +9,7 @@ import Core
 final class RowBadges {
     static let shared = RowBadges()
     private(set) var stats: [String: LineStats] = [:]   // worktree id → changes
-    private(set) var prs: [String: JSONValue] = [:]     // worktree id → its branch's PR
+    private(set) var prs: [String: GitHub.PullRequest] = [:]     // worktree id → its branch's PR
     @ObservationIgnored private var asked: [String: Date] = [:]
 
     private init() {
@@ -36,8 +36,7 @@ final class RowBadges {
         Task {
             let s = try? await c.call(GitLineStats(id: wid))
             if s != stats[wid] { stats[wid] = s }
-            let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(wid)]))
-            let pr = p?["number"] != nil ? p : nil
+            let pr = (try? await c.call(GitHubBranchPR(worktreeId: wid))) ?? nil
             if pr != prs[wid] { prs[wid] = pr }
         }
     }
@@ -56,11 +55,11 @@ final class RowBadges {
     }
 
     /// "#12" in the PR's state colour, with a mark for its checks.
-    static func pr(_ p: JSONValue?) -> (NSAttributedString, String)? {
-        guard let p, let n = p["number"]?.int else { return nil }
-        let state = p["isDraft"]?.bool == true ? "DRAFT" : p["state"]?.string ?? ""
+    static func pr(_ p: GitHub.PullRequest?) -> (NSAttributedString, String)? {
+        guard let p else { return nil }
+        let n = p.number, state = p.isDraft ? "DRAFT" : p.state
         let color: NSColor = state == "DRAFT" ? .secondaryLabelColor : state == "MERGED" ? .textPurple : state == "CLOSED" ? .textRed : .textGreen
-        let failed = p["checks"]?["failed"]?.int ?? 0, pending = p["checks"]?["pending"]?.int ?? 0, passed = p["checks"]?["passed"]?.int ?? 0
+        let failed = p.checks.failed, pending = p.checks.pending, passed = p.checks.passed
         let f = NSFont.uiDigits(11, weight: .medium)
         let t = NSMutableAttributedString(string: "#\(n)", attributes: [.font: f, .foregroundColor: color])
         let (mark, mc): (String, NSColor) = failed > 0 ? (" ✕", .textRed) : pending > 0 ? (" ●", .textOrange) : passed > 0 ? (" ✓", .textGreen) : ("", color)
@@ -73,6 +72,6 @@ final class RowBadges {
         case "CLOSED": String(localized: "closed")
         default: String(localized: "open")
         }
-        return (t, String(localized: "Pull request #\(n) · \(said) · \(checks)") + "\n" + (p["title"]?.string ?? ""))
+        return (t, String(localized: "Pull request #\(n) · \(said) · \(checks)") + "\n" + p.title)
     }
 }

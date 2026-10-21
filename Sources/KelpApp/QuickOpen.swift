@@ -273,13 +273,12 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         prSearch?.cancel()
         guard let repo = AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId else { return }
         prSearch = Task { [weak self] in
-            let prs = (try? await AppModel.shared.client?.call("github.prs", .obj(["repoId": .string(repo), "filter": "open"])).array) ?? []
+            let prs = (try? await AppModel.shared.client?.call(GitHubPRs(repoId: repo, filter: "open"))) ?? []
             guard let self, !Task.isCancelled, field.stringValue == q else { return }
             let term = String(q.dropFirst()).lowercased()
-            setRows(prs.filter { p in term.isEmpty || "\(p["number"]?.int ?? 0)".hasPrefix(term) || (p["title"]?.string ?? "").lowercased().contains(term) }.map { p in
-                let url = p["url"]?.string ?? ""
-                return Item(kind: "Pull Request", icon: "arrow.triangle.pull", title: "#\(p["number"]?.int ?? 0) \(p["title"]?.string ?? "")",
-                            detail: [p["author"]?.string, p["headRefName"]?.string].compactMap { $0 }.joined(separator: " · "), action: { Workbench.open(url) })
+            setRows(prs.filter { p in term.isEmpty || "\(p.number)".hasPrefix(term) || p.title.lowercased().contains(term) }.map { p in
+                Item(kind: "Pull Request", icon: "arrow.triangle.pull", title: "#\(p.number) \(p.title)",
+                     detail: "\(p.author) · \(p.headRefName)", action: { Workbench.open(p.url) })
             }, grouped: false)
         }
     }

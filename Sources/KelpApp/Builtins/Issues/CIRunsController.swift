@@ -95,20 +95,20 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         guard let w = worktree else { return }
         poll?.cancel()
         Task {
-            let r = await AppModel.shared.tryCall("ci.runs", .obj(["worktreeId": .string(w)]))
+            let r = await AppModel.shared.tryCall(CIRunsList(worktreeId: w))
             guard w == worktree else { return }
             if let e = r.error {
                 branch.stringValue = ""; workflowsButton.isHidden = true
                 show(note: e.contains("not found") ? String(localized: "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).") : e); return
             }
-            branchName = r.value?["branch"]?.string ?? ""
+            branchName = r.value?.branch ?? ""
             branch.stringValue = branchName
             // What was open stays open across a refresh, its jobs read again.
             let openRuns = Set(runs.filter { outline.isItemExpanded($0) }.compactMap(\.id))
             let openJobs = Set(runs.flatMap { $0.children ?? [] }.filter { outline.isItemExpanded($0) }.compactMap(\.id))
             let selected = (outline.item(atRow: outline.selectedRow) as? Item)?.id
-            runs = ((try? r.value?["runs"]?.decode([CIRuns.Run].self)) ?? []).map { Item(.run($0)) }
-            workflows = (try? r.value?["workflows"]?.decode([CIRuns.Workflow].self)) ?? []
+            runs = (r.value?.runs ?? []).map { Item(.run($0)) }
+            workflows = r.value?.workflows ?? []
             workflowsButton.isHidden = workflows.isEmpty
             show(note: runs.isEmpty ? String(localized: "No CI runs on \(branchName) yet.") : nil)
             outline.reloadData()
@@ -144,7 +144,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func expand(_ item: Item, openFailed: Bool) async {
         guard case .run(let run) = item.kind, let w = worktree else { return }
         if item.children == nil {
-            let jobs = (try? await AppModel.shared.client?.call("ci.jobs", .obj(["worktreeId": .string(w), "run": .int(run.id)]), as: [CIRuns.Job].self)) ?? []
+            let jobs = (try? await AppModel.shared.client?.call(CIJobs(worktreeId: w, run: run.id))) ?? []
             item.children = jobs.map { j in let i = Item(.job(j, run: run.id)); i.children = j.steps.map { Item(.step($0)) }; return i }
             outline.reloadItem(item, reloadChildren: true)
         }
@@ -164,9 +164,9 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let slow = whileSlow { [weak self] in if self?.shownJob?.job.id == job.id { self?.log.string = String(localized: "Loading the log…") } }
         Task {
             defer { slow.cancel() }
-            let r = await AppModel.shared.tryCall("ci.log", .obj(["worktreeId": .string(w), "job": .int(job.id)]))
+            let r = await AppModel.shared.tryCall(CILog(worktreeId: w, job: job.id))
             guard shownJob?.job.id == job.id else { return }
-            shownLog = r.value?.string ?? r.error ?? ""
+            shownLog = r.value ?? r.error ?? ""
             log.string = shownLog
             log.scrollToEndOfDocument(nil)
         }
@@ -183,7 +183,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func rerun() {
         guard let w = worktree, let j = shownJob else { return }
         Task {
-            if await AppModel.shared.call("ci.rerun", .obj(["worktreeId": .string(w), "run": .int(j.run)])) != nil {
+            if await AppModel.shared.call(CIRerun(worktreeId: w, run: j.run)) != nil {
                 Banner.show(String(localized: "Re-running the failed jobs")); try? await Task.sleep(for: .seconds(2)); reload()
             }
         }
@@ -217,10 +217,9 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         a.addButton(withTitle: String(localized: "Run")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            var inputs: [String: JSONValue] = [:]
-            for (k, v) in fields { inputs[k] = .string((v as? NSPopUpButton)?.titleOfSelectedItem ?? (v as? NSTextField)?.stringValue ?? "") }
-            if await AppModel.shared.call("ci.dispatch", .obj(["worktreeId": .string(w), "workflow": .string(wf.file), "branch": .string(branchName),
-                                                                "inputs": .object(inputs)])) != nil {
+            var inputs: [String: String] = [:]
+            for (k, v) in fields { inputs[k] = (v as? NSPopUpButton)?.titleOfSelectedItem ?? (v as? NSTextField)?.stringValue ?? "" }
+            if await AppModel.shared.call(CIDispatch(worktreeId: w, workflow: wf.file, branch: branchName, inputs: inputs)) != nil {
                 Banner.show(String(localized: "Started \(wf.name)")); try? await Task.sleep(for: .seconds(3)); reload()
             }
         }

@@ -85,7 +85,7 @@ final class SidebarCell: NSTableCellView {
         }
     }
     @objc private func openChanges() { if let w = folder { Workbench.open(DiffTab.uri(w.id), workspace: w.id) } }
-    @objc private func openPR() { if let w = folder, let u = RowBadges.shared.prs[w.id]?["url"]?.string { Workbench.open(u, workspace: w.id) } }
+    @objc private func openPR() { if let w = folder, let u = RowBadges.shared.prs[w.id]?.url { Workbench.open(u, workspace: w.id) } }
 
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.
     private func updateBadges() {

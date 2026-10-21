@@ -87,9 +87,9 @@ extension SourceControlController {
         ciPoll?.cancel()
         guard let wid = worktreeId, info?.upstream != nil else { ciRuns = []; ciRow.show([], failure: nil); return }
         ciPoll = Task { [weak self] in
-            let r = await AppModel.shared.tryCall("ci.runs", .obj(["worktreeId": .string(wid)]))
+            let r = await AppModel.shared.tryCall(CIRunsList(worktreeId: wid))
             guard let self, !Task.isCancelled, wid == worktreeId else { return }
-            ciRuns = (try? r.value?["runs"]?.decode([CIRuns.Run].self)) ?? []
+            ciRuns = r.value?.runs ?? []
             let latest = CIRuns.latest(ciRuns)
             ciRow.show(latest, failure: nil)
             if let failed = latest.first(where: \.failed) {
@@ -108,8 +108,8 @@ extension SourceControlController {
 
     /// "test › Run swift test": the first failed job and its failed step.
     private func failurePlace(_ wid: String, run: Int) async -> String? {
-        let r = await AppModel.shared.tryCall("ci.jobs", .obj(["worktreeId": .string(wid), "run": .int(run)]))
-        guard let job = (try? r.value?.decode([CIRuns.Job].self))?.first(where: \.failed) else { return nil }
+        let r = await AppModel.shared.tryCall(CIJobs(worktreeId: wid, run: run))
+        guard let job = r.value?.first(where: \.failed) else { return nil }
         return ([job.name] + (job.steps.first(where: \.failed).map { [$0.name] } ?? [])).joined(separator: " › ")
     }
 
