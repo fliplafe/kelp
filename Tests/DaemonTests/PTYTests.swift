@@ -196,3 +196,20 @@ final class Box: @unchecked Sendable {
     try pipe.fileHandleForWriting.close()
     #expect(pipe.fileHandleForReading.readDataToEndOfFile() == Data("ok".utf8))
 }
+
+/// Tests start programs as kelpd does, through `kelp __ctty`: the terminal is the program's controlling terminal, so a
+/// program that never touches it (`yes > /dev/null`) still gets the hangup when its daemon's process dies without
+/// stopping it. Without it, every test process that crashed or was killed left such programs running for good.
+@Test func aProgramThatNeverTouchesItsTerminalStillGetsTheHangup() async throws {
+    #expect(PTY.trampoline != nil)
+    var pty: PTY? = try PTY(argv: ["/bin/zsh", "-c", "echo up; exec yes > /dev/null"], cwd: "/tmp", env: [:])
+    let pid = try #require(pty?.pid)
+    let out = Locked("")
+    pty?.onOutput = { d in out.withLock { $0 += String(decoding: d, as: UTF8.self) } }
+    pty?.start()
+    #expect(try await waitFor(5) { out.withLock { $0 }.contains("up") })
+    pty = nil   // dropped: its end of the terminal closes, as when the daemon's process ends
+    let gone = try await waitFor(5) { kill(pid, 0) != 0 }
+    if !gone { kill(pid, SIGKILL) }
+    #expect(gone)
+}

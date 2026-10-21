@@ -2,6 +2,7 @@
 // ~/.kelp, ~/.claude, ~/.codex, keychain or git config, whichever target runs first or alone. (Swift has no load-time
 // code; a C constructor runs when the test bundle is loaded.)
 #include "TestSupportC.h"
+#include <dlfcn.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
 #include <stdio.h>
@@ -37,6 +38,15 @@ __attribute__((constructor)) static void kelp_isolate(void) {
     char exe[PATH_MAX], real[PATH_MAX];
     uint32_t size = sizeof exe;
     if (_NSGetExecutablePath(exe, &size) == 0 && realpath(exe, real)) setenv("KELP_APP_EXECUTABLE", real, 1);
+    // Sessions start through the kelp built beside this bundle (…/debug/KelpPackageTests.xctest/Contents/MacOS/…), as
+    // under kelpd: the terminal is theirs, so they get the hangup if this process dies before its daemons stop.
+    Dl_info info;
+    if (dladdr((const void *)kelp_isolate, &info) && info.dli_fname && realpath(info.dli_fname, real)) {
+        for (int i = 0; i < 4; i++) { char *slash = strrchr(real, '/'); if (slash) *slash = 0; }
+        char kelp[PATH_MAX];
+        snprintf(kelp, sizeof kelp, "%s/kelp", real);
+        if (access(kelp, X_OK) == 0) setenv("KELP_TRAMPOLINE", kelp, 1);
+    }
 }
 
 const char *kelp_test_root(void) { return root; }

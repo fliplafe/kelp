@@ -169,7 +169,11 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     /// The `kelp` CLI next to the daemon binary.
     public static let trampoline: String? = {
         let dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
-        let p = dir.appendingPathComponent("kelp").path
+        var p = dir.appendingPathComponent("kelp").path
+        #if DEBUG
+        // Tests run inside xctest: the kelp built with them (else a test that dies leaves programs without a terminal running).
+        if let t = ProcessInfo.processInfo.environment["KELP_TRAMPOLINE"] { p = t }
+        #endif
         return FileManager.default.isExecutableFile(atPath: p) ? p : nil
     }()
 

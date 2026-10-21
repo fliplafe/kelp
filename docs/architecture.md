@@ -101,8 +101,12 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
   Text typed for anyone is stripped of escape sequences and control keys (`LiveSession.typeable`).
 - Values go into shell commands as variables, never as command text (`ShellTemplate`); refs from clients that read as
   options are refused; paths go to git as literal pathspecs after `--`.
-- The background usage probe only opens folders whose agent config matches the base branch (or has none).
+- The background usage probe only opens folders whose agent config matches the base branch (or has none), and never
+  presses anything while its copy of the agent asks a question.
+- Language servers run a project's own code (build scripts, `Package.swift`, its `node_modules`' TypeScript): none
+  starts in a project until the user trusts it for them (a banner on its first file, like VS Code's Workspace Trust).
 - A remote project's marker counts only under `~/.kelp/remote`; gh/glab don't run for remote projects.
 
 Tests run with their own `KELP_HOME`, agent config dirs, keychain service and git config, set as the test bundle
-loads (`Tests/TestSupportC`), so no test reads or writes the user's own.
+loads (`Tests/TestSupportC`), so no test reads or writes the user's own. Their sessions start through `kelp __ctty`
+as under kelpd, so a test process that crashes or is killed takes its programs with it.
