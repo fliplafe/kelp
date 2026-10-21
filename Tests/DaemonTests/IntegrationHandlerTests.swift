@@ -26,7 +26,8 @@ private class Stub: URLProtocol, @unchecked Sendable {
         } else if let d = r.httpBody { body = String(decoding: d, as: UTF8.self) }
         let route = Self.lock.withLock { Self.routes[r.url?.host ?? ""] }
         let (code, text) = route?(r.url?.path ?? "", body) ?? (500, "")
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: r.url ?? URL(fileURLWithPath: "/"), statusCode: code, httpVersion: nil, headerFields: nil) ?? URLResponse(), cacheStoragePolicy: .notAllowed)
+        let response: URLResponse = HTTPURLResponse(url: r.url ?? URL(fileURLWithPath: "/"), statusCode: code, httpVersion: nil, headerFields: nil) ?? URLResponse()
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(text.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -63,7 +64,10 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
         let (d, c) = try await daemon(); defer { d.stop(); clearKeys() }
         Stub.serve("api.linear.app") { _, body in
             if body.contains("viewer { id name email }") { return (200, viewer) }
-            if body.contains("assignedIssues") { return (200, #"{"data":{"viewer":{"assignedIssues":{"nodes":[{"id":"i1","identifier":"ENG-1","title":"Fix","description":"","url":"u","branchName":"eng-1","state":{"id":"s","name":"Todo","type":"unstarted"},"team":{"id":"t","key":"ENG","name":"Eng"}}]}}}}"#) }
+            if body.contains("assignedIssues") {
+                return (200, #"{"data":{"viewer":{"assignedIssues":{"nodes":[{"id":"i1","identifier":"ENG-1","title":"Fix","description":"","url":"u","#
+                    + #""branchName":"eng-1","state":{"id":"s","name":"Todo","type":"unstarted"},"team":{"id":"t","key":"ENG","name":"Eng"}}]}}}}"#)
+            }
             if body.contains("teams {") { return (200, #"{"data":{"teams":{"nodes":[{"id":"t","key":"ENG","name":"Eng"}]}}}"#) }
             if body.contains("states {") { return (200, #"{"data":{"team":{"states":{"nodes":[{"id":"s1","name":"Todo","type":"unstarted"},{"id":"s2","name":"In Progress","type":"started"}]}}}}"#) }
             if body.contains("issueUpdate") { return (200, #"{"data":{"issueUpdate":{"success":true}}}"#) }
@@ -105,7 +109,10 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
         let moves = Moves()
         Stub.serve(host) { path, body in
             if path.hasSuffix("/myself") { return (200, #"{"displayName":"Ada"}"#) }
-            if path.contains("/search") { return (200, #"{"issues":[{"key":"ENG-1","fields":{"summary":"Fix","status":{"name":"To Do","statusCategory":{"key":"new"}},"issuetype":{"name":"Bug"},"project":{"key":"ENG"}}}]}"#) }
+            if path.contains("/search") {
+                return (200, #"{"issues":[{"key":"ENG-1","fields":{"summary":"Fix","status":{"name":"To Do","statusCategory":{"key":"new"}},"#
+                    + #""issuetype":{"name":"Bug"},"project":{"key":"ENG"}}}]}"#)
+            }
             if path.hasSuffix("/transitions"), body.isEmpty { return (200, #"{"transitions":[{"id":"11","name":"Start","to":{"statusCategory":{"key":"indeterminate"}}}]}"#) }
             if path.hasSuffix("/transitions") { moves.add(body); return (204, "") }
             return (404, "")

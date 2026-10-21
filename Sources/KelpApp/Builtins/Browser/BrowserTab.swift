@@ -33,11 +33,13 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         func b(_ sym: String, _ tip: String) -> NSButton {
             let x = NSButton(image: .symbol(sym, tip), target: nil, action: nil); x.bezelStyle = .texturedRounded; x.isBordered = false; x.toolTip = tip; return x
         }
-        let back = b("chevron.left", String(localized: "Back")), fwd = b("chevron.right", String(localized: "Forward")), reload = b("arrow.clockwise", String(localized: "Reload (⌘R)")), ext = b("safari", String(localized: "Open in Safari"))
+        let back = b("chevron.left", String(localized: "Back")), fwd = b("chevron.right", String(localized: "Forward"))
+        let reload = b("arrow.clockwise", String(localized: "Reload (⌘R)")), ext = b("safari", String(localized: "Open in Safari"))
         let more = b("ellipsis.circle", String(localized: "More"))
         address.placeholderString = String(localized: "Search or enter address"); address.lineBreakMode = .byTruncatingTail; address.bezelStyle = .roundedBezel
         designButton.setButtonType(.pushOnPushOff); designButton.bezelStyle = .texturedRounded; designButton.isBordered = false
-        designButton.image = .symbol("cursorarrow.rays", String(localized: "Design Mode")); designButton.toolTip = String(localized: "Design Mode: click an element to send its source, HTML, CSS and a screenshot to the agent (⌥-click copies them)")
+        designButton.image = .symbol("cursorarrow.rays", String(localized: "Design Mode"))
+        designButton.toolTip = String(localized: "Design Mode: click an element to send its source, HTML, CSS and a screenshot to the agent (⌥-click copies them)")
         let bar = NSStackView(views: [back, fwd, reload, address, designButton, ext, more]); bar.spacing = 6
         bar.edgeInsets = NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
         address.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -209,7 +211,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             if (f._debugSource) return {source: f._debugSource.fileName + ':' + f._debugSource.lineNumber, component};
             const st = f._debugStack && f._debugStack.stack;
             if (st) {
-              const line = st.split('\\n').map(l => (l.match(/at (?:(\\S+) \\()?(https?:\\/\\/\\S+?):(\\d+):\\d+\\)?$/) || [])).find(m => m[2] && !/node_modules|react-dom|react\\.|jsx-dev-runtime/.test(m[2]));
+              const line = st.split('\\n').map(l => (l.match(/at (?:(\\S+) \\()?(https?:\\/\\/\\S+?):(\\d+):\\d+\\)?$/) || []))\
+    .find(m => m[2] && !/node_modules|react-dom|react\\.|jsx-dev-runtime/.test(m[2]));
               if (line) return {source: strip(line[2]) + ':' + line[3], component: component || line[1] || null};
             }
           }
@@ -231,14 +234,16 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
      document.documentElement.append(box, tag);
      const move = e => { const r = e.target.getBoundingClientRect();
        Object.assign(box.style, {left: r.left+'px', top: r.top+'px', width: r.width+'px', height: r.height+'px', display: 'block'});
-       tag.textContent = e.target.tagName.toLowerCase() + (e.target.classList.length ? '.' + [...e.target.classList].slice(0,2).join('.') : '') + '  ' + Math.round(r.width) + '×' + Math.round(r.height);
+       tag.textContent = e.target.tagName.toLowerCase() + (e.target.classList.length ? '.' + [...e.target.classList].slice(0,2).join('.') : '')\
+     + '  ' + Math.round(r.width) + '×' + Math.round(r.height);
        Object.assign(tag.style, {left: r.left+'px', top: Math.max(0, r.top-20)+'px', display: 'block'}); };
      const path = n => { if (!n || n.nodeType !== 1) return ''; if (n.id) return '#' + n.id;
        let s = n.tagName.toLowerCase(); if (n.classList.length) s += '.' + [...n.classList].slice(0,3).join('.');
        const p = n.parentElement; if (!p) return s; const sib = [...p.children].filter(c => c.tagName === n.tagName);
        if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(n)+1) + ')'; return path(p) + ' > ' + s; };
      const click = e => { e.preventDefault(); e.stopPropagation(); const el = e.target, r = el.getBoundingClientRect(), cs = getComputedStyle(el);
-       const keys = ['display','position','width','height','margin','padding','color','background-color','font-family','font-size','font-weight','line-height','border','border-radius','gap','flex-direction','justify-content','align-items','grid-template-columns','box-shadow','opacity'];
+       const keys = ['display','position','width','height','margin','padding','color','background-color','font-family','font-size','font-weight',\
+    'line-height','border','border-radius','gap','flex-direction','justify-content','align-items','grid-template-columns','box-shadow','opacity'];
        const styles = {}; keys.forEach(k => styles[k] = cs.getPropertyValue(k));
        const src = __kelpSource(el);
        window.webkit.messageHandlers.kelp.postMessage({selector: path(el), html: el.outerHTML.slice(0, 4000), styles, rect: {x: r.left, y: r.top, w: r.width, h: r.height}, url: location.href,

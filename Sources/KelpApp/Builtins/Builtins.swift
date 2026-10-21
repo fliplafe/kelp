@@ -57,7 +57,8 @@ enum Builtins {
                   options: ["0", "15", "30", "60", "240"]),
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
                 s("usage.readPlans", "Show plan limits", "boolean", true,
-                  "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
+                  "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background "
+                    + "and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "kelp.agents", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),

@@ -312,13 +312,16 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let dirs = [URL(fileURLWithPath: root).appendingPathComponent(".kelp/templates"), Paths.root.appendingPathComponent("templates")]
         let all = dirs.flatMap { Templates.list(in: $0) }
         guard !all.isEmpty else {
-            let a = NSAlert(); a.messageText = String(localized: "No templates yet"); a.informativeText = String(localized: "Add Markdown files to .kelp/templates in the repo or ~/.kelp/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.")
+            let a = NSAlert(); a.messageText = String(localized: "No templates yet")
+            a.informativeText = String(
+                localized: "Add Markdown files to .kelp/templates in the repo or ~/.kelp/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.")
             Task { _ = await runSheet(a) }; return
         }
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26)); for t in all { pop.addItem(withTitle: t.deletingPathExtension().lastPathComponent) }
         let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); name.placeholderString = String(localized: "File name, e.g. plan-login.md")
         let box = NSStackView(views: [pop, name]); box.orientation = .vertical; box.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
-        let a = NSAlert(); a.messageText = String(localized: "New from Template"); a.accessoryView = box; a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
+        let a = NSAlert(); a.messageText = String(localized: "New from Template"); a.accessoryView = box
+        a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty, let text = try? String(contentsOf: all[pop.indexOfSelectedItem], encoding: .utf8) else { return }
             var file = name.stringValue; if (file as NSString).pathExtension.isEmpty { file += ".md" }

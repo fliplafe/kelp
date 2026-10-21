@@ -149,8 +149,31 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         try? log?.write(contentsOf: d); logSize += d.count
         if logSize > Self.logLimit { trimLogToItsTail() }
         let text = String(decoding: d, as: UTF8.self)
-        var probe = false
         let said = (record.summary, record.progress)
+        let probe = readReports(text)
+        let topic = readTopic(text)
+        // The chunk without escapes, once, for the two readers that want it.
+        let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
+        if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
+        if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
+        notePasteMode(text)
+        let answer = autoAnswer(), url = localURL(plain), limits = newLimits(text)
+        let subs = attached, sid = record.id   // read under the lock: other threads write `record`
+        emit(sync() ?? (said != (record.summary, record.progress) ? record : nil))
+        lock.unlock()
+        if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
+        if !limits.isEmpty { onLimits?(limits) }
+        if let url { onLocalURL?(url) }
+        if let topic { onTopic?(topic) }
+        if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
+        onOutput?(sid, d, subs)
+    }
+
+    // What a chunk of output says, read by handleOutput (each one: the caller holds the lock).
+
+    /// OSC 7501 reports (true: the agent asked whether Kelp reads them) and ConEmu progress.
+    private func readReports(_ text: String) -> Bool {
+        var probe = false
         if !hooked, text.contains(ProgramStatus.prefix) || !oscCarry.isEmpty {
             for m in ProgramStatus.scan(text, carry: &oscCarry) {
                 switch m {
@@ -161,49 +184,56 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             }
         }
         if text.contains(ProgramStatus.conEmuPrefix), let p = ProgramStatus.conEmuProgress(text).last { record.progress = p }
-        var topic: String?
-        if onTopic != nil, text.contains("\u{1B}]") || !titleCarry.isEmpty,
-           let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic {
-            lastTopic = t; topic = t
+        return probe
+    }
+
+    /// A new topic from the terminal title the agent sets.
+    private func readTopic(_ text: String) -> String? {
+        guard onTopic != nil, text.contains("\u{1B}]") || !titleCarry.isEmpty,
+              let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic else {
+            return nil
         }
-        // The chunk without escapes, once, for the two readers that want it.
-        let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
-        if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
-        if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
-        let scan = pasteCarry + text   // the sequence can be split across two reads
+        lastTopic = t
+        return t
+    }
+
+    /// Bracketed paste switched on or off (the sequence can be split across two reads).
+    private func notePasteMode(_ text: String) {
+        let scan = pasteCarry + text
         if let on = scan.range(of: "\u{1B}[?2004", options: .backwards), let mode = scan[on.upperBound...].first { pasteMode = mode == "h" }
         pasteCarry = String(text.suffix(7))
-        var answer: String?
-        if !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 {
-            let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
-            let r = NSRange(tail.startIndex..., in: tail)
-            if let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) {
-                let a = autoAnswers[i].1
-                if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
-                    steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
-                } else { answer = a.input; autoAnswers.remove(at: i); dialogSettled = true }
-            }
+    }
+
+    /// The keys that answer a question the manifest knows (a menu is steered instead, see steer()).
+    private func autoAnswer() -> String? {
+        guard !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 else { return nil }
+        let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
+        let r = NSRange(tail.startIndex..., in: tail)
+        guard let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) else { return nil }
+        let a = autoAnswers[i].1
+        if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
+            steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
+            return nil
         }
-        var url: String?
-        if !sawURL, onLocalURL != nil {
-            if let m = Self.urlRegex.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)), let r = Range(m.range, in: plain) {
-                sawURL = true; url = String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
-            }
-        }
-        var limits: [ClaudeLimits.Reading] = []
-        if onLimits != nil, text.contains("limit") {
-            let found = ClaudeLimits.parse(StatusDetector.stripANSI(String(decoding: ring.suffix(1200), as: UTF8.self)))
-            if !found.isEmpty, found != lastLimits { lastLimits = found; limits = found }
-        }
-        let subs = attached, sid = record.id   // read under the lock: other threads write `record`
-        emit(sync() ?? (said != (record.summary, record.progress) ? record : nil))
-        lock.unlock()
-        if probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
-        if !limits.isEmpty { onLimits?(limits) }
-        if let url { onLocalURL?(url) }
-        if let topic { onTopic?(topic) }
-        if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
-        onOutput?(sid, d, subs)
+        autoAnswers.remove(at: i); dialogSettled = true
+        return a.input
+    }
+
+    /// The first local URL it prints (a dev server), with 0.0.0.0 and [::] as localhost.
+    private func localURL(_ plain: String) -> String? {
+        guard !sawURL, onLocalURL != nil, let m = Self.urlRegex.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+              let r = Range(m.range, in: plain) else { return nil }
+        sawURL = true
+        return String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
+    }
+
+    /// Plan limits Claude Code printed, when they changed.
+    private func newLimits(_ text: String) -> [ClaudeLimits.Reading] {
+        guard onLimits != nil, text.contains("limit") else { return [] }
+        let found = ClaudeLimits.parse(StatusDetector.stripANSI(String(decoding: ring.suffix(1200), as: UTF8.self)))
+        guard !found.isEmpty, found != lastLimits else { return [] }
+        lastLimits = found
+        return found
     }
 
     private func handleExit(_ code: Int32) {

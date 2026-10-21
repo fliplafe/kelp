@@ -54,7 +54,8 @@ final class SessionTab: TabContent {
     static func close(session sid: String) -> Bool {
         let session = AppModel.shared.session(sid)
         if let s = session, s.agent != "shell", s.status == .working {
-            let a = NSAlert(); a.messageText = String(localized: "Stop \(AgentCatalog.displayName(s))?"); a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
+            let a = NSAlert(); a.messageText = String(localized: "Stop \(AgentCatalog.displayName(s))?")
+            a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
             a.addButton(withTitle: String(localized: "Stop Agent")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         } else if session?.agent == "shell", let program = busy(sid) {

@@ -127,7 +127,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         Task {
             let r = await AppModel.shared.tryCall("ci.runs", .obj(["worktreeId": .string(w)]))
             guard w == worktree else { return }
-            if let e = r.error { branch.stringValue = ""; workflowsButton.isHidden = true; show(note: e.contains("not found") ? String(localized: "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).") : e); return }
+            if let e = r.error {
+                branch.stringValue = ""; workflowsButton.isHidden = true
+                show(note: e.contains("not found") ? String(localized: "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).") : e); return
+            }
             branchName = r.value?["branch"]?.string ?? ""
             branch.stringValue = branchName
             // What was open stays open across a refresh, its jobs read again.

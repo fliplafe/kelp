@@ -16,7 +16,8 @@ private let fakeGh: (log: String, script: String) = {
       "pr checks") if [ "$3" = "404" ]; then echo "no checks reported on the 'x' branch" >&2; exit 1; fi
                    echo '[{"bucket":"fail","link":"https://github.com/o/r/actions/runs/99/job/1","name":"test","state":"FAILURE","workflow":"CI"}]';;
       "run view") case "$*" in
-                    *"--json jobs"*) echo '{"jobs":[{"databaseId":5,"name":"build","status":"completed","conclusion":"failure","url":"https://github.com/o/r/actions/runs/99/job/5","steps":[{"name":"Compile","status":"completed","conclusion":"failure"}]}]}';;
+                    *"--json jobs"*) echo '{"jobs":[{"databaseId":5,"name":"build","status":"completed","conclusion":"failure","url":"https://github.com/o/r/actions/runs/99/job/5",\
+    "steps":[{"name":"Compile","status":"completed","conclusion":"failure"}]}]}';;
                     *"--job"*"--log-failed"*) printf 'build\\tCompile\\t2026-10-20T10:00:00Z error: boom\\n';;
                     *) printf 'step 1\\nstep 2 failed\\n';;
                   esac;;
@@ -24,7 +25,8 @@ private let fakeGh: (log: String, script: String) = {
       "run rerun"|"workflow run") ;;
       "repo view") echo '{"owner":{"id":"O_1","login":"acme"}}';;
       "project list") echo '{"projects":[{"closed":false,"id":"PVT_1","number":3,"owner":{"login":"acme"},"title":"Roadmap","url":"https://github.com/orgs/acme/projects/3"}],"totalCount":1}';;
-      "project item-list") echo '{"items":[{"content":{"type":"Issue","url":"https://github.com/acme/r/issues/5"},"id":"I1","status":"In Progress","title":"Login"},{"content":{"type":"DraftIssue"},"id":"I2","title":"Idea"}],"totalCount":2}';;
+      "project item-list") echo '{"items":[{"content":{"type":"Issue","url":"https://github.com/acme/r/issues/5"},"id":"I1","status":"In Progress","title":"Login"},\
+    {"content":{"type":"DraftIssue"},"id":"I2","title":"Idea"}],"totalCount":2}';;
       "pr view") echo '{"reviews":[{"id":"R1","author":{"login":"bob"},"body":"Please rename","state":"CHANGES_REQUESTED"}]}';;
       "api --paginate") echo '[[{"path":"a.swift","line":3,"original_line":3,"body":"nit","user":{"login":"amy"},"html_url":"https://github.com/o/r/pull/7#r1"}]]';;
       "api user") echo ada;;

@@ -79,7 +79,9 @@ public struct JiraClient: Sendable {
     }
 
     public static func parseTransitions(_ d: Data) throws -> [JiraTransition] {
-        guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let ts = o["transitions"] as? [[String: Any]] else { throw JiraError(description: "unexpected transitions response") }
+        guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any], let ts = o["transitions"] as? [[String: Any]] else {
+            throw JiraError(description: "unexpected transitions response")
+        }
         return ts.compactMap { t in
             guard let id = t["id"] as? String, let name = t["name"] as? String else { return nil }
             return JiraTransition(id: id, name: name, toCategory: (((t["to"] as? [String: Any])?["statusCategory"]) as? [String: Any])?["key"] as? String ?? "")

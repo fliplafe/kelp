@@ -60,7 +60,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                 if let t = Workbench.editor?.focusedContent as? FileTab, ["run", "test"].contains(name), t.language?[command: name] != nil {
                     runFile(t, name); return
                 }
-                Banner.show(String(localized: "This project has no “\(name)” command. Add one to .kelp.yaml (\(name): the command)."), action: (String(localized: "Edit Commands"), { [weak self] in self?.edit() }))
+                Banner.show(String(localized: "This project has no “\(name)” command. Add one to .kelp.yaml (\(name): the command)."),
+                            action: (String(localized: "Edit Commands"), { [weak self] in self?.edit() }))
                 return
             }
             if info["trusted"]?.bool != true {

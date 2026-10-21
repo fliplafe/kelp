@@ -45,7 +45,8 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         layoutToggle.selectedSegment = UserDefaults.standard.bool(forKey: "diff.inline") ? 1 : 0
         layoutToggle.target = self; layoutToggle.action = #selector(layoutChanged)
         layoutToggle.setToolTip(String(localized: "Side by Side"), forSegment: 0); layoutToggle.setToolTip(String(localized: "Inline"), forSegment: 1)
-        source.addItems(withTitles: [String(localized: "Uncommitted"), String(localized: "Unstaged"), String(localized: "Staged"), String(localized: "Branch vs base"), String(localized: "Commit…"), String(localized: "Agent's Last Turn")])
+        source.addItems(withTitles: [String(localized: "Uncommitted"), String(localized: "Unstaged"), String(localized: "Staged"),
+                                     String(localized: "Branch vs base"), String(localized: "Commit…"), String(localized: "Agent's Last Turn")])
         source.lastItem?.toolTip = String(localized: "What changed since the agent's last prompt, even with other agents in the same folder")
         source.target = self; source.action = #selector(sourceChanged); source.controlSize = .small
         status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
@@ -66,7 +67,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         table.backgroundColor = .textBackgroundColor; table.floatsGroupRows = false
         table.onKey = { [weak self] e in self?.key(e) ?? false }
         let cm = NSMenu()
-        for (t, st) in [(String(localized: "Mark Resolved"), "resolved"), (String(localized: "Reopen"), "open")] { let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st }
+        for (t, st) in [(String(localized: "Mark Resolved"), "resolved"), (String(localized: "Reopen"), "open")] {
+            let i = cm.addItem(withTitle: t, action: #selector(setCommentState(_:)), keyEquivalent: ""); i.target = self; i.representedObject = st
+        }
         table.menu = cm
         let ts = NSScrollView(); ts.documentView = table; ts.hasVerticalScroller = true; ts.autohidesScrollers = true
         setColumns()
@@ -179,9 +182,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
             let log = (try? await AppModel.shared.client?.call("git.log", .obj(["id": .string(wid), "all": true])))?.array ?? []
             let menu = NSMenu()
-            for c in log.prefix(30) { let m = menu.addItem(withTitle: "\(c["hash"]?.string ?? "")  \(c["subject"]?.string ?? "")", action: nil, keyEquivalent: ""); m.representedObject = c["hash"]?.string }
+            for c in log.prefix(30) {
+                let m = menu.addItem(withTitle: "\(c["hash"]?.string ?? "")  \(c["subject"]?.string ?? "")", action: nil, keyEquivalent: "")
+                m.representedObject = c["hash"]?.string
+            }
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
-            let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Show")); a.addButton(withTitle: String(localized: "Cancel"))
+            let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop
+            a.addButton(withTitle: String(localized: "Show")); a.addButton(withTitle: String(localized: "Cancel"))
             if runAsSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
         }
         askCommit = false
@@ -238,12 +245,14 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         switch rows[row] {
         case .comment(let c):
             guard first else { return label("", font: font) }
-            let v = label("💬 \(c.text)  [\(c.state.rawValue)]", font: .systemFont(ofSize: 11, weight: .medium)); v.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.2); v.drawsBackground = true
+            let v = label("💬 \(c.text)  [\(c.state.rawValue)]", font: .systemFont(ofSize: 11, weight: .medium))
+            v.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.2); v.drawsBackground = true
             return v
         case .diff(let r):
             switch r {
             case .file(let p, let a, let d):
-                let v = label(first ? "\(p)   " + RowBadges.changes(added: a, removed: d).string : "", font: .boldSystemFont(ofSize: 12)); v.backgroundColor = .controlBackgroundColor; v.drawsBackground = true; return v
+                let v = label(first ? "\(p)   " + RowBadges.changes(added: a, removed: d).string : "", font: .boldSystemFont(ofSize: 12))
+                v.backgroundColor = .controlBackgroundColor; v.drawsBackground = true; return v
             case .binary(let p): return label(first ? String(localized: "Binary file \(p) not shown") : "", font: font, color: .secondaryLabelColor)
             case .gap(let n): return band(first ? String(localized: "⋯  \(n) unchanged lines") : "")
             case .hunk(let f, let h, let header):
@@ -336,7 +345,9 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     func tableViewSelectionDidChange(_ n: Notification) {
         guard (n.object as? NSTableView) === files, files.selectedRow >= 0 else { return }
         let path = diffs[files.selectedRow].path
-        if let i = rows.firstIndex(where: { if case .diff(.file(let p, _, _)) = $0 { p == path } else { false } }) { table.scrollRowToVisible(min(i + 40, rows.count - 1)); table.scrollRowToVisible(i) }
+        if let i = rows.firstIndex(where: { if case .diff(.file(let p, _, _)) = $0 { p == path } else { false } }) {
+            table.scrollRowToVisible(min(i + 40, rows.count - 1)); table.scrollRowToVisible(i)
+        }
     }
 
     // MARK: keyboard: ⌥↓/⌥↑ changes, ⌥→/⌥← files

@@ -256,7 +256,10 @@ enum WorkspaceActions {
                 : String(localized: "Remove \(clean.count) clean worktrees (\(size))?")
             let names = clean.prefix(10).map { "\(WorktreeSizes.name($0.path, root: r.path))  \(WorktreeSizes.size($0.bytes))" }
             a.informativeText = (clean.count > 1 ? names.joined(separator: "\n") + (clean.count > 10 ? "\n…" : "") + "\n\n" : "")
-                + String(localized: "Nothing uncommitted is lost: git removes only clean worktrees. A branch goes too if its commits are on another branch. Ignored files (builds, copied .env) go with the folder.")
+                + String(localized: """
+                    Nothing uncommitted is lost: git removes only clean worktrees. A branch goes too if its commits are on another branch. \
+                    Ignored files (builds, copied .env) go with the folder.
+                    """)
             a.addButton(withTitle: clean.count == 1 ? String(localized: "Remove Worktree") : String(localized: "Remove \(clean.count) Worktrees")).hasDestructiveAction = true
             a.addButton(withTitle: String(localized: "Cancel"))
             guard await runSheet(a) == .alertFirstButtonReturn,

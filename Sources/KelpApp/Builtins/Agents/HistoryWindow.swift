@@ -20,7 +20,8 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
 
     private func build() {
-        for (id, title, w) in [("agent", "Agent", 70.0), ("title", String(localized: "Conversation"), 380), ("cwd", String(localized: "Folder"), 260), ("updated", String(localized: "Last active"), 130)] {
+        for (id, title, w) in [("agent", "Agent", 70.0), ("title", String(localized: "Conversation"), 380),
+                               ("cwd", String(localized: "Folder"), 260), ("updated", String(localized: "Last active"), 130)] {
             let c = NSTableColumn(identifier: .init(id)); c.title = title; c.width = w; table.addTableColumn(c)
         }
         table.dataSource = self; table.delegate = self; table.rowHeight = 22; table.style = .inset; table.usesAlternatingRowBackgroundColors = true

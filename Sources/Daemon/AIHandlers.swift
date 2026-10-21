@@ -87,7 +87,8 @@ extension Daemon {
         sleepAssertion.withLock { held in   // the ticker and a settings change at once: one assertion
             if want, held == 0 {
                 var id: IOPMAssertionID = 0
-                if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { held = id }
+                if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                                               "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { held = id }
             } else if !want, held != 0 {
                 IOPMAssertionRelease(held); held = 0
             }

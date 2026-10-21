@@ -31,7 +31,9 @@ final class MarkdownTab: NSViewController {
             x.bezelStyle = .texturedRounded; x.toolTip = tip; return x
         }
         mode.selectedSegment = startInPreview ? 2 : 1; mode.target = self; mode.action = #selector(modeChanged)
-        let heading = NSPopUpButton(); heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"), String(localized: "Heading 2"), String(localized: "Heading 3")]); heading.target = self; heading.action = #selector(headingPicked(_:))
+        let heading = NSPopUpButton()
+        heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"), String(localized: "Heading 2"), String(localized: "Heading 3")])
+        heading.target = self; heading.action = #selector(headingPicked(_:))
         heading.bezelStyle = .texturedRounded
         let bar = NSStackView(views: [heading, b("bold", String(localized: "Bold (⌘B)"), #selector(bold)), b("italic", String(localized: "Italic (⌘I)"), #selector(italic)),
                                       b("chevron.left.forwardslash.chevron.right", String(localized: "Code"), #selector(code)), b("link", String(localized: "Link (⌘K)"), #selector(link)),

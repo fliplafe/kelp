@@ -35,7 +35,9 @@ struct IntegrationsSettings: View {
                             jiraStatus = String(localized: "Connected as \(r["name"]?.string ?? "")"); jiraToken = ""
                         }
                     } }.disabled(jiraSite.isEmpty || jiraEmail.isEmpty || jiraToken.isEmpty)
-                    Button("Disconnect") { Task { if await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])) != nil { jiraStatus = String(localized: "Not connected") } } }
+                    Button("Disconnect") { Task {
+                        if await AppModel.shared.call("jira.setCredentials", .obj(["site": "", "email": "", "token": ""])) != nil { jiraStatus = String(localized: "Not connected") }
+                    } }
                 }
                 Text("API token from id.atlassian.com › Security. Stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
             }

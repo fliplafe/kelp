@@ -181,12 +181,15 @@ struct SettingRow: View {
     static func label(_ key: String, _ v: String) -> String {
         switch key {
         case "agents.default": return AgentCatalog.name(v)
-        case "workbench.theme": return v == "auto" ? String(localized: "Match System") : v == "ghostty" ? String(localized: "Ghostty config") : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
+        case "workbench.theme":
+            return v == "auto" ? String(localized: "Match System") : v == "ghostty" ? String(localized: "Ghostty config")
+                : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
         case "workbench.iconTheme": return FileIcon.themes.first { $0.id == v }?.label ?? v
         case "power.keepAwake": return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
         case "sessions.hibernateMinutes":
             let m = Int(v) ?? -1
-            return m == 0 ? String(localized: "Never") : m == 60 ? String(localized: "After 1 hour") : m > 0 && m % 60 == 0 ? String(localized: "After \(m / 60) hours") : String(localized: "After \(v) minutes")
+            return m == 0 ? String(localized: "Never") : m == 60 ? String(localized: "After 1 hour")
+                : m > 0 && m % 60 == 0 ? String(localized: "After \(m / 60) hours") : String(localized: "After \(v) minutes")
         default: return loc(v.prefix(1).uppercased() + v.dropFirst())
         }
     }

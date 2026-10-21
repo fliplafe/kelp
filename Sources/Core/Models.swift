@@ -88,7 +88,8 @@ public struct Session: Codable, Sendable, Equatable, FetchableRecord, Persistabl
     /// The account profile it started with (Settings › Accounts); nil: the agent's own default login. Kept so a woken or
     /// restarted session comes back on the same account.
     public var profile: String?
-    public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil, status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
+    public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil,
+                status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {
         self.id = id; self.worktreeId = worktreeId; self.cwd = cwd; self.command = command; self.agent = agent
         self.status = status; self.statusAt = createdAt; self.unread = unread; self.pid = pid; self.createdAt = createdAt

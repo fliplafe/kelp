@@ -406,7 +406,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             lead = img
         }
         let t1 = NSTextField(labelWithString: ""); t1.attributedStringValue = Self.highlighted(it.title, field.stringValue); t1.lineBreakMode = .byTruncatingTail
-        let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = it.kind == "Setting" ? .byTruncatingTail : .byTruncatingMiddle   // paths keep both ends, prose its start
+        let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor
+        t2.lineBreakMode = it.kind == "Setting" ? .byTruncatingTail : .byTruncatingMiddle   // paths keep both ends, prose its start
         t2.isHidden = it.detail.isEmpty
         // Empty field: the agents on ⌘1–⌘6 say so.
         let n = showingRecents && row < 6 && it.kind != "Workspace" ? "⌘\(row + 1)  " : ""

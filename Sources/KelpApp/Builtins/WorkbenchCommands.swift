@@ -78,7 +78,8 @@ extension Builtins {
     }
 
     private static func restartService() {
-        let a = NSAlert(); a.messageText = String(localized: "Restart the background service?"); a.informativeText = String(localized: "Running agent sessions end. Workspaces, history and settings are kept.")
+        let a = NSAlert(); a.messageText = String(localized: "Restart the background service?")
+        a.informativeText = String(localized: "Running agent sessions end. Workspaces, history and settings are kept.")
         a.addButton(withTitle: String(localized: "Restart")); a.addButton(withTitle: String(localized: "Cancel"))
         Task { if await runSheet(a) == .alertFirstButtonReturn { await AppModel.shared.restartDaemon() } }
     }

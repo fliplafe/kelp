@@ -179,7 +179,8 @@ private final class TabButton: NSControl, NSDraggingSource {
         wantsLayer = true; layer?.cornerRadius = 6
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
         title.font = .systemFont(ofSize: 12); title.lineBreakMode = .byTruncatingTail
-        close.image = .symbol("xmark", String(localized: "Close Tab")); close.toolTip = String(localized: "Close Tab (⌘W)"); close.isBordered = false; close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+        close.image = .symbol("xmark", String(localized: "Close Tab")); close.toolTip = String(localized: "Close Tab (⌘W)"); close.isBordered = false
+        close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
         close.contentTintColor = .secondaryLabelColor; close.target = self; close.action = #selector(closeTapped)
         // Unsaved changes: a dot where the close button goes (as in TextEdit's tabs); hovering shows the close button.
         editedDot.image = .symbol("circle.fill", String(localized: "Edited")); editedDot.symbolConfiguration = .init(pointSize: 9, weight: .bold)

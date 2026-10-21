@@ -157,67 +157,78 @@ final class Renderer {
         while i < ls.count {
             let l = ls[i], ind = l.indent
             if l.blank { i += 1; continue }
-            if ind >= 4 {
-                var body: [String] = [], j = i
-                while j < ls.count, ls[j].blank || ls[j].indent >= 4 { body.append(String(ls[j].s.dropFirst(4))); j += 1 }
-                while body.last?.allSatisfy(\.isWhitespace) == true { body.removeLast() }
-                out.append("<pre data-line=\"\(l.n)\"><code>\(MarkdownHTML.esc(body.joined(separator: "\n")))\n</code></pre>")
-                i = j; continue
-            }
             let s = String(l.s.dropFirst(ind))
-            if let f = fence(s) {
-                var body: [String] = [], j = i + 1
-                while j < ls.count {
-                    let x = ls[j]
-                    if x.indent < 4, let c = fence(String(x.s.dropFirst(x.indent))), c.ch == f.ch, c.len >= f.len, c.info.isEmpty { j += 1; break }
-                    body.append(x.dropping(ind).s); j += 1
-                }
-                let lang = f.info.split(separator: " ").first.map { " class=\"language-\(MarkdownHTML.esc(String($0)))\"" } ?? ""
-                let code = body.isEmpty ? "" : MarkdownHTML.esc(body.joined(separator: "\n")) + "\n"
-                out.append("<pre data-line=\"\(l.n)\"><code\(lang)>\(code)</code></pre>")
-                i = j; continue
-            }
-            if let h = atx(s) { out.append(heading(h.0, h.1, l.n)); i += 1; continue }
-            if isHR(s) { out.append("<hr data-line=\"\(l.n)\">"); i += 1; continue }
-            if s.hasPrefix(">") {
-                var inner: [Line] = [], j = i
-                while j < ls.count {
-                    let x = ls[j], xs = x.s.dropFirst(min(x.indent, 3))
-                    if x.indent < 4, xs.hasPrefix(">") {
-                        var rest = xs.dropFirst()
-                        if rest.first == " " { rest = rest.dropFirst() }
-                        inner.append(Line(s: String(rest), n: x.n))
-                    } else if !x.blank, inner.last?.blank == false, !interrupts(x.s) {
-                        inner.append(x) // lazy continuation
-                    } else { break }
-                    j += 1
-                }
-                out.append("<blockquote data-line=\"\(l.n)\">\n\(blocks(inner))\n</blockquote>")
-                i = j; continue
-            }
-            if let m = marker(l.s) { let (html, j) = list(ls, i, m); out.append(html); i = j; continue }
-            if isTable(ls, i) { let (html, j) = table(ls, i); out.append(html); i = j; continue }
-            if def(s) != nil { i += 1; continue }
-
-            var text: [String] = [], j = i, setext = 0
-            while j < ls.count {
-                let x = ls[j]
-                if x.blank { break }
-                if j > i {
-                    let t = x.s.trimmingCharacters(in: .whitespaces)
-                    if x.indent < 4, let c = t.first, c == "=" || c == "-", t.allSatisfy({ $0 == c }) { setext = c == "=" ? 1 : 2; j += 1; break }
-                    if interrupts(x.s) || isTable(ls, j) { break }
-                }
-                text.append(String(x.s.drop { $0 == " " })); j += 1
-            }
-            let raw = text.joined(separator: "\n").replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-            if setext > 0 { out.append(heading(setext, raw, l.n)) } else {
-                let body = inline(raw)
-                if !body.isEmpty { out.append(tight ? body : "<p data-line=\"\(l.n)\">\(body)</p>") }
-            }
-            i = j
+            let block: (html: String?, end: Int)
+            if ind >= 4 { block = indentedCode(ls, i) }
+            else if let f = fence(s) { block = fencedCode(ls, i, f) }
+            else if let h = atx(s) { block = (heading(h.0, h.1, l.n), i + 1) }
+            else if isHR(s) { block = ("<hr data-line=\"\(l.n)\">", i + 1) }
+            else if s.hasPrefix(">") { block = blockquote(ls, i) }
+            else if let m = marker(l.s) { block = list(ls, i, m) }
+            else if isTable(ls, i) { block = table(ls, i) }
+            else if def(s) != nil { block = (nil, i + 1) }   // a link reference definition: read already, shows nothing
+            else { block = paragraph(ls, i, tight: tight) }
+            if let html = block.html { out.append(html) }
+            i = block.end
         }
         return out.joined(separator: "\n")
+    }
+
+    // Each reads the block that starts at ls[i] and returns its HTML and the line after it.
+
+    private func indentedCode(_ ls: [Line], _ i: Int) -> (String?, Int) {
+        var body: [String] = [], j = i
+        while j < ls.count, ls[j].blank || ls[j].indent >= 4 { body.append(String(ls[j].s.dropFirst(4))); j += 1 }
+        while body.last?.allSatisfy(\.isWhitespace) == true { body.removeLast() }
+        return ("<pre data-line=\"\(ls[i].n)\"><code>\(MarkdownHTML.esc(body.joined(separator: "\n")))\n</code></pre>", j)
+    }
+
+    private func fencedCode(_ ls: [Line], _ i: Int, _ f: (ch: Character, len: Int, info: String)) -> (String?, Int) {
+        let ind = ls[i].indent
+        var body: [String] = [], j = i + 1
+        while j < ls.count {
+            let x = ls[j]
+            if x.indent < 4, let c = fence(String(x.s.dropFirst(x.indent))), c.ch == f.ch, c.len >= f.len, c.info.isEmpty { j += 1; break }
+            body.append(x.dropping(ind).s); j += 1
+        }
+        let lang = f.info.split(separator: " ").first.map { " class=\"language-\(MarkdownHTML.esc(String($0)))\"" } ?? ""
+        let code = body.isEmpty ? "" : MarkdownHTML.esc(body.joined(separator: "\n")) + "\n"
+        return ("<pre data-line=\"\(ls[i].n)\"><code\(lang)>\(code)</code></pre>", j)
+    }
+
+    private func blockquote(_ ls: [Line], _ i: Int) -> (String?, Int) {
+        var inner: [Line] = [], j = i
+        while j < ls.count {
+            let x = ls[j], xs = x.s.dropFirst(min(x.indent, 3))
+            if x.indent < 4, xs.hasPrefix(">") {
+                var rest = xs.dropFirst()
+                if rest.first == " " { rest = rest.dropFirst() }
+                inner.append(Line(s: String(rest), n: x.n))
+            } else if !x.blank, inner.last?.blank == false, !interrupts(x.s) {
+                inner.append(x) // lazy continuation
+            } else { break }
+            j += 1
+        }
+        return ("<blockquote data-line=\"\(ls[i].n)\">\n\(blocks(inner))\n</blockquote>", j)
+    }
+
+    /// A paragraph, or a setext heading when an `===` / `---` line ends it.
+    private func paragraph(_ ls: [Line], _ i: Int, tight: Bool) -> (String?, Int) {
+        var text: [String] = [], j = i, setext = 0
+        while j < ls.count {
+            let x = ls[j]
+            if x.blank { break }
+            if j > i {
+                let t = x.s.trimmingCharacters(in: .whitespaces)
+                if x.indent < 4, let c = t.first, c == "=" || c == "-", t.allSatisfy({ $0 == c }) { setext = c == "=" ? 1 : 2; j += 1; break }
+                if interrupts(x.s) || isTable(ls, j) { break }
+            }
+            text.append(String(x.s.drop { $0 == " " })); j += 1
+        }
+        let raw = text.joined(separator: "\n").replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+        if setext > 0 { return (heading(setext, raw, ls[i].n), j) }
+        let body = inline(raw)
+        return (body.isEmpty ? nil : tight ? body : "<p data-line=\"\(ls[i].n)\">\(body)</p>", j)
     }
 
     private func heading(_ level: Int, _ raw: String, _ n: Int) -> String {

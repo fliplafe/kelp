@@ -1,0 +1,5 @@
+# TerminalKit wraps libghostty and changes only when asked (CLAUDE.md): its sizes are left as they are.
+disabled_rules:
+  - file_length
+  - type_body_length
+  - line_length

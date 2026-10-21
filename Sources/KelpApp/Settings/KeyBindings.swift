@@ -134,7 +134,8 @@ enum KeyBindings {
         let names: [Int: String] = [7: String(localized: "moving focus to the menu bar"), 8: String(localized: "moving focus to the Dock"), 9: String(localized: "moving focus to the active window"),
                                     27: String(localized: "moving focus to the next window"), 28: String(localized: "a screenshot"), 29: String(localized: "a screenshot to the clipboard"),
                                     30: String(localized: "a screenshot of an area"), 31: String(localized: "an area screenshot to the clipboard"), 32: "Mission Control",
-                                    33: String(localized: "application windows"), 36: String(localized: "Show Desktop"), 52: String(localized: "Dock hiding"), 60: String(localized: "the previous input source"),
+                                    33: String(localized: "application windows"), 36: String(localized: "Show Desktop"), 52: String(localized: "Dock hiding"),
+                                    60: String(localized: "the previous input source"),
                                     61: String(localized: "the next input source"), 64: "Spotlight", 65: String(localized: "Finder search"), 79: String(localized: "moving a space left"),
                                     81: String(localized: "moving a space right"), 98: String(localized: "the Help menu"), 160: "Launchpad", 175: String(localized: "Do Not Disturb"),
                                     184: String(localized: "screenshot options"), 190: String(localized: "Quick Note")]

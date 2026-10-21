@@ -32,7 +32,8 @@ class StubURL: URLProtocol, @unchecked Sendable {
         let sent = Sent(method: r.httpMethod ?? "GET", path: (r.url?.path ?? "") + (r.url?.query.map { "?" + $0 } ?? ""), auth: r.value(forHTTPHeaderField: "Authorization"), body: body)
         let route = Self.lock.withLock { Self.log[host, default: []].append(sent); return Self.routes[host] }
         let (code, text) = route?(sent) ?? (500, "")
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: r.url ?? URL(fileURLWithPath: "/"), statusCode: code, httpVersion: nil, headerFields: nil) ?? URLResponse(), cacheStoragePolicy: .notAllowed)
+        let response: URLResponse = HTTPURLResponse(url: r.url ?? URL(fileURLWithPath: "/"), statusCode: code, httpVersion: nil, headerFields: nil) ?? URLResponse()
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(text.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -57,7 +58,10 @@ private func basic(_ user: String, _ pass: String) -> String { "Basic " + Data("
 
 @Test func jiraSearchEncodesTheQuery() async throws {
     let host = "jira-\(UUID().uuidString.prefix(6).lowercased()).test"
-    StubURL.serve(host) { _ in (200, #"{"issues":[{"key":"ENG-1","fields":{"summary":"Fix","status":{"name":"To Do","statusCategory":{"key":"new"}},"issuetype":{"name":"Bug"},"project":{"key":"ENG"}}}]}"#) }
+    StubURL.serve(host) { _ in
+        (200, #"{"issues":[{"key":"ENG-1","fields":{"summary":"Fix","status":{"name":"To Do","statusCategory":{"key":"new"}},"#
+            + #""issuetype":{"name":"Bug"},"project":{"key":"ENG"}}}]}"#)
+    }
     let issues = try await JiraClient(site: "https://\(host)/", email: "a", token: "b").search(jql: "project = ENG AND text ~ \"a&b\"", max: 5)
     #expect(issues.map(\.key) == ["ENG-1"] && issues[0].url == "https://\(host)/browse/ENG-1")
     let path = try #require(StubURL.sent(host).first?.path)
@@ -81,7 +85,8 @@ private func basic(_ user: String, _ pass: String) -> String { "Basic " + Data("
 @Suite(.serialized) struct FixedHostClients {
     @Test func linearSendsTheKeyAndReadsIssues() async throws {
         StubURL.serve("api.linear.app") { _ in
-            (200, #"{"data":{"viewer":{"assignedIssues":{"nodes":[{"id":"i1","identifier":"ENG-1","title":"Fix","description":"","url":"u","branchName":"eng-1","state":{"id":"s","name":"Todo","type":"unstarted"},"team":{"id":"t","key":"ENG","name":"Eng"}}]}}}}"#)
+            (200, #"{"data":{"viewer":{"assignedIssues":{"nodes":[{"id":"i1","identifier":"ENG-1","title":"Fix","description":"","url":"u","#
+                + #""branchName":"eng-1","state":{"id":"s","name":"Todo","type":"unstarted"},"team":{"id":"t","key":"ENG","name":"Eng"}}]}}}}"#)
         }
         let issues = try await LinearClient(apiKey: "lin_key").myIssues()
         #expect(issues.map(\.identifier) == ["ENG-1"])

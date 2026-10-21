@@ -27,7 +27,8 @@ final class Box: @unchecked Sendable {
     let kelp = root.appendingPathComponent(".build/debug/kelp").path
     try #require(FileManager.default.isExecutableFile(atPath: kelp), "build the kelp CLI first: swift build")
     let box = Box()
-    let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"], cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: kelp)
+    let p = try PTY(argv: ["/bin/sh", "-c", "trap 'stty size; exit' WINCH; echo ready tty=$(ps -o tty= -p $$) size=$(stty size); while :; do sleep 0.1; done"],
+                    cwd: "/tmp", env: [:], cols: 100, rows: 30, trampoline: kelp)
     p.onOutput = { box.add(String(bytes: $0, encoding: .utf8) ?? "") }
     p.start()
     // Wait for the child rather than a fixed time: a busy machine (parallel builds) starts it late.

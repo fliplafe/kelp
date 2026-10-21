@@ -141,7 +141,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 self.rows = rows
                 // Empty because of the filter isn't the same as empty: say which, and offer the way back.
                 let narrowed = rows.isEmpty && f > 0 && src < 2
-                status.stringValue = rows.isEmpty ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here.")) : String(localized: "\(rows.count) items")
+                status.stringValue = rows.isEmpty
+                    ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here."))
+                    : String(localized: "\(rows.count) items")
                 showAll.isHidden = !narrowed
             } catch {
                 guard repoId == self.repoId, src == source.indexOfSelectedItem else { return }
@@ -221,7 +223,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func prDetail(_ r: JSONValue) {
         let n = r["number"]?.int ?? 0, branch = r["headRefName"]?.string ?? ""
         detail.addArrangedSubview(label("#\(n)  \(r["title"]?.string ?? "")", size: 17, weight: .semibold))
-        detail.addArrangedSubview(label(String(localized: "\(r["author"]?.string ?? "") wants to merge \(branch)\(r["isDraft"]?.bool == true ? String(localized: " · draft") : "")\(r["reviewDecision"]?.string.map { " · " + $0.lowercased().replacingOccurrences(of: "_", with: " ") } ?? "")"), color: .secondaryLabelColor))
+        let author = r["author"]?.string ?? "", draft = r["isDraft"]?.bool == true ? String(localized: " · draft") : ""
+        let decision = r["reviewDecision"]?.string.map { " · " + $0.lowercased().replacingOccurrences(of: "_", with: " ") } ?? ""
+        detail.addArrangedSubview(label(String(localized: "\(author) wants to merge \(branch)\(draft)\(decision)"), color: .secondaryLabelColor))
         let wt = worktreeFor(branch: branch)
         let actions = NSStackView(); actions.spacing = 8
         if let wt {

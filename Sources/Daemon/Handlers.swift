@@ -33,7 +33,9 @@ extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
+                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self]
+                                                          + gitMethods + workspaceMethods + sessionMethods + integrationMethods
+                                                          + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lastMethod.withLock { $0 = method } }

@@ -8,94 +8,29 @@ extension Renderer {
         func flush() { if !buf.isEmpty { nodes.append(.html(buf)); buf = "" } }
         while i < c.count {
             let ch = c[i]
+            var piece: (html: String, end: Int)?
             switch ch {
-            case "\\":
-                if i + 1 < c.count, c[i + 1] == "\n" { buf += "<br>\n"; i += 2 }
-                else if i + 1 < c.count, isASCIIPunct(c[i + 1]) { buf += MarkdownHTML.esc(String(c[i + 1])); i += 2 }
-                else { buf += "\\"; i += 1 }
-            case "`":
-                var n = 0
-                while i + n < c.count, c[i + n] == "`" { n += 1 }
-                var k = i + n, close: Int?
-                while k < c.count {
-                    guard c[k] == "`" else { k += 1; continue }
-                    var m = 0
-                    while k + m < c.count, c[k + m] == "`" { m += 1 }
-                    if m == n { close = k; break }
-                    k += m
-                }
-                if let f = close {
-                    var code = String(c[(i + n)..<f]).replacingOccurrences(of: "\n", with: " ")
-                    if code.count >= 2, code.first == " ", code.last == " ", !code.allSatisfy({ $0 == " " }) { code = String(code.dropFirst().dropLast()) }
-                    buf += "<code>\(MarkdownHTML.esc(code))</code>"; i = f + n
-                } else { buf += String(repeating: "`", count: n); i += n }
+            case "\\": piece = backslash(c, i)
+            case "`": piece = codeSpan(c, i)
             case "*", "_", "~":
-                var e = i
-                while e < c.count, c[e] == ch { e += 1 }
-                let run = e - i
-                if ch == "~", run > 2 { buf += String(repeating: "~", count: run); i = e; continue }
-                let prev: Character = i > 0 ? c[i - 1] : " ", next: Character = e < c.count ? c[e] : " "
-                let pw = prev.isWhitespace, nw = next.isWhitespace, pp = isPunct(prev), np = isPunct(next)
-                let left = !nw && (!np || pw || pp), right = !pw && (!pp || nw || np)
-                flush()
-                nodes.append(.delim(Delim(ch: ch, orig: run, count: run,
-                                          open: ch == "_" ? left && (!right || pp) : left,
-                                          close: ch == "_" ? right && (!left || np) : right)))
-                i = e
-            case "!" where links && i + 1 < c.count && c[i + 1] == "[":
-                if let r = link(c, i, image: true) { buf += r.0; i = r.1 } else { buf += "!"; i += 1 }
-            case "[" where links:
-                if let r = link(c, i, image: false) { buf += r.0; i = r.1 } else { buf += "["; i += 1 }
-            case "<":
-                if i + 3 < c.count, c[i + 1] == "!", c[i + 2] == "-", c[i + 3] == "-",
-                   let r = String(c[i...]).range(of: "-->") {
-                    i += String(c[i...])[..<r.upperBound].count; continue // drop HTML comments
-                }
-                if links, let close = c[(i + 1)...].firstIndex(of: ">") {
-                    let inner = String(c[(i + 1)..<close])
-                    if !inner.contains(where: { $0.isWhitespace || $0 == "<" }) {
-                        if inner.contains(":"), inner.wholeMatch(of: /[A-Za-z][A-Za-z0-9+.\-]{1,31}:.+/) != nil {
-                            buf += "<a href=\"\(MarkdownHTML.esc(safe(inner)))\">\(MarkdownHTML.esc(inner))</a>"; i = close + 1; continue
-                        }
-                        if inner.contains("@"), inner.wholeMatch(of: /[^@\s]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+/) != nil {
-                            buf += "<a href=\"mailto:\(MarkdownHTML.esc(inner))\">\(MarkdownHTML.esc(inner))</a>"; i = close + 1; continue
-                        }
-                    }
-                }
-                buf += "&lt;"; i += 1
-            case "&":
-                var k = i + 1
-                while k < c.count, k - i < 33, c[k].isASCII, c[k].isLetter || c[k].isNumber || c[k] == "#" { k += 1 }
-                if k < c.count, k > i + 1, c[k] == ";" { buf += String(c[i...k]); i = k + 1 } else { buf += "&amp;"; i += 1 }
+                let (node, end) = delimiterRun(c, i)
+                if let node { flush(); nodes.append(node) } else { buf += String(c[i..<end]) }
+                i = end; continue
+            case "!" where links && i + 1 < c.count && c[i + 1] == "[": piece = link(c, i, image: true) ?? ("!", i + 1)
+            case "[" where links: piece = link(c, i, image: false) ?? ("[", i + 1)
+            case "<": piece = angle(c, i, links: links)
+            case "&": piece = entity(c, i)
             case "\n":
                 let hard = buf.hasSuffix("  ")
                 while buf.last == " " { buf.removeLast() }
-                buf += hard ? "<br>\n" : "\n"; i += 1
-            case "h", "w":
-                var plen = 0
-                if links, i == 0 || c[i - 1].isWhitespace || "(*_~\"'".contains(c[i - 1]) {
-                    let head = String(c[i..<min(c.count, i + 8)]).lowercased()
-                    plen = head.hasPrefix("https://") ? 8 : head.hasPrefix("http://") ? 7 : head.hasPrefix("www.") ? 4 : 0
-                }
-                guard plen > 0 else { buf.append(ch); i += 1; continue }
-                var e = i
-                while e < c.count, !c[e].isWhitespace, !"<>\"`".contains(c[e]) { e += 1 }
-                while e > i {
-                    let last = c[e - 1]
-                    if "?!.,:*_~'\";".contains(last) { e -= 1; continue }
-                    if last == ")" {
-                        let u = c[i..<e]
-                        if u.filter({ $0 == "(" }).count < u.filter({ $0 == ")" }).count { e -= 1; continue }
-                    }
-                    break
-                }
-                guard e - i > plen else { buf.append(ch); i += 1; continue }
-                let url = String(c[i..<e])
-                buf += "<a href=\"\(MarkdownHTML.esc(plen == 4 ? "http://" + url : url))\">\(MarkdownHTML.esc(url))</a>"; i = e
-            case ">": buf += "&gt;"; i += 1
-            case "\"": buf += "&quot;"; i += 1
-            default: buf.append(ch); i += 1
+                piece = (hard ? "<br>\n" : "\n", i + 1)
+            case "h", "w": piece = links ? bareLink(c, i) : nil
+            case ">": piece = ("&gt;", i + 1)
+            case "\"": piece = ("&quot;", i + 1)
+            default: break
             }
+            let (html, end) = piece ?? (String(ch), i + 1)
+            buf += html; i = end
         }
         flush()
         emphasis(&nodes)
@@ -105,6 +40,96 @@ extension Renderer {
             case .delim(let d): return d.post.joined() + String(repeating: d.ch, count: d.count) + d.pre.joined()
             }
         }.joined()
+    }
+
+    // Each reads what starts at c[i] and returns its HTML and where the text goes on.
+
+    /// `\` a hard break before a newline, else the punctuation it escapes.
+    private func backslash(_ c: [Character], _ i: Int) -> (String, Int) {
+        if i + 1 < c.count, c[i + 1] == "\n" { return ("<br>\n", i + 2) }
+        if i + 1 < c.count, isASCIIPunct(c[i + 1]) { return (MarkdownHTML.esc(String(c[i + 1])), i + 2) }
+        return ("\\", i + 1)
+    }
+
+    /// A code span: as many backticks closing it as opened it; unclosed, the backticks as text.
+    private func codeSpan(_ c: [Character], _ i: Int) -> (String, Int) {
+        var n = 0
+        while i + n < c.count, c[i + n] == "`" { n += 1 }
+        var k = i + n, close: Int?
+        while k < c.count {
+            guard c[k] == "`" else { k += 1; continue }
+            var m = 0
+            while k + m < c.count, c[k + m] == "`" { m += 1 }
+            if m == n { close = k; break }
+            k += m
+        }
+        guard let f = close else { return (String(repeating: "`", count: n), i + n) }
+        var code = String(c[(i + n)..<f]).replacingOccurrences(of: "\n", with: " ")
+        if code.count >= 2, code.first == " ", code.last == " ", !code.allSatisfy({ $0 == " " }) { code = String(code.dropFirst().dropLast()) }
+        return ("<code>\(MarkdownHTML.esc(code))</code>", f + n)
+    }
+
+    /// A run of `*`, `_` or `~`: a delimiter for `emphasis` (nil: three or more `~`, just text) and where it ends.
+    private func delimiterRun(_ c: [Character], _ i: Int) -> (Node?, Int) {
+        let ch = c[i]
+        var e = i
+        while e < c.count, c[e] == ch { e += 1 }
+        let run = e - i
+        if ch == "~", run > 2 { return (nil, e) }
+        let prev: Character = i > 0 ? c[i - 1] : " ", next: Character = e < c.count ? c[e] : " "
+        let pw = prev.isWhitespace, nw = next.isWhitespace, pp = isPunct(prev), np = isPunct(next)
+        let left = !nw && (!np || pw || pp), right = !pw && (!pp || nw || np)
+        let open = ch == "_" ? left && (!right || pp) : left, close = ch == "_" ? right && (!left || np) : right
+        return (.delim(Delim(ch: ch, orig: run, count: run, open: open, close: close)), e)
+    }
+
+    /// `<`: an HTML comment (dropped), an autolink (`<https://…>`, `<a@b.c>`), else `&lt;`.
+    private func angle(_ c: [Character], _ i: Int, links: Bool) -> (String, Int) {
+        if i + 3 < c.count, c[i + 1] == "!", c[i + 2] == "-", c[i + 3] == "-", let r = String(c[i...]).range(of: "-->") {
+            return ("", i + String(c[i...])[..<r.upperBound].count)
+        }
+        if links, let close = c[(i + 1)...].firstIndex(of: ">") {
+            let inner = String(c[(i + 1)..<close])
+            if !inner.contains(where: { $0.isWhitespace || $0 == "<" }) {
+                if inner.contains(":"), inner.wholeMatch(of: /[A-Za-z][A-Za-z0-9+.\-]{1,31}:.+/) != nil {
+                    return ("<a href=\"\(MarkdownHTML.esc(safe(inner)))\">\(MarkdownHTML.esc(inner))</a>", close + 1)
+                }
+                if inner.contains("@"), inner.wholeMatch(of: /[^@\s]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+/) != nil {
+                    return ("<a href=\"mailto:\(MarkdownHTML.esc(inner))\">\(MarkdownHTML.esc(inner))</a>", close + 1)
+                }
+            }
+        }
+        return ("&lt;", i + 1)
+    }
+
+    /// `&name;` / `&#123;` as is, else `&amp;`.
+    private func entity(_ c: [Character], _ i: Int) -> (String, Int) {
+        var k = i + 1
+        while k < c.count, k - i < 33, c[k].isASCII, c[k].isLetter || c[k].isNumber || c[k] == "#" { k += 1 }
+        if k < c.count, k > i + 1, c[k] == ";" { return (String(c[i...k]), k + 1) }
+        return ("&amp;", i + 1)
+    }
+
+    /// A bare `https://…`, `http://…` or `www.…` at a word's start, without the punctuation that ends a sentence.
+    private func bareLink(_ c: [Character], _ i: Int) -> (String, Int)? {
+        guard i == 0 || c[i - 1].isWhitespace || "(*_~\"'".contains(c[i - 1]) else { return nil }
+        let head = String(c[i..<min(c.count, i + 8)]).lowercased()
+        let plen = head.hasPrefix("https://") ? 8 : head.hasPrefix("http://") ? 7 : head.hasPrefix("www.") ? 4 : 0
+        guard plen > 0 else { return nil }
+        var e = i
+        while e < c.count, !c[e].isWhitespace, !"<>\"`".contains(c[e]) { e += 1 }
+        while e > i {
+            let last = c[e - 1]
+            if "?!.,:*_~'\";".contains(last) { e -= 1; continue }
+            if last == ")" {
+                let u = c[i..<e]
+                if u.filter({ $0 == "(" }).count < u.filter({ $0 == ")" }).count { e -= 1; continue }
+            }
+            break
+        }
+        guard e - i > plen else { return nil }
+        let url = String(c[i..<e])
+        return ("<a href=\"\(MarkdownHTML.esc(plen == 4 ? "http://" + url : url))\">\(MarkdownHTML.esc(url))</a>", e)
     }
 
     /// CommonMark "process emphasis", minus the openers_bottom optimisation (O(n²) on pathological input).

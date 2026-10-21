@@ -48,103 +48,112 @@ extension AppDelegate {
                 let p = s.split(separator: "=", maxSplits: 1).map(String.init)
                 if p[0] == "remote" { RemoteSheet.show(start: p.count > 1 ? p[1] : nil) } else { CloneSheet.show(start: p.count > 1 ? p[1] : nil) }
             }
-            if let keys = env["KELP_TYPE"] { typeKeys(keys) }
-            // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
-            if let targets = env["KELP_CLICK"]?.split(separator: "|") {
-                let start = env["KELP_CLICK_DELAY"].flatMap(Double.init) ?? 0.3   // panels that load later need longer
-                for (i, t) in targets.enumerated() {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 0.8) { [self] in click(text: String(t)) }
-                }
-            }
-            // KELP_TERM_HOVER="app.py:2": the pointer rests on that text in a terminal (path previews).
-            #if canImport(GhosttyKit)
-            if let t = env["KELP_TERM_HOVER"], let v = main.window?.contentView {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    guard let g = v.allSubviews(of: GhosttyTerminalView.self).first, let p = g.location(of: t),
-                          let e = NSEvent.mouseEvent(with: .mouseMoved, location: g.convert(p, to: nil), modifierFlags: [], timestamp: 0,
-                                                     windowNumber: v.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { print("TERM_HOVER no", t); return }
-                    g.mouseMoved(with: e); print("TERM_HOVER", t, p)
-                }
-            }
-            #endif
-            // KELP_MOVE="Workspace 1": the pointer comes to rest on that text (hover cards): a mouse-moved event for whatever tracks it.
-            if let t = env["KELP_MOVE"], let w = main.window, let v = w.contentView { Self.move(t, in: v, window: w) }
-            // KELP_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
-            if let names = env["KELP_SWITCH"]?.split(separator: ",") {
-                for (i, n) in names.enumerated() {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 + Double(i) * 0.7) {
-                        guard let w = AppModel.shared.worktrees.first(where: { $0.displayName == n || $0.branch == n }) else { print("SWITCH no \(n)"); return }
-                        let t0 = Date()
-                        Workbench.show(workspace: w.id)
-                        self.main.window?.contentView?.layoutSubtreeIfNeeded(); self.main.window?.displayIfNeeded()
-                        print(String(format: "SWITCH %@ %.0f ms", String(n), Date().timeIntervalSince(t0) * 1000))
-                    }
-                }
-            }
+            driveInput(env)
             switch env["KELP_SNAPSHOT_WINDOW"] {
             case "history": HistoryWindow.shared.show()
             case "settings": SettingsWindow.show(section: env["KELP_SNAPSHOT_SECTION"])
             default: break
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
-            RunLoop.main.add(Timer(timeInterval: env["KELP_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5, repeats: false) { _ in MainActor.assumeIsolated { [self] in
-                let want = env["KELP_SNAPSHOT_WINDOW"].map { ["history": "Session History", "settings": "Settings"][$0] ?? $0 }
-                // The frame view includes the title bar and toolbar.
-                let picked = env["KELP_SNAPSHOT_WINDOW"] == "settings" ? SettingsWindow.window : NSApp.windows.filter(\.isVisible).last { want != nil && $0.title.hasPrefix(want ?? "") }
-                guard let w = picked ?? main.window,
-                      let v = w.contentView?.superview ?? w.contentView else { exit(2) }
-                if want != nil { print("WINDOW", w.title, w.frame) }
-                print("WINDOWS", NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? "-" : $0.title)(\(type(of: $0)))" }.joined(separator: ", "))
-                if let s = w.attachedSheet {
-                    print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
-                    // Its own window: drawn next to the snapshot as "<name>-sheet.png".
-                    Self.snap(s, to: path.replacingOccurrences(of: ".png", with: "-sheet.png"))
+            let delay = env["KELP_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5
+            RunLoop.main.add(Timer(timeInterval: delay, repeats: false) { _ in MainActor.assumeIsolated { [self] in snap(env, to: path) } }, forMode: .common)
+        }
+    }
+
+    /// KELP_TYPE, KELP_CLICK, KELP_TERM_HOVER, KELP_MOVE, KELP_SWITCH: real input events, as a user would make them.
+    private func driveInput(_ env: [String: String]) {
+        if let keys = env["KELP_TYPE"] { typeKeys(keys) }
+        // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
+        if let targets = env["KELP_CLICK"]?.split(separator: "|") {
+            let start = env["KELP_CLICK_DELAY"].flatMap(Double.init) ?? 0.3   // panels that load later need longer
+            for (i, t) in targets.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 0.8) { [self] in click(text: String(t)) }
+            }
+        }
+        // KELP_TERM_HOVER="app.py:2": the pointer rests on that text in a terminal (path previews).
+        #if canImport(GhosttyKit)
+        if let t = env["KELP_TERM_HOVER"], let v = main.window?.contentView {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                guard let g = v.allSubviews(of: GhosttyTerminalView.self).first, let p = g.location(of: t),
+                      let e = NSEvent.mouseEvent(with: .mouseMoved, location: g.convert(p, to: nil), modifierFlags: [], timestamp: 0,
+                                                 windowNumber: v.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { print("TERM_HOVER no", t); return }
+                g.mouseMoved(with: e); print("TERM_HOVER", t, p)
+            }
+        }
+        #endif
+        // KELP_MOVE="Workspace 1": the pointer comes to rest on that text (hover cards): a mouse-moved event for whatever tracks it.
+        if let t = env["KELP_MOVE"], let w = main.window, let v = w.contentView { Self.move(t, in: v, window: w) }
+        // KELP_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
+        if let names = env["KELP_SWITCH"]?.split(separator: ",") {
+            for (i, n) in names.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 + Double(i) * 0.7) {
+                    guard let w = AppModel.shared.worktrees.first(where: { $0.displayName == n || $0.branch == n }) else { print("SWITCH no \(n)"); return }
+                    let t0 = Date()
+                    Workbench.show(workspace: w.id)
+                    self.main.window?.contentView?.layoutSubtreeIfNeeded(); self.main.window?.displayIfNeeded()
+                    print(String(format: "SWITCH %@ %.0f ms", String(n), Date().timeIntervalSince(t0) * 1000))
                 }
-                // KELP_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
-                // reached otherwise without moving the user's pointer).
-                for text in (env["KELP_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
-                Self.snap(w, to: path)
-                // A popover (limits details…) is its own window: next to the snapshot, as "<name>-popover.png".
-                // An alert shown on its own (a background app has no window to put the sheet on): "<name>-alert.png".
-                for a in NSApp.windows where a.isVisible && a.className.contains("AlertPanel") {
-                    print("ALERT", (a.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
-                    Self.snap(a, to: path.replacingOccurrences(of: ".png", with: "-alert.png"))
+            }
+        }
+    }
+
+    /// The picture, and what it can't show said as text (sheets, alerts, popovers, panes, web content); then quits.
+    private func snap(_ env: [String: String], to path: String) {
+        let want = env["KELP_SNAPSHOT_WINDOW"].map { ["history": "Session History", "settings": "Settings"][$0] ?? $0 }
+        // The frame view includes the title bar and toolbar.
+        let picked = env["KELP_SNAPSHOT_WINDOW"] == "settings" ? SettingsWindow.window : NSApp.windows.filter(\.isVisible).last { want != nil && $0.title.hasPrefix(want ?? "") }
+        guard let w = picked ?? main.window,
+              let v = w.contentView?.superview ?? w.contentView else { exit(2) }
+        if want != nil { print("WINDOW", w.title, w.frame) }
+        print("WINDOWS", NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? "-" : $0.title)(\(type(of: $0)))" }.joined(separator: ", "))
+        if let s = w.attachedSheet {
+            print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
+            // Its own window: drawn next to the snapshot as "<name>-sheet.png".
+            Self.snap(s, to: path.replacingOccurrences(of: ".png", with: "-sheet.png"))
+        }
+        // KELP_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
+        // reached otherwise without moving the user's pointer).
+        for text in (env["KELP_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
+        Self.snap(w, to: path)
+        // A popover (limits details…) is its own window: next to the snapshot, as "<name>-popover.png".
+        // An alert shown on its own (a background app has no window to put the sheet on): "<name>-alert.png".
+        for a in NSApp.windows where a.isVisible && a.className.contains("AlertPanel") {
+            print("ALERT", (a.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })
+            Self.snap(a, to: path.replacingOccurrences(of: ".png", with: "-alert.png"))
+        }
+        for pop in NSApp.windows where pop.isVisible && pop.className.contains("Popover") {
+            Self.snap(pop, to: path.replacingOccurrences(of: ".png", with: "-popover.png"))
+        }
+        // In another language: menu items still in English (their text isn't in Localizable.xcstrings yet).
+        if Bundle.main.preferredLocalizations.first != "en" {
+            func walk(_ m: NSMenu) {
+                for i in m.items where !i.isSeparatorItem {
+                    if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s) }; continue }
+                    if i.title.range(of: "[А-яЁё]", options: .regularExpression) == nil, i.title.range(of: "[a-z]{3}", options: .regularExpression) != nil { print("UNTRANSLATED", i.title) }
                 }
-                for pop in NSApp.windows where pop.isVisible && pop.className.contains("Popover") {
-                    Self.snap(pop, to: path.replacingOccurrences(of: ".png", with: "-popover.png"))
-                }
-                // In another language: menu items still in English (their text isn't in Localizable.xcstrings yet).
-                if Bundle.main.preferredLocalizations.first != "en" {
-                    func walk(_ m: NSMenu) {
-                        for i in m.items where !i.isSeparatorItem {
-                            if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s) }; continue }
-                            if i.title.range(of: "[А-яЁё]", options: .regularExpression) == nil, i.title.range(of: "[a-z]{3}", options: .regularExpression) != nil { print("UNTRANSLATED", i.title) }
-                        }
+            }
+            NSApp.mainMenu.map(walk)
+        }
+        for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
+        // Web content is drawn out of process and may be missing from the PNG: report what the page really shows
+        // (not under a sheet: its run loop may not deliver the script's answer).
+        let webs = v.allSubviews(of: WKWebView.self)
+        guard !webs.isEmpty, w.attachedSheet == nil else { exit(0) }
+        var left = webs.count
+        for (i, web) in webs.enumerated() {
+            web.evaluateJavaScript("document.body ? [document.body.innerText.length, document.querySelectorAll('svg').length] : [-1, 0]") { r, _ in
+                let n = (r as? [Int]) ?? []
+                let visible = web.window != nil && !web.isHiddenOrHasHiddenAncestor
+                print("WEB", web.url?.absoluteString ?? "-", "frame", web.frame.size, "visible", visible, "text", n.first ?? -1, "svg", n.last ?? 0)
+                // What the page draws, as "<name>-web<i>.png" (it's out of process, so not in the window's PNG).
+                guard visible else { left -= 1; if left == 0 { exit(0) }; return }
+                web.takeSnapshot(with: nil) { img, _ in
+                    if let t = img?.tiffRepresentation, let png = NSBitmapImageRep(data: t)?.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-web\(i).png")))
                     }
-                    NSApp.mainMenu.map(walk)
+                    left -= 1; if left == 0 { exit(0) }
                 }
-                for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
-                // Web content is drawn out of process and may be missing from the PNG: report what the page really shows
-                // (not under a sheet: its run loop may not deliver the script's answer).
-                let webs = v.allSubviews(of: WKWebView.self)
-                guard !webs.isEmpty, w.attachedSheet == nil else { exit(0) }
-                var left = webs.count
-                for (i, web) in webs.enumerated() {
-                    web.evaluateJavaScript("document.body ? [document.body.innerText.length, document.querySelectorAll('svg').length] : [-1, 0]") { r, _ in
-                        let n = (r as? [Int]) ?? []
-                        let visible = web.window != nil && !web.isHiddenOrHasHiddenAncestor
-                        print("WEB", web.url?.absoluteString ?? "-", "frame", web.frame.size, "visible", visible, "text", n.first ?? -1, "svg", n.last ?? 0)
-                        // What the page draws, as "<name>-web<i>.png" (it's out of process, so not in the window's PNG).
-                        guard visible else { left -= 1; if left == 0 { exit(0) }; return }
-                        web.takeSnapshot(with: nil) { img, _ in
-                            if let t = img?.tiffRepresentation, let png = NSBitmapImageRep(data: t)?.representation(using: .png, properties: [:]) {
-                                try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-web\(i).png")))
-                            }
-                            left -= 1; if left == 0 { exit(0) }
-                        }
-                    }
-                }
-            } }, forMode: .common)
+            }
         }
     }
 }
@@ -206,13 +215,21 @@ extension AppDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + at) { [self] in
                 let named: [String: UInt16] = ["\u{F700}": 126, "\u{F701}": 125, "\u{F702}": 123, "\u{F703}": 124, "\t": 48, "\u{1B}": 53, "\u{7F}": 51]
                 let code = named[ch] ?? (ch.count == 1 ? codes[Character(ch.lowercased())] ?? 0 : 0)
-                defer { if !mods.isEmpty { DispatchQueue.main.async { print("KEY", mods.rawValue, ch.unicodeScalars.map { String($0.value, radix: 16) }, "→", AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-") } } }
+                defer {
+                    if !mods.isEmpty {
+                        DispatchQueue.main.async {
+                            let shown = AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-"
+                            print("KEY", mods.rawValue, ch.unicodeScalars.map { String($0.value, radix: 16) }, "→", shown)
+                        }
+                    }
+                }
                 // In the background (launched from a shell) there's no key window, so menu items that go to the
                 // responder chain (Find…, Copy) are disabled: send their action along the window's chain instead.
                 if !NSApp.isActive, mods.contains(.command), let item = Self.menuItem(ch, mods), item.target == nil, let a = item.action,
                    main.window?.firstResponder?.tryToPerform(a, with: item) == true { return }
+                let flags = (123...126).contains(code) ? mods.union([.numericPad, .function]) : mods   // arrows carry these
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
-                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: (123...126).contains(code) ? mods.union([.numericPad, .function]) : mods, timestamp: ProcessInfo.processInfo.systemUptime,
+                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                                                 windowNumber: (NSApp.keyWindow ?? main.window)?.windowNumber ?? 0, context: nil, characters: ch, charactersIgnoringModifiers: ch,
                                                 isARepeat: false, keyCode: code) { NSApp.sendEvent(e) }
                 }

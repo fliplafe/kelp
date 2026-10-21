@@ -149,6 +149,29 @@ func plist() -> String {
     static func run(_ cmd: String, _ c: RPCClient) async throws {
         let sub = args.first.flatMap { $0.hasPrefix("-") ? nil : $0 }
         if sub != nil { args.removeFirst() }
+        switch cmd {
+        case "status", "repo", "worktree": try await projects(cmd, sub, c)
+        case "session", "terminal", "wait", "report": try await sessions(cmd, sub, c)
+        case "diff", "commit", "merge", "push", "comment": try await git(cmd, sub, c)
+        case "github", "linear": try await forge(cmd, sub, c)
+        case "settings", "ui", "run": try await settingsAndUI(cmd, sub, c)
+        case "ext": try await ext(sub, c)
+        case "open": try await open(sub, c)
+        default: print(usage)
+        }
+    }
+
+    /// `open <path|url> [--split right|down] [--focus]`: a tab in the app.
+    static func open(_ sub: String?, _ c: RPCClient) async throws {
+        let split = flag("--split")
+        let focus = has("--focus") || sub == "--focus"
+        guard let target = sub.flatMap({ $0 == "--focus" ? nil : $0 }) ?? args.first else { fail("open <path|url> [--split right|down] [--focus]") }
+        let cwd = FileManager.default.currentDirectoryPath
+        show(try await IDE.open(target, split: split, cwd: cwd, focus: focus, call: { try await c.call($0, $1) }))
+    }
+
+    /// `status`, `repo …`, `worktree …`.
+    static func projects(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
         switch (cmd, sub) {
         case ("status", _):
             let repos = try await c.call("repo.list").array ?? []
@@ -181,6 +204,13 @@ func plist() -> String {
             let force = has("--force"), drop = has("--drop-commits")   // two separate losses, each asked for by name
             show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")),
                                                                    "force": .bool(force), "dropCommits": .bool(drop)])))
+        default: print(usage)
+        }
+    }
+
+    /// `session …`, `terminal …`, `wait`, `report`.
+    static func sessions(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
+        switch (cmd, sub) {
         case ("session", "new"):
             let wait = has("--wait"), split = flag("--split")
             var p: [String: JSONValue] = [:]
@@ -213,21 +243,8 @@ func plist() -> String {
         case ("terminal", "send"):
             let enter = !has("--no-enter")
             guard args.count >= 2 else { fail("terminal send <session> <text>") }
-            show(try await c.call("session.send", .obj(["id": .string(try await resolve(c, args[0], "session.list")), "text": .string(args.dropFirst().joined(separator: " ")), "enter": .bool(enter)])))
-        case ("diff", _):
-            let w = try await currentWorktree(c)
-            let d = try await c.call("git.diff", .obj(["id": w["id"] ?? .null, "source": .string(flag("--source") ?? "all")]))
-            for f in d.array ?? [] { print("\(f["path"]?.string ?? "")  +\((f["hunks"]?.array ?? []).flatMap { $0["lines"]?.array ?? [] }.filter { $0["kind"]?.string == "add" }.count) -\((f["hunks"]?.array ?? []).flatMap { $0["lines"]?.array ?? [] }.filter { $0["kind"]?.string == "del" }.count)") }
-        case ("commit", _):
-            show(try await c.call("git.commit", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "message": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "all": true])))
-        case ("merge", _): show(try await c.call("git.merge", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
-        case ("push", _): show(try await c.call("git.push", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
-        case ("comment", "add"):
-            guard args.count >= 3 else { fail("comment add <file> <line[-line]> <text>") }
-            let range = args[1].split(separator: "-").compactMap { Int($0) }
-            show(try await c.call("comment.add", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(args.dropFirst(2).joined(separator: " "))])))
-        case ("comment", "send"):
-            show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            let id = try await resolve(c, args[0], "session.list")
+            show(try await c.call("session.send", .obj(["id": .string(id), "text": .string(args.dropFirst().joined(separator: " ")), "enter": .bool(enter)])))
         case ("session", "restart"):
             show(try await c.call("session.restart", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("session", "rename"):
@@ -238,6 +255,39 @@ func plist() -> String {
             show(try await c.call("session.handoff", .object(p)))
         case ("terminal", "context"):
             show(try await c.call("session.context", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+        default: print(usage)
+        }
+    }
+
+    /// `diff`, `commit`, `merge`, `push`, `comment …` in the current workspace.
+    static func git(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
+        switch (cmd, sub) {
+        case ("diff", _):
+            let w = try await currentWorktree(c)
+            let d = try await c.call("git.diff", .obj(["id": w["id"] ?? .null, "source": .string(flag("--source") ?? "all")]))
+            for f in d.array ?? [] {
+                let lines = (f["hunks"]?.array ?? []).flatMap { $0["lines"]?.array ?? [] }
+                func count(_ kind: String) -> Int { lines.filter { $0["kind"]?.string == kind }.count }
+                print("\(f["path"]?.string ?? "")  +\(count("add")) -\(count("del"))")
+            }
+        case ("commit", _):
+            show(try await c.call("git.commit", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "message": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "all": true])))
+        case ("merge", _): show(try await c.call("git.merge", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
+        case ("push", _): show(try await c.call("git.push", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
+        case ("comment", "add"):
+            guard args.count >= 3 else { fail("comment add <file> <line[-line]> <text>") }
+            let range = args[1].split(separator: "-").compactMap { Int($0) }
+            let id = try await currentWorktree(c)["id"] ?? .null, text = args.dropFirst(2).joined(separator: " ")
+            show(try await c.call("comment.add", .obj(["id": id, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(text)])))
+        case ("comment", "send"):
+            show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null, "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+        default: print(usage)
+        }
+    }
+
+    /// `github …`, `linear …`.
+    static func forge(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
+        switch (cmd, sub) {
         case ("github", "prs"), ("github", "issues"):
             var p: [String: JSONValue] = ["repoId": .string(try await currentRepoID(c))]
             if let f = flag("--filter") { p["filter"] = .string(f) }
@@ -264,10 +314,12 @@ func plist() -> String {
             var p: [String: JSONValue] = ["repoId": .string(repo), "agent": .string(flag("--agent") ?? "claude")]
             if cmd == "github" {
                 let n = Int(ref.trimmingCharacters(in: CharacterSet(charactersIn: "#"))) ?? 0
-                guard let i = (try await c.call("github.issues", .obj(["repoId": .string(repo)])).array ?? []).first(where: { $0["number"]?.int == n }) else { fail("issue #\(n) not found among open issues") }
+                let open = try await c.call("github.issues", .obj(["repoId": .string(repo)])).array ?? []
+                guard let i = open.first(where: { $0["number"]?.int == n }) else { fail("issue #\(n) not found among open issues") }
                 p["ref"] = .string("#\(n)"); p["title"] = i["title"] ?? ""; p["body"] = i["body"] ?? ""; p["url"] = i["url"] ?? ""
             } else {
-                guard let i = (try await c.call("linear.issues").array ?? []).first(where: { $0["identifier"]?.string?.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
+                let mine = try await c.call("linear.issues").array ?? []
+                guard let i = mine.first(where: { $0["identifier"]?.string?.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
                 p["ref"] = i["identifier"] ?? ""; p["title"] = i["title"] ?? ""; p["body"] = i["description"] ?? ""; p["url"] = i["url"] ?? ""; p["linearId"] = i["id"] ?? ""
             }
             if has("--send") { p["draft"] = false }
@@ -282,13 +334,6 @@ func plist() -> String {
         case ("linear", "login"):
             guard let k = args.first else { fail("linear login <api-key>") }
             show(try await c.call("linear.setKey", .obj(["key": .string(k)])))
-        case ("open", _):
-            let split = flag("--split")
-            let focus = has("--focus") || sub == "--focus"
-            guard let target = sub.flatMap({ $0 == "--focus" ? nil : $0 }) ?? args.first else { fail("open <path|url> [--split right|down] [--focus]") }
-            show(try await IDE.open(target, split: split, cwd: FileManager.default.currentDirectoryPath, focus: focus, call: { try await c.call($0, $1) }))
-        case ("settings", _), ("ui", _), ("run", _): try await settingsAndUI(cmd, sub, c)
-        case ("ext", _): try await ext(sub, c)
         default: print(usage)
         }
     }

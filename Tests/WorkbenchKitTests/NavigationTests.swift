@@ -51,5 +51,6 @@ private func twoPanes() throws -> (WorkspaceLayout, left: String, right: String,
     #expect(Layout.nearestPane(from: me, among: panes, toward: .right) == "right")
     #expect(Layout.nearestPane(from: me, among: panes, toward: .up) == "above")     // y grows upward
     #expect(Layout.nearestPane(from: me, among: panes, toward: .down) == nil)       // nothing below: the caller beeps
-    #expect(Layout.nearestPane(from: me, among: ["a": CGRect(x: 300, y: 95, width: 10, height: 10), "b": CGRect(x: 300, y: 195, width: 10, height: 10)], toward: .right) == "a")   // equal distance: stable
+    #expect(Layout.nearestPane(from: me, among: ["a": CGRect(x: 300, y: 95, width: 10, height: 10), "b": CGRect(x: 300, y: 195, width: 10, height: 10)],
+                               toward: .right) == "a")   // equal distance: stable
 }

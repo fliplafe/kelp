@@ -143,7 +143,8 @@ final class AppModel {
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
         if info.liveSessions > 0 {
             let a = NSAlert(); a.messageText = String(localized: "Kelp was updated")
-            a.informativeText = String(localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
+            a.informativeText = String(
+                localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
             a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }

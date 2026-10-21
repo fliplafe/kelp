@@ -320,7 +320,8 @@ final class NoteBox: @unchecked Sendable {
 @Test func programStatusFromTheAgent() async throws {
     let root = tmp(); let d = try Daemon(root: root); try d.start(); defer { d.stop() }
     try FileManager.default.createDirectory(at: root.appendingPathComponent("agents"), withIntermediateDirectories: true)
-    let script = #"stty -icanon -echo; printf '\033]7501;?\033\\'; IFS= read -r -t 5 -d '\' reply; [[ $reply == *states=idle* ]] && printf '\033]7501;state=blocked:kind=permission:msg=QWxsb3cgcm0/\033\\'; sleep 30"#
+    let script = #"stty -icanon -echo; printf '\033]7501;?\033\\'; IFS= read -r -t 5 -d '\' reply; "#
+        + #"[[ $reply == *states=idle* ]] && printf '\033]7501;state=blocked:kind=permission:msg=QWxsb3cgcm0/\033\\'; sleep 30"#
     try JSONEncoder().encode(AgentManifest(id: "osc", name: "OSC", command: "/bin/bash", args: ["-c", script]))
         .write(to: root.appendingPathComponent("agents/osc.json"))
     let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
@@ -579,7 +580,8 @@ private func signals(_ s: DispatchSemaphore, _ n: Int, by deadline: DispatchTime
     let repo: Repo = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]), as: Repo.self)
     let ws = try await c.call("workspace.create", .obj(["repoId": .string(repo.id)]))
     let wid = try #require(ws["id"]?.string)
-    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wid), "agent": "topical", "prompt": "сделай ревью приложения и дай ему оценку по десятибалльной шкале"]), as: Session.self)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wid), "agent": "topical",
+                                                              "prompt": "сделай ревью приложения и дай ему оценку по десятибалльной шкале"]), as: Session.self)
     #expect(try await waitFor(10) { try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.title == "Ревью и оценка приложения" })
     #expect(try await waitFor(5) { try await c.call("worktree.list", as: [Worktree].self).first { $0.id == wid }?.note == "Ревью и оценка приложения" })
 }

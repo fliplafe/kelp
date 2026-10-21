@@ -17,7 +17,8 @@ extension DiffViewController {
         guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
         let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
         Task {
-            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header), "fingerprint": .string(h.fingerprint), "reverse": .bool(staged)]))
+            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header),
+                                                         "fingerprint": .string(h.fingerprint), "reverse": .bool(staged)]))
             await load()
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
@@ -66,7 +67,8 @@ extension DiffViewController {
             }
         }
         guard let file, let first = lines.first, let last = lines.last else { NSSound.beep(); return }
-        guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"), String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
+        guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"),
+                                String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
         Task {
             await AppModel.shared.call("comment.add", .obj(["id": .string(wid), "file": .string(file), "start": .int(first.0), "end": .int(last.0),
                                                            "quote": .string(lines.map(\.1).joined(separator: "\n")), "text": .string(text)]))
@@ -97,7 +99,8 @@ extension DiffViewController {
         guard !live.isEmpty else { status.stringValue = String(localized: "No running agent in this worktree"); return nil }
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
-        let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
+        let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop
+        a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
         return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 }

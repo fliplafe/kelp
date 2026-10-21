@@ -71,7 +71,8 @@ private func r(_ md: String) -> String { MarkdownHTML.render(md) }
 
 @Test func tablesWithAlignment() {
     let h = r("| L | C | R | N |\n|:--|:-:|--:|---|\n| a | `b\\|c` | **r** |\n\nafter")
-    #expect(h.contains("<table data-line=\"1\">\n<thead>\n<tr data-line=\"1\"><th style=\"text-align:left\">L</th><th style=\"text-align:center\">C</th><th style=\"text-align:right\">R</th><th>N</th></tr>"))
+    #expect(h.contains("<table data-line=\"1\">\n<thead>\n<tr data-line=\"1\"><th style=\"text-align:left\">L</th>"
+        + "<th style=\"text-align:center\">C</th><th style=\"text-align:right\">R</th><th>N</th></tr>"))
     #expect(h.contains(#"<tr data-line="3"><td style="text-align:left">a</td><td style="text-align:center"><code>b|c</code></td><td style="text-align:right"><strong>r</strong></td><td></td></tr>"#))
     #expect(h.contains(#"<p data-line="5">after</p>"#))
     #expect(!r("a | b\n---").contains("<table"))
@@ -220,7 +221,8 @@ private func sel(_ t: String, _ s: String) -> NSRange { (t as NSString).range(of
 
 /// What a cloned repo's notebook holds can't leave its text or attribute: no markup, no handlers.
 @Test func hostileNotebookStaysInert() throws {
-    let nb = #"{"metadata":{"language_info":{"name":"x\"><img src=x onerror=alert(1)>"}},"cells":[{"cell_type":"code","source":"1","outputs":[{"output_type":"display_data","data":{"image/png":"\" onerror=\"alert(2)"}}]}]}"#
+    let nb = #"{"metadata":{"language_info":{"name":"x\"><img src=x onerror=alert(1)>"}},"#
+        + #""cells":[{"cell_type":"code","source":"1","outputs":[{"output_type":"display_data","data":{"image/png":"\" onerror=\"alert(2)"}}]}]}"#
     let html = try #require(NotebookHTML.render(Data(nb.utf8)))
     #expect(!html.contains("onerror=") && !html.contains("<img src=x"))
     #expect(html.contains("class=\"language-ximgsrcxonerroralert1\""))

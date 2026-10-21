@@ -66,7 +66,8 @@ final class RowBadges {
         let t = NSMutableAttributedString(string: "#\(n)", attributes: [.font: f, .foregroundColor: color])
         let (mark, mc): (String, NSColor) = failed > 0 ? (" ✕", .textRed) : pending > 0 ? (" ●", .textOrange) : passed > 0 ? (" ✓", .textGreen) : ("", color)
         if !mark.isEmpty { t.append(NSAttributedString(string: mark, attributes: [.font: NSFont.ui(9, weight: .bold), .foregroundColor: mc])) }
-        let checks = failed > 0 ? String(localized: "\(failed) checks failing") : pending > 0 ? String(localized: "\(pending) checks running") : passed > 0 ? String(localized: "checks passed") : String(localized: "no checks")
+        let checks = failed > 0 ? String(localized: "\(failed) checks failing") : pending > 0 ? String(localized: "\(pending) checks running")
+            : passed > 0 ? String(localized: "checks passed") : String(localized: "no checks")
         let said = switch state {
         case "DRAFT": String(localized: "draft")
         case "MERGED": String(localized: "merged")

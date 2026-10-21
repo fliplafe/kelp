@@ -42,7 +42,9 @@ extension Daemon {
                         if !readings.isEmpty { break }
                     }
                     // What a failed probe saw, for whoever fixes the parser when an agent changes its screen.
-                    if readings.isEmpty, (try? Paths.ensure(root.appendingPathComponent("probe"))) != nil { try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8) }
+                    if readings.isEmpty, (try? Paths.ensure(root.appendingPathComponent("probe"))) != nil {
+                        try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8)
+                    }
                 }
                 plans.withLock { plans in
                     if !readings.isEmpty { plans[probe.agent]?.readings = readings; plans[probe.agent]?.readAt = Date() }

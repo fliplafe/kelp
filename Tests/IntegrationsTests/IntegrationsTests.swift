@@ -134,7 +134,10 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
 }
 
 @Test func jiraParsing() throws {
-    let search = #"{"issues":[{"key":"ENG-7","fields":{"summary":"Fix login","status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"issuetype":{"name":"Bug"},"project":{"key":"ENG"},"description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Steps:"}]},{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"open app"}]}]}]}]}}}]}"#
+    let search = #"{"issues":[{"key":"ENG-7","fields":{"summary":"Fix login","status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"#
+        + #""issuetype":{"name":"Bug"},"project":{"key":"ENG"},"#
+        + #""description":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Steps:"}]},"#
+        + #"{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"open app"}]}]}]}]}}}]}"#
     let issues = try JiraClient.parseSearch(Data(search.utf8), site: "https://acme.atlassian.net/")
     #expect(issues.count == 1)
     #expect(issues[0].key == "ENG-7" && issues[0].statusCategory == "indeterminate" && issues[0].url == "https://acme.atlassian.net/browse/ENG-7")

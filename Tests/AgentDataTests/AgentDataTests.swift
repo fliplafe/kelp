@@ -228,7 +228,9 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let f = dir.appendingPathComponent("s.jsonl")
     func line(_ id: String, _ ts: String, _ out: Int) -> String {
-        #"{"parentUuid":null,"cwd":"/p","message":{"id":"\#(id)","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"{ not usage }"}],"usage":{"input_tokens":10,"output_tokens":\#(out),"cache_creation":{"ephemeral_5m_input_tokens":0}}},"requestId":"r\#(id)","type":"assistant","timestamp":"\#(ts)"}"#
+        #"{"parentUuid":null,"cwd":"/p","message":{"id":"\#(id)","type":"message","role":"assistant","model":"claude-sonnet-4-5","#
+            + #""content":[{"type":"text","text":"{ not usage }"}],"usage":{"input_tokens":10,"output_tokens":\#(out),"#
+            + #""cache_creation":{"ephemeral_5m_input_tokens":0}}},"requestId":"r\#(id)","type":"assistant","timestamp":"\#(ts)"}"#
     }
     let now = ISO8601DateFormatter().string(from: Date())
     let old = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3 * 86400))   // copied in by a resume: before the file existed
