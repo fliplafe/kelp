@@ -35,6 +35,7 @@ enum AgentActions {
     /// Same command in the same tab; resumes the conversation when the agent supports it.
     static func restart(_ sid: String) {
         Task {
+            AppModel.shared.restarting.insert(sid); defer { AppModel.shared.restarting.remove(sid) }   // its tab is kept for the new one
             guard let s = await AppModel.shared.call(SessionRestart(id: sid)) else { return }
             AppModel.shared.sessions.removeAll { $0.id == sid }
             AppModel.shared.upsert(s)

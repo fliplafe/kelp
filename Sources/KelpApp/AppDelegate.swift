@@ -76,7 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var unsavedAnswered = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
-    func applicationWillTerminate(_ n: Notification) { main?.leaveFocusMode() }
+    func applicationWillTerminate(_ n: Notification) {
+        main?.leaveFocusMode()
+        AppModel.shared.client?.flush()   // writes are queued: the last layout or state set goes out before the process ends
+    }
 
     /// Folders dropped on the Dock icon or opened with `open -a Kelp <path>` become projects; files open as tabs.
     /// What opens Kelp waits for the projects and the last workspace to be on screen.

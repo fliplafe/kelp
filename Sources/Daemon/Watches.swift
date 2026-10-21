@@ -180,13 +180,14 @@ extension Daemon {
         try JSONDecoder().decode(M.Result.self, from: await answer(M.name, try m.params() ?? .null, conn: -1))
     }
 
-    /// A project or workspace record changed: the record goes to every client (they keep their lists from these).
+    /// A project or workspace record changed, or a record went: it goes to every client (they keep their lists from these).
     func recordChanged(_ c: Store.Change) {
         switch c {
         case .repo(let r): notify(r)
         case .worktree(let w): notify(w)
         case .repoRemoved(let id): notify(RemovedEvent(repo: id))
         case .worktreeRemoved(let id): notify(RemovedEvent(worktree: id))
+        case .sessionRemoved(let id): notify(RemovedEvent(session: id))
         }
     }
 }

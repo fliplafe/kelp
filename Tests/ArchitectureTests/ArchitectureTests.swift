@@ -77,6 +77,12 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     #expect(found == [])
 }
 
+/// The daemon's events reach the app as their types (`RPCClient.onEvent`, decoded once on the client's reader thread):
+/// the app doesn't switch on their names or decode them from JSON on the main thread.
+@Test func theAppTakesEventsByType() throws {
+    #expect(try matches(#"onNotification|case [A-Z]\w*\.name\b|\.decode\(\w*(Event|Session|Repo|Worktree)\.self"#, in: ["Sources/KelpApp"]) == [])
+}
+
 /// Questions are sheets that are awaited: a nested modal loop (runModal for a sheet) runs every timer, event and task of
 /// the app inside it, and a semaphore on the main thread stops them all. (The hang watcher's semaphore is on a thread of
 /// its own: it's what notices a stuck main thread.)

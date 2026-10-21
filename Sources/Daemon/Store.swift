@@ -7,14 +7,16 @@ import Core
 public final class Store: Sendable {
     public let db: DatabaseQueue
 
-    /// A project or workspace record written (as it is now) or deleted.
-    public enum Change: Sendable { case repo(Repo), worktree(Worktree), repoRemoved(String), worktreeRemoved(String) }
+    /// A project or workspace record written (as it is now) or deleted, or a session deleted (its writes are pushed as
+    /// `event.session` where its live state is known).
+    public enum Change: Sendable { case repo(Repo), worktree(Worktree), repoRemoved(String), worktreeRemoved(String), sessionRemoved(String) }
     /// Told of every one, after its write: every write goes through here, so the daemon pushes them from one place.
     public let changed = OSAllocatedUnfairLock<(@Sendable (Change) -> Void)?>(initialState: nil)
     private func report(_ r: Any, removed: Bool = false) {
         guard let tell = changed.withLock({ $0 }) else { return }
         if let x = r as? Repo { tell(removed ? .repoRemoved(x.id) : .repo(x)) }
         if let x = r as? Worktree { tell(removed ? .worktreeRemoved(x.id) : .worktree(x)) }
+        if let x = r as? Session, removed { tell(.sessionRemoved(x.id)) }
     }
 
     public init(path: String? = nil) throws {

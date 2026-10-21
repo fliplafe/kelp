@@ -171,6 +171,51 @@ private extension Data {
     #expect(got.value)
 }
 
+/// An event comes to `onEvent` as its own type, read once on the reader thread (the app's main thread decodes nothing).
+@Test func eventsComeAsTheirTypes() async throws {
+    let path = NSTemporaryDirectory() + "kelp-ev-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try RPCClient(socket: path)
+    let peer = accept(server, nil, nil)
+    defer { close(peer) }
+    let got = OSAllocatedUnfairLock<[any RPCEvent]>(initialState: [])
+    client.onEvent = { e in got.withLock { $0.append(e) } }
+    Unix.writeAll(peer, try Wire.line(RPCNotification(RemovedEvent(session: "s1"))))
+    Unix.writeAll(peer, try Wire.line(RPCRequest(id: nil, method: "event.unknown", params: nil)))   // not one of `rpcEvents`
+    Unix.writeAll(peer, try Wire.line(RPCNotification(CloneEvent(id: "c", line: "done"))))
+    for _ in 0..<50 where got.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
+    let events = got.withLock { $0 }
+    #expect(events.count == 2)
+    #expect(events.first as? RemovedEvent == RemovedEvent(session: "s1"))
+    #expect((events.last as? CloneEvent)?.line == "done")
+}
+
+/// The caller (the app's main thread) never waits on a full socket: writes are queued, and go out whole and in the
+/// order they were made once the daemon reads again. Before, the eighth megabyte waited for the daemon to read.
+@Test func writesDontWaitForTheDaemonToRead() async throws {
+    let path = NSTemporaryDirectory() + "kelp-full-\(getpid()).sock"
+    let server = try Unix.listen(path)
+    defer { close(server); unlink(path) }
+    let client = try RPCClient(socket: path)
+    let peer = accept(server, nil, nil)
+    defer { close(peer) }
+    let sent = Flag(), pad = JSONValue.string(String(repeating: "x", count: 1 << 20))
+    Thread.detachNewThread {
+        for i in 0..<8 { client.notify("big", .obj(["i": .int(i), "pad": pad])) }   // far more than the socket holds
+        sent.set()
+    }
+    for _ in 0..<50 where !sent.value { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(sent.value)   // before the daemon read a byte
+    var lb = LineBuffer(), order: [Int] = [], buf = [UInt8](repeating: 0, count: 65536)
+    while order.count < 8 {
+        let n = read(peer, &buf, buf.count)
+        if n <= 0 { break }
+        for line in lb.append(Data(buf[0..<n])) { order.append(try JSONDecoder().decode(JSONValue.self, from: line)["params"]?["i"]?.int ?? -1) }
+    }
+    #expect(order == Array(0..<8))
+}
+
 private final class Flag: @unchecked Sendable {   // the bool under lock
     private let lock = NSLock(); private var on = false
     func set() { lock.withLock { on = true } }

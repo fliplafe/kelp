@@ -33,6 +33,8 @@ final class AppModel {
 
     /// `event.session`s handled so far, per session: a list asked for before one of them may be older than it.
     @ObservationIgnored private var sessionEvents: [String: Int] = [:]
+    /// Sessions a restart is replacing: their removal waits for the new one, which takes their tab.
+    @ObservationIgnored var restarting: Set<String> = []
     /// The refresh under way, and whether another was asked for meanwhile (a burst of `event.changed` makes one more).
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshAgain = false
@@ -243,35 +245,38 @@ final class AppModel {
         return list.compactMap { newer.contains($0.id) ? kept[$0.id] : $0 } + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
     }
 
-    /// The daemon's events, handled on the main actor.
-    func listen(_ c: RPCClient) { c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } } }
+    /// The daemon's events, decoded as their types on the client's reader thread, handled on the main actor.
+    func listen(_ c: RPCClient) { c.onEvent = { [weak self] e in Task { @MainActor in self?.handle(e) } } }
 
-    private func handle(_ method: String, _ p: JSONValue) {
-        func event<E: RPCEvent>(_: E.Type) -> E? { try? p.decode(E.self) }
-        switch method {
-        case Session.name:
-            guard let s = event(Session.self) else { return }
+    func handle(_ event: any RPCEvent) {
+        switch event {
+        case let s as Session:
             sessionEvents[s.id, default: 0] += 1
             let old = sessions.first { $0.id == s.id }
             if old != s { upsert(s) }   // views follow `sessions`
             (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
             if old?.status != s.status { syncContextWatches() }
-        case DevServerEvent.name:
+        case let e as DevServerEvent:
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
             // The keys stay where they are: the page comes while you may be typing.
-            if let e = event(DevServerEvent.self), e.worktree == Workbench.shared.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
-        case ChangedEvent.name: break   // the records themselves follow (event.repo / event.worktree / event.removed)
-        case Repo.name, Worktree.name, RemovedEvent.name: record(method, p)
-        case GitEvent.name, PortsEvent.name, ActivityEvent.name, CIEvent.name, PREvent.name, ContextEvent.name, LimitsEvent.name:
-            watched(method, p)
-        case CloneEvent.name:
-            if let e = event(CloneEvent.self) { CloneSheet.cloneProgress(id: e.id, line: e.line) }
-        case SettingsEvent.name:
-            if let e = event(SettingsEvent.self) { SettingsStore.shared.received(e.settings) }
-        case UIEvent.name:
-            if let e = event(UIEvent.self) { UIRequests.handle(e) }
-        default: break
+            if e.worktree == Workbench.shared.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
+        case let r as Repo: record(r)
+        case let w as Worktree: record(w)
+        case let e as RemovedEvent: removed(e)
+        case let e as CloneEvent: CloneSheet.cloneProgress(id: e.id, line: e.line)
+        case let e as SettingsEvent: SettingsStore.shared.received(e.settings)
+        case let e as UIEvent: UIRequests.handle(e)
+        default: watched(event)   // event.changed is left: the records themselves follow (event.repo / .worktree / .removed)
         }
+    }
+
+    /// A session gone for good (deleted, its workspace removed, pruned): its tab and row go with it. One being restarted
+    /// is replaced in its tab by `AgentActions.restart` when the new one comes back.
+    func removed(session id: String) {
+        sessionEvents[id, default: 0] += 1
+        guard !restarting.contains(id), sessions.contains(where: { $0.id == id }) else { return }
+        sessions.removeAll { $0.id == id }
+        syncContextWatches()
     }
 
     // MARK: calls

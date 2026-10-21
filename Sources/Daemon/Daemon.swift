@@ -175,6 +175,7 @@ public final class Daemon: Sendable {
         Thread.detachNewThread { [self] in
             var lb = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
+            var spoke = false
             reading: while true {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
@@ -185,6 +186,8 @@ public final class Daemon: Sendable {
                             Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) { c.send(d) }
                         continue
                     }
+                    // A JSON-RPC client after all (it came in raw, Clients.add): events from now on.
+                    if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(c.id, false) } }
                     // Quick, and only right in the order they were sent (keystrokes, a setting dragged, two sends; a saved
                     // layout or a terminal size that finished second must not win over the newer one): applied here, one
                     // after another, calls and notifications alike (`Answered.inOrder`); a call's reply goes out in that order.

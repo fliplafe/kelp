@@ -63,3 +63,13 @@ private final class Heard: Sendable {
     _ = try await w.c.call(RepoRemove(id: other.id))
     #expect(try await waitFor(5) { heard.events(RemovedEvent.self).contains { $0.repo == other.id } })
 }
+
+/// A session deleted for good (here with its workspace) says so too: the app drops it without reading the list again.
+@Test func aDeletedSessionIsPushedAsRemoved() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let heard = Heard(); heard.listen(w.c)
+    let desk = try await w.c.call(WorkspaceCreate(repoId: w.repo.id))
+    let s = try await w.c.call(SessionCreate(worktreeId: desk.id, command: "exec cat"))
+    _ = try await w.c.call(WorktreeRemove(id: desk.id))
+    #expect(try await waitFor(5) { heard.events(RemovedEvent.self).contains { $0.session == s.id } })
+}

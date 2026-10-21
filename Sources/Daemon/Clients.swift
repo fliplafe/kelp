@@ -12,15 +12,17 @@ import Core
 final class Clients: Sendable {
     private struct State {
         var all: [Int: Connection] = [:], next = 1
-        var raw = Set<Int>()          // byte pipes: no JSON events go to them
+        var raw = Set<Int>()          // byte pipes, and new ones until their first request says they aren't: no JSON events go to them
         var app = Set<Int>()          // Kelp's window (ui.publish): it gets event.ui
         var muted = Set<Int>()        // asked for no broadcasts (client.events): kelp attach's control connection
         var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
+    /// Raw until it asks for something (`kelp attach` sends `session.stream` first): an event broadcast before then would
+    /// land in its byte stream, on the screen.
     func add(fd: Int32) -> Connection {
-        state.withLock { s in let c = Connection(id: s.next, fd: fd); s.next += 1; s.all[c.id] = c; return c }
+        state.withLock { s in let c = Connection(id: s.next, fd: fd); s.next += 1; s.all[c.id] = c; s.raw.insert(c.id); return c }
     }
 
     /// Gone: it gets nothing more, and the app's published state goes with the last app.

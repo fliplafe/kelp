@@ -38,43 +38,40 @@ extension AppModel {
     }
 
     /// What the daemon pushed for a watched topic. Assigned only when it differs: every assignment re-renders its readers.
-    func watched(_ method: String, _ p: JSONValue) {
-        func event<E: RPCEvent>(_: E.Type) -> E? { try? p.decode(E.self) }
-        switch method {
-        case GitEvent.name: if let e = event(GitEvent.self), git[e.worktree] != e { git[e.worktree] = e }
-        case PortsEvent.name: if let e = event(PortsEvent.self), ports[e.worktree] != e.ports { ports[e.worktree] = e.ports }
-        case ActivityEvent.name: if let e = event(ActivityEvent.self), activity != e { activity = e }
-        case CIEvent.name: if let e = event(CIEvent.self), ci[e.worktree] != e { ci[e.worktree] = e }
-        case PREvent.name: if let e = event(PREvent.self), prs[e.worktree] != e.pr { prs[e.worktree] = e.pr }
-        case LimitsEvent.name: if let e = event(LimitsEvent.self), limits != e.usage { limits = e.usage }
-        case ContextEvent.name:
+    func watched(_ event: any RPCEvent) {
+        switch event {
+        case let e as GitEvent: if git[e.worktree] != e { git[e.worktree] = e }
+        case let e as PortsEvent: if ports[e.worktree] != e.ports { ports[e.worktree] = e.ports }
+        case let e as ActivityEvent: if activity != e { activity = e }
+        case let e as CIEvent: if ci[e.worktree] != e { ci[e.worktree] = e }
+        case let e as PREvent: if prs[e.worktree] != e.pr { prs[e.worktree] = e.pr }
+        case let e as LimitsEvent: if limits != e.usage { limits = e.usage }
+        case let e as ContextEvent:
             // No usage (not Claude Code, ended, just compacted) takes the ring away.
-            guard let e = event(ContextEvent.self) else { return }
             let share = e.usage.flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }
             if abs((contextShare[e.session] ?? -1) - (share ?? -1)) > 0.01 { contextShare[e.session] = share }
         default: break
         }
     }
 
-    /// A project or workspace as it is now, or gone: the lists follow the daemon's records without reading them again.
-    func record(_ method: String, _ p: JSONValue) {
-        switch method {
-        case Repo.name:
-            guard let r = try? p.decode(Repo.self) else { return }
-            recordEvents[r.id, default: 0] += 1
-            if let i = repos.firstIndex(where: { $0.id == r.id }) { if repos[i] != r { repos[i] = r } } else { repos.append(r) }
-        case Worktree.name:
-            guard let w = try? p.decode(Worktree.self) else { return }
-            recordEvents[w.id, default: 0] += 1
-            if let i = worktrees.firstIndex(where: { $0.id == w.id }) { if worktrees[i] != w { worktrees[i] = w } } else { worktrees.append(w) }
-        default:
-            guard let e = try? p.decode(RemovedEvent.self) else { return }
-            if let id = e.repo {
-                for x in [id] + worktrees.filter({ $0.repoId == id }).map(\.id) { recordEvents[x, default: 0] += 1 }
-                repos.removeAll { $0.id == id }; worktrees.removeAll { $0.repoId == id }
-            }
-            if let id = e.worktree { recordEvents[id, default: 0] += 1; worktrees.removeAll { $0.id == id } }
+    /// A project or workspace as it is now: the lists follow the daemon's records without reading them again.
+    func record(_ r: Repo) {
+        recordEvents[r.id, default: 0] += 1
+        if let i = repos.firstIndex(where: { $0.id == r.id }) { if repos[i] != r { repos[i] = r } } else { repos.append(r) }
+    }
+    func record(_ w: Worktree) {
+        recordEvents[w.id, default: 0] += 1
+        if let i = worktrees.firstIndex(where: { $0.id == w.id }) { if worktrees[i] != w { worktrees[i] = w } } else { worktrees.append(w) }
+    }
+
+    /// A project, workspace or session that's gone.
+    func removed(_ e: RemovedEvent) {
+        if let id = e.repo {
+            for x in [id] + worktrees.filter({ $0.repoId == id }).map(\.id) { recordEvents[x, default: 0] += 1 }
+            repos.removeAll { $0.id == id }; worktrees.removeAll { $0.repoId == id }
         }
+        if let id = e.worktree { recordEvents[id, default: 0] += 1; worktrees.removeAll { $0.id == id } }
+        if let id = e.session { removed(session: id) }
     }
 
     /// The context ring of every agent that hasn't ended: watched while it runs, let go when it ends.

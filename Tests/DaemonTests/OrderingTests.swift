@@ -67,7 +67,9 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
         let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path)
         var t = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
+        // Either way it says something first: until then it could be a terminal's byte stream (session.stream), which hears nothing.
         if muted { Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: ClientEvents.name, params: .obj(["events": false])))) }
+        else { Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: Ping.name, params: nil))) }
         return fd
     }
     let quiet = try listener(muted: true), loud = try listener(muted: false)
@@ -81,6 +83,25 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     }
     #expect(heard(loud).contains("event.settings"))
     #expect(heard(quiet).isEmpty)
+}
+
+/// `kelp attach` sends `session.stream` as its first line: an event broadcast between its connect and that line went into
+/// what became the terminal's byte stream, and showed on screen as JSON.
+@Test func anAttachingTerminalGetsNoEventBeforeItsStream() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    _ = try await c.call(Ping())
+    let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path)
+    defer { close(fd) }
+    #expect(try await waitFor(5) { d.clients.everyone().count == 2 })
+    d.notify(ChangedEvent.repo)   // while it hasn't said what it is
+    Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: "session.stream", params: .obj(["id": "none"]))))
+    var out = Data(), buf = [UInt8](repeating: 0, count: 4096)
+    while true {
+        let n = read(fd, &buf, buf.count)
+        if n <= 0 { break }
+        out.append(contentsOf: buf[0..<n])
+    }
+    #expect(String(decoding: out, as: UTF8.self) == "kelp: no such session\r\n")
 }
 
 /// A send to a paused agent wakes it (git, files, a spawn) off the connection's reader thread: what that connection sends

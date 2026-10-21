@@ -1,7 +1,8 @@
 import Foundation
 import os
 
-/// Client for the daemon socket. Requests are async; server notifications go to `onNotification`.
+/// Client for the daemon socket. Requests are async; the daemon's events go to `onEvent` as their types (decoded once, on
+/// the reader thread), or to `onNotification` as JSON, for a client that reads them by name (tests).
 public final class RPCClient: Sendable {
     private let fd: Int32
     private struct State {
@@ -9,17 +10,23 @@ public final class RPCClient: Sendable {
         var pending: [Int: CheckedContinuation<Data, Error>] = [:]   // id → its reply line, decoded by the caller as its type
         var closed = false, readerDone = false
         var notificationHandler: (@Sendable (String, JSONValue) -> Void)?
+        var eventHandler: (@Sendable (any RPCEvent) -> Void)?
         var closeHandler: (@Sendable () -> Void)?
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
-    /// One line on the wire at a time: a long request written in pieces must not get another one in between. Held across
-    /// the write (which can block), so an NSLock rather than the unfair lock above.
-    private let writeLock = NSLock()
+    /// Every line goes out from here, whole and in the order it was asked for, and the fd is closed here after the last:
+    /// the caller (often the main thread) never waits on a full socket.
+    private let writer = DispatchQueue(label: "dev.kelp.rpc.write")
 
     /// Read by the reader thread, so kept under the lock like the rest.
     public var onNotification: (@Sendable (String, JSONValue) -> Void)? {
         get { state.withLock { $0.notificationHandler } }
         set { state.withLock { $0.notificationHandler = newValue } }
+    }
+    /// One of the daemon's events (`rpcEvents`) as its type, on the reader thread.
+    public var onEvent: (@Sendable (any RPCEvent) -> Void)? {
+        get { state.withLock { $0.eventHandler } }
+        set { state.withLock { $0.eventHandler = newValue } }
     }
     /// Set after the connection already dropped, it runs at once: a caller that installs it late is still told.
     public var onClose: (@Sendable () -> Void)? {
@@ -37,14 +44,20 @@ public final class RPCClient: Sendable {
 
     deinit { close() }
 
-    /// Shuts the connection; the reader thread closes the fd when its read returns. Closing it here could let that read
-    /// land on a number already reused by a newer connection, and take its replies.
+    /// Shuts the connection once what was sent before is written, without waiting for that; the reader thread has the fd
+    /// closed when its read returns. Closing it here could let that read land on a number already reused by a newer
+    /// connection, and take its replies.
     public func close() {
-        // Under writeLock, which the reader takes to close the fd: while we hold it the number is still this connection's.
-        writeLock.withLock {
-            let skip = state.withLock { s -> Bool in let was = s.closed || s.readerDone; s.closed = true; return was }
-            if !skip { shutdown(fd, SHUT_RDWR) }
-        }
+        state.withLock { $0.closed = true }   // nothing new goes out
+        // Not on self: deinit calls this. Before the reader is done its close isn't queued yet, so the number is still ours.
+        writer.async { [fd, state] in state.withLock { if !$0.readerDone { shutdown(fd, SHUT_RDWR) } } }
+    }
+
+    /// Waits (up to `timeout`) until what's queued is written: a quitting app's last change must reach the daemon.
+    public func flush(timeout: TimeInterval = 1) {
+        let written = DispatchSemaphore(value: 0)
+        writer.async { written.signal() }
+        _ = written.wait(timeout: .now() + timeout)
     }
 
     private func readLoop() {
@@ -54,10 +67,13 @@ public final class RPCClient: Sendable {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { break }
             for line in lb.append(Data(buf[0..<n])) {
-                // The result isn't read here: the caller reads it straight from the line, as its own type.
+                // The result isn't read here: the caller reads it straight from the line, as its own type. An event is read
+                // here, once, as its type (as JSON too only for `onNotification`).
                 guard let m = try? JSONDecoder().decode(Envelope.self, from: line) else { continue }
                 if let method = m.method {
-                    state.withLock { $0.notificationHandler }?(method, m.params ?? .null)
+                    let (typed, named) = state.withLock { ($0.eventHandler, $0.notificationHandler) }
+                    if let e = m.event { typed?(e) }
+                    named?(method, (try? JSONDecoder().decode(Params.self, from: line))?.params ?? .null)
                 } else if let id = m.id {
                     let c = state.withLock { $0.pending.removeValue(forKey: id) }
                     if let e = m.error { c?.resume(throwing: e) } else { c?.resume(returning: line) }
@@ -68,7 +84,7 @@ public final class RPCClient: Sendable {
             defer { s.pending = [:]; s.closed = true; s.readerDone = true }
             return (s.pending, s.closeHandler)
         }
-        writeLock.withLock { _ = Darwin.close(fd) }   // the only close: no read or write of ours can follow it
+        writer.async { [fd] in _ = Darwin.close(fd) }   // the only close, after the last write (none is written once the reader is done)
         for (_, c) in all { c.resume(throwing: RPCError.internalError("connection closed")) }
         done?()
     }
@@ -79,8 +95,9 @@ public final class RPCClient: Sendable {
         write(d)
     }
 
-    /// Nothing is written once closed: the fd number may be someone else's by then.
-    private func write(_ d: Data) { writeLock.withLock { if !state.withLock({ $0.closed }) { Unix.writeAll(fd, d) } } }
+    /// Queued for the writer (callers check `closed` first). Nothing is written once the reader is done: the fd is closed
+    /// after it, and the number may be someone else's by then.
+    private func write(_ d: Data) { writer.async { [self] in if !state.withLock({ $0.readerDone }) { Unix.writeAll(fd, d) } } }
 
     /// `timeout`: throw if no reply came by then — for polls, where one reply that never arrives would stop the loop for good.
     public func call(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> JSONValue {
@@ -118,10 +135,25 @@ public final class RPCClient: Sendable {
     public func notify<M: RPCMethod>(_ m: M) { notify(M.name, try? m.params()) }
 }
 
-/// A line from the daemon as far as the reader needs it: a notification's method and params, a reply's id and error.
+/// A line from the daemon as far as the reader needs it: a reply's id and error; a notification's method, and its params
+/// as the event's own type when it's one of `rpcEvents`.
 private struct Envelope: Decodable {
-    var id: Int?, method: String?, params: JSONValue?, error: RPCError?
+    private static let events = Dictionary(rpcEvents.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+    var id: Int?, method: String?, error: RPCError?, event: (any RPCEvent)?
+    private enum Key: String, CodingKey { case id, method, params, error }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        id = try c.decodeIfPresent(Int.self, forKey: .id)
+        method = try c.decodeIfPresent(String.self, forKey: .method)
+        error = try c.decodeIfPresent(RPCError.self, forKey: .error)
+        // One that doesn't decode (from a newer daemon) is dropped: nothing this client could show.
+        if let method, let t = Self.events[method] { event = try? Self.params(t, c) }
+    }
+    private static func params<E: RPCEvent>(_: E.Type, _ c: KeyedDecodingContainer<Key>) throws -> E { try c.decode(E.self, forKey: .params) }
 }
+/// A notification's params as JSON, for `onNotification`.
+private struct Params: Decodable { var params: JSONValue? }
 /// A reply's result as the caller's type, read from its line in one pass.
 private struct ResultOf<R: Decodable>: Decodable { let result: R }
 

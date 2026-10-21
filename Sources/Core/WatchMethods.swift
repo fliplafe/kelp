@@ -87,9 +87,9 @@ public struct LimitsEvent: RPCEvent, Equatable {
 extension Repo: RPCEvent { public static let name = "event.repo" }
 extension Worktree: RPCEvent { public static let name = "event.worktree" }
 
-/// A project or workspace that's gone (a project takes its workspaces with it).
+/// A project, workspace or session record that's gone (a project takes its workspaces with it; their sessions each say so).
 public struct RemovedEvent: RPCEvent, Equatable {
     public static let name = "event.removed"
-    public var repo: String?, worktree: String?
-    public init(repo: String? = nil, worktree: String? = nil) { self.repo = repo; self.worktree = worktree }
+    public var repo: String?, worktree: String?, session: String?
+    public init(repo: String? = nil, worktree: String? = nil, session: String? = nil) { self.repo = repo; self.worktree = worktree; self.session = session }
 }
