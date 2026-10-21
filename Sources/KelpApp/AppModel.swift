@@ -11,6 +11,8 @@ final class AppModel {
 
     @ObservationIgnored var client: RPCClient?
     var connected = false
+    /// Connections made so far: each new one may be a new daemon, whose streams (`kelp attach`) start over.
+    private(set) var connections = 0
     var repos: [Repo] = []
     var worktrees: [Worktree] = []
     var sessions: [Session] = []
@@ -120,6 +122,7 @@ final class AppModel {
         await SettingsStore.shared.load()
         await refresh()
         connected = client === c   // after the lists: what waits for the connection finds the projects in
+        if connected { connections += 1 }
         published = nil   // a new daemon knows nothing yet
         publishUIState()
         watchContext()

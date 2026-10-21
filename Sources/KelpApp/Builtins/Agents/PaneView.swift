@@ -8,39 +8,48 @@ import WorkbenchKit
 @MainActor
 final class PaneView: NSView {
     let sessionId: String
-    private let ghostty: GhosttyTerminalView
+    private var ghostty: GhosttyTerminalView
     private let ended = NSStackView()
+    /// `kelp attach` still streams, and from which daemon (`AppModel.connections` when it started).
+    private var attached = true
+    private var attachedTo = AppModel.shared.connections
 
     var onClose: ((PaneView) -> Void)?
     var onRestart: ((PaneView) -> Void)?
 
     init(session: Session) {
         sessionId = session.id
-        let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
-        ghostty = GhosttyTerminalView(command: IDE.shellWord(kelp) + " attach \(session.id)", cwd: session.cwd,
-                                      env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
+        ghostty = Self.terminal(session)
         super.init(frame: .zero)
         wantsLayer = true
         buildTerminal(session)
         buildEndedOverlay()
-        for v in [ghostty, ended] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        NSLayoutConstraint.activate([
-            ghostty.topAnchor.constraint(equalTo: topAnchor), ghostty.leadingAnchor.constraint(equalTo: leadingAnchor),
-            ghostty.trailingAnchor.constraint(equalTo: trailingAnchor), ghostty.bottomAnchor.constraint(equalTo: bottomAnchor),
-            ended.centerXAnchor.constraint(equalTo: ghostty.centerXAnchor), ended.centerYAnchor.constraint(equalTo: ghostty.centerYAnchor)
-        ])
+        ended.translatesAutoresizingMaskIntoConstraints = false; addSubview(ended)
+        NSLayoutConstraint.activate([ended.centerXAnchor.constraint(equalTo: centerXAnchor), ended.centerYAnchor.constraint(equalTo: centerYAnchor)])
         registerForDraggedTypes([.fileURL, .png, .tiff, .string])
         update(session)
+        track(owner: self) { AppModel.shared.connections } changed: { [weak self] _ in self?.settle() }
     }
     required init?(coder: NSCoder) { fatalError() }
 
     private let preview = PathPreview()
 
+    private static func terminal(_ s: Session) -> GhosttyTerminalView {
+        let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
+        return GhosttyTerminalView(command: IDE.shellWord(kelp) + " attach \(s.id)", cwd: s.cwd,
+                                   env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
+    }
+
     private func buildTerminal(_ s: Session) {
         let id = s.id, g = ghostty
-        g.onExit = { [weak self] in self?.sessionEnded() }
+        g.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(g, positioned: .below, relativeTo: nil)
+        NSLayoutConstraint.activate([g.topAnchor.constraint(equalTo: topAnchor), g.leadingAnchor.constraint(equalTo: leadingAnchor),
+                                     g.trailingAnchor.constraint(equalTo: trailingAnchor), g.bottomAnchor.constraint(equalTo: bottomAnchor)])
+        g.onExit = { [weak self] in self?.attached = false; self?.settle() }
         g.onSearch = { [weak self] in self?.searchEvent($0) }
         g.onOpenURL = Self.openLink
+        g.onPasteRefused = { Banner.show(String(localized: "Not pasted: a program put these lines on the clipboard, and this terminal would run them as typed. Copy them yourself to paste here.")) }
         // Paths the agent prints are its folder's: its own worktree once it went into one.
         let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
         g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
@@ -64,7 +73,25 @@ final class PaneView: NSView {
         ended.isHidden = true
     }
 
-    private func sessionEnded() { ended.isHidden = false }
+    /// A new connection may be a new daemon (an update, Restart Background Service, a crash), whose session this stream
+    /// no longer reaches — libghostty reports the attach's exit only after a key press, so the connection is the sign.
+    /// The session living on, attach again: only on screen, a hidden tab attaches when shown (a restart mustn't wake
+    /// every paused agent). Against the same daemon that's one history replay, nothing lost. Ended: "Session ended".
+    private func settle() {
+        let s = AppModel.shared.session(sessionId), m = AppModel.shared
+        if let s, s.status != .exited, m.connected, m.connections != attachedTo, window != nil { reattach(s) }
+        ended.isHidden = attached && s?.status != .exited
+    }
+
+    private func reattach(_ s: Session) {
+        let focused = window?.firstResponder === ghostty
+        findBar?.removeFromSuperview(); findBar = nil   // it searched the old terminal
+        ghostty.removeFromSuperview()
+        ghostty = Self.terminal(s)
+        attached = true; attachedTo = AppModel.shared.connections
+        buildTerminal(s)
+        if focused { focus() }
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -72,7 +99,7 @@ final class PaneView: NSView {
             ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         }
     }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance() }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle() }
 
     /// A link ⌘-clicked in the terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
     /// the two. Files open as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target
@@ -89,9 +116,7 @@ final class PaneView: NSView {
         }
     }
 
-    func update(_ s: Session) {
-        if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
-    }
+    func update(_: Session) { settle() }
 
     func focus() { ghostty.focus() }
 
