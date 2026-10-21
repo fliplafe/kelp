@@ -59,10 +59,11 @@ extension Daemon {
     }
 
     /// gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up to
-    /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all.
-    func refuseRemoteForge(_ method: String, _ p: JSONValue) throws -> JSONValue? {
-        guard method.hasPrefix("github.") || method.hasPrefix("ci."), (try? repoPath(p)).map({ RemoteHost.of($0.1) != nil }) == true else { return nil }
-        if method == "github.branchPR" || method == "github.forge" { return .null }   // asked by the sidebar on its own
+    /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all: a `LocalForge`
+    /// method is refused for one, or answers null when the sidebar asked by itself.
+    func refuseRemoteForge(_ t: any Answered.Type, _ p: JSONValue) throws -> Data? {
+        guard let forge = t as? any LocalForge.Type, (try? repoPath(p)).map({ RemoteHost.of($0.1) != nil }) == true else { return nil }
+        if forge.quietOnRemote { return Data("null".utf8) }
         throw RPCError.invalidParams("Pull requests and CI aren't available for remote projects yet.")
     }
 
@@ -74,3 +75,28 @@ extension Daemon {
     }
 
 }
+
+/// Runs gh or glab in the project's folder (`refuseRemoteForge`): every GitHub, GitLab and CI method.
+protocol LocalForge {
+    /// Asked by the sidebar on its own: null for a remote project instead of an error.
+    static var quietOnRemote: Bool { get }
+}
+extension LocalForge { static var quietOnRemote: Bool { false } }
+
+extension GitHubBranchPR: LocalForge { static var quietOnRemote: Bool { true } }
+extension GitHubForge: LocalForge { static var quietOnRemote: Bool { true } }
+extension GitHubStatus: LocalForge {}
+extension GitHubIssues: LocalForge {}
+extension GitHubChecks: LocalForge {}
+extension GitHubFailedLog: LocalForge {}
+extension GitHubReviewComments: LocalForge {}
+extension GitHubProjects: LocalForge {}
+extension GitHubProjectItems: LocalForge {}
+extension GitHubPRs: LocalForge {}
+extension GitHubPRCreate: LocalForge {}
+extension GitHubPRMerge: LocalForge {}
+extension CIRunsList: LocalForge {}
+extension CIJobs: LocalForge {}
+extension CILog: LocalForge {}
+extension CIRerun: LocalForge {}
+extension CIDispatch: LocalForge {}

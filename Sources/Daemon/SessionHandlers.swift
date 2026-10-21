@@ -40,6 +40,8 @@ extension SessionWrite: Handled {
 }
 
 extension SessionSend: Handled {
+    /// Two sends in a row reach the session in that order (`submit` only queues: nothing here waits on the agent).
+    static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
         // Still starting (woken just now, by this send or anyone else), a question open, an unread draft in the box, or
         // text still waiting ahead: queued, and typed once the program is ready for it (`LiveSession.submit`).

@@ -9,7 +9,7 @@ import Core
 @Test func methodNamesOnlyGrow() throws {
     let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("methods.txt")
     let pinned = Set(try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map(String.init))
-    let served = Set(Daemon.typed.keys).union(Daemon.asyncTyped.keys)
+    let served = Set(Daemon.methods.keys)
     #expect(pinned.subtracting(served).sorted() == [], "renamed or removed: clients still send these")
     #expect(served.subtracting(pinned).sorted() == [], "new: add them to methods.txt")
 }
@@ -27,4 +27,19 @@ import Core
     #expect(try wire(OutputEvent(session: "s", data: Data("hi".utf8)))["params"] == .obj(["session": "s", "data": "aGk="]))
     #expect(try wire(SettingsEvent(settings: ["a": 1]))["params"] == .obj(["settings": .obj(["a": 1])]))
     #expect(try wire(UIEvent(UIOpen(uri: "file:///x", split: "right")))["params"] == .obj(["action": "open", "uri": "file:///x", "split": "right"]))
+}
+
+/// gh and glab run in the project's folder, which for a remote project is only a marker here: every GitHub, GitLab and CI
+/// method is a `LocalForge`, so it's refused for one by its type, not by a name prefix a new method could slip past.
+@Test func everyForgeMethodIsRefusedForARemoteProject() {
+    let forge = Daemon.methods.filter { $0.key.hasPrefix("github.") || $0.key.hasPrefix("ci.") }
+    #expect(forge.count > 10)
+    #expect(forge.filter { ($0.value as? any LocalForge.Type) == nil }.keys.sorted() == [])
+}
+
+/// A typed reply goes out as its result's JSON with the id around it, and reads back as the same value.
+@Test func aReplyCarriesItsResultAsEncoded() throws {
+    let line = Daemon.replyLine(id: 7, result: try JSONEncoder().encode(["a", "b"]))
+    #expect(try JSONDecoder().decode(JSONValue.self, from: line) == .obj(["jsonrpc": "2.0", "id": 7, "result": .array(["a", "b"])]))
+    #expect(line.last == 0x0A)
 }

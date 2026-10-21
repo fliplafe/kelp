@@ -126,3 +126,11 @@ public struct SessionReport: RPCMethod {
         self.id = id; self.state = state; self.message = message; self.progress = progress; self.kind = kind
     }
 }
+
+/// Whether this connection wants the daemon's broadcast events. `kelp attach`'s control connection only sends sizes:
+/// without this, every open terminal would be one more reader of every event.
+public struct ClientEvents: RPCMethod {
+    public static let name = "client.events"; public typealias Result = Done
+    public var events: Bool
+    public init(events: Bool) { self.events = events }
+}

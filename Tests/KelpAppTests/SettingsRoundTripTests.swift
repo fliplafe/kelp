@@ -33,4 +33,18 @@ extension SharedAppModel {
         for _ in 0..<100 where s.bool("editor.lsp") != false { try await Task.sleep(for: .milliseconds(50)) }
         #expect(s.bool("editor.lsp") == false && s.bool("editor.autoSave") == true)
     }
+
+    /// A stepper held sends 14 then 15: the daemon's answer to 14 arriving after 15 was shown doesn't put 14 back.
+    @Test func anOlderSettingsEchoDoesntUndoANewerChange() async throws {
+        _ = NSApplication.shared   // the theme applies to NSApp
+        let s = SettingsStore.shared, m = AppModel.shared
+        let saved = (m.client, s.values)
+        defer { m.client = saved.0; s.apply(saved.1) }
+        m.client = nil   // its set fails later, on a task of its own: what matters is what's shown meanwhile
+        s.set("terminal.fontSize", .int(15))
+        s.received(s.values.merging(["terminal.fontSize": .int(14)]) { $1 })   // the echo of the set before it
+        #expect(s.values["terminal.fontSize"] == .int(15))
+        s.received(s.values.merging(["editor.lsp": .bool(false)]) { $1 })      // other keys still follow the daemon
+        #expect(s.values["editor.lsp"] == .bool(false))
+    }
 }

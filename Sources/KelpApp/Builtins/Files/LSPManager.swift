@@ -53,13 +53,16 @@ final class LSPManager {
         if first {
             let name = (root as NSString).lastPathComponent
             Banner.show(String(localized: "Language servers and formatters can run code from “\(name)” (its build scripts, plugins, toolchain). Trust this project?"),
-                        action: (String(localized: "Trust"), { LSPManager.shared.trust(root) }))
+                        action: (String(localized: "Trust"), { Task { await LSPManager.shared.trust(root) } }))
         }
         return false
     }
 
-    func trust(_ root: String) {
-        if !trusted(root) { UIState[Self.trustKey] = .array((UIState.strings(Self.trustKey) + [root]).map(JSONValue.string)) }
+    /// Recorded by the daemon first (a refusal shows, and nothing starts), then the tabs waiting for it start.
+    func trust(_ root: String) async {
+        if !trusted(root) {
+            guard await UIState.save(Self.trustKey, .array((UIState.strings(Self.trustKey) + [root]).map(JSONValue.string))) else { return }
+        }
         (waiting.removeValue(forKey: root) ?? []).forEach { $0() }
     }
 

@@ -14,6 +14,7 @@ final class Clients: Sendable {
         var all: [Int: Connection] = [:], next = 1
         var raw = Set<Int>()          // byte pipes: no JSON events go to them
         var app = Set<Int>()          // Kelp's window (ui.publish): it gets event.ui
+        var muted = Set<Int>()        // asked for no broadcasts (client.events): kelp attach's control connection
         var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -25,7 +26,7 @@ final class Clients: Sendable {
     /// Gone: it gets nothing more, and the app's published state goes with the last app.
     func remove(_ id: Int) {
         state.withLock { s in
-            s.all[id] = nil; s.raw.remove(id)
+            s.all[id] = nil; s.raw.remove(id); s.muted.remove(id)
             if s.app.remove(id) != nil, s.app.isEmpty { s.uiState = .object([:]) }
         }
     }
@@ -42,10 +43,14 @@ final class Clients: Sendable {
         state.withLock { s in (subs.filter { s.raw.contains($0) }.compactMap { s.all[$0] }, subs.subtracting(s.raw)) }
     }
 
-    /// Who gets a JSON event: everyone but the raw pipes, or only those in `only`.
+    /// Who gets a JSON event: everyone but the raw pipes and those that asked for none, or only those in `only`.
     func targets(_ only: Set<Int>?) -> [Connection] {
-        state.withLock { s in s.all.filter { !s.raw.contains($0.key) && only?.contains($0.key) != false }.map(\.value) }
+        state.withLock { s in
+            s.all.filter { id, _ in !s.raw.contains(id) && (only.map { $0.contains(id) } ?? !s.muted.contains(id)) }.map(\.value)
+        }
     }
+
+    func setMuted(_ id: Int, _ muted: Bool) { state.withLock { if muted { $0.muted.insert(id) } else { $0.muted.remove(id) } } }
 
     func publishUI(_ ui: JSONValue, from id: Int) { state.withLock { $0.uiState = ui; $0.app.insert(id) } }
     var uiState: JSONValue { state.withLock { $0.uiState } }

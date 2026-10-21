@@ -57,3 +57,9 @@ extension StateSet: Handled {
         try d.store.setUIState(key, value); return Done()
     }
 }
+
+extension ClientEvents: Handled {
+    static var inOrder: Bool { true }   // before whatever is broadcast after it
+    func handle(_ d: Daemon) throws -> Done { Done() }
+    func handle(_ d: Daemon, conn: Int) throws -> Done { d.clients.setMuted(conn, !events); return Done() }
+}

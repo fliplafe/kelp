@@ -20,6 +20,7 @@ enum Attach {
 
         // Size changes go over a separate control connection.
         let control = try? RPCClient(socket: socket)
+        control?.notify(ClientEvents(events: false))   // it only sends sizes: no events to read
         func sendSize() {
             var ws = winsize()
             guard ioctl(1, TIOCGWINSZ, &ws) == 0, ws.ws_col > 0 else { return }

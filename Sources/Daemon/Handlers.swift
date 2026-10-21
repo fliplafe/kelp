@@ -10,12 +10,19 @@ extension JSONValue {
     }
 }
 
-/// A method declared in Core (`RPCMethod`) that the daemon answers: params decoded, result encoded, run through `offload`.
-/// `handle(_:conn:)` for the few that need the asking connection (attach, detach, ui.publish); the rest write `handle(_:)`.
-protocol Handled: RPCMethod {
-    /// Sent as a notification, it runs on the connection's reader thread, after the ones before it: only right in the
-    /// order sent, and quick. Everything else runs on a task of its own, so its replies can come back in any order.
+/// A method declared in Core (`RPCMethod`) that the daemon answers, sync (`Handled`) or async (`AsyncHandled`), listed
+/// once in `Daemon.methods`. Its result is encoded straight into the reply (`answer`), never through a JSONValue.
+protocol Answered: RPCMethod {
+    /// Applied on the connection's reader thread, after what was sent before it, call or notification: only right in the
+    /// order sent, and quick (`Handled` only). Everything else runs on a task of its own, its reply whenever it's ready.
     static var inOrder: Bool { get }
+    /// The result as the reply's JSON.
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data
+}
+
+/// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
+/// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
+protocol Handled: Answered {
     func handle(_ d: Daemon) throws -> Result
     func handle(_ d: Daemon, conn: Int) throws -> Result
 }
@@ -24,7 +31,9 @@ extension Handled {
     static var inOrder: Bool { false }
     func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
 
-    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) throws -> JSONValue { try .from(decoded(p).handle(d, conn: conn)) }
+    /// On the calling thread: an in-order method's, on the reader thread.
+    static func answerNow(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Data { try JSONEncoder().encode(decoded(p).handle(d, conn: conn)) }
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload { try answerNow(p, d, conn: conn) } }
 }
 
 extension RPCMethod {
@@ -37,25 +46,36 @@ extension RPCMethod {
 }
 
 extension Daemon {
-    /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
-    static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
-                                                          WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self]
-                                                          + gitMethods + workspaceMethods + sessionMethods + integrationMethods
-                                                          + projectMethods + launchMethods + uiMethods as [any Handled.Type]).map { ($0.name, $0) })
+    /// Every method the daemon answers, by name: one list, so none is answered twice (a second entry traps at launch).
+    static let methods: [String: any Answered.Type] = {
+        let sync: [any Handled.Type] = [DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
+                                        WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self, GitDiscardHunk.self,
+                                        RemoteListFolders.self, SessionReport.self, ClientEvents.self]
+            + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods + uiMethods
+        let all = sync.map { $0 as any Answered.Type } + asyncMethods.map { $0 as any Answered.Type }
+        return Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
+    }()
 
-    func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
-        if let r = try refuseRemoteForge(method, p) { return r }
-        return try await integrationErrors { try await dispatch(method, p, conn: conn) }
+    /// The reply's result, encoded once.
+    func answer(_ method: String, _ p: JSONValue, conn: Int) async throws -> Data {
+        guard let t = Self.methods[method] else { throw RPCError.methodNotFound }
+        if let quiet = try refuseRemoteForge(t, p) { return quiet }
+        return try await integrationErrors { try await gitErrors { try await t.answer(p, self, conn: conn) } }
     }
 
-    private func dispatch(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
-        do {
-            if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self, conn: conn) } }
-            if let t = Self.asyncTyped[method] { return try await t.run(p, self, conn: conn) }
-            return try await offload { [self] in try handleSync(method, p, conn: conn) }
-        }
-        catch let e as GitError { throw RPCError.internalError(e.message) }
+    /// An in-order method, here on the connection's reader thread.
+    func answerNow(_ t: any Handled.Type, _ p: JSONValue, conn: Int) throws -> Data {
+        if let quiet = try refuseRemoteForge(t, p) { return quiet }
+        do { return try t.answerNow(p, self, conn: conn) } catch let e as GitError { throw RPCError.internalError(e.message) }
+    }
+
+    /// The same as a value, for callers that read it by hand (tests).
+    func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
+        try JSONDecoder().decode(JSONValue.self, from: await answer(method, p, conn: conn))
+    }
+
+    private func gitErrors<T>(_ body: () async throws -> T) async throws -> T {
+        do { return try await body() } catch let e as GitError { throw RPCError.internalError(e.message) }
     }
 
     /// Where a project's worktrees go: its name made safe for a folder ("../x" can't leave `worktrees/`) and its id, so two
@@ -71,11 +91,6 @@ extension Daemon {
     /// time limits, so the threads stay bounded by what is actually running.
     func offload<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
-    }
-
-    func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
-        if let t = Self.typed[method] { return try t.run(p, self, conn: conn) }   // also for notifications applied in order
-        throw RPCError.methodNotFound
     }
 }
 

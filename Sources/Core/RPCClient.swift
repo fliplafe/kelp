@@ -6,7 +6,7 @@ public final class RPCClient: Sendable {
     private let fd: Int32
     private struct State {
         var nextID = 1
-        var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+        var pending: [Int: CheckedContinuation<Data, Error>] = [:]   // id → its reply line, decoded by the caller as its type
         var closed = false, readerDone = false
         var notificationHandler: (@Sendable (String, JSONValue) -> Void)?
         var closeHandler: (@Sendable () -> Void)?
@@ -54,12 +54,13 @@ public final class RPCClient: Sendable {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { break }
             for line in lb.append(Data(buf[0..<n])) {
-                guard let m = try? JSONDecoder().decode(RPCMessage.self, from: line) else { continue }
+                // The result isn't read here: the caller reads it straight from the line, as its own type.
+                guard let m = try? JSONDecoder().decode(Envelope.self, from: line) else { continue }
                 if let method = m.method {
                     state.withLock { $0.notificationHandler }?(method, m.params ?? .null)
                 } else if let id = m.id {
                     let c = state.withLock { $0.pending.removeValue(forKey: id) }
-                    if let e = m.error { c?.resume(throwing: e) } else { c?.resume(returning: m.result ?? .null) }
+                    if let e = m.error { c?.resume(throwing: e) } else { c?.resume(returning: line) }
                 }
             }
         }
@@ -83,6 +84,11 @@ public final class RPCClient: Sendable {
 
     /// `timeout`: throw if no reply came by then — for polls, where one reply that never arrives would stop the loop for good.
     public func call(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> JSONValue {
+        try await call(method, params, timeout: timeout, as: JSONValue.self)
+    }
+
+    /// The reply's line: a message with `id` and `result` (or `error`, thrown before it gets here).
+    private func reply(_ method: String, _ params: JSONValue?, timeout: TimeInterval?) async throws -> Data {
         try await withCheckedThrowingContinuation { c in
             let id = state.withLock { s -> Int? in
                 guard !s.closed else { return nil }
@@ -101,16 +107,23 @@ public final class RPCClient: Sendable {
         }
     }
 
-    public func call<T: Decodable>(_ method: String, _ params: JSONValue? = nil, as: T.Type) async throws -> T {
-        try await call(method, params).decode(T.self)
+    public func call<T: Decodable>(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil, as: T.Type) async throws -> T {
+        try JSONDecoder().decode(ResultOf<T>.self, from: await reply(method, params, timeout: timeout)).result
     }
 
     /// `timeout`: sooner than the method's own (`RPCMethod.timeout`).
     public func call<M: RPCMethod>(_ m: M, timeout: TimeInterval? = nil) async throws -> M.Result {
-        try await call(M.name, m.params(), timeout: timeout ?? M.timeout).decode(M.Result.self)
+        try await call(M.name, m.params(), timeout: timeout ?? M.timeout, as: M.Result.self)
     }
     public func notify<M: RPCMethod>(_ m: M) { notify(M.name, try? m.params()) }
 }
+
+/// A line from the daemon as far as the reader needs it: a notification's method and params, a reply's id and error.
+private struct Envelope: Decodable {
+    var id: Int?, method: String?, params: JSONValue?, error: RPCError?
+}
+/// A reply's result as the caller's type, read from its line in one pass.
+private struct ResultOf<R: Decodable>: Decodable { let result: R }
 
 extension JSONValue {
     public static func obj(_ kv: KeyValuePairs<String, JSONValue>) -> JSONValue {

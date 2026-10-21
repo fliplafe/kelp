@@ -166,10 +166,17 @@ public final class Daemon: Sendable {
                             Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) { c.send(d) }
                         continue
                     }
-                    // Quick, and only right in the order they were sent (keystrokes; a saved layout or a terminal size that
-                    // finished second must not win over the newer one): applied here, one after another (`Handled.inOrder`).
-                    if req.isNotification, let t = Self.typed[req.method], t.inOrder {
-                        _ = try? t.run(req.params ?? .null, self, conn: c.id)
+                    // Quick, and only right in the order they were sent (keystrokes, a setting dragged, two sends; a saved
+                    // layout or a terminal size that finished second must not win over the newer one): applied here, one
+                    // after another, calls and notifications alike (`Answered.inOrder`); a call's reply goes out in that order.
+                    if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder {
+                        let id = req.id ?? .null
+                        do {
+                            let r = try answerNow(t, req.params ?? .null, conn: c.id)
+                            if !req.isNotification { c.send(Self.replyLine(id: id, result: r)) }
+                        } catch {
+                            if !req.isNotification, let d = Self.errorLine(id: id, error) { c.send(d) }
+                        }
                         continue
                     }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
@@ -217,26 +224,42 @@ public final class Daemon: Sendable {
     }
 
     private func respond(_ req: Request, conn c: Connection) async {
-        let reply: Reply
         let id = req.id ?? .null
         // Attach: the reply with the history is queued in the same step that subscribes, so no live output can reach this
         // connection ahead of it (the screen would show the newest bytes before the history they follow).
-        if req.method == "session.attach", !req.isNotification, let sid = req.params?["id"]?.string,
+        // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
+        // queued inside the session's lock, which `Handled` can't express.
+        if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.decoded(req.params ?? .null))?.id,
            existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
            let ls = try? await offload({ [self] in try liveSession(sid) }) {
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
             clients.ifConnected(c.id) {
                 _ = ls.attach(c.id) { history in
-                    if let d = try? Wire.line(Reply(id: id, result: .obj(["history": .string(history.base64EncodedString())]), error: nil)) { c.send(d) }
+                    if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) { c.send(Self.replyLine(id: id, result: r)) }
                 }
             }
             return
         }
-        do { reply = Reply(id: id, result: try await handle(req.method, req.params ?? .null, conn: c.id), error: nil) }
-        catch let e as RPCError { reply = Reply(id: id, result: nil, error: e); Log.rpc.debug("\(req.method, privacy: .public) failed: \(e.message)") }
-        catch { reply = Reply(id: id, result: nil, error: .internalError("\(error)")); Log.rpc.error("\(req.method, privacy: .public) failed: \(error)") }
-        if !req.isNotification, let d = try? Wire.line(reply) { c.send(d) }
+        do {
+            let r = try await answer(req.method, req.params ?? .null, conn: c.id)
+            if !req.isNotification { c.send(Self.replyLine(id: id, result: r)) }
+        } catch {
+            if let e = error as? RPCError { Log.rpc.debug("\(req.method, privacy: .public) failed: \(e.message)") }
+            else { Log.rpc.error("\(req.method, privacy: .public) failed: \(error)") }
+            if !req.isNotification, let d = Self.errorLine(id: id, error) { c.send(d) }
+        }
+    }
+
+    /// A reply line around a result already encoded: the result isn't decoded and encoded again on its way out.
+    static func replyLine(id: JSONValue, result: Data) -> Data {
+        var d = Data(#"{"jsonrpc":"2.0","id":"#.utf8)
+        d.append((try? JSONEncoder().encode(id)) ?? Data("null".utf8))
+        d.append(Data(#","result":"#.utf8)); d.append(result); d.append(Data("}\n".utf8))
+        return d
+    }
+    static func errorLine(id: JSONValue, _ error: Error) -> Data? {
+        try? Wire.line(Reply(id: id, result: nil, error: (error as? RPCError) ?? .internalError("\(error)")))
     }
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) {

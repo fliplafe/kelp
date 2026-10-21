@@ -169,10 +169,10 @@ extension TaskFromIssue: AsyncHandled {
             while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
             return unique
         }
-        let wv = try await d.handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: -1)
+        let created = try await d.offload { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(d) }
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
         let (w, s) = try await d.offload { () throws -> (Worktree, Session) in
-            guard let w = try d.store.update(Worktree.self, try wv.req("id"), {
+            guard let w = try d.store.update(Worktree.self, created.worktree.id, {
                 $0.issue = ref; $0.issueURL = url; $0.linearIssueId = linearId ?? ""
             }) else { throw RPCError.internalError("worktree vanished") }
             let cfg = d.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
@@ -190,7 +190,7 @@ extension TaskFromIssue: AsyncHandled {
         await d.moveJira(w, toName: "progress", category: "indeterminate")
         d.notify(ChangedEvent.worktree)
         // An untrusted .kelp.yaml's setup didn't run: said, as worktree.create says it, so the caller can ask.
-        return Result(worktree: w, session: s, setupNeedsTrust: wv["setupNeedsTrust"]?.bool == true)
+        return Result(worktree: w, session: s, setupNeedsTrust: created.setupNeedsTrust == true)
     }
 }
 

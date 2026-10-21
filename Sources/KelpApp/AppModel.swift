@@ -76,8 +76,15 @@ final class AppModel {
         ])
         guard state != published else { return }
         published = state
-        c.notify(UIPublish(state: state))
+        // A call (applied in order all the same): a daemon that isn't this app's own copy refuses it, and agents' `kelp open`
+        // would then say Kelp isn't running. Said once per connection.
+        Task {
+            guard let error = await tryCall(UIPublish(state: state)).error, !publishRefused, client === c else { return }
+            publishRefused = true
+            Banner.show(error, style: .error)
+        }
     }
+    @ObservationIgnored private var publishRefused = false
 
     /// One connection at a time: launch, a dropped connection and Restart Background Service all come through here.
     func connect() async {
@@ -123,7 +130,7 @@ final class AppModel {
         await refresh()
         connected = client === c   // after the lists: what waits for the connection finds the projects in
         if connected { connections += 1 }
-        published = nil   // a new daemon knows nothing yet
+        published = nil; publishRefused = false   // a new daemon knows nothing yet
         publishUIState()
         watchContext()
     }
@@ -241,7 +248,7 @@ final class AppModel {
         case CloneEvent.name:
             if let e = event(CloneEvent.self) { CloneSheet.cloneProgress(id: e.id, line: e.line) }
         case SettingsEvent.name:
-            if let e = event(SettingsEvent.self) { SettingsStore.shared.apply(e.settings) }
+            if let e = event(SettingsEvent.self) { SettingsStore.shared.received(e.settings) }
         case UIEvent.name:
             if let e = event(UIEvent.self) { UIRequests.handle(e) }
         default: break

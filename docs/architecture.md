@@ -98,11 +98,15 @@ else a `NotificationCenter` name (`kelpGitChanged`: after a git action the windo
   connections and the 2 Hz ticker (session ticks, keep-awake, pausing idle agents, settings.json polling) have their own
   queues.
 - **Ordering.** Replies to one connection can come back in any order, as in JSON-RPC and LSP; clients match them by id.
-  What is only right in the order it was sent says so on its type (`Handled.inOrder`: keystrokes `session.write`,
-  `session.resize`, `state.set`, `ui.publish`) and, sent as a notification, runs on the reader thread, one after
-  another. A session's status changes run in order on its own queue (`LiveSession.inOrder`). `session.stream`, the one
-  method the reader knows by name, turns its connection into a raw byte pipe; the history goes out under the session's
-  lock, so no live output gets ahead of it. Events (`event.*`) are typed too (`RPCEvent` in Core), one encode each.
+  What is only right in the order it was sent says so on its type (`Answered.inOrder`: keystrokes `session.write`,
+  `session.resize`, `state.set`, `ui.publish`, `settings.set`, `session.send`) and runs on the reader thread, one after
+  another, call or notification; a call's reply goes out in that order. A session's status changes run in order on its
+  own queue (`LiveSession.inOrder`). `session.stream`, the one method the reader knows by name, turns its connection into
+  a raw byte pipe; `session.attach` of a live session answers itself, its history queued under the session's lock, so no
+  live output gets ahead of it. Every method is in one registry (`Daemon.methods`); a result is encoded once, straight
+  into its reply, and the client decodes it as its type from the reply's bytes. Events (`event.*`) are typed too
+  (`RPCEvent` in Core), one encode each; a connection that asked for none (`client.events`, `kelp attach`'s control
+  connection) gets no broadcasts.
 - **Writes to a client** leave in order from that connection's own queue. A client whose writes make no progress for
   30 s is hung up on, and so is one more than 256 MiB behind.
 - **Locks**, outermost first: a session's wake lock (`WakeLocks`; several are taken in id order) → `SessionTable` →

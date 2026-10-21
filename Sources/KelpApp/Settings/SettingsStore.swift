@@ -9,9 +9,19 @@ import Core
 final class SettingsStore {
     static let shared = SettingsStore()
     private(set) var values: [String: JSONValue] = [:]
+    /// Keys with a set still on its way: the daemon's answer to an older one (a colour dragged, a stepper held) mustn't
+    /// put back a value the user already moved past.
+    private var inFlight: [String: Int] = [:]
 
     func load() async {
-        if let o = await AppModel.shared.call(SettingsGet()) { apply(o) }   // else a banner: what's shown may not be settings.json
+        if let o = await AppModel.shared.call(SettingsGet()) { received(o) }   // else a banner: what's shown may not be settings.json
+    }
+
+    /// The daemon's settings (its event, or a load): a key still being set here keeps the value set here.
+    func received(_ o: [String: JSONValue]) {
+        var o = o
+        for k in inFlight.keys { o[k] = values[k] }
+        apply(o)
     }
 
     func apply(_ o: [String: JSONValue]) {
@@ -46,9 +56,12 @@ final class SettingsStore {
     func set(_ key: String, _ v: JSONValue?) {
         var next = values; next[key] = v
         apply(next)   // optimistic; the daemon's echo confirms
+        inFlight[key, default: 0] += 1
         Task {
+            let error = await AppModel.shared.tryCall(SettingsSet(key: key, value: v)).error
+            inFlight[key] = inFlight[key].flatMap { $0 > 1 ? $0 - 1 : nil }
             // Not saved: say so and show what settings.json really holds again, instead of a value that reverts later.
-            if let error = await AppModel.shared.tryCall(SettingsSet(key: key, value: v)).error {
+            if let error {
                 Banner.show(String(localized: "Couldn't change “\(key)”: \(error)"), style: .error)
                 await load()
             }

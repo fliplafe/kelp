@@ -5,15 +5,16 @@ import Integrations
 
 /// A method that waits on a web API (Linear, Jira, Bitbucket): async, with its gh / git calls through `offload`.
 /// `handle(_:conn:)` for one that reports progress to the asking connection (repo.clone).
-protocol AsyncHandled: RPCMethod {
+protocol AsyncHandled: Answered {
     func handle(_ d: Daemon) async throws -> Result
     func handle(_ d: Daemon, conn: Int) async throws -> Result
 }
 
 extension AsyncHandled {
+    static var inOrder: Bool { false }
     func handle(_ d: Daemon, conn: Int) async throws -> Result { try await handle(d) }
 
-    static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) async throws -> JSONValue { try .from(await decoded(p).handle(d, conn: conn)) }
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try JSONEncoder().encode(await decoded(p).handle(d, conn: conn)) }
 }
 
 extension Daemon {
@@ -254,9 +255,8 @@ extension Daemon {
     static let integrationMethods: [any Handled.Type] = [GitHubBranchPR.self, GitHubForge.self, CIRunsList.self, CIJobs.self, CILog.self,
         CIRerun.self, CIDispatch.self, GitHubStatus.self, GitHubIssues.self, GitHubChecks.self, GitHubFailedLog.self,
         GitHubReviewComments.self, GitHubProjects.self, GitHubProjectItems.self]
-    static let asyncTyped = Dictionary(uniqueKeysWithValues: ([GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
+    static let asyncMethods: [any AsyncHandled.Type] = [GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,
         JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self,
         AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self]
-        as [any AsyncHandled.Type]).map { ($0.name, $0) })
 }
