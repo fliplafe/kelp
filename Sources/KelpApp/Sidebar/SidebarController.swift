@@ -69,6 +69,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
         outline.addTableColumn(col); outline.outlineTableColumn = col
         outline.headerView = nil; outline.style = .sourceList; outline.rowSizeStyle = .custom
+        outline.selectionHighlightStyle = .none   // SidebarRowView draws the selection as a pill
         outline.floatsGroupRows = false; outline.indentationPerLevel = 14
         outline.allowsMultipleSelection = true   // ⌘/⇧-click: the menu then acts on all of them
         outline.dataSource = self; outline.delegate = self
@@ -116,7 +117,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
         track(owner: self) { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection(); self?.updateCard() }
         track(owner: self) { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
@@ -127,6 +128,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     }
 
     private func updateVisibleCells() {
+        updateCard()
         for row in 0..<outline.numberOfRows { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
     }
 
@@ -286,6 +288,22 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         return TextSize.of(Self.isHeader(item) ? 32 : 28)
     }
 
+    func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { SidebarRowView() }
+    func outlineView(_ o: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) { (rowView as? SidebarRowView)?.card = cardPlace(row) }
+
+    /// The top-level row (project or section) whose rows hold the workspace on screen: they're drawn as one card.
+    private func cardPlace(_ row: Int) -> (first: Bool, last: Bool)? {
+        func root(_ r: Int) -> Node? {
+            var n = outline.item(atRow: r) as? Node
+            while let p = n.flatMap({ outline.parent(forItem: $0) as? Node }) { n = p }
+            return n
+        }
+        guard let id = Workbench.shared.workspaceId, let top = root(row),
+              top.children.contains(where: { $0.key == "w:" + id }) else { return nil }
+        return ((outline.item(atRow: row) as? Node) === top, root(row + 1) !== top)
+    }
+    private func updateCard() { outline.enumerateAvailableRowViews { v, row in (v as? SidebarRowView)?.card = self.cardPlace(row) } }
+
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? Node else { return nil }
         let cell = SidebarCell(node: n, owner: self)
@@ -299,6 +317,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard !syncing, let node = n.userInfo?["NSObject"] as? Node, case .workspace = node.kind else { return }
         if c { collapsed.insert(node.key) } else { collapsed.remove(node.key) }
         refreshCell(node.key)   // collapsed, the workspace shows its agents' state itself
+        updateCard()   // the card ends at another row
     }
 
     func outlineViewSelectionDidChange(_ n: Notification) {

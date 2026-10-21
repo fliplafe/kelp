@@ -208,3 +208,37 @@ final class SidebarCell: NSTableCellView {
 struct SidebarFooterView: View {
     var body: some View { UsageView() }
 }
+
+/// Like Safari's tab groups: the project with the workspace on screen sits on a rounded card, and the row you're on is
+/// a raised pill inside it (no accent colour, so the text keeps its colours).
+@MainActor
+final class SidebarRowView: NSTableRowView {
+    /// Where this row is in the card: nil outside it.
+    var card: (first: Bool, last: Bool)? { didSet { if card?.first != oldValue?.first || card?.last != oldValue?.last { needsDisplay = true } } }
+
+    static let cardFill = NSColor.labelColor.withAlphaComponent(0.06)
+    static let pillFill = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.black.withAlphaComponent(0.32) : .white }
+
+    override func drawBackground(in r: NSRect) {
+        if let card {
+            // Rows in the middle extend past their bounds, so only the card's ends are rounded.
+            var rect = bounds.insetBy(dx: 6, dy: 0)
+            if card.first { rect.origin.y += 3; rect.size.height -= 3 } else { rect.origin.y -= 12; rect.size.height += 12 }
+            if card.last { rect.size.height -= 3 } else { rect.size.height += 12 }
+            Self.cardFill.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
+        }
+        guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow(); shadow.shadowColor = .black.withAlphaComponent(0.12); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .init(width: 0, height: -0.5)
+        shadow.set()
+        Self.pillFill.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 10, dy: 2), xRadius: 7, yRadius: 7).fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+    override var isSelected: Bool { didSet { if isSelected != oldValue { needsDisplay = true } } }
+    /// In the sidebar's vibrant material a dark fill would come out lighter; the card and pill are drawn as they are.
+    override var allowsVibrancy: Bool { false }
+    /// The pill isn't the accent colour, so the cell draws as unselected (white text on it would vanish).
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+}
