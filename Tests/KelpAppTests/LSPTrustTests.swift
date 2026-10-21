@@ -22,5 +22,7 @@ extension SharedAppModel {
         lsp.trust(root)                                          // the banner's "Trust and Start"
         #expect(started == 2 && lsp.trusted(root))
         #expect(lsp.whenTrusted(root) { started += 1 } && started == 2)   // trusted from now on: no waiting
+        let scratch = Paths.root.appendingPathComponent("scratch").path
+        #expect(lsp.trusted(scratch + "/note") && !lsp.trusted(scratch + "-x/repo"))   // Kelp's own scratch folder, not a sibling
     }
 }

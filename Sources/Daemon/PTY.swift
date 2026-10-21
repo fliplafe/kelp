@@ -13,7 +13,7 @@ public struct PTYError: Error, LocalizedError, CustomStringConvertible {
 /// another process, so nothing is written to the one or signalled at the other after that.
 public final class PTY: @unchecked Sendable {   // closed under io, reaped under life; source and the rest on q
     public let pid: pid_t
-    private let primaryFD: Int32
+    let primaryFD: Int32
     private var source: DispatchSourceRead?
     private let q = DispatchQueue(label: "kelp.pty")
     private var exited = false
@@ -23,8 +23,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     /// Typing goes out on a queue of its own, from a copy of the terminal's fd that only this queue closes: a program that
     /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `io`, and a write never
     /// reaches a reused fd number. `stopWrites` (under io) ends a write that's waiting for room.
-    private let writes = DispatchQueue(label: "kelp.pty.write")
-    private let writeFD: Int32
+    let writes = DispatchQueue(label: "kelp.pty.write")
+    let writeFD: Int32
     private var stopWrites = false
     /// Closes the terminal's fd from the read source's cancel handler, once GCD is done with it: closing right after
     /// `cancel()` could pull the fd from under a read still running (which would then read whatever reuses the number).

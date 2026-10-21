@@ -41,6 +41,7 @@ public final class Daemon: Sendable {
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()
     /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
+    let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
     let deskLock = NSRecursiveLock()  // trusted-configs.json: read-modify-write under it
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
@@ -113,7 +114,11 @@ public final class Daemon: Sendable {
         let r = running.withLock { r in defer { r = Running() }; return r }
         r.accept?.cancel(); r.ticker?.cancel()   // the accept source's cancel closes the socket
         if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
-        live.all.forEach { $0.pty.kill() }
+        // Every program ends with the daemon, whole trees (a job in a process group of its own, an agent that ignores the
+        // hangup), each recorded as pausing records it: a resumable agent comes back paused, not as a second copy.
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        let pids = live.all.flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] }
+        Self.waitGone(pids)
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }

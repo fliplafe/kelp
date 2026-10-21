@@ -19,6 +19,11 @@ final class AppModel {
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
     @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
+    /// `event.session`s handled so far, per session: a list asked for before one of them may be older than it.
+    @ObservationIgnored private var sessionEvents: [String: Int] = [:]
+    /// The refresh under way, and whether another was asked for meanwhile (a burst of `event.changed` makes one more).
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshAgain = false
 
     /// Workspaces of a project in the order they were opened: Workspace 1, 2, 3… (older ones on their own branch
     /// included), unless dragged into another in the sidebar.
@@ -176,12 +181,35 @@ final class AppModel {
         try? p.run()
     }
 
+    /// One at a time: two lists asked for together could come back the older last. A caller gets a list read after it asked.
     func refresh() async {
+        if let running = refreshTask { refreshAgain = true; await running.value; return }
+        let t = Task { @MainActor in
+            repeat { refreshAgain = false; await refreshOnce() } while refreshAgain
+            refreshTask = nil   // with the last check: no await between, so a later caller starts a new one
+        }
+        refreshTask = t
+        await t.value
+    }
+
+    private func refreshOnce() async {
         guard let c = client else { return }
         // Assign only what changed: every assignment re-renders the views that read it.
         if let r = try? await c.call("repo.list", as: [Repo].self), r != repos { repos = r }
         if let w = try? await c.call("worktree.list", as: [Worktree].self), w != worktrees { worktrees = w }
-        if let s = try? await c.call("session.list", as: [Session].self), s != sessions { sessions = s }
+        let before = sessionEvents
+        if let s = try? await c.call("session.list", as: [Session].self) {
+            let merged = Self.merge(list: s, local: sessions, newer: Set(sessionEvents.keys.filter { sessionEvents[$0] != before[$0] }))
+            if merged != sessions { sessions = merged }
+        }
+    }
+
+    /// The daemon's list, except sessions in `newer`: an event about them came while the list was on its way (on the
+    /// same connection, so after the list was read, or as it was), and what it said stays.
+    static func merge(list: [Session], local: [Session], newer: Set<String>) -> [Session] {
+        let kept = Dictionary(local.filter { newer.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let listed = Set(list.map(\.id))
+        return list.map { kept[$0.id] ?? $0 } + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
     }
 
     /// The daemon's events, handled on the main actor.
@@ -193,6 +221,7 @@ final class AppModel {
             if let id = p["session"]?.string, let b = p["data"]?.string, let d = Data(base64Encoded: b) { outputHandlers[id]?(d) }
         case "event.session":
             guard let s = try? p.decode(Session.self) else { return }
+            sessionEvents[s.id, default: 0] += 1
             let old = sessions.first { $0.id == s.id }
             if old != s { upsert(s) }   // views follow `sessions`
             (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)

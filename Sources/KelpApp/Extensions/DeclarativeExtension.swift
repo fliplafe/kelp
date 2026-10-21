@@ -199,7 +199,8 @@ enum ExtActions {
         }
         if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
         else if let o = a.open { Workbench.open(TabURI.normalize(expand(o, item: item, quote: false), cwd: IDEContext.current.workspace?.path)) }
-        else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false)) }
+        // Typed, not sent: `item` is a command's output (an issue's title, a PR's body), someone else's words.
+        else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), extra: ["draft": true]) }
         else if let r = a.run {
             let cmd = expand(r, item: item, quote: true)
             Task {

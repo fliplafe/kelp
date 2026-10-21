@@ -126,12 +126,13 @@ extension GitHubPRCreate: AsyncHandled {
         guard let w = try d.store.worktree(worktreeId), let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
         let path = w.path, draft = draft == true
         try await d.offload { try Git.remote(path, .push) }   // the branch checked out now
+        let branch = try await d.offload { d.checkedOut(w) }   // and the PR's source (the record can be stale after a switch)
         var title = title ?? "", body = body ?? ""
         let link = w.issue.isEmpty ? nil : (w.issue.hasPrefix("#") ? "Fixes \(w.issue)" : "Refs \(w.issue)")
         if title.isEmpty || body.isEmpty {
             let cmpBase = w.base.isEmpty ? r.baseBranch : w.base
             let commits = try await d.offload { try Git.log(path, base: cmpBase).map(\.subject) }
-            if title.isEmpty { title = commits.last ?? w.branch }
+            if title.isEmpty { title = commits.last ?? branch }
             if body.isEmpty { body = commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "") }
         } else if let link, !body.contains(w.issue) { body += "\n\n\(link)" }
         // Stacked: a worktree cut from another feature branch opens its PR against that branch.
@@ -140,7 +141,7 @@ extension GitHubPRCreate: AsyncHandled {
         let url: String
         if let slug = try await d.offload({ BitbucketClient.slug(cwd: path) }) {
             guard let bb = await d.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
-            url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: w.branch, destination: prBase)
+            url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: branch, destination: prBase)
         } else if try await d.offload({ GitLab.isGitLab(cwd: path) }) {
             url = try await d.offload { [title, body] in try GitLab.createMR(cwd: path, title: title, body: body, base: prBase, draft: draft) }
         } else {

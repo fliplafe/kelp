@@ -56,17 +56,20 @@ extension Daemon {
         // of starting a second one (on the same log, in a folder about to be removed).
         let sessions = try store.sessions().filter { $0.worktreeId == wid }
         try wakeLocks.withLocks(sessions.map(\.id)) {
-            for s in sessions {
-                guard let ls = live.remove(s.id) else { continue }
-                if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
-                    publish(ls.markHibernated())
-                } else {
-                    ls.overrideStatus(.exited); publish(ls.snapshot)   // said here and saved now: out of `live`, nothing records its exit
-                }
-                pids += ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
-            }
+            for s in sessions { if let ls = live.remove(s.id) { pids += pause(ls, manifests) } }
             Self.waitGone(pids)
         }
+    }
+
+    /// A session already out of `live`: recorded as paused (a resumable agent) or ended — said here and saved now, since
+    /// nothing records its exit any more — then stopped with all it started. Its pids, for `waitGone`.
+    func pause(_ ls: LiveSession, _ manifests: [AgentManifest]) -> [pid_t] {
+        if manifests.first(where: { $0.id == ls.snapshot.agent })?.resumeArgs.isEmpty == false {
+            publish(ls.markHibernated())
+        } else {
+            ls.overrideStatus(.exited); publish(ls.snapshot)
+        }
+        return ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
     }
 
     /// Until these processes have exited (or 3 s, for one that ignores the hangup).

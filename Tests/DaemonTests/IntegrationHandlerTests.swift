@@ -89,6 +89,29 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
         await #expect(throws: (any Error).self) { _ = try await c.call("linear.setState", .obj(["issueId": "i", "stateId": "s"])) }
     }
 
+    /// A Bitbucket pull request opens from the branch checked out now, the one just pushed: a workspace's record can still
+    /// name the branch it had before a switch.
+    @Test func aBitbucketPullRequestComesFromTheBranchCheckedOut() async throws {
+        let (d, c) = try await daemon(); defer { d.stop(); clearKeys() }
+        let sent = Locked("")
+        Stub.serve("api.bitbucket.org") { _, body in
+            sent.withLock { $0 = body }
+            return (201, #"{"links":{"html":{"href":"https://bitbucket.org/w/r/pull-requests/7"}}}"#)
+        }
+        _ = try await c.call("bitbucket.setCredentials", .obj(["user": "me", "token": "t"]))
+        let path = try makeRepo(), bare = tmp().path + ".git"
+        try Git.run(["init", "-q", "--bare", bare], cwd: "/tmp")
+        try Git.run(["remote", "add", "origin", "git@bitbucket.org:w/r.git"], cwd: path)
+        try Git.run(["config", "url.\(bare).pushInsteadOf", "git@bitbucket.org:w/r.git"], cwd: path)   // pushes stay here
+        let repo: Repo = try await c.call("repo.add", .obj(["path": .string(path)]), as: Repo.self)
+        let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
+        try Git.run(["checkout", "-qb", "switched-to"], cwd: w.path)   // outside Kelp: its record still says the old branch
+        try "x".write(toFile: w.path + "/x.txt", atomically: true, encoding: .utf8)
+        try Git.run(["add", "."], cwd: w.path); try Git.run(["commit", "-qm", "x"], cwd: w.path)
+        _ = try await c.call("github.pr-create", .obj(["worktreeId": .string(w.id), "title": "T", "body": "B"]))
+        #expect(sent.withLock { $0 }.contains(#""source":{"branch":{"name":"switched-to"}}"#))
+    }
+
     @Test func bitbucketCredentialsAreKeptOrCleared() async throws {
         let (d, c) = try await daemon(); defer { d.stop(); clearKeys() }
         clearKeys()

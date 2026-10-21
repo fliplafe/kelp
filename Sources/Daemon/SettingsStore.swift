@@ -77,22 +77,25 @@ extension Daemon {
             for (old, new) in SettingsStore.legacyKeys { o[old] = settings[new] }
             return .object(o)
         case "config.set":
-            var all = settings.all
-            if case .object(let o) = p { for (k, v) in o { if let key = SettingsStore.legacyKeys[k] { all = try settings.set(key, v) } } }
-            settingsChanged(all)
+            if case .object(let o) = p { for (k, v) in o { if let key = SettingsStore.legacyKeys[k] { _ = try settings.set(key, v) } } }
+            settingsChanged()
             return try handleSettings("config.get", .null)
         default: return nil
         }
     }
 
-    func settingsChanged(_ all: JSONValue) {
-        notify("event.settings", .obj(["settings": all]))
-        applyKeepAwake()
+    /// The settings as they are when it's their turn, one change after another: two sets close together can't announce
+    /// themselves the wrong way round (the app takes each event as the whole of the settings).
+    func settingsChanged() {
+        settingsEvents.async { [self] in
+            notify("event.settings", .obj(["settings": settings.all]))
+            applyKeepAwake()
+        }
     }
 
     /// From the ticker: hand edits of settings.json.
     func pollSettings() {
-        if settings.reloadIfChanged() { settingsChanged(settings.all) }
+        if settings.reloadIfChanged() { settingsChanged() }
     }
 }
 
@@ -100,7 +103,7 @@ extension SettingsGet: Handled { func handle(_ d: Daemon) throws -> JSONValue { 
 extension SettingsSet: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         let all = try d.settings.set(key, value)
-        d.settingsChanged(all)
+        d.settingsChanged()
         return all
     }
 }

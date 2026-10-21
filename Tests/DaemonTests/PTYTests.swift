@@ -179,22 +179,36 @@ final class Box: @unchecked Sendable {
     #expect(done.wait(timeout: .now() + 2) == .success, "size / foregroundProgram waited on the stuck write")
 }
 
-/// A terminal closes its fds once: finishing and being dropped both hang up, and a second close would hit a reused number.
+/// A terminal closes its fds once: finishing and being dropped both hang up, and a second close would hit whatever
+/// reuses the number by then. Here a pipe takes each freed number before the drop, and must survive it.
 @Test func aFinishedTerminalClosesItsFdsOnce() async throws {
-    for _ in 0..<20 {
-        let p = try PTY(argv: ["/bin/sh", "-c", "exit 0"], cwd: "/tmp", env: [:])
+    var held = 0
+    for _ in 0..<60 where held < 6 {   // until some freed numbers were had (tests running alongside take them too)
+        var p: PTY? = try PTY(argv: ["/bin/sh", "-c", "exit 0"], cwd: "/tmp", env: [:])
         let ended = Box()
-        p.onExit = { ended.exit($0) }
-        p.start()
+        p?.onExit = { ended.exit($0) }
+        p?.start()
         #expect(try await waitFor(5) { ended.code != nil })
-        withExtendedLifetime(p) {}   // alive until it finished (Swift may release it right after its last use)
-    }   // each is dropped here: deinit after finish
-    // A pipe opened now gets one of the freed numbers; it must still work after any late close.
-    let pipe = Pipe()
-    try await Task.sleep(for: .milliseconds(200))
-    pipe.fileHandleForWriting.write(Data("ok".utf8))
-    try pipe.fileHandleForWriting.close()
-    #expect(pipe.fileHandleForReading.readDataToEndOfFile() == Data("ok".utf8))
+        let fds = [p?.primaryFD ?? -1, p?.writeFD ?? -1], writes = p?.writes   // no other reference: the drop below is the last
+        writes?.sync {}   // finished: its first close of the write end has run (the terminal's own goes on its read queue)
+        // Each freed number, taken again: by the pipe itself (the lowest free numbers), else a copy of it. Only a number that
+        // is free now (closed by the terminal already, not taken by another test meanwhile) can be had either way.
+        let pipe = Pipe(), ends = [pipe.fileHandleForReading.fileDescriptor, pipe.fileHandleForWriting.fileDescriptor]
+        let holders = fds.compactMap { fd -> Int32? in
+            if ends.contains(fd) { return fd }
+            let h = fcntl(ends[0], F_DUPFD, fd)
+            if h == fd { return h }
+            if h >= 0 { close(h) }
+            return nil
+        }
+        held += holders.count
+        p = nil   // dropped: deinit hangs up again, and must close nothing
+        writes?.sync {}   // a close it queued has run
+        #expect(holders.allSatisfy { fcntl($0, F_GETFD) != -1 }, "closed under us")
+        holders.filter { !ends.contains($0) }.forEach { close($0) }
+        withExtendedLifetime(pipe) {}
+    }
+    #expect(held > 0)
 }
 
 /// Tests start programs as kelpd does, through `kelp __ctty`: the terminal is the program's controlling terminal, so a

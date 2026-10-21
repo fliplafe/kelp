@@ -367,7 +367,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// hangup gets 2 s before SIGKILL): each session has its own wake lock.
 @Test func openingASessionDoesntWaitForAnotherToStop() async throws {
     let stubborn = AgentManifest(id: "stubborn2", name: "Stubborn", command: "/bin/bash",
-                                 args: ["-c", "trap '' HUP TERM; echo up; while :; do sleep 0.1; done", "x"], resumeArgs: ["--resume"])
+                                 args: ["-c", "trap 'echo STOPPING' TERM; trap '' HUP; echo up; while :; do sleep 0.1; done", "x"], resumeArgs: ["--resume"])
     let sleepy = AgentManifest(id: "sleepy3", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo up; sleep 30", "x"], resumeArgs: ["--resume"])
     let w = try await world(agents: [stubborn, sleepy]); defer { w.d.stop() }
     let slow = try await desk(w, "slow"), other = try await desk(w, "other")
@@ -376,8 +376,9 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(a.id)]))).string?.contains("up") == true })
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(other.id)]))   // b paused
     _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(other.id)]))
+    let la = try #require(w.d.existing(a.id))
     let archiving = Task { try await w.c.call("worktree.archive", .obj(["id": .string(slow.id)])) }   // ~2 s: a ignores SIGTERM
-    try await Task.sleep(for: .milliseconds(300))
+    #expect(try await waitFor(10) { String(decoding: la.tail(4000), as: UTF8.self).contains("STOPPING") })   // under way, its lock held
     _ = try await w.c.call("session.attach", .obj(["id": .string(b.id)]))   // wakes b
     #expect(kill(a.pid, 0) == 0)   // a still stopping: b's wake didn't wait for it
     _ = try await archiving.value
@@ -425,4 +426,24 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
         #expect(readings.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: pressed), "a key reached: \(question)")
     }
+}
+
+/// Stopping the daemon (a restart, an update) ends whole trees — a job in a process group of its own, an agent that
+/// ignores the hangup — and a resumable agent is recorded as paused, so opening it later resumes it once.
+@Test func stoppingTheDaemonEndsWholeTreesAndKeepsAgentsResumable() async throws {
+    let stubborn = AgentManifest(id: "stubborn4", name: "Stubborn", command: "/bin/bash",
+                                 args: ["-c", "trap '' HUP TERM; echo up; while :; do sleep 0.1; done", "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [stubborn])
+    let wt = try await desk(w, "stop")
+    let a: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "stubborn4"]), as: Session.self)
+    let pidFile = tmp().path + "-job.pid"
+    let script = "set -m; (trap '' HUP TERM; while :; do sleep 0.1; done) & echo $! > \(pidFile); echo started; wait"
+    _ = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string("/bin/bash -c " + IDE.shellWord(script))]))
+    #expect(try await waitFor(10) { FileManager.default.fileExists(atPath: pidFile) })
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(a.id)]))).string?.contains("up") == true })
+    let job = try #require(pid_t((try String(contentsOfFile: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)))
+    defer { kill(job, SIGKILL); kill(a.pid, SIGKILL) }   // whatever happens, not left behind
+    w.d.stop()
+    #expect(kill(job, 0) != 0 && kill(a.pid, 0) != 0)
+    #expect(try w.d.store.session(a.id)?.status == .hibernated)
 }
