@@ -208,7 +208,11 @@ final class EditorArea: NSViewController {
     }
 
     /// Unsaved files: the dot in the window's close button (and on their tabs), as in any Mac document app.
-    func showEdited() { view.window?.isDocumentEdited = !editedFiles.isEmpty }
+    /// In the main window, any loaded workspace's: switching away from one with unsaved files keeps the dot (quitting asks).
+    func showEdited() {
+        let all = Workbench.window.flatMap { $0.window === view.window ? $0.editors.editedFiles : nil }
+        view.window?.isDocumentEdited = !(all ?? editedFiles).isEmpty
+    }
 
     /// Files with unsaved changes in this workspace (asked about on quit; the workspace isn't dropped from memory).
     var editedFiles: [SavableTab] { contents.values.compactMap { $0 as? SavableTab }.filter(\.isEdited) }

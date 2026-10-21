@@ -51,10 +51,15 @@ final class FileTab: SavableTab {
             let box = NSView(); view = box
             let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); box.pin(wait)
             Task { [weak self] in
-                let res = await AppModel.shared.tryCall(FilesReadRemote(path: p))
+                let read: Result<String, Error>
+                do { read = .success(try await AppModel.shared.get(FilesReadRemote(path: p))) } catch { read = .failure(error) }
                 guard let self else { return }
                 wait.removeFromSuperview()
-                guard let text = res.value else { box.pin(Self.message(res.error ?? String(localized: "Couldn't read it."))); return }
+                // The host refuses what a tab here refuses (a pipe, too big, not UTF-8), and says it the same way.
+                guard case .success(let text) = read else {
+                    if case .failure(let e) = read { box.pin(Self.message(Unopenable(e).map(Self.reason) ?? AppModel.message(e))) }
+                    return
+                }
                 let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
                 e.view.clipsToBounds = true
                 e.onChange = { [weak self] t in self?.edited(t) }
@@ -65,15 +70,9 @@ final class FileTab: SavableTab {
             return
         }
         // Read whole and on the main thread: only a regular file (a pipe or /dev/zero would block or never end), and only
-        // up to `openLimit` (a 300 MB log would hang the window). Limit: synchronous read; move it off the main thread
-        // if files near the limit feel slow.
-        switch Self.unopenable(p) {
-        case .special?: view = Self.message(String(localized: "Kelp opens files, not devices or pipes.")); return
-        case .tooBig(let n)?:
-            let size = ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
-            view = Self.message(String(localized: "Too big to open here (\(size)). Open it with another app.")); return
-        case nil: break
-        }
+        // up to `openLimit` (a 300 MB log would hang the window). Limit: synchronous first read; move it off the main
+        // thread if files near the limit feel slow.
+        if let u = Self.unopenable(p) { view = Self.message(Self.reason(u)); return }
         if Preview.canPreview(url) { view = Preview.view(for: url); return }
         if ext == "ipynb" {
             let nb = NotebookTab(url: url, path: p, worktreeId: AppModel.shared.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
@@ -84,10 +83,10 @@ final class FileTab: SavableTab {
             view = Self.message(FileManager.default.fileExists(atPath: p)
                 ? String(localized: "Couldn't read this file.") : String(localized: "File not found — it was moved or deleted.")); return
         }
-        guard let text = String(data: data, encoding: .utf8) else { view = Self.message(String(localized: "Binary file — open it with another app.")); return }
+        guard let text = String(data: data, encoding: .utf8) else { view = Self.message(Self.reason(.binary)); return }
         let e = CodeEditor(text: text, url: url, editable: data.count <= CodeEditor.readOnlyLimit)
         e.view.clipsToBounds = true
-        editor = e; lastSaved = text
+        editor = e; lastSaved = text; known = Stamp(p).map { ($0, text) }
         if ["md", "markdown"].contains(ext) {
             let md = MarkdownTab(editor: e, url: url)
             md.startInPreview = p == Help.location.path   // the help is for reading
@@ -160,9 +159,28 @@ final class FileTab: SavableTab {
         }
     }
 
+    /// The file on disk now. Read again only when its stamp changed since the last read or write here: a save's check and
+    /// every file event would otherwise read the whole file, on the main thread.
     private var disk: FileSync.Disk {
-        FileManager.default.fileExists(atPath: path) ? .present(try? String(contentsOf: url, encoding: .utf8)) : .missing
+        guard let now = Stamp(path) else { return .missing }
+        if let known, known.stamp == now { return .present(known.text) }
+        let text = try? String(contentsOf: url, encoding: .utf8)
+        known = (now, text)
+        return .present(text)
     }
+    /// What was last read from disk or written there, and its stamp.
+    private var known: (stamp: Stamp, text: String?)?
+    /// A file's size, modification time and inode, through symlinks: the same stamp, the same text.
+    private struct Stamp: Equatable {
+        let size: Int64, modified: Double, inode: UInt64
+        init?(_ p: String) {
+            var st = stat()
+            guard stat(p, &st) == 0 else { return nil }
+            size = st.st_size; inode = UInt64(st.st_ino)
+            modified = Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9
+        }
+    }
+    private var reading = false, readAgain = false
 
     /// ⌘S. False when it couldn't be written, or the user is asked first (an agent changed the file meanwhile, or it's gone).
     @discardableResult
@@ -171,7 +189,7 @@ final class FileTab: SavableTab {
         if isRemote { return write() }
         switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
         case .write: return write()
-        case .conflict: diskChanged(); return false   // don't clobber an agent's edit
+        case .conflict: apply(disk); return false   // don't clobber an agent's edit: ask
         case .missing:   // moved or deleted (git mv, a rename): writing would bring the old file back beside the new one
             let a = NSAlert(); a.messageText = String(localized: "“\(title)” was moved or deleted")
             a.informativeText = String(localized: "Save writes it at its old place again.")
@@ -187,7 +205,7 @@ final class FileTab: SavableTab {
         if isRemote { write(); return }
         switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
         case .write: write()
-        case .conflict: diskChanged()
+        case .conflict: apply(disk)
         default: break
         }
     }
@@ -197,7 +215,10 @@ final class FileTab: SavableTab {
         guard let e = editor else { return true }
         if isRemote { writeRemote(); return true }
         // Through a symlink to the file it points at: an atomic write to the link would replace it with a plain file.
-        do { try e.text.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8); lastSaved = e.text; gone = false }
+        do {
+            try e.text.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8)
+            lastSaved = e.text; gone = false; known = Stamp(path).map { ($0, e.text) }
+        }
         catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error); return false }
         editedStateMayHaveChanged()
         return true
@@ -233,10 +254,28 @@ final class FileTab: SavableTab {
         isEdited = now; onChange?()
     }
 
+    /// A file event: read again only what changed, and off the main thread (a log a dev server appends to sends one every
+    /// quarter second). One read at a time; events meanwhile make one more.
     private func diskChanged() {
-        // Grown past the limit (a log) or replaced by a pipe: keep what's shown rather than read it all again.
-        guard let e = editor, Self.unopenable(path) == nil else { return }
-        let d = disk
+        guard editor != nil, !isRemote else { return }
+        if reading { readAgain = true; return }
+        guard let now = Stamp(path) else { apply(.missing); return }
+        if let known, known.stamp == now { return }   // touched, not changed (or our own write)
+        guard Self.unopenable(path) == nil else { return }   // grown past the limit (a log) or a pipe now: keep what's shown
+        reading = true
+        let url = url
+        Task { [weak self] in
+            let text = await Task.detached { try? String(contentsOf: url, encoding: .utf8) }.value
+            guard let self else { return }
+            reading = false
+            known = (now, text)
+            apply(.present(text))
+            if readAgain { readAgain = false; diskChanged() }
+        }
+    }
+
+    private func apply(_ d: FileSync.Disk) {
+        guard let e = editor else { return }
         let wasGone = gone
         gone = d == .missing
         switch FileSync.diskChanged(buffer: e.text, saved: lastSaved, disk: d) {
@@ -328,15 +367,23 @@ final class FileTab: SavableTab {
         e.goTo(line: line)
     }
 
-    /// Bigger than this isn't opened (read only from 5 MB, `CodeEditor.readOnlyLimit`).
-    static let openLimit = 50 << 20
-    enum Unopenable: Equatable { case special, tooBig(Int) }
-    /// Why `p` (followed through symlinks) isn't opened; nil when it is, or when it's missing (said elsewhere).
+    /// Why `p` (followed through symlinks) isn't opened; nil when it is, or when it's missing (said elsewhere). Binary is
+    /// known only once it's read. A remote project's host applies the same rule (`files.readRemote`).
     static func unopenable(_ p: String) -> Unopenable? {
         var st = stat()
         guard stat(p, &st) == 0 else { return nil }
         if st.st_mode & S_IFMT != S_IFREG { return .special }
-        return st.st_size > openLimit ? .tooBig(Int(st.st_size)) : nil
+        return st.st_size > Unopenable.openLimit ? .tooBig(Int(st.st_size)) : nil
+    }
+
+    /// What the tab says instead of the text, for a file here or on a host.
+    static func reason(_ u: Unopenable) -> String {
+        switch u {
+        case .special: String(localized: "Kelp opens files, not devices or pipes.")
+        case .tooBig(let n):
+            String(localized: "Too big to open here (\(ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file))). Open it with another app.")
+        case .binary: String(localized: "Binary file — open it with another app.")
+        }
     }
 
     private static func message(_ s: String) -> NSView {

@@ -94,3 +94,10 @@ extension Git {
         return name
     }
 }
+
+extension RemoteHost {
+    /// `script` in sh on the host (whatever its login shell is), its output as the bytes it wrote.
+    public func run(_ script: String) throws -> Data {
+        try Git.runData(sshArgs(tty: false) + ["sh -c " + Self.quote(script)], cwd: NSHomeDirectory(), executable: Self.ssh)
+    }
+}

@@ -14,7 +14,9 @@ public struct RPCRequest: Codable, Sendable {
 public struct RPCError: Codable, Error, Sendable, Equatable {
     public var code: Int
     public var message: String
-    public init(code: Int, message: String) { self.code = code; self.message = message }
+    /// What a program reads where `message` is for people (JSON-RPC's `data`), e.g. an `Unopenable`.
+    public var data: JSONValue?
+    public init(code: Int, message: String, data: JSONValue? = nil) { self.code = code; self.message = message; self.data = data }
     public static func invalidParams(_ m: String) -> RPCError { .init(code: -32602, message: m) }
     public static func internalError(_ m: String) -> RPCError { .init(code: -32603, message: m) }
     public static let methodNotFound = RPCError(code: -32601, message: "method not found")

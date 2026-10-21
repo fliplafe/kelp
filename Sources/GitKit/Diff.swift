@@ -118,15 +118,16 @@ extension Git {
 
     static func untrackedDiffs(_ path: String, only: String?) throws -> [FileDiff] {
         let remote = RemoteHost.of(path)
-        return try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }.compactMap { f in
+        let files = try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }
+        // On the host: all of them in one round trip, each at most a byte past the limit (the folder here is a marker).
+        let there = remote.map { r in (try? untrackedOnHost(r, files.map(\.path))) ?? [:] } ?? [:]
+        return files.compactMap { f in
             let full = (path as NSString).appendingPathComponent(f.path)
             let mode = FileManager.default.isExecutableFile(atPath: full) ? "100755" : "100644"   // staged as it is: a script stays runnable
             let hdr = "diff --git a/\(f.path) b/\(f.path)\nnew file mode \(mode)\n--- /dev/null\n+++ b/\(f.path)"
             let asBinary = FileDiff(path: f.path, header: hdr, hunks: [], binary: true)
-            if let remote {   // the files are on the host: read there, at most a byte past the limit (the folder here is a marker)
-                let cmd = "head -c 1000001 -- " + RemoteHost.quote(remote.path + "/" + f.path)
-                guard let data = try? Git.runData(remote.sshArgs(tty: false) + [cmd], cwd: NSHomeDirectory(), executable: RemoteHost.ssh),
-                      data.count <= 1_000_000 else { return asBinary }
+            if remote != nil {
+                guard let data = there[f.path], data.count <= 1_000_000 else { return asBinary }
                 return added(data, f.path, hdr) ?? asBinary
             }
             // A symlink is shown as git stores it, its target path; following it could read /dev/zero or a huge file.
@@ -139,6 +140,27 @@ extension Git {
             guard let data = FileManager.default.contents(atPath: full) else { return nil }
             return added(data, f.path, hdr) ?? asBinary
         }
+    }
+
+    /// Untracked files on a remote project's host, one ssh round trip per 200 (a command line has a length limit): each
+    /// its first 1 MB and a byte; one that isn't a regular file or can't be read is left out (shown as binary).
+    static func untrackedOnHost(_ r: RemoteHost, _ paths: [String]) throws -> [String: Data] {
+        var out: [String: Data] = [:]
+        for start in stride(from: 0, to: paths.count, by: 200) {
+            let chunk = paths[start..<min(start + 200, paths.count)]
+            let names = chunk.map { RemoteHost.quote(r.path + "/" + $0) }.joined(separator: " ")
+            // Each file as a line with its length (-1: not read) and then that many bytes.
+            let script = "t=$(mktemp) || exit 1; for f in \(names); do if [ -f \"$f\" ] && head -c 1000001 -- \"$f\" > \"$t\" 2>/dev/null; "
+                + "then echo $(wc -c < \"$t\"); cat \"$t\"; else echo -1; fi; done; rm -f \"$t\""
+            var rest = try r.run(script)[...]
+            for p in chunk {
+                guard let nl = rest.firstIndex(of: 0x0A), let n = Int(String(decoding: rest[..<nl], as: UTF8.self)) else { break }
+                rest = rest[(nl + 1)...]
+                guard n >= 0, rest.count >= n else { continue }
+                out[p] = Data(rest.prefix(n)); rest = rest.dropFirst(n)
+            }
+        }
+        return out
     }
 
     /// A new file's text as one added hunk; nil when it isn't text.

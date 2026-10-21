@@ -39,7 +39,35 @@ public struct RepoAddRemote: RPCMethod {
     public static let name = "repo.addRemote"; public typealias Result = Repo; public var host: String, path: String, `init`: Bool?
     public init(host: String, path: String, `init`: Bool? = nil) { self.host = host; self.path = path; self.`init` = `init` }
 }
-/// A file in a remote project's folder, read on the host.
+/// Why a tab shows a reason instead of a file's text: one rule for a file on this Mac and one on a remote project's host
+/// (`files.readRemote` fails with it as its error's `data`).
+public enum Unopenable: Codable, Sendable, Equatable {
+    /// A pipe or a device (/dev/zero): reading it would block or never end.
+    case special
+    /// Past `openLimit` (a 300 MB log would hang the window); its size in bytes.
+    case tooBig(Int)
+    /// Not UTF-8 text: decoded anyway, U+FFFD would stand for bytes that a save then writes back.
+    case binary
+    /// Bigger than this isn't opened (read only from 5 MB, `CodeEditor.readOnlyLimit`).
+    public static let openLimit = 50 << 20
+
+    public var error: RPCError {
+        let message = switch self {
+        case .special: "Not a regular file (a pipe or a device)."
+        case .tooBig(let n): "Too big to open (\(n) bytes)."
+        case .binary: "Not UTF-8 text (binary, or another encoding)."
+        }
+        return RPCError(code: -32001, message: message, data: try? JSONValue.from(self))
+    }
+    /// The reason a daemon's error carries, when it's this kind of error.
+    public init?(_ error: Error) {
+        guard let d = (error as? RPCError)?.data, let u = try? d.decode(Unopenable.self) else { return nil }
+        self = u
+    }
+}
+
+/// A file in a remote project's folder, read on the host. Fails with an `Unopenable` error where a tab here would refuse
+/// the file (a pipe, past the size limit, not UTF-8).
 public struct FilesReadRemote: RPCMethod {
     public static let name = "files.readRemote"; public typealias Result = String; public var path: String
     public init(path: String) { self.path = path }

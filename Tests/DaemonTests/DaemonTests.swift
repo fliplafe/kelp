@@ -16,6 +16,7 @@ let localSSH: String = {
     try? """
     #!/bin/sh
     while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
+    printf '%s\\n' "$1" >> "$(dirname "$0")/ssh.log"
     exec /bin/sh -c "$1"
     """.write(to: shim, atomically: true, encoding: .utf8)
     chmod(shim.path, 0o755)

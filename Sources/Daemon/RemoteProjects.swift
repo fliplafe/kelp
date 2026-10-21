@@ -87,7 +87,23 @@ extension RepoAddRemote: Handled {
 extension FilesReadRemote: Handled {
     func handle(_ d: Daemon) throws -> String {
         guard let (_, remote, remotePath) = RemoteHost.containing(path) else { throw RPCError.invalidParams("Not in a remote project.") }
-        return try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh)
+        // One round trip: what it is (gone, not a regular file, its size), then its bytes only when a tab would open it.
+        let limit = Unopenable.openLimit
+        let script = "f=\(RemoteHost.quote(remotePath)); if [ ! -e \"$f\" ]; then echo missing; elif [ ! -f \"$f\" ]; then echo special; "
+            + "else n=$(wc -c < \"$f\") || exit 1; echo $n; [ $n -gt \(limit) ] || head -c \(limit + 1) -- \"$f\"; fi"
+        return try Self.text(try remote.run(script), host: remote.host)
+    }
+
+    /// The host's answer: a line saying what the file is (or its size), then its bytes, refused as a tab here would.
+    static func text(_ out: Data, host: String) throws -> String {
+        guard let nl = out.firstIndex(of: 0x0A) else { throw RPCError.internalError("\(host) didn't answer.") }
+        let head = String(decoding: out[..<nl], as: UTF8.self).trimmingCharacters(in: .whitespaces), body = out[(nl + 1)...]
+        if head == "missing" { throw RPCError.invalidParams("It isn't on \(host) any more (moved or deleted).") }
+        if head == "special" { throw Unopenable.special.error }
+        guard let size = Int(head) else { throw RPCError.internalError("\(host) answered: \(head)") }
+        guard size <= Unopenable.openLimit, body.count <= Unopenable.openLimit else { throw Unopenable.tooBig(max(size, body.count)).error }
+        guard let text = String(data: body, encoding: .utf8) else { throw Unopenable.binary.error }
+        return text
     }
 }
 
@@ -98,8 +114,12 @@ extension FilesWriteRemote: Handled {
             try Git.run(remote.sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)], cwd: NSHomeDirectory(), stdin: input, executable: RemoteHost.ssh)
         }
         let file = RemoteHost.quote(remotePath)
-        // Changed there since it was read: the user decides (a file that's gone is just written again).
-        if let base, let now = try? ssh("cat -- " + file), now != base { return Changed(changed: now) }
+        // Changed there since it was read: the user decides (a file that's gone is just written again). Compared byte for
+        // byte; a version there that isn't UTF-8 text can't be shown, and writing over it unasked could lose it.
+        if let base, let now = try? remote.run("cat -- " + file), now != Data(base.utf8) {
+            guard let text = String(data: now, encoding: .utf8) else { throw RPCError.invalidParams("It changed on \(remote.host) and isn't UTF-8 text now: not written.") }
+            return Changed(changed: text)
+        }
         // Sent to a file beside it, then copied over it on the host: a dropped connection can't leave half of it, and
         // the file keeps its mode, owner and links.
         let tmp = RemoteHost.quote(remotePath + ".kelp-XXXXXX")

@@ -84,6 +84,25 @@ extension SharedAppModel {
         #expect(TerminalPaths.resolve("out.log", cwd: (fifo as NSString).deletingLastPathComponent) == nil)
         #expect(TerminalPaths.resolve("notes.txt", cwd: (fifo as NSString).deletingLastPathComponent) != nil)
     }
+
+    /// A file event reads the file again only when its stamp (size, modification time, inode) changed: every event of a
+    /// log a dev server appends to used to read all of it on the main thread. Rewritten in place with the same size and
+    /// its old modification time put back, the file looks untouched, so the tab keeps what it read.
+    @Test func aFileEventWithTheSameStampReadsNothing() async throws {
+        let p = try file("aaaa\n")
+        let tab = FileTab(uri: TabURI.file(p))
+        var st = stat()
+        #expect(stat(p, &st) == 0)
+        let h = try FileHandle(forWritingTo: URL(fileURLWithPath: p))
+        try h.write(contentsOf: Data("bbbb\n".utf8)); try h.close()   // same inode, same size
+        var times = [st.st_atimespec, st.st_mtimespec]
+        #expect(utimensat(AT_FDCWD, p, &times, 0) == 0)
+        try await Task.sleep(for: .seconds(1))   // the events of both arrive meanwhile
+        #expect(tab.editor?.text == "aaaa\n")
+        try "cccc\n".write(toFile: p, atomically: true, encoding: .utf8)   // a real change still shows
+        for _ in 0..<100 where tab.editor?.text != "cccc\n" { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(tab.editor?.text == "cccc\n")
+    }
 }
 
 /// Files moved in the Files panel come back with ⌘Z (and go again with ⇧⌘Z): an agent's folder isn't left half-moved.
