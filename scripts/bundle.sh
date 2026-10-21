@@ -1,24 +1,30 @@
 #!/bin/zsh
-# Build dist/Kelp.app (+ DMG). One command:  scripts/bundle.sh
+# Build dist/Kelp.app (+ DMG). One command:  scripts/bundle.sh   (or `make release`)
+#   scripts/bundle.sh dev   (`make dev`): a debug build for this Mac in dist/dev/Kelp.app, signed ad hoc, then opens it
 # Signing/notarization are opt-in via env:
 #   SIGN_ID="Developer ID Application: Name (TEAM)"   sign app + dmg
 #   NOTARY_PROFILE=kelp                               notarytool keychain profile (xcrun notarytool store-credentials)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CONFIG=${CONFIG:-release}
+DEV=${1:-}
+CONFIG=${CONFIG:-release}; ARCHS=(--arch arm64 --arch x86_64); APP=dist/Kelp.app
+if [ "$DEV" = dev ]; then
+  CONFIG=debug; ARCHS=(); APP=dist/dev/Kelp.app
+  # Replacing a running app's files can crash it; its daemon (and agents) may keep running.
+  if pgrep -qf "$PWD/$APP/Contents/MacOS/KelpApp"; then echo "Quit Kelp (dev) first: ⌘Q"; exit 1; fi
+fi
 # The terminal renders with libghostty (universal static lib, built once into Vendor/).
 [ -d Vendor/GhosttyKit.xcframework ] || scripts/build-ghostty.sh
-swift build -c "$CONFIG" --arch arm64 --arch x86_64
-BIN=$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path)
-APP=dist/Kelp.app
-rm -rf "$APP" dist/Kelp.dmg
+swift build -c "$CONFIG" "${ARCHS[@]}"
+BIN=$(swift build -c "$CONFIG" "${ARCHS[@]}" --show-bin-path)
+rm -rf "$APP"; [ "$DEV" = dev ] || rm -f dist/Kelp.dmg
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/KelpApp" "$APP/Contents/MacOS/KelpApp"
 cp "$BIN/kelpd" "$BIN/kelp" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # from AppIcon.svg: scripts/icon.sh
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
-for b in "$BIN"/*.bundle(N); do cp -R "$b" "$APP/Contents/Resources/"; done
+for b in "$BIN"/*.bundle(N); do [[ $b == */Krill_* ]] || cp -R "$b" "$APP/Contents/Resources/"; done   # Krill_: left from before the rename
 scripts/strings.sh install "$APP/Contents/Resources"   # English and Russian
 if [ -n "${SIGN_ID:-}" ]; then
   SIGN=(codesign --force --options runtime --timestamp --sign "$SIGN_ID")
@@ -34,6 +40,11 @@ if [ -n "${SIGN_ID:-}" ]; then
   "${SIGN[@]}" "$APP/Contents/MacOS/kelpd"
   "${SIGN[@]}" "$APP/Contents/MacOS/kelp"
   codesign --force --options runtime --timestamp --entitlements Resources/Kelp.entitlements --sign "$SIGN_ID" "$APP"
+fi
+if [ "$DEV" = dev ]; then
+  # Ad hoc, inside out; no entitlements, as a debug build runs from Xcode.
+  for f in "$APP/Contents/MacOS/kelpd" "$APP/Contents/MacOS/kelp" "$APP"; do codesign --force --sign - "$f"; done
+  open "$APP"; echo "built $APP"; exit 0
 fi
 STAGE=$(mktemp -d); cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
 hdiutil create -quiet -volname Kelp -srcfolder "$STAGE" -ov -format UDZO dist/Kelp.dmg
