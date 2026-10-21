@@ -49,7 +49,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// The app reads the daemon's records as Core's types: running git, gh, the agents' files and the daemon itself is the
 /// daemon's job. (Package.swift enforces it too; this says why when someone adds the dependency back.)
 @Test func theAppDoesNotImportTheDaemonsLibraries() {
-    let banned = ["Daemon", "GitKit", "Integrations", "AgentData"]
+    let banned = ["Daemon", "GitKit", "Integrations", "AgentData", "LSPKit"]
     let found = sources(["Sources/KelpApp"]).filter { f in banned.contains { f.text.hasPrefix("import \($0)\n") || f.text.contains("\nimport \($0)\n") } }
     #expect(found.map(\.path) == [])
 }

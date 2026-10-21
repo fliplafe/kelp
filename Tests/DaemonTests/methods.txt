@@ -62,6 +62,12 @@ linear.setState
 linear.states
 linear.status
 linear.teams
+lsp.change
+lsp.close
+lsp.completion
+lsp.definition
+lsp.open
+lsp.symbol
 ping
 ports.list
 ports.stop

@@ -51,8 +51,8 @@ extension Daemon {
         let sync: [any Handled.Type] = [DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                         WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self, GitDiscardHunk.self,
                                         RemoteListFolders.self, SessionReport.self, ClientEvents.self]
-            + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods + uiMethods
-        let all = sync.map { $0 as any Answered.Type } + asyncMethods.map { $0 as any Answered.Type }
+            + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods + uiMethods + lspMethods
+        let all = sync.map { $0 as any Answered.Type } + (asyncMethods + lspAsyncMethods).map { $0 as any Answered.Type }
         return Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
     }()
 

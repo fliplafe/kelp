@@ -154,7 +154,9 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
 - Language servers run a project's own code (build scripts, `Package.swift`, its `node_modules`' TypeScript), and
   formatters can (rustup takes the toolchain a repo names): neither runs in a project until the user trusts it in
   Kelp's window (a banner on its first file, like VS Code's Workspace Trust), the scratch desk included. Only the window
-  can record that trust (`state.set` of `lsp.*` checks the connecting program, as `scripts.trust` does).
+  can record that trust (`state.set` of `lsp.*` checks the connecting program, as `scripts.trust` does). Language
+  servers run in the daemon (`lsp.*`: one per project and server command, shared by every client, stopped a minute after
+  its last file closes), which checks that trust itself before it starts one, whoever asks.
 - Links clicked in a Markdown, notebook or PDF preview, or ⌘-clicked in a terminal, open web pages, plain files (as tabs) and
   mail only: a link to an app the repo ships (files from `git clone` carry no quarantine), a `.command` file or another
   app's scheme is refused. ⌥⌘ on a path a program printed

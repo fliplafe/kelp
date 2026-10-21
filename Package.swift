@@ -24,7 +24,7 @@ let package = Package(
         .target(name: "GitKit", dependencies: ["Core"]),
         .target(name: "Agents", dependencies: ["Core"]),
         .target(name: "AgentData", dependencies: ["Core"]),
-        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData", .product(name: "GRDB", package: "GRDB.swift")]),
+        .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData", "LSPKit", .product(name: "GRDB", package: "GRDB.swift")]),
         .target(name: "TerminalKit", dependencies: ["Core", "GhosttyKit"], linkerSettings: ghosttyLinks),
         .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
         .executableTarget(name: "kelp", dependencies: ["Core"]),
@@ -35,7 +35,7 @@ let package = Package(
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "GhosttyKit",
+            dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "Markdown", "WorkbenchKit", "GhosttyKit",
                            .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the

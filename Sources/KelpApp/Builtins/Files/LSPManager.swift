@@ -1,28 +1,16 @@
 import AppKit
 import Core
-import LSPKit
 import WorkbenchKit
 
-/// Lazily starts one language server per (worktree, server command). Which server a file gets comes from the
-/// extensions' `languages`. A server that died is started again on next use (its open files with it), at most
-/// once per `retryDelay`; one with no open file for a minute is stopped.
+/// The app's side of language servers, which run in the daemon (one per project and server command, shared by every
+/// client, stopped once no file is open for it). Which server a file gets comes from the extensions' `languages`; whether
+/// a project may run one is the user's say, asked here once per project and checked again by the daemon.
 @MainActor
 final class LSPManager {
     static let shared = LSPManager()
-    private var clients: [String: LSPClient] = [:]
-    private var starting: [String: Task<LSPClient?, Never>] = [:]
-    /// When each server was last started: a broken one isn't respawned on every edit.
-    private var started: [String: Date] = [:]
-    private static let retryDelay: TimeInterval = 30
     /// Server commands already reported missing this launch.
     private var reported: Set<String> = []
     var enabled: Bool { SettingsStore.shared.bool("editor.lsp") != false }
-
-    private init() {
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { LSPManager.shared.clients.values.forEach { $0.terminate() } }
-        }
-    }
 
     func language(_ path: String) -> LanguageSpec? { LanguageSpec.find(path, in: ExtensionRegistry.shared.all.languages) }
 
@@ -32,7 +20,7 @@ final class LSPManager {
     // does: a cloned repository's files don't act as the user just by being opened or formatted.
 
     /// Projects whose language servers may run (the daemon's UI state: one list per KELP_HOME).
-    static let trustKey = "lsp.trusted"
+    static let trustKey = LSPOpen.trustKey
     /// The scratch desk too is asked about once: something cloned into it is someone else's code like any other.
     func trusted(_ root: String) -> Bool { UIState.strings(Self.trustKey).contains(root) }
     /// Roots asked about this run, and what starts once the user trusts them (the tabs that wanted a server).
@@ -66,43 +54,37 @@ final class LSPManager {
         (waiting.removeValue(forKey: root) ?? []).forEach { $0() }
     }
 
-    func client(root: String, path: String) async -> LSPClient? {
-        guard enabled, trusted(root), let lang = language(path), let server = lang.server else { return nil }
-        let argv = [server.command] + (server.args ?? [])
-        let key = root + "|" + argv.joined(separator: " ")
-        if let c = clients[key], c.isRunning { return c }
-        if let t = starting[key] { return await t.value }
-        if let at = started[key], Date().timeIntervalSince(at) < Self.retryDelay { return nil }
-        let reopen = clients[key]?.openDocuments ?? [:]   // a server that died: its files go to the new one
-        started[key] = Date()
-        let t = Task<LSPClient?, Never> { @MainActor in
-            // The login-shell PATH may still be loading: look the command up off the main thread.
-            let cmd = server.command
-            guard await Task.detached(operation: { (try? LoginPath.resolve(cmd)) != nil }).value else { reportMissing(server); return nil }
-            guard let c = LSPClient(argv: argv, root: root) else { return nil }
-            c.onIdle = { Task { @MainActor in LSPManager.shared.stopWhenIdle(key) } }
-            do { try await c.initialize() } catch { return nil }
-            for (p, n) in reopen {
-                let text = (try? String(contentsOfFile: p, encoding: .utf8)) ?? ""
-                for _ in 0..<n { c.open(p, text: text, languageId: language(p)?.id ?? lang.id) }
+    /// Gives a file a tab shows to its server, which the daemon starts when it isn't running. False when there's none: no
+    /// server for its language, servers off, or refused — the daemon's reason shows (trust the project, install the server;
+    /// `retry` runs once the user trusts it).
+    func open(root: String, path: String, text: String, retry: @escaping @MainActor () -> Void) async -> Bool {
+        guard enabled, let lang = language(path), let server = lang.server else { return false }
+        do {
+            _ = try await AppModel.shared.get(LSPOpen(root: root, path: path, languageId: lang.id, command: server.command, args: server.args, text: text))
+            return true
+        } catch {
+            switch LSPRefusal(error) {
+            case .untrusted?: _ = askTrust(root, retry)   // the daemon doesn't have it as trusted (another copy of Kelp recorded it)
+            case .notInstalled?: reportMissing(server)
+            case nil: break   // no daemon now: a reconnect opens it again
             }
-            return c
+            return false
         }
-        starting[key] = t
-        let c = await t.value
-        starting[key] = nil
-        if let c { clients[key] = c }   // else keep the dead one: its open files go to the next try
-        stopWhenIdle(key)   // started only to close a file, say
-        return c
     }
 
-    /// Stops the server a minute from now if it still has no open file then (its project's tabs were closed).
-    private func stopWhenIdle(_ key: String) {
-        Task {
-            try? await Task.sleep(for: .seconds(60))
-            guard let c = clients[key], c.isIdle else { return }
-            clients[key] = nil; started[key] = nil; c.shutdown()
-        }
+    /// The file's whole text, as typed (in order: notifications on one connection).
+    func change(root: String, path: String, text: String) { AppModel.shared.client?.notify(LSPChange(root: root, path: path, text: text)) }
+    func close(root: String, path: String) { AppModel.shared.client?.notify(LSPClose(root: root, path: path)) }
+
+    /// Completions at a 1-based position; none when the server can't say (quietly: they're offered while typing).
+    func completion(root: String, path: String, line: Int, column: Int) async -> [CodeCompletion] {
+        await AppModel.shared.quiet(LSPCompletion(root: root, path: path, line: line, column: column)) ?? []
+    }
+    func definition(root: String, path: String, line: Int, column: Int) async -> CodeLocation? {
+        await AppModel.shared.quiet(LSPDefinition(root: root, path: path, line: line, column: column)) ?? nil
+    }
+    func symbol(root: String, path: String, line: Int) async -> String? {
+        await AppModel.shared.quiet(LSPSymbol(root: root, path: path, line: line)) ?? nil
     }
 
     /// Once per command and launch; the button runs the language's `install` in a terminal tab.

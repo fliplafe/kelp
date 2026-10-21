@@ -20,6 +20,9 @@ final class FileTab: SavableTab {
     private static var autosave: Bool { SettingsStore.shared.bool("editor.autoSave") == true }
     private let autosaving = Debounce()
     private var lspTask: Task<Void, Never>?
+    /// The connection (`AppModel.connections`) its language server was given this file on; nil when it has none. A new
+    /// daemon knows nothing of it: the file is given again.
+    private var lspOpenedOn: Int?
     private var watcher: FileWatcher?
     private let root: String
     private var pendingLine: Int?
@@ -99,6 +102,10 @@ final class FileTab: SavableTab {
         }
         e.onChange = { [weak self] t in self?.edited(t) }
         startLSP()
+        track(owner: self) { AppModel.shared.connections } changed: { [weak self] now in
+            guard let self, let was = lspOpenedOn, was != now else { return }
+            lspOpenedOn = nil; startLSP()
+        }
         // FSEvents reports real paths (/private/tmp…): resolve ours once, not for every path of every event.
         let real = Paths.real(p) ?? p
         watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in
@@ -110,8 +117,7 @@ final class FileTab: SavableTab {
     isolated deinit {
         // Dropped without close() (its workspace went away): autosave writes what's safe to write, never over a conflict.
         if Self.autosave, !discarded, let e = editor, FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) == .write { write() }
-        let path = path, root = root
-        Task { await LSPManager.shared.client(root: root, path: path)?.close(path) }
+        if lspOpenedOn != nil { LSPManager.shared.close(root: root, path: path) }
     }
 
     func focus() {
@@ -153,13 +159,13 @@ final class FileTab: SavableTab {
         if Self.autosave { autosaving.after(0.6) { [weak self] in self?.autosaveNow() } }
         editedStateMayHaveChanged()
         markdown?.textChanged()
-        guard !isRemote else { return }   // no language server for a file on another machine
+        guard !isRemote, lspOpenedOn != nil else { return }   // no language server for it (or for a file on another machine)
         lspTask?.cancel()
         let p = path, r = root
         lspTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let c = await LSPManager.shared.client(root: r, path: p) else { return }
-            c.change(p, text: t)
+            guard !Task.isCancelled else { return }
+            LSPManager.shared.change(root: r, path: p, text: t)
         }
     }
 
@@ -315,11 +321,11 @@ final class FileTab: SavableTab {
         guard LSPManager.shared.language(p)?.server != nil,
               LSPManager.shared.whenTrusted(r, { [weak self] in self?.startLSP() }) else { return }   // asked once per project
         Task { [weak self] in
-            guard let c = await LSPManager.shared.client(root: r, path: p), let e = self?.editor, let lang = LSPManager.shared.language(p) else { return }
-            c.open(p, text: e.text, languageId: lang.id)
-            e.completionProvider = { line, col in   // the current client: a server that died is replaced
-                guard let c = await LSPManager.shared.client(root: r, path: p) else { return [] }
-                return ((try? await c.completion(p, line: line, column: col)) ?? []).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
+            guard let text = self?.editor?.text, await LSPManager.shared.open(root: r, path: p, text: text, retry: { [weak self] in self?.startLSP() }),
+                  let self, let e = editor else { return }
+            lspOpenedOn = AppModel.shared.connections
+            e.completionProvider = { line, col in
+                await LSPManager.shared.completion(root: r, path: p, line: line, column: col).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
             }
         }
     }
@@ -329,7 +335,7 @@ final class FileTab: SavableTab {
         guard let e = editor, let (l, c) = e.cursor else { return }
         let p = path, r = root
         Task {
-            guard let client = await LSPManager.shared.client(root: r, path: p), let loc = try? await client.definition(p, line: l, column: c) else { NSSound.beep(); return }
+            guard let loc = await LSPManager.shared.definition(root: r, path: p, line: l, column: c) else { NSSound.beep(); return }
             Workbench.open(TabURI.file(loc.path, line: loc.line))
         }
     }
@@ -346,8 +352,7 @@ final class FileTab: SavableTab {
         let (line, column) = editor?.cursor ?? (1, 1)
         var symbol = ""
         if template.contains("${symbol}") {
-            let client = await LSPManager.shared.client(root: root, path: path)
-            symbol = (try? await client?.symbol(path, line: line)) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
+            symbol = await LSPManager.shared.symbol(root: root, path: path, line: line) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
         }
         let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
         let vars = ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path, "line": String(line), "symbol": symbol, "workspace": root]

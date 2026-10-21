@@ -17,7 +17,7 @@ extension SharedAppModel {
         var started = 0
         #expect(!lsp.whenTrusted(root) { started += 1 })        // asks; nothing starts
         #expect(!lsp.whenTrusted(root) { started += 1 })        // a second tab of it waits too (asked once)
-        #expect(await lsp.client(root: root, path: root + "/main.rs") == nil)
+        #expect(await !lsp.open(root: root, path: root + "/main.rs", text: "", retry: {}))   // no server is given the file
         #expect(started == 0 && !lsp.trusted(root))
         await lsp.trust(root)                                    // the banner's "Trust and Start"
         #expect(started == 2 && lsp.trusted(root))

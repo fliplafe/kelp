@@ -27,8 +27,6 @@ public struct LSPFramer: Sendable {
     }
 }
 
-public struct Location: Sendable, Equatable { public var path: String; public var line: Int; public var column: Int }
-
 /// One language server process for one workspace root. Once the process has exited every request fails at once
 /// (the manager starts a new client); a request the server never answers fails after its timeout.
 public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't Sendable; everything that changes is in `state`
@@ -169,20 +167,21 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
 
     private func at(_ path: String, _ line: Int, _ col: Int) -> JSONValue { .obj(["textDocument": .obj(["uri": Self.uri(path)]), "position": Self.pos(line, col)]) }
 
-    public func definition(_ path: String, line: Int, column: Int) async throws -> Location? {
+    public func definition(_ path: String, line: Int, column: Int) async throws -> CodeLocation? {
         let r = try await request("textDocument/definition", at(path, line, column))
         guard let l = r.array?.first ?? (r == .null ? nil : r) else { return nil }
         let uri = l["uri"]?.string ?? l["targetUri"]?.string
         let range = l["range"] ?? l["targetSelectionRange"]
         guard let uri, let p = URL(string: uri)?.path else { return nil }
-        return Location(path: p, line: (range?["start"]?["line"]?.int ?? 0) + 1, column: (range?["start"]?["character"]?.int ?? 0) + 1)
+        return CodeLocation(path: p, line: (range?["start"]?["line"]?.int ?? 0) + 1, column: (range?["start"]?["character"]?.int ?? 0) + 1)
     }
 
-    public func completion(_ path: String, line: Int, column: Int) async throws -> [(label: String, detail: String?, insert: String)] {
+    public func completion(_ path: String, line: Int, column: Int) async throws -> [CodeCompletion] {
         let r = try await request("textDocument/completion", at(path, line, column))
         let items = r.array ?? r["items"]?.array ?? []
         return items.prefix(200).map {
-            ($0["label"]?.string ?? "", $0["detail"]?.string, $0["insertText"]?.string ?? $0["textEdit"]?["newText"]?.string ?? $0["label"]?.string ?? "")
+            CodeCompletion(label: $0["label"]?.string ?? "", detail: $0["detail"]?.string,
+                           insert: $0["insertText"]?.string ?? $0["textEdit"]?["newText"]?.string ?? $0["label"]?.string ?? "")
         }
     }
 

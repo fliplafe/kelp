@@ -38,6 +38,7 @@ public final class Daemon: Sendable {
     func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
+    let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
@@ -131,6 +132,7 @@ public final class Daemon: Sendable {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         let pids = live.all.flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] }
         Self.waitGone(pids)
+        lsp.stopAll()
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }
@@ -190,6 +192,7 @@ public final class Daemon: Sendable {
             }
             clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
             live.all.forEach { $0.detach(c.id) }
+            lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
             c.close()
         }
     }
