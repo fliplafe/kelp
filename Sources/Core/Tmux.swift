@@ -25,6 +25,15 @@ public enum Tmux {
         String(s.trimmingCharacters(in: .whitespacesAndNewlines).map { $0 == ":" || $0 == "." || $0.isNewline ? "_" : $0 })
     }
 
+    /// Sessions Kelp starts for terminals of its own (the `terminal.tmux` setting) are named so ("kelp-tab-" and 8 hex
+    /// digits): they end with their tab. The rest are the user's, and closing a tab attached to one only detaches.
+    public static func own() -> String { "kelp-tab-" + UUID().uuidString.prefix(8).lowercased() }
+    public static func isOwn(_ name: String) -> Bool {
+        name.count == 17 && name.hasPrefix("kelp-tab-") && name.dropFirst(9).allSatisfy(\.isHexDigit)
+    }
+    /// What a pane runs when nothing runs in it.
+    public static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "login"]
+
     /// `tmux list-sessions -F` with this, one session a line.
     public static let format = "#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_activity}"
 

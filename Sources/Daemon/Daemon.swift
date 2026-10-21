@@ -354,8 +354,10 @@ public final class Daemon: Sendable {
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.
     /// Under its wake lock, as a wake is: a paused session being opened at this moment can't come back after its record and log
-    /// are gone (it would restart an agent for a deleted project and save the record again).
-    func discard(_ s: Session) {
+    /// are gone (it would restart an agent for a deleted project and save the record again). A terminal's own tmux session
+    /// ends with it unless `keepTmux` (a restart, whose new session attaches to it).
+    func discard(_ s: Session, keepTmux: Bool = false) {
+        if !keepTmux { endOwnTmux(s) }
         wakeLocks.withLock(s.id) {
             let ls = live.remove(s.id)
             if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)

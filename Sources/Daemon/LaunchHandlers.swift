@@ -26,26 +26,12 @@ extension SessionCreate: Handled {
             guard !name.isEmpty else { throw RPCError.invalidParams("Name the tmux session.") }
             o.argv = Tmux.argv(name)
             if o.title == nil { o.title = "tmux \(name)" }
+        } else if command == nil, (agent ?? "shell") == "shell", d.settings["terminal.tmux"]?.bool == true,
+                  RemoteHost.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
+            o.argv = Tmux.argv(Tmux.own())   // a terminal in a tmux session of its own, which ends with it (Tmux.isOwn)
         }
         return try d.spawn(cwd: dir, manifest: d.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
                                  worktreeId: worktreeId, o)
-    }
-}
-
-extension TmuxList: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let w = try d.cwd(forWorktree: worktreeId)
-        let list = ["list-sessions", "-F", Tmux.format]
-        // On the host for a remote project, through its login shell as its terminals are (tmux is on that PATH).
-        let argv = try RemoteHost.of(w.path).map { [RemoteHost.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + list)] }
-            ?? [LoginPath.resolve("tmux")] + list
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = d.childPath
-        let r = try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: 30)
-        let err = String(decoding: r.stderr, as: UTF8.self)
-        if r.status == 0 { return Tmux.parse(String(decoding: r.stdout, as: UTF8.self)) }
-        if Tmux.noServer(err) { return [] }
-        let why = err.trimmingCharacters(in: .whitespacesAndNewlines)
-        throw RPCError.invalidParams(r.timedOut ? "tmux didn't answer." : why.isEmpty ? "tmux list-sessions failed (exit code \(r.status))." : why)
     }
 }
 
@@ -68,7 +54,7 @@ extension SessionRestart: Handled {
         // The new session pins an id of its own, never the old one's.
         o.argv = Daemon.withoutSessionId(resume != false ? d.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
         let s = try d.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
-        d.discard(old)   // its exit, still to come, doesn't save it again
+        d.discard(old, keepTmux: true)   // its exit, still to come, doesn't save it again; the new one has its tmux session
         return s
     }
 }

@@ -481,7 +481,8 @@ extension QuickOpen {
             let uri = c.string ?? "terminal:"
             return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { Workbench.open(uri) }, split: { Workbench.open(uri, split: .right) })
         }
-        let found = sessions.compactMap { s -> (Item, Int)? in
+        // Kelp's own (terminal.tmux) are terminals already, and end with their tab: not offered.
+        let found = sessions.filter { !Tmux.isOwn($0.name) }.compactMap { s -> (Item, Int)? in
             guard let score = s.name == q ? 1000 : Self.wordScore(s.name, q) else { return nil }
             let detail = [s.windows == 1 ? String(localized: "1 window") : String(localized: "\(s.windows) windows"),
                           s.attached > 0 ? String(localized: "attached") : nil, shortAgo(s.activity)].compactMap { $0 }.joined(separator: " · ")

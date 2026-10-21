@@ -64,6 +64,7 @@ extension SessionKill: Handled {
             if let ls = d.existing(id) { ls.pty.terminate() }
             else if var s = try d.store.session(id), s.status == .hibernated { s.status = .exited; d.publish(s) }   // don't wake just to kill
         }
+        if let s = try d.store.session(id) { d.endOwnTmux(s) }
         return Done()
     }
 }
@@ -99,7 +100,12 @@ extension PortsStop: Handled {
 }
 
 extension SessionBusy: Handled {
-    func handle(_ d: Daemon) throws -> String? { d.existing(id)?.pty.foregroundProgram }
+    func handle(_ d: Daemon) throws -> String? {
+        guard let ls = d.existing(id) else { return nil }
+        // In a terminal's own tmux session tmux is always in front: what runs is in its panes (closing ends them).
+        if let name = Tmux.session(ls.snapshot.argv), Tmux.isOwn(name) { return d.tmuxBusy(name, cwd: ls.snapshot.cwd) }
+        return ls.pty.foregroundProgram
+    }
 }
 
 extension Daemon {

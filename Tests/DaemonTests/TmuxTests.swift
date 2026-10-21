@@ -46,3 +46,28 @@ private func end(_ session: String) {
     _ = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "tmux": "far"]))
     #expect(try await waitFor(15) { try await tmuxSessions(c, wt).contains("far") })
 }
+
+/// terminal.tmux: a plain terminal runs in a tmux session of its own; what runs in it counts as running (closing asks),
+/// and closing the tab ends the session. A restart keeps it. Commands and agents aren't wrapped.
+@Test(.enabled(if: tmux != nil, "tmux isn't installed")) func terminalsRunInTheirOwnTmuxSession() async throws {
+    let w = try await world()
+    let wt = try await firstDesk(w)
+    _ = try await w.c.call("settings.set", .obj(["key": "terminal.tmux", "value": true]))
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "shell"]), as: Session.self)
+    let name = try #require(Tmux.session(s.argv)); defer { end(name) }
+    #expect(Tmux.isOwn(name) && s.title.isEmpty)
+    #expect(try await waitFor(10) { try await tmuxSessions(w.c, wt).contains(name) })
+    _ = try await w.c.call("session.write", .obj(["id": .string(s.id), "text": "sleep 30\r"]))
+    #expect(try await waitFor(10) { try await w.c.call("session.busy", .obj(["id": .string(s.id)])).string == "sleep" })
+
+    let r: Session = try await w.c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
+    #expect(Tmux.session(r.argv) == name)
+    try await Task.sleep(for: .seconds(1))
+    #expect(try await tmuxSessions(w.c, wt).contains(name))   // kept for the new tab
+
+    _ = try await w.c.call("session.kill", .obj(["id": .string(r.id)]))
+    #expect(try await waitFor(10) { try await !tmuxSessions(w.c, wt).contains(name) })
+    let cmd: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "true"]), as: Session.self)
+    #expect(Tmux.session(cmd.argv) == nil)
+    w.d.stop()
+}

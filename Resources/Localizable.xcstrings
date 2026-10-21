@@ -10071,6 +10071,127 @@
           }
         }
       }
+    },
+    "tmux Session…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия tmux…"
+          }
+        }
+      }
+    },
+    "tmux Session": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия tmux"
+          }
+        }
+      }
+    },
+    "Attach to tmux Session…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключиться к сессии tmux…"
+          }
+        }
+      }
+    },
+    "Attach to a tmux session, or type a name for a new one": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключитесь к сессии tmux или введите имя новой"
+          }
+        }
+      }
+    },
+    "↑↓ Select    ↩ Attach    ⇧↩ Attach in a Split": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↑↓ Выбрать    ↩ Подключиться    ⇧↩ Подключиться в сплите"
+          }
+        }
+      }
+    },
+    "1 window": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 окно"
+          }
+        }
+      }
+    },
+    "%lld windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "окон: %lld"
+          }
+        }
+      }
+    },
+    "attached": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "подключена"
+          }
+        }
+      }
+    },
+    "New tmux session": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новая сессия tmux"
+          }
+        }
+      }
+    },
+    "Run terminals inside tmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запускать терминалы внутри tmux"
+          }
+        }
+      }
+    },
+    "New terminals run in a tmux session of their own (on the host, for a remote project): it keeps running when Kelp quits or updates, and the tab attaches to it again; after a dropped SSH connection, Restart does. Closing the tab ends the session. Needs tmux; without it here, terminals are plain shells.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Каждый новый терминал работает в своей сессии tmux (у удалённого проекта — на хосте): она продолжает работать, когда Kelp закрывается или обновляется, и вкладка снова к ней подключается; после обрыва SSH это делает кнопка «Перезапустить». Закрытие вкладки завершает сессию. Нужен tmux; без него здесь терминалы — обычные оболочки."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
