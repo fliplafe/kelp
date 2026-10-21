@@ -252,7 +252,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                         session: s)
         }
         var seen: Set<String> = []   // each workspace once, at its last visit
-        for id in Workbench.shared.visits.reversed() where id != Workbench.shared.workspaceId && seen.insert(id).inserted {
+        for id in Workbench.shared.history.visits.reversed() where id != Workbench.shared.workspaceId && seen.insert(id).inserted {
             guard let w = m.worktree(id) else { continue }
             out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName,
                             detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))

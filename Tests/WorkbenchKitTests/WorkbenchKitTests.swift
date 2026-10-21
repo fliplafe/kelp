@@ -238,3 +238,21 @@ private func sh(_ shell: String, _ cmd: String) throws -> String {
     guard case .split(false, let grid)? = l.root else { Issue.record("not in rows"); return }
     #expect(grid.map(\.sessions.count) == [2, 2])
 }
+
+/// Back and Forward walk the workspaces as shown, skip closed ones and the one on screen, and a new visit after going
+/// back drops what was ahead (a browser's history).
+@Test func backAndForwardWalkTheWorkspacesShown() throws {
+    var h = WorkspaceHistory()
+    for id in ["a", "b", "c", "d"] { h.visit(id) }
+    let open: Set = ["a", "b", "d"]   // c was closed
+    let back = try #require(h.target(-1, current: "d", exists: open.contains))
+    #expect(h.visits[back] == "b")
+    #expect(h.go(to: back) == "b")
+    #expect(h.visits[try #require(h.target(1, current: "b", exists: open.contains))] == "d")
+    #expect(h.target(-1, current: "b", exists: open.contains).map { h.visits[$0] } == "a")
+    h.visit("e")
+    #expect(h.visits == ["a", "b", "e"])
+    #expect(h.target(1, current: "e", exists: { _ in true }) == nil)
+    for i in 0..<60 { h.visit("w\(i)") }
+    #expect(h.visits.count == 50 && h.visits.last == "w59")
+}

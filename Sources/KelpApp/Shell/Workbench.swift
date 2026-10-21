@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Core
+import WorkbenchKit
 
 /// What's on screen: the selected workspace and what has focus in it.
 @MainActor
@@ -17,8 +18,6 @@ final class Workbench {
     var inspectorPanel: String = UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {
         didSet { UserDefaults.standard.set(inspectorPanel, forKey: "inspectorPanel") }
     }
-    /// Workspaces in the order they were shown, for Back / Forward (⌃⌘← / ⌃⌘→), like a browser's history.
-    /// Observed: the title bar's arrows follow it.
-    var visits: [String] = []
-    var visitAt = -1
+    /// For Back / Forward (⌃⌘← / ⌃⌘→). Observed: the title bar's arrows follow it.
+    var history = WorkspaceHistory()
 }

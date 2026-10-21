@@ -59,7 +59,7 @@ final class WindowBar: NSView {
             sideBySide.widthAnchor.constraint(equalToConstant: 28),
             sideBySide.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
-        track(owner: self) { [-1, 1].map { Workbench.visit($0).flatMap { AppModel.shared.worktree(Workbench.shared.visits[$0])?.displayName } } } changed: { [weak self] in
+        track(owner: self) { [-1, 1].map { Workbench.visit($0).flatMap { AppModel.shared.worktree(Workbench.shared.history.visits[$0])?.displayName } } } changed: { [weak self] in
             self?.showNav(back: $0[0], forward: $0[1])
         }
         track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }

@@ -26,7 +26,7 @@ final class WorkspaceSwitcher {
         let m = AppModel.shared, wb = Workbench.shared
         let live = Workbench.workspacesInOrder
         var order: [String] = []
-        for id in [wb.workspaceId].compactMap({ $0 }) + wb.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) { order.append(id) }
+        for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) { order.append(id) }
         order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
         guard items.count > 1, let window = Workbench.window?.window else { items = []; NSSound.beep(); return }

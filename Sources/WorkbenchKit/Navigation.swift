@@ -34,3 +34,26 @@ extension WorkspaceLayout {
         }.min { $0.1 < $1.1 || ($0.1 == $1.1 && $0.0 < $1.0) }?.0
     }
 }
+
+/// Workspaces in the order they were shown, for Back / Forward (⌃⌘← / ⌃⌘→), like a browser's history: at most 50, and
+/// showing one after going back drops what was ahead.
+public struct WorkspaceHistory: Equatable, Sendable {
+    public private(set) var visits: [String] = []
+    public private(set) var at = -1
+    public init() {}
+
+    public mutating func visit(_ id: String) {
+        visits = Array(visits.prefix(at + 1).suffix(49)) + [id]
+        at = visits.count - 1
+    }
+
+    /// Where Back (-1) / Forward (1) goes: past workspaces that are gone and the one on screen; nil when nothing is that way.
+    public func target(_ step: Int, current: String?, exists: (String) -> Bool) -> Int? {
+        var i = at + step
+        while visits.indices.contains(i), !exists(visits[i]) || visits[i] == current { i += step }
+        return visits.indices.contains(i) ? i : nil
+    }
+
+    /// Goes there (from `target`) and says which workspace that is.
+    public mutating func go(to i: Int) -> String { at = i; return visits[i] }
+}
