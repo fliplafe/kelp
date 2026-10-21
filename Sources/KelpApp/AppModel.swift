@@ -105,9 +105,12 @@ final class AppModel {
     }
 
     private func open() async {
-        for attempt in 0..<2 {
+        // Launched again on each try: a daemon that's stopping (a restart, an update) closes its socket first and holds
+        // its home's lock until its agents are gone (up to 3 s), so the kelpd started meanwhile finds it taken and exits.
+        // One that's already running takes no harm: a second kelpd exits at once.
+        for _ in 0..<3 {
             if let c = try? RPCClient() { client = c; break }
-            if attempt == 0 { launchDaemon() }
+            launchDaemon()
             for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); if let c = try? RPCClient() { client = c; break } }
             if client != nil { break }
         }
