@@ -561,3 +561,10 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("worktree.list", as: [Worktree].self)
     #expect(try String(contentsOfFile: victim, encoding: .utf8) == "keep me\n")
 }
+
+/// Esc / ⌃C stop a turn also once the agent turned on the kitty keyboard protocol (Claude Code does): the keys arrive as
+/// CSI u, and the session stayed "working" after the user stopped it.
+@Test func stopKeysAreSeenInKittyKeyboardMode() {
+    for k in ["\u{1B}", "\u{03}", "\u{1B}[27u", "\u{1B}[99;5u", "\u{1B}[1089::99;5u"] { #expect(LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
+    for k in ["\u{1B}[A", "\u{1B}[99u", "\u{1B}[199;5u", "\u{1B}[27;2u", "q"] { #expect(!LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
+}

@@ -106,6 +106,11 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     var lastTurn: Turn? { lock.withLock { turnResult } }
     private var inTurn = false
     static let stoppedMarkers = ["Interrupted", "What should Claude do instead", "tell Claude what to do"]
+    /// Esc or ⌃C, as one byte or as the kitty keyboard protocol sends them once the agent turns it on (Claude Code does):
+    /// ESC[27u, ESC[99;5u — on a non-Latin layout the layout's own letter comes first (ESC[1089::99;5u).
+    static func isStopKey(_ d: Data) -> Bool {
+        d == Data([0x1B]) || d.contains(0x03) || String(decoding: d, as: UTF8.self).wholeMatch(of: /\x1B\[(27|([0-9]*:)*99;5)u/) != nil
+    }
 
     init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16) throws {
         var rec = record
@@ -358,7 +363,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         var read: Session?
         if record.unread { record.unread = false; read = record }   // typing into it is having read it
         if hooked {
-            if d == Data([0x1B]) || d.contains(0x03), record.status == .working || record.status == .waiting { interruptArmed = (Date(), "") }
+            if Self.isStopKey(d), record.status == .working || record.status == .waiting { interruptArmed = (Date(), "") }
             // An answer to a question or a permission menu: it works again (Claude Code sends no hook for that).
             if record.status == .waiting, d.contains(0x0D) || (d.count == 1 && (0x31...0x39).contains(d[0])) {
                 detector.override(.working); interruptArmed = (Date(), "")
