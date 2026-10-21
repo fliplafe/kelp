@@ -209,6 +209,20 @@ struct SidebarFooterView: View {
     var body: some View { UsageView() }
 }
 
+/// The source list puts a project's workspaces level with its name; set in, they read as the project's.
+final class SidebarOutline: NSOutlineView {
+    static let inset: CGFloat = 12
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        let r = super.frameOfOutlineCell(atRow: row)
+        return level(forRow: row) > 0 ? r.offsetBy(dx: Self.inset, dy: 0) : r
+    }
+    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        var r = super.frameOfCell(atColumn: column, row: row)
+        if level(forRow: row) > 0 { r.origin.x += Self.inset; r.size.width -= Self.inset }
+        return r
+    }
+}
+
 /// Like Safari's tab groups: the workspace on screen and its agents sit on a rounded card, and the row you're on is
 /// a raised pill inside it (no accent colour, so the text keeps its colours).
 @MainActor

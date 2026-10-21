@@ -32,7 +32,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         }
     }
 
-    let outline = NSOutlineView()
+    let outline = SidebarOutline()
     var roots: [Node] = []
     private var shape: [String] = []
     private var collapsed: Set<String> {
