@@ -83,8 +83,12 @@ func trustQuestionStandIn() -> String {
 
 @Test func planLimitsAreReadInAFolderTheAgentAlreadyTrusts() {
     func pick(_ used: [String], _ trusted: [String], usable: Set<String>? = nil) -> String? {
-        Daemon.probeFolder(used: used, trusted: trusted, remoteRoot: "/h/.kelp/remote") { usable?.contains($0) ?? true }
+        Daemon.probeFolder(used: used, trusted: trusted, remoteRoot: "/h/.kelp/remote", home: "/h") { usable?.contains($0) ?? true }
     }
+    // A trusted folder in Documents, Desktop… that Kelp never opened isn't touched: macOS would ask for it out of nowhere.
+    #expect(pick([], ["/h/Documents/app", "/h/Desktop/x", "/Volumes/usb/y", "/p/web"]) == "/p/web")
+    #expect(pick([], ["/h/Documents/app"]) == nil)
+    #expect(pick(["/h/Documents/app"], ["/h/Documents/app"]) == "/h/Documents/app")   // Kelp works there: already asked
     // The newest session was in a remote project's local folder: it holds nothing, and the agent never trusted it.
     #expect(pick(["/h/.kelp/remote/box/app", "/p/web"], ["/p/web", "/p/api"]) == "/p/web")
     // A recent folder the agent hasn't trusted would stop at its trust question: a trusted one is used instead.

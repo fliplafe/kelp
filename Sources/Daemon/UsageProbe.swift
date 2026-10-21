@@ -94,10 +94,19 @@ extension Daemon {
     /// Where the hidden copy of an agent opens: a folder it already trusts, or it stops at its trust question and `/usage`
     /// never shows. Folders of the agent's recent sessions come first; a remote project's local folder never counts (its
     /// sessions run on the host, and the folder here holds nothing). With no trust list to go by, recent folders do.
-    static func probeFolder(used: [String], trusted: [String], remoteRoot: String, usable: (String) -> Bool) -> String? {
+    /// A trusted folder Kelp never worked in is skipped where macOS asks first (Documents, Desktop…): even checking that
+    /// it exists would pop "Kelp would like to access…" out of nowhere.
+    static func probeFolder(used: [String], trusted: [String], remoteRoot: String, home: String = NSHomeDirectory(),
+                            usable: (String) -> Bool) -> String? {
         let local = used.filter { !$0.hasPrefix(remoteRoot + "/") && $0 != remoteRoot }
-        let ordered = trusted.isEmpty ? local : local.filter(trusted.contains) + trusted.sorted()
+        let ordered = trusted.isEmpty ? local : local.filter(trusted.contains) + trusted.filter { !asksFirst($0, home: home) }.sorted()
         return ordered.first(where: usable)
+    }
+
+    /// In a place macOS guards under Privacy › Files and Folders.
+    static func asksFirst(_ dir: String, home: String) -> Bool {
+        dir.hasPrefix("/Volumes/") || ["Desktop", "Documents", "Downloads", "Library/Mobile Documents", "Library/CloudStorage"]
+            .contains { dir == "\(home)/\($0)" || dir.hasPrefix("\(home)/\($0)/") }
     }
 
     /// Folders the user trusted in Claude Code (read only).
