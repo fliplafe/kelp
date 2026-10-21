@@ -33,7 +33,7 @@ extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods as [any Handled.Type]).map { ($0.name, $0) })
+                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
@@ -46,15 +46,8 @@ extension Daemon {
         do {
             if let t = Self.typed[method] { return try await offload { [self] in try t.run(p, self, conn: conn) } }
             if let t = Self.asyncTyped[method] { return try await t.run(p, self) }
-            if let r = try await handleAsync(method, p, conn: conn) { return r }
             if method == "repo.clone" || method == "repo.cloneCancel" || method == "repo.create", let r = try await handleNewRepo(method, p, conn: conn) { return r }
-            if method.hasPrefix("usage.") || method.hasPrefix("history."), let r = try await offload({ [self] in try handleHistory(method, p) }) { return r }
-            if ["github.", "linear.", "jira.", "bitbucket.", "ci."].contains(where: method.hasPrefix) || method == "task.fromIssue",
-               let r = try await handleIntegration(method, p, conn: conn) { return r }
-            return try await offload { [self] in
-                if let r = try handleAgents(method, p, conn: conn) { return r }
-                return try handleSync(method, p, conn: conn)
-            }
+            return try await offload { [self] in try handleSync(method, p, conn: conn) }
         }
         catch let e as GitError { throw RPCError.internalError(e.message) }
     }
@@ -76,31 +69,9 @@ extension Daemon {
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         if let t = Self.typed[method] { return try t.run(p, self, conn: conn) }   // also for notifications applied in order
+        // Not declared yet: config.* (the old settings names the Accounts pane still uses) and ui.* (relayed to the app as sent).
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
-        switch method {
-        case "ping": return "pong"
-        case "daemon.shutdown":
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.stop(); exit(0) }
-            return .null
-
-        // MARK: sessions
-        case "session.create":
-            // cwd wins when both are given (e.g. an agent building an extension, shown in the current workspace).
-            var dir = p["cwd"]?.string.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }; let wid = p["worktreeId"]?.string
-            if let wid, dir == nil { dir = try cwd(forWorktree: wid).path }
-            guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
-            let m = try manifest(p["agent"]?.string, command: p["command"]?.string)
-            return try .from(spawn(cwd: dir, manifest: m, worktreeId: wid, Launch(p)))
-        case "session.hook":   // from a running agent; a late one (it was paused or ended since) wakes nothing
-            guard let ls = existing(try p.req("id")) else { return .null }
-            if let t = p["transcript"]?.string, !t.isEmpty { ls.transcriptPath = t }
-            if let dir = p["cwd"]?.string, let s = ls.workIn(dir) { publish(s) }
-            if let n = p["notification"], Hooks.isIdleReminder(n) { return .null }
-            let event: String = try p.req("event")
-            ls.hook(event == "done" && Hooks.hasBackgroundWork(p) ? "working" : event,
-                    trigger: p["trigger"]?.string, message: p["notification"]?["message"]?.string); return .null
-        default: throw RPCError.methodNotFound
-        }
+        throw RPCError.methodNotFound
     }
 }
 

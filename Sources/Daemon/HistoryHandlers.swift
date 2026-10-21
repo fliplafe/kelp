@@ -58,25 +58,6 @@ extension Daemon {
               "cost": .double(b.estimatedCostUSD), "models": .array(b.models.map { .string($0) })])
     }
 
-    /// Reads transcripts on disk (GBs the first time): runs through `offload`.
-    func handleHistory(_ method: String, _ p: JSONValue) throws -> JSONValue? {
-        switch method {
-        case "history.resume":   // reopen a past conversation as a live session
-            guard let s = try p["session"]?.decode(AgentSessionInfo.self) else { throw RPCError.invalidParams("session required") }
-            var cwd = s.cwd, wid: String? = p["worktreeId"]?.string
-            if let w = wid, let wt = try store.worktree(w) { cwd = wt.path } else {
-                wid = try store.worktrees().first { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == URL(fileURLWithPath: s.cwd).resolvingSymlinksInPath().path }?.id
-            }
-            guard FileManager.default.fileExists(atPath: cwd) else { throw RPCError.invalidParams("the session's folder no longer exists: \(cwd)") }
-            let cmd = History.resumeCommand(for: s)
-            var o = Launch(p); o.title = s.title.isEmpty ? "Resumed \(s.agent.rawValue)" : s.title
-            var m = try manifest(s.agent.rawValue, command: nil)
-            m.args += Array(cmd.dropFirst())
-            return try .from(spawn(cwd: cwd, manifest: m, worktreeId: wid, o))
-        default: return nil
-        }
-    }
-
     /// Claude's own percentages from the last 12 hours (they reset; older readings mislead).
     func withLimits(_ v: JSONValue) -> JSONValue {
         guard case .object(var o) = v else { return v }

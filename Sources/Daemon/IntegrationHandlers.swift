@@ -86,43 +86,4 @@ extension Daemon {
         catch let e as BitbucketError { throw RPCError.internalError(e.description) }
     }
 
-    func handleIntegration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
-        try await integration(method, p, conn: conn)
-    }
-
-    /// What also waits on a web API; its gh / git calls still go through `offload`, one by one.
-    private func integration(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue? {
-        switch method {
-        case "task.fromIssue":   // issue / Linear task -> branch with its number, worktree, agent briefed with the description
-            guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
-            let ref = try p.req("ref"), title = try p.req("title"), body = p["body"]?.string ?? "", url = p["url"]?.string ?? ""
-            var branch = p["branch"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? IssueRef.branchName(ref.hasPrefix("#") ? String(ref.dropFirst()) : ref.lowercased(), title: title)
-            if let prefix = p["branchPrefix"]?.string, !prefix.isEmpty, !branch.hasPrefix(prefix) { branch = prefix + branch }
-            let unique = try await offload { [branch] in
-                var unique = branch, n = 2
-                while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
-                return unique
-            }
-            let wv = try await handle("worktree.create", .obj(["repoId": .string(r.id), "branch": .string(unique), "note": .string("\(ref) \(title)"), "tabs": false]), conn: conn)
-            // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
-            let (w, s) = try await offload { [self] () throws -> (Worktree, Session) in
-                guard let w = try store.updateWorktree(try wv.req("id"), {
-                    $0.issue = ref; $0.issueURL = url; $0.linearIssueId = p["linearId"]?.string ?? ""
-                }) else { throw RPCError.internalError("worktree vanished") }
-                let cfg = trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
-                let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
-                var prompt = cfg.issueCommand.map { Self.fill($0, vars) }
-                    ?? Recipes.render("issue", config: cfg, vars: vars)
-                if let extra = p["prompt"]?.string, !extra.isEmpty { prompt += "\n\n" + extra }
-                var o = Launch(p); o.prompt = prompt; o.title = "\(ref) \(title)".prefix(48).description
-                return (w, try spawn(cwd: w.path, manifest: manifest(p["agent"]?.string ?? "claude", command: nil), worktreeId: w.id, o))
-            }
-            await moveLinear(w, to: .inProgress)
-            await moveJira(w, toName: "progress", category: "indeterminate")
-            notify("event.changed", "worktree")
-            // An untrusted .kelp.yaml's setup didn't run: said, as worktree.create says it, so the caller can ask.
-            return .obj(["worktree": try .from(w), "session": try .from(s), "setupNeedsTrust": .bool(wv["setupNeedsTrust"]?.bool == true)])
-        default: return nil
-        }
-    }
 }

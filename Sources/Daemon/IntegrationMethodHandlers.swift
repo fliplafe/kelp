@@ -257,6 +257,7 @@ extension Daemon {
         GitHubReviewComments.self, GitHubProjects.self, GitHubProjectItems.self]
     static let asyncTyped = Dictionary(uniqueKeysWithValues: ([GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,
-        JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self]
+        JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self,
+        AgentsVersions.self, TaskFromIssue.self]
         as [any AsyncHandled.Type]).map { ($0.name, $0) })
 }
