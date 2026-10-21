@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Unsaved files ask before quitting, like any Mac app: the question is a sheet, and the app quits once it's answered
     /// and any remote file's save came back (not if one failed).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let edited = main?.editors.editedFiles ?? []
+        let edited = Workbench.editedFiles
         guard !edited.isEmpty, !unsavedAnswered else { return .terminateNow }
         // Asked in a sheet, then quit again. Not `terminateLater`: until its reply AppKit runs a modal mode in which the
         // main actor's tasks don't run, so the question could never be asked.

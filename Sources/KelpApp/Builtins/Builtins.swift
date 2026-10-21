@@ -137,7 +137,7 @@ enum Builtins {
                           }
                       },
                       cmd("editor.saveAll", "Save All", "opt+cmd+s") {
-                          Task { for t in Workbench.window?.editors.editedFiles ?? [] { await t.save() } }
+                          Task { for t in Workbench.editedFiles { await t.save() } }
                       },
                       cmd("files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
                           Workbench.window?.showInspector(panel: "files")

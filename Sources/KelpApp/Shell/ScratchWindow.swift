@@ -11,6 +11,9 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
     private var area: EditorArea?
     private var hotKey: EventHotKeyRef?
 
+    /// Its unsaved files (a file opened from a scratch terminal): quitting and Save All count them too.
+    var editedFiles: [SavableTab] { area?.editedFiles ?? [] }
+
     /// The scratch project's path, so lists of projects can leave it out.
     static var path: String { URL(fileURLWithPath: Paths.scratch.path).resolvingSymlinksInPath().path }
     static func isScratch(_ r: Repo?) -> Bool { r.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == path } ?? false }

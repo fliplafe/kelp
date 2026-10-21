@@ -6,6 +6,8 @@ import WorkbenchKit
 @MainActor
 extension Workbench {
     static var window: MainWindowController? { (NSApp.delegate as? AppDelegate)?.main }
+    /// Every unsaved file in the app: the main window's loaded workspaces and the Scratch panel's.
+    static var editedFiles: [SavableTab] { (window?.editors.editedFiles ?? []) + ScratchWindow.shared.editedFiles }
     /// The editor area with the keyboard: the Scratch panel's while it's key, else the workspace on screen's.
     static var editor: EditorArea? { keyArea ?? window?.editors.current }
     /// An editor area that is a window's whole content (the Scratch panel) and has the keys.
