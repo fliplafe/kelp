@@ -281,6 +281,8 @@ final class EditorHost: NSViewController {
 
     func show(_ id: String?) {
         if let c = current, c.workspaceId == id { return }
+        // A hold's width is on the area itself and outlives its removal: left on, the area could never narrow again.
+        NSLayoutConstraint.deactivate(held); held = []
         current?.view.removeFromSuperview()
         guard let id, AppModel.shared.worktree(id) != nil else { current = nil; showWelcome(); return }
         welcome?.removeFromSuperview(); welcome = nil
@@ -295,7 +297,6 @@ final class EditorHost: NSViewController {
         view.addSubview(area.view)
         // Under the window bar, which lies over this view's top (the split view is the window's full height).
         fill = [area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)]
-        held = []
         NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height),
                                      area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)] + fill)
         area.reconcile()
