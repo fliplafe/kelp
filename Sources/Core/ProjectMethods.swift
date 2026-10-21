@@ -13,6 +13,9 @@ public struct ScriptsRun: RPCMethod { public static let name = "scripts.run"; pu
 public struct RepoAddRemote: RPCMethod { public static let name = "repo.addRemote"; public typealias Result = JSONValue; public var host: String, path: String, `init`: Bool? }
 /// A file in a remote project's folder, read on the host.
 public struct FilesReadRemote: RPCMethod { public static let name = "files.readRemote"; public typealias Result = JSONValue; public var path: String }
+/// Writes `text` to that file on the host → null; → {changed: its text there} instead, unwritten, when it's no longer `base`
+/// (an agent there edited it since it was read).
+public struct FilesWriteRemote: RPCMethod { public static let name = "files.writeRemote"; public typealias Result = JSONValue; public var path: String, text: String, base: String? }
 
 public struct SettingsGet: RPCMethod { public static let name = "settings.get"; public typealias Result = JSONValue }
 /// A null `value` resets the key → all settings.

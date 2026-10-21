@@ -466,6 +466,14 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await c.call("github.branchPR", .obj(["worktreeId": .string(w.id)])) == .null)
     #expect(try await c.call("files.list", .obj(["id": .string(w.id)]), as: [String].self).contains("a.txt"))
     #expect(try await c.call("files.readRemote", .obj(["path": .string(repo.path + "/a.txt")])).string == "changed\n")
+    // Saving writes it there; an edit there since it was read comes back instead, and nothing is written over it.
+    let save = { (text: String, base: String) in try await c.call("files.writeRemote", .obj(["path": .string(repo.path + "/a.txt"), "text": .string(text), "base": .string(base)])) }
+    #expect(try await save("mine\n", "changed\n") == .null)
+    #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "mine\n")
+    #expect(try await save("again\n", "changed\n") == .obj(["changed": "mine\n"]))
+    #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "mine\n")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: there).allSatisfy { !$0.contains(".kelp-") })
+    try "changed\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
     // Adding it again is the same project; a folder that isn't there says so.
     #expect(try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self).id == repo.id)
     await #expect(throws: (any Error).self) { try await c.call("repo.addRemote", .obj(["host": "box", "path": "/nope/nothing"])) }

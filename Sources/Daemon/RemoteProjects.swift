@@ -90,3 +90,20 @@ extension FilesReadRemote: Handled {
         return .string(try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh))
     }
 }
+
+extension FilesWriteRemote: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        guard let (_, remote, remotePath) = RemoteHost.containing(path) else { throw RPCError.invalidParams("Not in a remote project.") }
+        func ssh(_ script: String, _ input: String? = nil) throws -> String {
+            try Git.run(remote.sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)], cwd: NSHomeDirectory(), stdin: input, executable: RemoteHost.ssh)
+        }
+        let file = RemoteHost.quote(remotePath)
+        // Changed there since it was read: the user decides (a file that's gone is just written again).
+        if let base, let now = try? ssh("cat -- " + file), now != base { return .obj(["changed": .string(now)]) }
+        // Sent to a file beside it, then copied over it on the host: a dropped connection can't leave half of it, and
+        // the file keeps its mode, owner and links.
+        let tmp = RemoteHost.quote(remotePath + ".kelp-XXXXXX")
+        try ssh("t=$(mktemp \(tmp)) || exit 1; cat > \"$t\" && cat \"$t\" > \(file); s=$?; rm -f \"$t\"; exit $s", text)
+        return .null
+    }
+}

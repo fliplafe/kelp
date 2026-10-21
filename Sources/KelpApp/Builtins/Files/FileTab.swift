@@ -28,6 +28,11 @@ final class FileTab: SavableTab {
     private var discarded = false
     /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
     private var gone = false { didSet { if gone != oldValue { onChange?() } } }
+    /// A remote project's file: read and written on its host, one save at a time.
+    private var isRemote = false
+    private var saving: Task<Void, Never>?
+    /// Focused while its text was still on the way from the host: focused (and its line shown) once it's here.
+    private var focusWhenLoaded = false
 
     var uri: String { TabURI.file(path) }
     var title: String { url.lastPathComponent }
@@ -39,8 +44,9 @@ final class FileTab: SavableTab {
         path = p; url = URL(fileURLWithPath: p); pendingLine = line
         root = AppModel.shared.worktrees.filter { p.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }?.path ?? url.deletingLastPathComponent().path
         let ext = url.pathExtension.lowercased()
-        // A remote project's file: read on its host and shown read-only (edits happen there, by its agents and terminals).
+        // A remote project's file: read on its host, saved there (an agent's edit there meanwhile is asked about).
         if !FileManager.default.fileExists(atPath: p), let r = RemoteHost.containing(p) {
+            isRemote = true
             let box = NSView(); view = box
             let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); box.pin(wait)
             Task { [weak self] in
@@ -48,10 +54,12 @@ final class FileTab: SavableTab {
                 guard let self else { return }
                 wait.removeFromSuperview()
                 guard let text = res.value?.string else { box.pin(Self.message(res.error ?? String(localized: "Couldn't read it."))); return }
-                let e = CodeEditor(text: text, url: url, editable: false)
+                let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
                 e.view.clipsToBounds = true
+                e.onChange = { [weak self] t in self?.edited(t) }
                 editor = e; lastSaved = text
                 box.pin(e.view)
+                if focusWhenLoaded { focus() }
             }
             return
         }
@@ -97,7 +105,8 @@ final class FileTab: SavableTab {
     }
 
     func focus() {
-        editor?.focus()
+        guard let editor else { focusWhenLoaded = true; return }
+        editor.focus()
         if let l = pendingLine { pendingLine = nil; DispatchQueue.main.async { [weak self] in self?.editor?.goTo(line: l) } }
     }
     func goTo(line: Int) { editor?.goTo(line: line); editor?.focus() }
@@ -108,8 +117,8 @@ final class FileTab: SavableTab {
     func close() -> Bool {
         autosaving.cancel()
         guard let e = editor, isEdited else { return true }
-        let action = FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
-        if Self.autosave, action == .write, write() { return true }
+        let action = isRemote ? .write : FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
+        if Self.autosave, action == .write, writeAndClose() { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save the changes you made to “\(title)”?")
         a.informativeText = switch action {
         case .conflict: String(localized: "An agent changed it on disk meanwhile. Save replaces that version with yours.")
@@ -118,7 +127,7 @@ final class FileTab: SavableTab {
         }
         a.addButton(withTitle: String(localized: "Save")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
         switch runAsSheet(a) {
-        case .alertFirstButtonReturn: return write()
+        case .alertFirstButtonReturn: return writeAndClose()
         case .alertThirdButtonReturn: discarded = true; return true
         default: return false
         }
@@ -130,6 +139,7 @@ final class FileTab: SavableTab {
         if Self.autosave { autosaving.after(0.6) { [weak self] in self?.autosaveNow() } }
         editedStateMayHaveChanged()
         markdown?.textChanged()
+        guard !isRemote else { return }   // no language server for a file on another machine
         lspTask?.cancel()
         let p = path, r = root
         lspTask = Task {
@@ -147,6 +157,7 @@ final class FileTab: SavableTab {
     @discardableResult
     func save() -> Bool {
         guard let e = editor else { return true }
+        if isRemote { return write() }
         switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
         case .write: return write()
         case .conflict: diskChanged(); return false   // don't clobber an agent's edit
@@ -162,6 +173,7 @@ final class FileTab: SavableTab {
     /// Autosave writes only when that's safe; a conflict asks (if the tab is on screen), a missing file waits for ⌘S.
     private func autosaveNow() {
         guard let e = editor else { return }
+        if isRemote { write(); return }
         switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
         case .write: write()
         case .conflict: diskChanged()
@@ -172,11 +184,33 @@ final class FileTab: SavableTab {
     @discardableResult
     private func write() -> Bool {
         guard let e = editor else { return true }
+        if isRemote { writeRemote(); return true }
         // Through a symlink to the file it points at: an atomic write to the link would replace it with a plain file.
         do { try e.text.write(to: url.resolvingSymlinksInPath(), atomically: true, encoding: .utf8); lastSaved = e.text; gone = false }
         catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error); return false }
         editedStateMayHaveChanged()
         return true
+    }
+
+    /// Closing with a save: a remote file's tab stays until the host has it (a failed save keeps the edits), then closes.
+    private func writeAndClose() -> Bool {
+        guard isRemote else { return write() }
+        writeRemote { [uri] in Workbench.closeTab(uri: uri) }
+        return false
+    }
+
+    /// Each save waits for the one before, so it's checked against what that one wrote, not what's in flight.
+    private func writeRemote(then done: (() -> Void)? = nil) {
+        let previous = saving
+        saving = Task { [weak self] in
+            await previous?.value
+            guard let self, let e = editor, e.text != lastSaved else { done?(); return }
+            let text = e.text
+            let res = await AppModel.shared.tryCall("files.writeRemote", .obj(["path": .string(path), "text": .string(text), "base": .string(lastSaved)]))
+            if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return }
+            if let now = res.value?["changed"]?.string { askKeepMine(disk: now); return }
+            lastSaved = text; editedStateMayHaveChanged(); done?()
+        }
     }
 
     private func editedStateMayHaveChanged() {
