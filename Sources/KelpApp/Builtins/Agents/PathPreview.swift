@@ -43,8 +43,9 @@ final class PathPreview {
     private let popover = NSPopover()
     init() { popover.behavior = .semitransient; popover.animates = false }
 
-    func show(_ token: String?, rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
-        guard let token, let f = TerminalPaths.resolve(token, cwd: cwd) else { popover.close(); return }
+    /// The first of `tokens` (what the word under the pointer may be) that is a file; none closes it.
+    func show(_ tokens: [String], rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
+        guard let f = tokens.lazy.compactMap({ TerminalPaths.resolve($0, cwd: cwd) }).first else { popover.close(); return }
         let model = PreviewModel(path: f.path, line: f.line, cwd: cwd)
         let host = NSHostingController(rootView: PathPreviewView(model: model))
         host.sizingOptions = .preferredContentSize   // placed and resized around the anchor (see HoverCard)

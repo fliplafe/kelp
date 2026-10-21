@@ -55,9 +55,9 @@ final class PaneView: NSView {
         // Paths the agent prints are its folder's: its own worktree once it went into one.
         let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
         g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
-        g.onHoverWord = { [weak self, weak g] token, rect in
+        g.onHoverWord = { [weak self, weak g] tokens, rect in
             guard let self, let g else { return }
-            self.preview.show(token, rect: rect, in: g, cwd: cwd(), worktree: wid)
+            self.preview.show(tokens, rect: rect, in: g, cwd: cwd(), worktree: wid)
         }
     }
 

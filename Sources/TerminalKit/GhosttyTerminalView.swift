@@ -201,8 +201,9 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public var onSearch: ((SearchEvent) -> Void)?
     /// ⌘-click on text Ghostty doesn't see as a link (`Sources/App.swift:12`): true if the app opened it.
     public var onOpenPath: ((String, NSEvent.ModifierFlags) -> Bool)?
-    /// The pointer came to rest on a word (a path, maybe), or left it (nil); the rect is the word's, in this view.
-    public var onHoverWord: ((String?, NSRect) -> Void)?
+    /// The pointer came to rest on a word (a path, maybe: what it may be, see `word(at:)`), or left it (none); the rect
+    /// is the word's part on that row, in this view.
+    public var onHoverWord: (([String], NSRect) -> Void)?
     /// ⌘V was refused: a program put that text on the clipboard and here its line breaks would run it.
     public var onPasteRefused: (() -> Void)?
     private var hoverTimer: Timer?
@@ -400,11 +401,20 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         guard let surface else { return }
         endHover()
-        // ⌘-click on a path: the app opens it (Ghostty handles URLs itself).
-        if e.modifierFlags.contains(.command), let w = word(at: convert(e.locationInWindow, from: nil)), onOpenPath?(w.text, e.modifierFlags) == true {
+        if e.modifierFlags.contains(.command), let w = word(at: convert(e.locationInWindow, from: nil)), open(w.texts, e.modifierFlags) {
             clickTaken = true; return
         }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mouseMods(e.modifierFlags))
+    }
+    /// ⌘-click on a path: the app opens it. On a link a program broke across rows, the whole link — Ghostty would open
+    /// the clicked row's part; it handles links on one row and the ones it wrapped itself. A program breaks only a word
+    /// longer than the row: a shorter one is a link that just filled its row, and the next row's word isn't part of it.
+    private func open(_ texts: [String], _ flags: NSEvent.ModifierFlags) -> Bool {
+        if texts.count > 1, texts[0].count > gridSize?.cols ?? .max, texts[0].contains("://"), let u = URL(string: texts[0]) {
+            if let h = onOpenURL { h(u) } else { NSWorkspace.shared.open(u) }
+            return true
+        }
+        return texts.contains { onOpenPath?($0, flags) == true }
     }
     public override func mouseUp(with e: NSEvent) {
         if clickTaken { clickTaken = false; return }
@@ -441,19 +451,20 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let w = self.word(at: p) else { return }
-                self.hovered = w.rect; self.onHoverWord?(w.text, w.rect)
+                self.hovered = w.rect; self.onHoverWord?(w.texts, w.rect)
             }
         }
     }
     private func endHover() {
         hoverTimer?.invalidate()
         guard hovered != nil else { return }
-        hovered = nil; onHoverWord?(nil, .zero)
+        hovered = nil; onHoverWord?([], .zero)
     }
 
-    /// The run of characters under `p` up to blanks and brackets, from its screen row — so "App.swift:12:5" stays
-    /// whole (Ghostty's own words stop at ":").
-    public func word(at p: NSPoint) -> (text: String, rect: NSRect)? {
+    /// The run of characters under `p` up to blanks and brackets, with its parts on the rows it wraps onto — so
+    /// "App.swift:12:5" stays whole (Ghostty's own words stop at ":"), and so does a path Claude Code broke in two.
+    /// `texts`: the joined word first, then the row's own part (see `TerminalCopy.wrappedWord`); `rect`: that part.
+    public func word(at p: NSPoint) -> (texts: [String], rect: NSRect)? {
         guard let surface else { return nil }
         let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
         let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
@@ -461,15 +472,19 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         let padX = 12.0, padY = 8.0   // window-padding in the overrides above
         let col = Int((p.x - padX) / cw), row = Int((bounds.height - p.y - padY) / ch)
         guard row >= 0, row < Int(s.rows), col >= 0, col < Int(s.columns) else { return nil }
-        var t = ghostty_text_s()
-        let sel = ghostty_selection_s(top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: UInt32(row)),
-                                      bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: UInt32(s.columns - 1), y: UInt32(row)),
-                                      rectangle: false)
-        guard ghostty_surface_read_text(surface, sel, &t) else { return nil }
-        defer { ghostty_surface_free_text(surface, &t) }
-        guard let r = TerminalCopy.word(in: String(cString: t.text), at: col) else { return nil }
-        let rect = NSRect(x: padX + Double(r.start) * cw, y: bounds.height - padY - Double(row + 1) * ch, width: Double(r.width) * cw, height: ch)
-        return (r.text, rect)
+        let rowText = { (y: Int) -> String? in
+            guard y >= 0, y < Int(s.rows) else { return nil }
+            var t = ghostty_text_s()
+            let sel = ghostty_selection_s(top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: UInt32(y)),
+                                          bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: UInt32(s.columns - 1), y: UInt32(y)),
+                                          rectangle: false)
+            guard ghostty_surface_read_text(surface, sel, &t) else { return nil }
+            defer { ghostty_surface_free_text(surface, &t) }
+            return String(cString: t.text)
+        }
+        guard let w = TerminalCopy.wrappedWord(rows: rowText, row: row, at: col, columns: Int(s.columns)) else { return nil }
+        let rect = NSRect(x: padX + Double(w.start) * cw, y: bounds.height - padY - Double(row + 1) * ch, width: Double(w.width) * cw, height: ch)
+        return (w.texts, rect)
     }
     public override func mouseDragged(with e: NSEvent) { mouseMoved(with: e) }
     public override func rightMouseDragged(with e: NSEvent) { mouseMoved(with: e) }

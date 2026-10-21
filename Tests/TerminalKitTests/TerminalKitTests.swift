@@ -20,6 +20,56 @@ import Testing
     #expect(TerminalCopy.word(in: line, at: 1) == nil)
 }
 
+/// A word that runs to the right edge goes on at the next row's first word, as Claude Code breaks a long path.
+@Test func wordsGoOnAcrossWrappedRows() {
+    func at(_ rows: [String], _ row: Int, _ col: Int, columns: Int = 14) -> [String]? {
+        TerminalCopy.wrappedWord(rows: { rows.indices.contains($0) ? rows[$0] : nil }, row: row, at: col, columns: columns)?.texts
+    }
+    let rows = ["  see /tmp/abc", "  def/x.png.", "  word", "  /tmp/full.md", "  next one"]
+    #expect(at(rows, 0, 8) == ["/tmp/abcdef/x.png", "/tmp/abc"])         // from its first row
+    #expect(at(rows, 1, 3) == ["/tmp/abcdef/x.png", "def/x.png"])        // and from the row it went on to
+    #expect(at(rows, 0, 3) == ["see"])                                   // not the row's last word
+    #expect(at(rows, 2, 3) == ["word"])                                  // a row short of the edge ends its word
+    #expect(at(rows, 3, 3) == ["/tmp/full.mdnext", "/tmp/full.md"])      // a word that just filled its row: its own too
+    #expect(at(["aaaa", "bbbb", "cc"], 2, 0, columns: 4) == ["aaaabbbbcc", "cc"])   // over three rows
+}
+
+/// A path and a link a program broke at the right edge itself (no soft wrap Ghostty knows of): ⌘-click on their last
+/// row gets all of them.
+@Test @MainActor func commandClickJoinsRowsAProgramBroke() async throws {
+    let path = "/tmp/" + String(repeating: "a", count: 150) + "/x.txt", link = "https://example.com/" + String(repeating: "b", count: 100) + "?q=1"
+    let script = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-wrap-\(UUID().uuidString).sh")
+    try #"sleep 0.5; c=$(stty size | cut -d' ' -f2); printf '\033[?1000h\033[?1006h'; for s in '\#(path)' '\#(link)'; do printf '%s\n' "$s" | fold -w "$c"; done; echo DONE; sleep 20"#
+        .write(to: script, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: script) }
+    let v = GhosttyTerminalView(command: "/bin/sh " + script.path, cwd: NSTemporaryDirectory())
+    let surface = try #require(v.surface)
+    let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    w.contentView = v; w.orderFront(nil)
+    defer { w.orderOut(nil) }
+    var tried: [String] = [], opened: URL?
+    v.onOpenPath = { t, _ in tried.append(t); return t == path }
+    v.onOpenURL = { opened = $0 }
+    let deadline = Date() + 5
+    while !(v.visibleText.contains("DONE") && ghostty_surface_mouse_captured(surface)), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    let rows = v.visibleText.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+    let s = ghostty_surface_size(surface), scale = w.backingScaleFactor
+    let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
+    func click(lastRowOf text: String) throws {
+        let row = try #require(rows.firstIndex { !$0.isEmpty && $0.count < text.count && text.hasSuffix($0) })
+        let p = v.convert(NSPoint(x: 12 + 0.5 * cw, y: v.bounds.height - 8 - (Double(row) + 0.5) * ch), to: nil)
+        for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let e = try #require(NSEvent.mouseEvent(with: t, location: p, modifierFlags: .command, timestamp: 0, windowNumber: w.windowNumber,
+                                                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            if t == .leftMouseDown { v.mouseDown(with: e) } else { v.mouseUp(with: e) }
+        }
+    }
+    try click(lastRowOf: path)
+    #expect(tried.first == path)
+    try click(lastRowOf: link)
+    #expect(opened?.absoluteString == link)
+}
+
 @Test func wideCharactersTakeTwoColumns() {
     let line = "日本 src/a.swift"   // 日本 covers columns 0-3, the path starts at 5
     #expect(TerminalCopy.word(in: line, at: 6)?.text == "src/a.swift")
