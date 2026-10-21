@@ -80,8 +80,9 @@ final class TabStrip: NSView {
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
         // Below the split view's holding priority (250): a full strip must never move the divider.
         let fit = stack.widthAnchor.constraint(lessThanOrEqualTo: scroll.widthAnchor); fit.priority = .init(245); fit.isActive = true
-        // The stacks' own hugging and clipping resistance would beat `fit` and keep every title whole.
-        stack.setHuggingPriority(.init(200), for: .horizontal); stack.setClippingResistancePriority(.init(200), for: .horizontal)
+        // The stack's own hugging would beat `fit` and keep every title whole. Its clipping resistance stays above `fit`:
+        // tabs at their minimum widen the stack (the strip scrolls) instead of running past its end, clipped.
+        stack.setHuggingPriority(.init(200), for: .horizontal); stack.setClippingResistancePriority(.init(246), for: .horizontal)
         registerForDraggedTypes([.kelpTab])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -102,20 +103,21 @@ final class TabStrip: NSView {
     }
 
     override func layout() {
-        super.layout()
-        stack.layoutSubtreeIfNeeded()
         // "+" right after the tabs while they fit (as in Safari), else at the end of the room they have.
+        // Before super.layout(): set after it, the constant only took effect on the next pass, so a tab whose title
+        // grew (a page finishing loading) stayed clipped until something else laid the strip out.
         let natural = stack.fittingSize.width
         let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - 26
         let x = max(0, min(natural, room))
         if abs((addLead?.constant ?? 0) - x) > 0.5 { addLead?.constant = x }
         overflow.isHidden = natural <= room + 1
+        super.layout()
     }
 
     /// Keeps the selected tab in view when the strip is scrolled or squeezed.
     private func revealSelected() {
         guard let i = items.firstIndex(where: { $0.id == selectedId }), buttons.indices.contains(i) else { return }
-        stack.layoutSubtreeIfNeeded()
+        layoutSubtreeIfNeeded()
         buttons[i].scrollToVisible(buttons[i].bounds.insetBy(dx: -24, dy: 0))
     }
 
