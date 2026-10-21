@@ -246,7 +246,7 @@ enum WorkspaceActions {
             a.informativeText = lost.isEmpty ? String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.") : lost.joined(separator: " ")
             a.addButton(withTitle: lost.isEmpty ? String(localized: "Delete Workspace and Branch") : String(localized: "Delete and Lose Changes")).hasDestructiveAction = true
             a.addButton(withTitle: String(localized: "Cancel")); a.alertStyle = lost.isEmpty ? .warning : .critical
-            guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            guard await runSheet(a) == .alertFirstButtonReturn, await UnsavedChanges.confirm(closing: [w.id]) else { return }
             if Workbench.shared.workspaceId == w.id, let main = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
                 Workbench.show(workspace: main.id)
             }
@@ -301,6 +301,7 @@ enum WorkspaceActions {
                 a.addButton(withTitle: String(localized: "Cancel"))
                 guard await runSheet(a) == .alertFirstButtonReturn else { return }
             }
+            guard await UnsavedChanges.confirm(closing: [w.id]) else { return }
             if Workbench.shared.workspaceId == w.id, let other = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
                 Workbench.show(workspace: other.id)
             }
@@ -340,7 +341,7 @@ enum WorkspaceActions {
             : running.count == 1 ? String(localized: "Stop 1 Session and Close") : String(localized: "Stop \(running.count) Sessions and Close"))
         close.hasDestructiveAction = !running.isEmpty; a.addButton(withTitle: String(localized: "Cancel"))
         Task {
-            guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            guard await runSheet(a) == .alertFirstButtonReturn, await UnsavedChanges.confirm(closing: closing.map(\.id)) else { return }
             if closing.contains(where: { $0.id == Workbench.shared.workspaceId }),
                let other = m.worktrees.first(where: { w in !w.archived && !closing.contains { $0.id == w.id } }) { Workbench.show(workspace: other.id) }
             for w in closing {
@@ -354,6 +355,7 @@ enum WorkspaceActions {
     /// Out of the sidebar, nothing lost: its agents pause and its tabs stay until it comes back (Window › Archived Workspaces).
     static func archive(_ w: Worktree) {
         Task {
+            guard await UnsavedChanges.confirm(closing: [w.id]) else { return }
             if Workbench.shared.workspaceId == w.id,
                let other = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id && !$0.archived }) { Workbench.show(workspace: other.id) }
             if await AppModel.shared.call("worktree.archive", .obj(["id": .string(w.id)])) != nil {
@@ -375,7 +377,8 @@ enum WorkspaceActions {
         let a = NSAlert(); a.messageText = String(localized: "Remove “\(r.name)” from Kelp?"); a.informativeText = String(localized: "The repository on disk is not touched.")
         a.addButton(withTitle: String(localized: "Remove")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
-            guard await runSheet(a) == .alertFirstButtonReturn else { return }
+            guard await runSheet(a) == .alertFirstButtonReturn,
+                  await UnsavedChanges.confirm(closing: AppModel.shared.worktrees.filter { $0.repoId == r.id }.map(\.id)) else { return }
             await AppModel.shared.call("repo.remove", .obj(["id": .string(r.id)]))
         }
     }

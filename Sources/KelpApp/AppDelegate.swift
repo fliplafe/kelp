@@ -61,18 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let edited = main?.editors.editedFiles ?? []
         guard !edited.isEmpty else { return .terminateNow }
-        let a = NSAlert()
-        a.messageText = edited.count == 1 ? String(localized: "Do you want to save the changes you made to “\(edited[0].title)”?")
-            : String(localized: "You have \(edited.count) files with unsaved changes. Save them before quitting?")
-        a.informativeText = String(localized: "Your changes will be lost if you don't save them.")
-        a.addButton(withTitle: edited.count == 1 ? String(localized: "Save") : String(localized: "Save All"))
-        a.addButton(withTitle: String(localized: "Cancel"))
-        a.addButton(withTitle: String(localized: "Don't Save"))
-        switch runAsSheet(a) {
-        case .alertFirstButtonReturn: return edited.allSatisfy { $0.save() } ? .terminateNow : .terminateCancel
-        case .alertThirdButtonReturn: return .terminateNow
-        default: return .terminateCancel
-        }
+        return UnsavedChanges.settle(edited, runAsSheet(UnsavedChanges.alert(edited, quitting: true))) ? .terminateNow : .terminateCancel
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive

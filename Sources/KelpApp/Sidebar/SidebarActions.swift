@@ -81,7 +81,7 @@ extension SidebarController {
                 let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions.close(w) }
                 close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
             } else {
-                menu.add(String(localized: "Archive")) { Task { await AppModel.shared.call("worktree.archive", .obj(["id": .string(id)])) } }
+                menu.add(String(localized: "Archive")) { WorkspaceActions.archive(w) }
                 menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions.delete(w) }
             }
         case .agent(let sid):

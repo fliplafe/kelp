@@ -7925,6 +7925,16 @@
         }
       }
     },
+    "You have %lld files with unsaved changes. Save them before closing?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Несохранённых файлов: %lld. Сохранить их перед закрытием?"
+          }
+        }
+      }
+    },
     "You have %lld files with unsaved changes. Save them before quitting?": {
       "localizations": {
         "ru": {

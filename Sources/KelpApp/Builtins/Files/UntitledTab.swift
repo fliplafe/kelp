@@ -7,13 +7,15 @@ import WorkbenchKit
 @MainActor
 final class UntitledTab: SavableTab {
     let uri: String
-    private let editor = CodeEditor(text: "", url: URL(fileURLWithPath: "/Untitled.txt"))
+    let editor = CodeEditor(text: "", url: URL(fileURLWithPath: "/Untitled.txt"))
     private var wasEdited = false
     var onChange: (() -> Void)?
     var view: NSView { editor.view }
     let title: String
     var icon: NSImage? { .symbol("doc") }
-    var isEdited: Bool { !editor.text.isEmpty }
+    var isEdited: Bool { !discarded && !editor.text.isEmpty }
+    private var discarded = false
+    func discard() { discarded = true }
 
     init(uri: String) {
         self.uri = uri

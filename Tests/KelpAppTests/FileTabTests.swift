@@ -35,6 +35,27 @@ extension SharedAppModel {
         #expect(!tab.save())   // asks (here: no window, so it just doesn't write)
         #expect(try String(contentsOfFile: p, encoding: .utf8) == "theirs\n")
     }
+
+    /// Closing a workspace with an edited file: Cancel keeps it, Save writes it, Don't Save leaves nothing edited (so the
+    /// workspace going away doesn't ask again); without Cancel the second button is Don't Save.
+    @Test func closingAWorkspaceAsksAboutItsUnsavedFiles() throws {
+        let p = try file("one\n")
+        let tab = FileTab(uri: TabURI.file(p)), untitled = UntitledTab(uri: "untitled:1")
+        func type(_ t: String) { tab.editor?.setText(t); tab.editor?.onChange?(t) }   // as typing does
+        type("mine\n")
+        #expect(!UnsavedChanges.settle([tab], .alertSecondButtonReturn))   // Cancel
+        #expect(tab.isEdited)
+        #expect(UnsavedChanges.settle([tab], .alertFirstButtonReturn))     // Save
+        #expect(try String(contentsOfFile: p, encoding: .utf8) == "mine\n")
+        type("mine again\n")
+        #expect(tab.isEdited)
+        #expect(UnsavedChanges.settle([tab], .alertThirdButtonReturn))     // Don't Save
+        #expect(!tab.isEdited)
+        #expect(try String(contentsOfFile: p, encoding: .utf8) == "mine\n")
+        untitled.editor.setText("draft")
+        #expect(UnsavedChanges.settle([untitled], .alertSecondButtonReturn, canCancel: false))   // Don't Save, no Cancel
+        #expect(!untitled.isEdited)
+    }
 }
 
 /// Files moved in the Files panel come back with ⌘Z (and go again with ⇧⌘Z): an agent's folder isn't left half-moved.

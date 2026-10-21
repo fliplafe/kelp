@@ -31,6 +31,8 @@ protocol TabContent: AnyObject {
 protocol SavableTab: TabContent {
     /// False when nothing was written (the user cancelled, or it failed and said why).
     @discardableResult func save() -> Bool
+    /// The user chose Don't Save for a tab that's going away: it isn't edited any more, and nothing writes it later.
+    func discard()
 }
 
 extension TabContent {

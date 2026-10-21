@@ -291,6 +291,7 @@ final class EditorHost: NSViewController {
     private var recent: [String] = []
     private(set) var current: EditorArea?
     var editedFiles: [SavableTab] { areas.values.flatMap(\.editedFiles) }
+    func editedFiles(in ids: [String]) -> [SavableTab] { ids.compactMap { areas[$0] }.flatMap(\.editedFiles) }
     private var welcome: NSView?
     private static let keep = 4
 
@@ -335,7 +336,16 @@ final class EditorHost: NSViewController {
     }
 
     private func refresh() {
-        for (id, a) in areas where AppModel.shared.worktree(id) == nil { a.view.removeFromSuperview(); a.removeFromParent(); areas[id] = nil; recent.removeAll { $0 == id } }
+        for (id, a) in areas where AppModel.shared.worktree(id) == nil {
+            a.view.removeFromSuperview(); areas[id] = nil; recent.removeAll { $0 == id }
+            // Closed from elsewhere (the CLI, an agent): unsaved files still get their question, only without Cancel.
+            let edited = a.editedFiles
+            guard !edited.isEmpty else { a.removeFromParent(); continue }
+            Task {
+                _ = UnsavedChanges.settle(edited, await runSheet(UnsavedChanges.alert(edited, quitting: false, canCancel: false)), canCancel: false)
+                a.removeFromParent()
+            }
+        }
         if let c = current, areas[c.workspaceId] == nil { current = nil; showWelcome() }
         current?.reconcile()   // the others reconcile when shown
         if current == nil { showWelcome() }

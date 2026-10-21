@@ -26,6 +26,7 @@ final class FileTab: SavableTab {
     private var pendingLine: Int?
     /// Closed with Don't Save: deinit's autosave mustn't write it after all.
     private var discarded = false
+    func discard() { discarded = true; isEdited = false }
     /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
     private var gone = false { didSet { if gone != oldValue { onChange?() } } }
     /// A remote project's file: read and written on its host, one save at a time.
