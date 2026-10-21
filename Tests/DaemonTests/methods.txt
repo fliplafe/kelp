@@ -109,6 +109,10 @@ state.get
 state.set
 task.fromIssue
 tmux.list
+ui.command
+ui.open
+ui.publish
+ui.state
 usage.get
 usage.report
 workspace.create

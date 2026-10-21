@@ -93,7 +93,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if let c = AppModel.shared.client, let reply = (try? await c.call(SessionLastReply(id: s.id))) ?? nil {
             let line = Self.firstSentence(reply)
             s.summary = line
-            _ = try? await c.call("session.annotate", .obj(["id": .string(s.id), "summary": .string(line)]))
+            _ = try? await c.call(SessionAnnotate(id: s.id, summary: line))
         }
         post(s)   // other agents: no summary; the state says enough
     }

@@ -45,7 +45,7 @@ enum AgentActions {
     /// Same command in the same tab; resumes the conversation when the agent supports it.
     static func restart(_ sid: String) {
         Task {
-            guard let r = await AppModel.shared.call("session.restart", .obj(["id": .string(sid)])), let s = try? r.decode(Session.self) else { return }
+            guard let s = await AppModel.shared.call(SessionRestart(id: sid)) else { return }
             AppModel.shared.sessions.removeAll { $0.id == sid }
             AppModel.shared.upsert(s)
             Workbench.editor?.replace(session: sid, with: s.id)
@@ -80,9 +80,9 @@ enum AgentActions {
 
     static func handoff(_ sid: String, to agent: String, full: Bool) {
         Task {
-            let p: JSONValue = .obj(["id": .string(sid), "agent": .string(agent), "full": .bool(full), "draft": true,
-                                     "prompt": "Continue the task where the previous agent left off: check what's done, then finish it."])
-            guard let r = await AppModel.shared.call("session.handoff", p), let s = try? r.decode(Session.self) else { return }
+            let p = SessionHandoff(id: sid, agent: agent, full: full, prompt: "Continue the task where the previous agent left off: check what's done, then finish it.",
+                                   draft: true)
+            guard let s = await AppModel.shared.call(p) else { return }
             AppModel.shared.upsert(s)
             Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId)
         }

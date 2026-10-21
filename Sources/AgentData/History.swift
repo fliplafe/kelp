@@ -1,20 +1,6 @@
 import Foundation
 import Core
 
-/// One resumable conversation of a CLI coding agent, read from its on-disk transcript.
-public struct AgentSessionInfo: Codable, Sendable, Equatable, Identifiable {
-    public enum Agent: String, Codable, Sendable { case claude, codex }
-    public var agent: Agent
-    public var id: String
-    public var cwd: String
-    public var title: String
-    public var started: Date
-    public var updated: Date
-    /// Exact for small files; extrapolated from the head and tail for large ones.
-    public var messageCount: Int
-    public var path: URL
-}
-
 public enum ClaudeHistory {
     /// Where Claude Code keeps conversations: under CLAUDE_CONFIG_DIR when it's set, as Claude Code itself does.
     public static let defaultRoot = (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }

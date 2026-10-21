@@ -122,13 +122,13 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
     private func open(_ h: String, _ p: String, init: Bool) {
         busy(true); say(String(localized: "Opening…"))
         Task {
-            let r = await AppModel.shared.tryCall("repo.addRemote", .obj(["host": .string(h), "path": .string(p), "init": .bool(`init`)]))
+            let r = await AppModel.shared.tryCall(RepoAddRemote(host: h, path: p, init: `init`))
             busy(false)
             if let e = r.error { say(e, error: true); return }
             UserDefaults.standard.set(h, forKey: "remote.host")
             close()
             await AppModel.shared.refresh()
-            if let rid = r.value?["id"]?.string, let repo = AppModel.shared.repo(rid), let w = AppModel.shared.workspaces(of: repo).first {
+            if let rid = r.value?.id, let repo = AppModel.shared.repo(rid), let w = AppModel.shared.workspaces(of: repo).first {
                 Workbench.show(workspace: w.id)
             }
         }

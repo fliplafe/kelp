@@ -11,7 +11,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     private let search = NSSearchField()
     private let fullText = NSButton(checkboxWithTitle: String(localized: "Search inside conversations"), target: nil, action: nil)
     private let status = NSTextField(labelWithString: "")
-    private var rows: [JSONValue] = []
+    private var rows: [AgentSessionInfo] = []
     private let pending = Debounce()
 
     func show() {
@@ -53,9 +53,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
         Task {
             defer { slow.cancel() }
-            var p: [String: JSONValue] = ["query": .string(search.stringValue)]
-            if fullText.state == .on { p["fullText"] = true }
-            rows = (await AppModel.shared.call("history.list", .object(p)))?.array ?? []
+            rows = await AppModel.shared.call(HistoryList(query: search.stringValue, fullText: fullText.state == .on ? true : nil)) ?? []
             let q = search.stringValue.trimmingCharacters(in: .whitespaces)
             status.stringValue = rows.isEmpty
                 ? (q.isEmpty ? String(localized: "No conversations yet") : String(localized: "No conversations match “\(q)”"))
@@ -70,12 +68,10 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let r = rows[row]
         let s: String
         switch c?.identifier.rawValue {
-        case "agent": s = r["agent"]?.string == "codex" ? "Codex" : "Claude"
-        case "title": s = r["title"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Untitled")
-        case "cwd": s = (r["cwd"]?.string ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        default:
-            let d = Date(timeIntervalSinceReferenceDate: r["updated"]?.number ?? 0)
-            s = RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date())
+        case "agent": s = r.agent == .codex ? "Codex" : "Claude"
+        case "title": s = r.title.isEmpty ? String(localized: "Untitled") : r.title
+        case "cwd": s = r.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        default: s = RelativeDateTimeFormatter().localizedString(for: r.updated, relativeTo: Date())
         }
         let l = NSTextField(labelWithString: s); l.lineBreakMode = c?.identifier.rawValue == "cwd" ? .byTruncatingHead : .byTruncatingTail
         if c?.identifier.rawValue == "agent" || c?.identifier.rawValue == "updated" { l.textColor = .secondaryLabelColor }
@@ -84,10 +80,9 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     /// Drag a conversation onto a terminal pane: drops its resume command there.
     func tableView(_ t: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? { command(rows[row]) as NSString }
 
-    private func command(_ r: JSONValue) -> String {
-        let id = r["id"]?.string ?? ""
-        let cwd = IDE.shellWord(r["cwd"]?.string ?? "")
-        return r["agent"]?.string == "codex" ? "cd \(cwd) && codex resume \(id)" : "cd \(cwd) && claude --resume \(id)"
+    private func command(_ r: AgentSessionInfo) -> String {
+        let cwd = IDE.shellWord(r.cwd)
+        return r.agent == .codex ? "cd \(cwd) && codex resume \(r.id)" : "cd \(cwd) && claude --resume \(r.id)"
     }
     @objc private func copyCommand() {
         guard table.selectedRow >= 0 else { NSSound.beep(); return }
@@ -98,7 +93,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard rows.indices.contains(r) else { return }
         Task {
-            guard let res = await AppModel.shared.call("history.resume", .obj(["session": rows[r]])), let s = try? res.decode(Session.self) else { return }
+            guard let s = await AppModel.shared.call(HistoryResume(session: rows[r])) else { return }
             AppModel.shared.upsert(s)
             // A conversation from a folder that isn't a project opens in the workspace on screen (it keeps its own folder).
             if let w = s.worktreeId { Workbench.show(workspace: w) }

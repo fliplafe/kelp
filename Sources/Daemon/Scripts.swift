@@ -52,21 +52,18 @@ extension Daemon {
 }
 
 extension ScriptsList: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         let (_, repo) = try d.configRepo(worktreeId)
         let read = d.configAndTrust(repo), cfg = read.config
         // Everything trusting it would allow, and the digest of exactly this text (one read): trust is given to what was shown.
-        return .obj(["scripts": try .from(cfg.scripts), "setup": cfg.setup.map { .string($0) } ?? .null,
-                     "tabs": try .from(cfg.tabs), "shared": try .from(cfg.shared), "recipes": try .from(cfg.recipes),
-                     "issueCommand": cfg.issueCommand.map { .string($0) } ?? .null,
-                     "digest": .string(Daemon.digest(read.text)),
-                     "trusted": .bool(read.trusted), "file": .string(repo + "/.kelp.yaml")])
+        return Result(scripts: cfg.scripts, setup: cfg.setup, tabs: cfg.tabs, shared: cfg.shared, recipes: cfg.recipes, issueCommand: cfg.issueCommand,
+                      digest: Daemon.digest(read.text), trusted: read.trusted, file: repo + "/.kelp.yaml")
     }
 }
 
 extension ScriptsTrust: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
+    func handle(_ d: Daemon, conn: Int) throws -> Done {
         let (_, repo) = try d.configRepo(worktreeId)
         let now = Daemon.digest(d.configText(repo))
         // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
@@ -84,12 +81,12 @@ extension ScriptsTrust: Handled {
             known[repo] = now
             try JSONEncoder().encode(known).write(to: d.trustFile, options: .atomic)
         }
-        return .null
+        return Done()
     }
 }
 
 extension ScriptsRun: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Session {
         let (w, repo) = try d.configRepo(worktreeId)
         let read = d.configAndTrust(repo)   // the command run is from the text that was checked
         guard read.trusted else { throw RPCError.invalidParams("This project's commands aren't trusted yet.") }
@@ -98,7 +95,7 @@ extension ScriptsRun: Handled {
             throw RPCError.invalidParams("No “\(name)” command in .kelp.yaml.")
         }
         var o = Daemon.Launch(); o.title = name
-        return try .from(d.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o))
+        return try d.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o)
     }
 }
 

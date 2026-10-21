@@ -139,14 +139,14 @@ struct UsageView: View {
 
     private func load() async {
         // The poll awaits each answer: without a timeout one lost reply froze the limits for good ("Read 36m ago; not since").
-        guard let c = AppModel.shared.client, let u = try? await c.call("usage.get", timeout: 60) else { return }
+        guard let c = AppModel.shared.client, let u = try? await c.call(UsageGet(), timeout: 60) else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
-            r.readAt = u["plansReadAt"]?[a.id]?.number.map { Date(timeIntervalSince1970: $0) }
+            r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }
             switch a.id {
             case "claude": r.lines = Self.claude(u)
             case "codex": r.lines = Self.codex(u)
-            default: r.lines = Self.lines(u["plans"]?[a.id]?.array ?? [])
+            default: r.lines = Self.lines(u.plans?[a.id] ?? [])
             }
             return r.lines.isEmpty ? nil : r
         }
@@ -159,28 +159,28 @@ struct UsageView: View {
     }
 
     /// Readings as the daemon passes them: kind ("session", "week", "week · Fable", "Gemini week"), percent, resets.
-    private static func lines(_ readings: [JSONValue]) -> [Line] {
-        readings.compactMap { l in
-            guard let kind = l["kind"]?.string, let p = l["percent"]?.number else { return nil }
+    private static func lines(_ readings: [UsageGet.Limit]) -> [Line] {
+        readings.map { l in
+            let kind = l.kind
             let label = kind == "session" ? String(localized: "5 hours") : kind == "week" ? String(localized: "Week")
                 : kind.hasPrefix("week · ") ? String(localized: "Week, ") + kind.dropFirst(7) : kind.prefix(1).uppercased() + kind.dropFirst()
-            return Line(label: label, used: p / 100, resets: l["resets"]?.string, session: kind == "session")
+            return Line(label: label, used: l.percent / 100, resets: l.resets, session: kind == "session")
         }
     }
 
     /// Claude Code's /usage, or the percentages a session printed.
-    private static func claude(_ u: JSONValue) -> [Line] {
-        lines(u["plans"]?["claude"]?.array ?? u["claudeLimits"]?.array ?? [])
+    private static func claude(_ u: UsageGet.Result) -> [Line] {
+        lines(u.plans?["claude"] ?? u.claudeLimits ?? [])
     }
 
-    private static func codex(_ u: JSONValue) -> [Line] {
-        guard let x = u["codex"]?.array?.first else { return [] }
+    private static func codex(_ u: UsageGet.Result) -> [Line] {
+        guard let x = u.codex.first else { return [] }
         let now = Date().timeIntervalSince1970
-        return [(String(localized: "5 hours"), "primaryUsedPercent", "primaryResetsAt"),
-                (String(localized: "Week"), "secondaryUsedPercent", "secondaryResetsAt")].compactMap { label, used, reset in
-            guard let p = x[used]?.number else { return nil }
-            let t = x[reset]?.number ?? 0, expired = t > 0 && t < now
-            return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.at(t) : nil, session: used == "primaryUsedPercent")
+        return [(String(localized: "5 hours"), x.primaryUsedPercent, x.primaryResetsAt, true),
+                (String(localized: "Week"), x.secondaryUsedPercent, x.secondaryResetsAt, false)].compactMap { label, used, reset, session in
+            guard let p = used else { return nil }
+            let t = reset ?? 0, expired = t > 0 && t < now
+            return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.at(t) : nil, session: session)
         }
     }
 

@@ -432,8 +432,7 @@ enum GitFix {
 
     /// The recipe typed into the session, not sent: other people's text (errors, CI logs, review comments) waits for Return.
     static func type(_ recipe: String, worktree wid: String, vars: [String: String], into sid: String) async -> Bool {
-        let v = JSONValue.object(vars.mapValues { .string($0) })
-        guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wid), "name": .string(recipe), "vars": v]))?.string else { return false }
+        guard let text = await AppModel.shared.call(RecipeRender(id: wid, name: recipe, vars: vars)) else { return false }
         await AppModel.shared.call(SessionSend(id: sid, text: text, enter: false))
         return true
     }

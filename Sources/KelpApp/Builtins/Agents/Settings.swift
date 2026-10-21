@@ -120,9 +120,9 @@ struct AgentsSettings: View {
     }
 
     private func loadVersions() async {
-        let rows = (try? await AppModel.shared.client?.call("agents.versions").array) ?? []
+        let rows = (try? await AppModel.shared.client?.call(AgentsVersions())) ?? []
         var v: [String: (String?, String?)] = [:]
-        for r in rows { if let id = r["id"]?.string { v[id] = (r["version"]?.string, r["latest"]?.string) } }
+        for r in rows { v[r.id] = (r.version, r.latest) }
         for a in agents where v[a.id] == nil { v[a.id] = (nil, nil) }
         versions = v
     }

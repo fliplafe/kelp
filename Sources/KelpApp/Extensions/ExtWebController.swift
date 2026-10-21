@@ -55,7 +55,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
         case "open":
             if let u = ExtActions.openableURI(TabURI.normalize(arg, cwd: ctx.workspace?.path)) { Workbench.open(u) }
             reply(id, .null)
-        case "agent": Workbench.editor?.newAgent(nil, prompt: arg, extra: ["draft": true]); reply(id, .null)
+        case "agent": Workbench.editor?.newAgent(nil, prompt: arg, draft: true); reply(id, .null)
         case "settings.get": reply(id, SettingsStore.shared.value(arg) ?? .null)
         case "settings.set":
             let v = (d["value"] as? String).flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }

@@ -4,36 +4,31 @@ import WorkbenchKit
 
 /// Starting agents and terminals in the focused pane, and reacting to their sessions.
 extension EditorArea {
-    func newAgent(_ agent: String? = nil, prompt: String? = nil, extra: [String: JSONValue] = [:], split: SplitDirection? = nil) {
-        var p = extra
-        p["worktreeId"] = .string(workspaceId)
-        p["agent"] = .string(agent ?? AgentCatalog.defaultAgent)
-        if let prompt, !prompt.isEmpty { p["prompt"] = .string(prompt) }
-        createSession(p, split: split)
+    /// `draft`: the prompt is typed for the user to send, not sent.
+    func newAgent(_ agent: String? = nil, prompt: String? = nil, draft: Bool = false, split: SplitDirection? = nil) {
+        createSession(SessionCreate(worktreeId: workspaceId, agent: agent ?? AgentCatalog.defaultAgent, prompt: prompt?.isEmpty == false ? prompt : nil,
+                                    draft: draft ? true : nil), split: split)
     }
-    func newTerminal(split: SplitDirection? = nil) { createSession(["worktreeId": .string(workspaceId), "agent": "shell"], split: split) }
+    func newTerminal(split: SplitDirection? = nil) { createSession(SessionCreate(worktreeId: workspaceId, agent: "shell"), split: split) }
     /// A terminal attached to tmux session `name` (started if tmux has none); the tab already attached to it, if there is one.
     func newTmux(_ name: String, split: SplitDirection? = nil) {
         let name = Tmux.name(name)
         if let s = AppModel.shared.sessions.first(where: { $0.worktreeId == workspaceId && $0.status != .exited && Tmux.session($0.argv) == name }) {
             open(TabURI.session(s.id), split: split); return
         }
-        createSession(["worktreeId": .string(workspaceId), "tmux": .string(name)], split: split)
+        createSession(SessionCreate(worktreeId: workspaceId, tmux: name), split: split)
     }
     /// `cwd`: run it in another folder (a remote project's runs on its host), as a tab here.
     func run(command: String?, title: String? = nil, cwd: String? = nil, split: SplitDirection? = nil) {
         guard let command, !command.isEmpty else { newTerminal(split: split); return }
-        var p: [String: JSONValue] = ["worktreeId": .string(workspaceId), "command": .string(command)]
-        if let title { p["title"] = .string(title) }
-        if let cwd { p["cwd"] = .string(cwd) }
-        createSession(p, split: split)
+        createSession(SessionCreate(cwd: cwd, worktreeId: workspaceId, command: command, title: title), split: split)
     }
 
-    private func createSession(_ p: [String: JSONValue], split: SplitDirection?) {
+    private func createSession(_ p: SessionCreate, split: SplitDirection?) {
         var p = p
-        if let (cols, rows) = terminalSize(split: split) { p["cols"] = .int(cols); p["rows"] = .int(rows) }
+        if let (cols, rows) = terminalSize(split: split) { p.cols = cols; p.rows = rows }
         Task {
-            guard let r = await AppModel.shared.call("session.create", .object(p)), let s = try? r.decode(Session.self) else { return }
+            guard let s = await AppModel.shared.call(p) else { return }
             AppModel.shared.upsert(s)
             open(TabURI.session(s.id), split: split)
         }

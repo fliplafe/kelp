@@ -39,7 +39,7 @@ extension RemoteListFolders: Handled {
 
 /// {host, path, init?} → the project (its local folder stands for the one on the host).
 extension RepoAddRemote: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Repo {
         let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
         guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
         guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
@@ -51,7 +51,7 @@ extension RepoAddRemote: Handled {
             m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
         }
         if let r = try d.store.repos().first(where: { RemoteHost.of($0.path).map(same) ?? false }) {
-            return try .from(r)
+            return r
         }
         let name = Daemon.remoteFolderName(path)
         let hostDir = d.root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
@@ -80,30 +80,30 @@ extension RepoAddRemote: Handled {
         try mark(RemoteHost(host: host, path: top))
         let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
         try d.store.save(r); try d.syncMainWorkspaces(); d.notify("event.changed", "repo")
-        return try .from(r)
+        return r
     }
 }
 
 extension FilesReadRemote: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> String {
         guard let (_, remote, remotePath) = RemoteHost.containing(path) else { throw RPCError.invalidParams("Not in a remote project.") }
-        return .string(try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh))
+        return try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh)
     }
 }
 
 extension FilesWriteRemote: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Changed? {
         guard let (_, remote, remotePath) = RemoteHost.containing(path) else { throw RPCError.invalidParams("Not in a remote project.") }
         func ssh(_ script: String, _ input: String? = nil) throws -> String {
             try Git.run(remote.sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)], cwd: NSHomeDirectory(), stdin: input, executable: RemoteHost.ssh)
         }
         let file = RemoteHost.quote(remotePath)
         // Changed there since it was read: the user decides (a file that's gone is just written again).
-        if let base, let now = try? ssh("cat -- " + file), now != base { return .obj(["changed": .string(now)]) }
+        if let base, let now = try? ssh("cat -- " + file), now != base { return Changed(changed: now) }
         // Sent to a file beside it, then copied over it on the host: a dropped connection can't leave half of it, and
         // the file keeps its mode, owner and links.
         let tmp = RemoteHost.quote(remotePath + ".kelp-XXXXXX")
         try ssh("t=$(mktemp \(tmp)) || exit 1; cat > \"$t\" && cat \"$t\" > \(file); s=$?; rm -f \"$t\"; exit $s", text)
-        return .null
+        return nil
     }
 }

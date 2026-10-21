@@ -16,10 +16,10 @@ struct AccountProfile: Codable, Hashable, Identifiable {
 @MainActor
 enum Accounts {
     static func load() async -> [AccountProfile] {
-        (try? await AppModel.shared.call("settings.get")?["accounts.profiles"]?.decode([AccountProfile].self)) ?? []
+        (try? await AppModel.shared.call(SettingsGet())?["accounts.profiles"]?.decode([AccountProfile].self)) ?? []
     }
     static func save(_ list: [AccountProfile]) async {
-        await AppModel.shared.call("settings.set", .obj(["key": "accounts.profiles", "value": (try? JSONValue.from(list)) ?? .array([])]))
+        await AppModel.shared.call(SettingsSet(key: "accounts.profiles", value: (try? JSONValue.from(list)) ?? .array([])))
     }
 }
 
@@ -59,9 +59,8 @@ struct AccountsSettings: View {
     private func login() {
         guard let p = profiles.first(where: { $0.id == selection }), let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         Task {
-            guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "agent": .string(p.agent), "profile": .string(p.name),
-                                                                             "title": .string(String(localized: "Log in: \(p.name)"))])),
-                  let s = try? r.decode(Session.self) else { return }
+            guard let s = await AppModel.shared.call(SessionCreate(worktreeId: wid, agent: p.agent, title: String(localized: "Log in: \(p.name)"),
+                                                                   profile: p.name)) else { return }
             AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }

@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// `.kelp.yaml`: flat `key: value` lines. Deliberately not full YAML.
 ///   setup: shell command      shared: node_modules, .venv   (symlinked into each worktree)
@@ -12,7 +13,7 @@ public struct RepoConfig: Sendable, Equatable {
     public var recipes: [String: String] = [:]
     /// Named commands in the file's order.
     public var scripts: [Script] = []
-    public struct Script: Sendable, Equatable, Codable { public var name: String; public var command: String }
+    public typealias Script = ScriptsList.Script
     public static let scriptNames: Set = ["run", "test", "lint", "build"]
 
     public static func parse(_ text: String) -> RepoConfig {

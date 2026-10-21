@@ -127,18 +127,18 @@ func plist() -> String {
             case "hook":   // inside an agent session: report status to the daemon
                 guard let id = ProcessInfo.processInfo.environment["KELP_SESSION"], let ev = args.first else { fail("hook: needs KELP_SESSION and an event") }
                 let c = try RPCClient(socket: ProcessInfo.processInfo.environment["KELP_SOCKET"] ?? Paths.socket.path)
-                var p: [String: JSONValue] = ["id": .string(id), "event": .string(ev)]
+                var h = SessionHook(id: id, event: ev)
                 // Claude Code hooks pass a JSON payload on stdin (session id, transcript path).
                 if isatty(0) == 0, let d = try? FileHandle.standardInput.readToEnd(), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
-                    if let t = v["transcript_path"]?.string { p["transcript"] = .string(t) }
-                    if let t = v["cwd"]?.string { p["cwd"] = .string(t) }   // where it works now: its own worktree, maybe
-                    if let t = v["trigger"]?.string { p["trigger"] = .string(t) }   // PreCompact: manual (/compact) or auto
-                    if let t = v["background_tasks"] { p["background_tasks"] = t }   // Stop: subagents still running
+                    h.transcript = v["transcript_path"]?.string
+                    h.cwd = v["cwd"]?.string   // where it works now: its own worktree, maybe
+                    h.trigger = v["trigger"]?.string   // PreCompact: manual (/compact) or auto
+                    h.backgroundTasks = v["background_tasks"]?.array   // Stop: subagents still running
                     if v["notification_type"] != nil || v["message"] != nil {
-                        p["notification"] = .obj(["notification_type": v["notification_type"] ?? .null, "message": v["message"] ?? .null])
+                        h.notification = .obj(["notification_type": v["notification_type"] ?? .null, "message": v["message"] ?? .null])
                     }
                 }
-                _ = try await c.call("session.hook", .object(p))
+                _ = try await c.call(h)
             default:
                 let c = try connect()
                 try await run(cmd, c)
@@ -210,18 +210,15 @@ func plist() -> String {
         switch (cmd, sub) {
         case ("session", "new"):
             let wait = has("--wait"), split = flag("--split")
-            var p: [String: JSONValue] = [:]
-            if let a = flag("--agent") { p["agent"] = .string(a) }
-            if let m = flag("--cmd") { p["command"] = .string(m) }
+            var p = SessionCreate(agent: flag("--agent"), command: flag("--cmd"))
             // A session outside every workspace would run where no tab or sidebar row shows it.
-            if let w = flag("--worktree") { p["worktreeId"] = .string(try await resolve(c, w, "worktree.list")) }
-            else if let w = try? await currentWorktree(c) { p["worktreeId"] = w["id"] }
+            if let w = flag("--worktree") { p.worktreeId = try await resolve(c, w, "worktree.list") }
+            else if let w = try? await currentWorktree(c) { p.worktreeId = w["id"]?.string }
             else { fail("not inside a Kelp project: run it in a project's folder or pass --worktree <id> (see `kelp status`)") }
-            let s = try await c.call("session.create", .object(p))
-            guard let id = s["id"]?.string else { show(s); return }
+            let s = try await c.call(p), id = s.id
             // Its tab beside yours; without the app it runs all the same (its row shows once the app opens).
             if let split { _ = try? await IDE.open("session:\(id)", split: split, cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }) }
-            guard wait else { show(s); return }
+            guard wait else { show(try .from(s)); return }
             print(id)   // for `kelp terminal read`, once it ends
             exit(Int32(try await waitFor(c, id, timeout: nil) { $0.status == .exited }?.exitCode ?? 1))
         case ("session", "list"), ("terminal", "list"): show(try await c.call(SessionList()))
@@ -243,13 +240,11 @@ func plist() -> String {
             let id = try await resolve(c, args[0], "session.list")
             show(try await c.call(SessionSend(id: id, text: args.dropFirst().joined(separator: " "), enter: enter)))
         case ("session", "restart"):
-            show(try await c.call("session.restart", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            show(try .from(try await c.call(SessionRestart(id: try await resolve(c, args.first ?? "", "session.list")))))
         case ("session", "rename"):
             _ = try await c.call(SessionRename(id: try await resolve(c, args.first ?? "", "session.list"), title: args.dropFirst().joined(separator: " ")))
         case ("session", "handoff"):
-            var p: [String: JSONValue] = ["id": .string(try await resolve(c, args.first ?? "", "session.list"))]
-            if let a = flag("--agent") { p["agent"] = .string(a) }
-            show(try await c.call("session.handoff", .object(p)))
+            show(try .from(try await c.call(SessionHandoff(id: try await resolve(c, args.first ?? "", "session.list"), agent: flag("--agent")))))
         case ("terminal", "context"):
             show(try await c.call(SessionContext(id: try await resolve(c, args.first ?? "", "session.list"))))
         default: print(usage)
@@ -311,10 +306,10 @@ func plist() -> String {
                 p["linearId"] = .string(i.id)
             }
             if has("--send") { p["draft"] = false }
-            let r = try await c.call("task.fromIssue", .object(p))
-            print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")")
+            let r = try await c.call(try JSONValue.object(p).decode(TaskFromIssue.self))
+            print("\(r.worktree.branch)  \(r.worktree.path)")
             if !has("--send") { print("The issue's text is typed into the agent, not sent: look it over in Kelp and press Return.") }
-            if r["setupNeedsTrust"]?.bool == true { print("Its .kelp.yaml setup didn't run: open the project in Kelp to look at it and trust it.") }
+            if r.setupNeedsTrust { print("Its .kelp.yaml setup didn't run: open the project in Kelp to look at it and trust it.") }
         case ("linear", "tasks"):
             for x in try await c.call(LinearIssues()) { print("\(x.identifier)  [\(x.state.name)]  \(x.title)") }
         case ("linear", "login"):
@@ -326,21 +321,19 @@ func plist() -> String {
 
     static func settingsAndUI(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
         switch (cmd, sub) {
-        case ("settings", nil): show(try await c.call("settings.get"))
+        case ("settings", nil): show(.object(try await c.call(SettingsGet())))
         case ("settings", "get"):
             guard let k = args.first else { fail("settings get <key>") }
-            show(try await c.call("settings.get")[k] ?? .null)
+            show(try await c.call(SettingsGet())[k] ?? .null)
         case ("settings", "set"):
             guard args.count >= 2 else { fail("settings set <key> <value>") }
-            _ = try await c.call("settings.set", .obj(["key": .string(args[0]), "value": jsonOrText(args.dropFirst().joined(separator: " "))]))
+            _ = try await c.call(SettingsSet(key: args[0], value: jsonOrText(args.dropFirst().joined(separator: " "))))
         case ("settings", "unset"):
             guard let k = args.first else { fail("settings unset <key>") }
-            _ = try await c.call("settings.set", .obj(["key": .string(k)]))
-        case ("ui", "state"): show(try await c.call("ui.state"))
+            _ = try await c.call(SettingsSet(key: k, value: nil))
+        case ("ui", "state"): show(try await c.call(UIStateGet()))
         case ("run", let id?):
-            var p: [String: JSONValue] = ["id": .string(id)]
-            if !args.isEmpty { p["args"] = jsonOrText(args.joined(separator: " ")) }
-            show(try await c.call("ui.command", .object(p)))
+            show(try .from(try await c.call(UICommand(id: id, args: args.isEmpty ? nil : jsonOrText(args.joined(separator: " "))))))
         default: print(usage)
         }
     }
@@ -361,7 +354,7 @@ func plist() -> String {
         case "enable", "disable":
             guard let id = args.first else { fail("ext enable|disable <id>") }
             try await IDE.setExtension(id, enabled: sub == "enable", call: call)
-        case "reload": show(try await c.call("ui.command", .obj(["id": "extensions.reload"])))
+        case "reload": show(try .from(try await c.call(UICommand(id: "extensions.reload"))))
         case "path": print(Paths.extensions.path)
         default: print(usage)
         }

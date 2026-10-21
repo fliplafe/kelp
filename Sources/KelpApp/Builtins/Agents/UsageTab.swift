@@ -77,14 +77,9 @@ struct UsageReportView: View {
         loading = true; slow = false
         let hint = Task { try? await Task.sleep(for: .seconds(3)); if loading { slow = true } }
         defer { hint.cancel() }
-        let r = try? await AppModel.shared.client?.call("usage.report", .obj(["days": .int(range)]))
-        func rows(_ k: String) -> [Row] {
-            (r?[k]?.array ?? []).map { j in
-                let c = j["cost"]?.number ?? 0
-                return Row(id: j["name"]?.string ?? "", cost: c, tokens: j["tokens"]?.int ?? 0)
-            }
-        }
-        days = rows("days").sorted { $0.id < $1.id }; models = rows("models"); projects = rows("projects")
+        let r = try? await AppModel.shared.client?.call(UsageReport(days: range))
+        func rows(_ groups: [UsageReport.Group]?) -> [Row] { (groups ?? []).map { Row(id: $0.name, cost: $0.cost, tokens: $0.tokens) } }
+        days = rows(r?.days).sorted { $0.id < $1.id }; models = rows(r?.models); projects = rows(r?.projects)
         loading = false
     }
 

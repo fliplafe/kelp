@@ -104,8 +104,8 @@ public final class RPCClient: Sendable {
         try await call(method, params).decode(T.self)
     }
 
-    public func call<M: RPCMethod>(_ m: M) async throws -> M.Result {
-        try await call(M.name, m.params()).decode(M.Result.self)
+    public func call<M: RPCMethod>(_ m: M, timeout: TimeInterval? = nil) async throws -> M.Result {
+        try await call(M.name, m.params(), timeout: timeout).decode(M.Result.self)
     }
     public func notify<M: RPCMethod>(_ m: M) { notify(M.name, try? m.params()) }
 }

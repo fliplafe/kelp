@@ -8,8 +8,7 @@ import WorkbenchKit
 @MainActor
 final class ScriptsMenu: NSObject, NSMenuDelegate {
     static let shared = ScriptsMenu()
-    private struct Script: Decodable { var name: String; var command: String }
-    private var cached: [String: [Script]] = [:]   // workspace → its commands, for the menu
+    private var cached: [String: [ScriptsList.Script]] = [:]   // workspace → its commands, for the menu
     private var setupCommand: [String: String] = [:]
     private var runs: [String: (workspace: String, name: String)] = [:]   // session → what it runs
     private var watching = false
@@ -32,10 +31,10 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         if let wid { Task { await load(wid) } }   // next time it's current
     }
 
-    @discardableResult private func load(_ wid: String) async -> JSONValue? {
-        guard let r = try? await AppModel.shared.client?.call("scripts.list", .obj(["worktreeId": .string(wid)])) else { return nil }
-        cached[wid] = (try? r["scripts"]?.decode([Script].self)) ?? []
-        setupCommand[wid] = r["setup"]?.string
+    @discardableResult private func load(_ wid: String) async -> ScriptsList.Result? {
+        guard let r = try? await AppModel.shared.client?.call(ScriptsList(worktreeId: wid)) else { return nil }
+        cached[wid] = r.scripts
+        setupCommand[wid] = r.setup
         return r
     }
 
@@ -64,15 +63,15 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                             action: (String(localized: "Edit Commands"), { [weak self] in self?.edit() }))
                 return
             }
-            if info["trusted"]?.bool != true {
+            if !info.trusted {
                 // A snapshot run takes clicks and keys from its environment (DevAids): anyone could start one that presses
                 // Trust, so that window never trusts anything.
                 guard ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] == nil else { return }
-                guard await askTrust(info, file: info["file"]?.string ?? ".kelp.yaml") else { return }
+                guard await askTrust(info) else { return }
                 // The digest of the text shown: a file changed since (an agent, a pull) isn't trusted unseen.
-                guard await AppModel.shared.call("scripts.trust", .obj(["worktreeId": .string(wid), "digest": info["digest"] ?? .null])) != nil else { return }
+                guard await AppModel.shared.call(ScriptsTrust(worktreeId: wid, digest: info.digest)) != nil else { return }
             }
-            await start(wid, name, "scripts.run", ["worktreeId": .string(wid), "name": .string(name)])
+            await start(wid, name, ScriptsRun(worktreeId: wid, name: name))
         }
     }
 
@@ -84,18 +83,18 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
         Task {
             guard let cmd = await t.command(name) else { return }
             let title = "\(name) \(t.title)"
-            await start(wid, title, "session.create", ["worktreeId": .string(wid), "command": .string(cmd), "title": .string(title)])
+            await start(wid, title, SessionCreate(worktreeId: wid, command: cmd, title: title))
         }
     }
 
     /// Again: start over, like Xcode's Run (the last run's tab gives way to the new one).
-    private func start(_ wid: String, _ name: String, _ method: String, _ params: [String: JSONValue]) async {
+    private func start<M: RPCMethod>(_ wid: String, _ name: String, _ method: M) async where M.Result == Session {
         for (sid, r) in runs where r.workspace == wid && r.name == name {
             runs[sid] = nil
             if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call(SessionKill(id: sid)) }
             Workbench.closeTab(uri: TabURI.session(sid))
         }
-        guard let s = await AppModel.shared.call(method, .object(params)), let sid = s["id"]?.string else { return }
+        guard let sid = await AppModel.shared.call(method)?.id else { return }
         runs[sid] = (wid, name)
         await AppModel.shared.refresh()
         // Below what you're doing, like a console; the keys stay where they were.
@@ -112,10 +111,10 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// The first time a project's commands would run: everything trusting the file allows (commands, the agents and links
     /// a new workspace gets, the prompts it puts in agents' mouths), and whose it is.
-    private func askTrust(_ info: JSONValue, file: String) async -> Bool {
+    private func askTrust(_ info: ScriptsList.Result) async -> Bool {
         let a = NSAlert()
         a.messageText = String(localized: "Run this project's commands?")
-        a.informativeText = String(localized: "\((file as NSString).abbreviatingWithTildeInPath) asks Kelp to run these as you, in the workspace's folder. ")
+        a.informativeText = String(localized: "\((info.file as NSString).abbreviatingWithTildeInPath) asks Kelp to run these as you, in the workspace's folder. ")
             + String(localized: "Trust it only if you know where this project comes from. Kelp asks again if the file changes.")
         a.accessoryView = Self.trustText(info)
         a.addButton(withTitle: String(localized: "Trust and Run")); a.addButton(withTitle: String(localized: "Cancel"))
@@ -123,14 +122,14 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     }
 
     /// The file's effects as the file spells them, scrollable when long.
-    static func trustText(_ info: JSONValue) -> NSView {
+    static func trustText(_ info: ScriptsList.Result) -> NSView {
         var lines: [String] = []
-        if let s = info["setup"]?.string { lines.append("setup: \(s)") }
-        for s in (try? info["scripts"]?.decode([Script].self)) ?? [] { lines.append("\(s.name): \(s.command)") }
-        if let t = info["tabs"]?.array?.compactMap(\.string), !t.isEmpty { lines.append("tabs: " + t.joined(separator: ", ")) }
-        if let t = info["shared"]?.array?.compactMap(\.string), !t.isEmpty { lines.append("shared: " + t.joined(separator: ", ")) }
-        if let c = info["issueCommand"]?.string { lines.append("issueCommand: \(c)") }
-        if case .object(let r)? = info["recipes"] { for (k, v) in r.sorted(by: { $0.key < $1.key }) { lines.append("recipe.\(k): \(v.string ?? "")") } }
+        if let s = info.setup { lines.append("setup: \(s)") }
+        for s in info.scripts { lines.append("\(s.name): \(s.command)") }
+        if !info.tabs.isEmpty { lines.append("tabs: " + info.tabs.joined(separator: ", ")) }
+        if !info.shared.isEmpty { lines.append("shared: " + info.shared.joined(separator: ", ")) }
+        if let c = info.issueCommand { lines.append("issueCommand: \(c)") }
+        for (k, v) in info.recipes.sorted(by: { $0.key < $1.key }) { lines.append("recipe.\(k): \(v)") }
         let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 10))
         text.string = lines.joined(separator: "\n"); text.isEditable = false; text.drawsBackground = false
         text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)

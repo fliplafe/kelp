@@ -76,7 +76,7 @@ final class AppModel {
         ])
         guard state != published else { return }
         published = state
-        c.notify("ui.publish", .obj(["state": state]))
+        c.notify(UIPublish(state: state))
     }
 
     /// One connection at a time: launch, a dropped connection and Restart Background Service all come through here.
@@ -153,7 +153,7 @@ final class AppModel {
             a.buttons[0].hasDestructiveAction = true; a.buttons[0].keyEquivalent = ""; a.buttons[1].keyEquivalent = "\r"
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
-        _ = try? await c.call("daemon.shutdown")
+        _ = try? await c.call(DaemonShutdown())
         c.close(); client = nil
         try? await Task.sleep(for: .milliseconds(600))
         await open()
@@ -164,7 +164,7 @@ final class AppModel {
         let old = client
         old?.onClose = nil   // this restart reconnects itself: a second client would hear every event twice
         client = nil; connected = false
-        _ = try? await old?.call("daemon.shutdown"); old?.close()
+        _ = try? await old?.call(DaemonShutdown()); old?.close()
         try? await Task.sleep(for: .milliseconds(600)); await connect()
     }
 
@@ -270,9 +270,7 @@ final class AppModel {
 
     // MARK: calls
 
-    /// Errors show as a banner, never a blocking alert.
-    @discardableResult
-    func call(_ method: String, _ params: JSONValue? = nil) async -> JSONValue? { Self.banner(await tryCall(method, params)) }
+    /// Errors show as a banner, never a blocking alert. Only typed methods: a renamed field must not compile.
     @discardableResult
     func call<M: RPCMethod>(_ m: M) async -> M.Result? { Self.banner(await tryCall(m)) }
     private static func banner<T>(_ r: (value: T?, error: String?)) -> T? {
@@ -281,10 +279,6 @@ final class AppModel {
     }
 
     /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.
-    func tryCall(_ method: String, _ params: JSONValue? = nil) async -> (value: JSONValue?, error: String?) {
-        guard let c = client else { return (nil, Self.noService) }
-        do { return (try await c.call(method, params), nil) } catch { return (nil, Self.message(error)) }
-    }
     func tryCall<M: RPCMethod>(_ m: M) async -> (value: M.Result?, error: String?) {
         guard let c = client else { return (nil, Self.noService) }
         do { return (try await c.call(m), nil) } catch { return (nil, Self.message(error)) }

@@ -65,9 +65,9 @@ final class NotebookTab: NSViewController {
         guard let wid = worktreeId else { return }
         guard Self.jupyter() != nil else { status.stringValue = String(localized: "Jupyter not found — pip install jupyter"); return }
         Task {
-            guard let r = await AppModel.shared.call("session.create", .obj(["worktreeId": .string(wid), "command": .string("jupyter lab --no-browser " + IDE.shellWord(path)),
-                                                                            "title": "Jupyter", "openURLs": true])) else { return }
-            if let s = try? r.decode(Core.Session.self) { AppModel.shared.sessions.append(s) }
+            guard let s = await AppModel.shared.call(SessionCreate(worktreeId: wid, command: "jupyter lab --no-browser " + IDE.shellWord(path),
+                                                                   title: "Jupyter", openURLs: true)) else { return }
+            AppModel.shared.sessions.append(s)
             // Jupyter's URL arrives as a dev-server URL and opens in a browser tab
             status.stringValue = String(localized: "Starting Jupyter Lab… it opens in the Browser tab")
         }

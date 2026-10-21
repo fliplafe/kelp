@@ -22,12 +22,13 @@ final class SettingsStore: Sendable {
         }
     }
 
-    var all: JSONValue { .object(state.withLock { $0 }.values) }
+    var values: [String: JSONValue] { state.withLock { $0 }.values }
+    var all: JSONValue { .object(values) }
     subscript(key: String) -> JSONValue? { state.withLock { $0 }.values[key] }
     func number(_ key: String) -> Double? { self[key]?.number }
 
     /// nil or .null removes the key.
-    func set(_ key: String, _ value: JSONValue?) throws -> JSONValue {
+    func set(_ key: String, _ value: JSONValue?) throws -> [String: JSONValue] {
         try state.withLock { st in
             // A hand edit saved since the last poll is merged, not overwritten; a file that doesn't parse is the user's
             // work in progress, so nothing is written over it.
@@ -39,7 +40,7 @@ final class SettingsStore: Sendable {
             }
             st.values[key] = value == .null ? nil : value
             try write(&st)
-            return .object(st.values)
+            return st.values
         }
     }
 
@@ -85,9 +86,9 @@ extension Daemon {
     }
 }
 
-extension SettingsGet: Handled { func handle(_ d: Daemon) throws -> JSONValue { d.settings.all } }
+extension SettingsGet: Handled { func handle(_ d: Daemon) throws -> [String: JSONValue] { d.settings.values } }
 extension SettingsSet: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> [String: JSONValue] {
         let all = try d.settings.set(key, value)
         d.settingsChanged()
         return all

@@ -312,7 +312,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func startTask(ref: String, title: String, body: String, url: String) {
         let brief = ["Work on \(ref): \(title)", body, url].filter { !$0.isEmpty }.joined(separator: "\n\n")
         guard let editor = Workbench.editor else { NSSound.beep(); return }
-        editor.newAgent(nil, prompt: brief, extra: ["draft": true])
+        editor.newAgent(nil, prompt: brief, draft: true)
     }
 
     private func agentSession(_ wt: Worktree) -> String? {

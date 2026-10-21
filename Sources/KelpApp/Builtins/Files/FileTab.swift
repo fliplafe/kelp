@@ -50,10 +50,10 @@ final class FileTab: SavableTab {
             let box = NSView(); view = box
             let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); box.pin(wait)
             Task { [weak self] in
-                let res = await AppModel.shared.tryCall("files.readRemote", .obj(["path": .string(p)]))
+                let res = await AppModel.shared.tryCall(FilesReadRemote(path: p))
                 guard let self else { return }
                 wait.removeFromSuperview()
-                guard let text = res.value?.string else { box.pin(Self.message(res.error ?? String(localized: "Couldn't read it."))); return }
+                guard let text = res.value else { box.pin(Self.message(res.error ?? String(localized: "Couldn't read it."))); return }
                 let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
                 e.view.clipsToBounds = true
                 e.onChange = { [weak self] t in self?.edited(t) }
@@ -219,9 +219,9 @@ final class FileTab: SavableTab {
             await previous?.value
             guard let e = editor, e.text != lastSaved else { done?(); return }
             let text = e.text
-            let res = await AppModel.shared.tryCall("files.writeRemote", .obj(["path": .string(path), "text": .string(text), "base": .string(lastSaved)]))
+            let res = await AppModel.shared.tryCall(FilesWriteRemote(path: path, text: text, base: lastSaved))
             if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return }
-            if let now = res.value?["changed"]?.string { askKeepMine(disk: now); return }
+            if let now = res.value??.changed { askKeepMine(disk: now); return }
             lastSaved = text; editedStateMayHaveChanged(); done?()
         }
     }

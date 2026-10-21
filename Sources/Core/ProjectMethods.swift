@@ -2,31 +2,138 @@ import Foundation
 
 // A project's .kelp.yaml commands, remote projects, settings, usage and past conversations.
 
-/// → {scripts, setup, tabs, shared, recipes, issueCommand, digest, trusted, file}: everything trusting it would allow.
-public struct ScriptsList: RPCMethod { public static let name = "scripts.list"; public typealias Result = JSONValue; public var worktreeId: String }
+/// Everything trusting the project's .kelp.yaml would allow.
+public struct ScriptsList: RPCMethod {
+    public static let name = "scripts.list"
+    public struct Script: Codable, Sendable, Equatable {
+        public var name: String, command: String
+        public init(name: String, command: String) { self.name = name; self.command = command }
+    }
+    public struct Result: Codable, Sendable, Equatable {
+        public var scripts: [Script], setup: String?, tabs: [String], shared: [String], recipes: [String: String], issueCommand: String?
+        /// Of exactly the text read: `scripts.trust` trusts what was shown, not a later version.
+        public var digest: String
+        public var trusted: Bool, file: String
+        public init(scripts: [Script], setup: String?, tabs: [String], shared: [String], recipes: [String: String], issueCommand: String?,
+                    digest: String, trusted: Bool, file: String) {
+            self.scripts = scripts; self.setup = setup; self.tabs = tabs; self.shared = shared; self.recipes = recipes
+            self.issueCommand = issueCommand; self.digest = digest; self.trusted = trusted; self.file = file
+        }
+    }
+    public var worktreeId: String
+    public init(worktreeId: String) { self.worktreeId = worktreeId }
+}
 /// The project's .kelp.yaml as shown (`digest` from scripts.list) may run. Only from Kelp's window.
-public struct ScriptsTrust: RPCMethod { public static let name = "scripts.trust"; public typealias Result = JSONValue; public var worktreeId: String, digest: String? }
+public struct ScriptsTrust: RPCMethod {
+    public static let name = "scripts.trust"; public typealias Result = Done; public var worktreeId: String, digest: String?
+    public init(worktreeId: String, digest: String?) { self.worktreeId = worktreeId; self.digest = digest }
+}
 /// Runs command `name` (or "setup") in the workspace's folder → the session.
-public struct ScriptsRun: RPCMethod { public static let name = "scripts.run"; public typealias Result = JSONValue; public var worktreeId: String, name: String }
+public struct ScriptsRun: RPCMethod {
+    public static let name = "scripts.run"; public typealias Result = Session; public var worktreeId: String, name: String
+    public init(worktreeId: String, name: String) { self.worktreeId = worktreeId; self.name = name }
+}
 
 /// A project on `host` at `path` (its local folder stands for the one there); `init` makes a plain folder a repository.
-public struct RepoAddRemote: RPCMethod { public static let name = "repo.addRemote"; public typealias Result = JSONValue; public var host: String, path: String, `init`: Bool? }
+public struct RepoAddRemote: RPCMethod {
+    public static let name = "repo.addRemote"; public typealias Result = Repo; public var host: String, path: String, `init`: Bool?
+    public init(host: String, path: String, `init`: Bool? = nil) { self.host = host; self.path = path; self.`init` = `init` }
+}
 /// A file in a remote project's folder, read on the host.
-public struct FilesReadRemote: RPCMethod { public static let name = "files.readRemote"; public typealias Result = JSONValue; public var path: String }
+public struct FilesReadRemote: RPCMethod {
+    public static let name = "files.readRemote"; public typealias Result = String; public var path: String
+    public init(path: String) { self.path = path }
+}
 /// Writes `text` to that file on the host → null; → {changed: its text there} instead, unwritten, when it's no longer `base`
 /// (an agent there edited it since it was read).
-public struct FilesWriteRemote: RPCMethod { public static let name = "files.writeRemote"; public typealias Result = JSONValue; public var path: String, text: String, base: String? }
+public struct FilesWriteRemote: RPCMethod {
+    public static let name = "files.writeRemote"
+    public struct Changed: Codable, Sendable, Equatable {
+        public var changed: String
+        public init(changed: String) { self.changed = changed }
+    }
+    public typealias Result = Changed?
+    public var path: String, text: String, base: String?
+    public init(path: String, text: String, base: String?) { self.path = path; self.text = text; self.base = base }
+}
 
-public struct SettingsGet: RPCMethod { public static let name = "settings.get"; public typealias Result = JSONValue }
+/// All settings (settings.json's keys, flat and dotted).
+public struct SettingsGet: RPCMethod { public static let name = "settings.get"; public typealias Result = [String: JSONValue]; public init() {} }
 /// A null `value` resets the key → all settings.
-public struct SettingsSet: RPCMethod { public static let name = "settings.set"; public typealias Result = JSONValue; public var key: String, value: JSONValue? }
+public struct SettingsSet: RPCMethod {
+    public static let name = "settings.set"; public typealias Result = [String: JSONValue]; public var key: String, value: JSONValue?
+    public init(key: String, value: JSONValue?) { self.key = key; self.value = value }
+}
 
-/// Per account: Claude's 5-hour block, today and the week; Codex's limits (cached for a minute unless `force`).
-public struct UsageGet: RPCMethod { public static let name = "usage.get"; public typealias Result = JSONValue; public var force: Bool? }
+/// Per account: Claude's 5-hour block, today and the week; Codex's limits (cached for a minute unless `force`); the plan
+/// limits the agents' own /usage screens show.
+public struct UsageGet: RPCMethod {
+    public static let name = "usage.get"
+    /// Tokens and their API price over a span (dates as seconds since 1970).
+    public struct Block: Codable, Sendable, Equatable {
+        public var start: Double, end: Double, input: Int, output: Int, cacheWrite: Int, cacheRead: Int, cost: Double, models: [String]
+        public init(start: Double, end: Double, input: Int, output: Int, cacheWrite: Int, cacheRead: Int, cost: Double, models: [String]) {
+            self.start = start; self.end = end; self.input = input; self.output = output
+            self.cacheWrite = cacheWrite; self.cacheRead = cacheRead; self.cost = cost; self.models = models
+        }
+    }
+    public struct Claude: Codable, Sendable, Equatable {
+        public var account: String, today: Block, week: Block
+        /// The 5-hour block now, if one is running.
+        public var block: Block?
+        public init(account: String, today: Block, week: Block, block: Block?) { self.account = account; self.today = today; self.week = week; self.block = block }
+    }
+    /// Codex's own limits from its latest log line (percent used, resets as seconds since 1970).
+    public struct Codex: Codable, Sendable, Equatable {
+        public var observedAt: Double, primaryUsedPercent: Double?, primaryResetsAt: Double?, secondaryUsedPercent: Double?, secondaryResetsAt: Double?
+        public init(observedAt: Double, primaryUsedPercent: Double?, primaryResetsAt: Double?, secondaryUsedPercent: Double?, secondaryResetsAt: Double?) {
+            self.observedAt = observedAt; self.primaryUsedPercent = primaryUsedPercent; self.primaryResetsAt = primaryResetsAt
+            self.secondaryUsedPercent = secondaryUsedPercent; self.secondaryResetsAt = secondaryResetsAt
+        }
+    }
+    /// One limit as an agent shows it: kind ("session", "week", "week · Fable"…), percent used, when it resets.
+    public struct Limit: Codable, Sendable, Equatable {
+        public var kind: String, percent: Double, resets: String?
+        /// When a session printed it (Claude's percentages from the last 12 hours); nil for a /usage reading.
+        public var observedAt: Double?
+        public init(kind: String, percent: Double, resets: String?, observedAt: Double? = nil) {
+            self.kind = kind; self.percent = percent; self.resets = resets; self.observedAt = observedAt
+        }
+    }
+    public struct Result: Codable, Sendable, Equatable {
+        public var claude: [Claude], codex: [Codex]
+        /// By agent id: the latest /usage readings, and when they were read.
+        public var plans: [String: [Limit]]?, plansReadAt: [String: Double]?
+        public var claudeLimits: [Limit]?
+        public init(claude: [Claude], codex: [Codex], plans: [String: [Limit]]? = nil, plansReadAt: [String: Double]? = nil, claudeLimits: [Limit]? = nil) {
+            self.claude = claude; self.codex = codex; self.plans = plans; self.plansReadAt = plansReadAt; self.claudeLimits = claudeLimits
+        }
+    }
+    public var force: Bool?
+    public init(force: Bool? = nil) { self.force = force }
+}
 /// What Claude Code used over `days`, by day, model and project, priced as the API would.
-public struct UsageReport: RPCMethod { public static let name = "usage.report"; public typealias Result = JSONValue; public var days: Int? }
+public struct UsageReport: RPCMethod {
+    public static let name = "usage.report"
+    public struct Group: Codable, Sendable, Equatable {
+        public var name: String, cost: Double, tokens: Int
+        public init(name: String, cost: Double, tokens: Int) { self.name = name; self.cost = cost; self.tokens = tokens }
+    }
+    public struct Result: Codable, Sendable, Equatable {
+        /// Most expensive first; `since` is the first day's start (seconds since 1970).
+        public var days: [Group], models: [Group], projects: [Group], since: Double
+        public init(days: [Group], models: [Group], projects: [Group], since: Double) {
+            self.days = days; self.models = models; self.projects = projects; self.since = since
+        }
+    }
+    public var days: Int?
+    public init(days: Int? = nil) { self.days = days }
+}
 /// Past conversations, newest first; `query` (in `fullText` too), `cwd`, at most `limit`.
 public struct HistoryList: RPCMethod {
-    public static let name = "history.list"; public typealias Result = JSONValue
+    public static let name = "history.list"; public typealias Result = [AgentSessionInfo]
     public var query: String?, fullText: Bool?, cwd: String?, limit: Int?
+    public init(query: String? = nil, fullText: Bool? = nil, cwd: String? = nil, limit: Int? = nil) {
+        self.query = query; self.fullText = fullText; self.cwd = cwd; self.limit = limit
+    }
 }

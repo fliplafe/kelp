@@ -23,7 +23,7 @@ public final class Daemon: Sendable {
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
-    let usageCache = OSAllocatedUnfairLock<(at: Date, value: JSONValue)?>(initialState: nil)
+    let usageCache = OSAllocatedUnfairLock<(at: Date, value: UsageGet.Result)?>(initialState: nil)
     let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: GitHub.PullRequest?)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.
     let longContextModels = OSAllocatedUnfairLock<Set<String>?>(initialState: nil)
@@ -166,13 +166,8 @@ public final class Daemon: Sendable {
                     }
                     // Quick, and only right in the order they were sent: a saved layout or a terminal size that finished second
                     // must not win over the newer one. Applied here, one after another, like keystrokes.
-                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" || req.method == "ui.publish" {
-                        let p = req.params ?? .null
-                        switch req.method {
-                        case StateSet.name: _ = try? StateSet.run(p, self, conn: c.id)
-                        case "ui.publish": _ = try? handleUI(req.method, p, conn: c.id)
-                        default: _ = try? handleSync(req.method, p, conn: c.id)
-                        }
+                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" || req.method == UIPublish.name {
+                        _ = try? handleSync(req.method, req.params ?? .null, conn: c.id)
                         continue
                     }
                     if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)

@@ -130,8 +130,8 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 }
 
 @MainActor @Test func theTrustSheetShowsEverythingTrustAllows() throws {
-    let info = JSONValue.obj(["setup": "npm i", "scripts": .array([.obj(["name": "test", "command": "npm test"])]), "tabs": .array(["claude"]),
-                              "shared": .array(["node_modules"]), "issueCommand": "Fix {title}", "recipes": .obj(["commit": "also run x"])])
+    let info = ScriptsList.Result(scripts: [.init(name: "test", command: "npm test")], setup: "npm i", tabs: ["claude"], shared: ["node_modules"],
+                                  recipes: ["commit": "also run x"], issueCommand: "Fix {title}", digest: "", trusted: false, file: "")
     let scroll = try #require(ScriptsMenu.trustText(info) as? NSScrollView)
     let text = try #require(scroll.documentView as? NSTextView).string
     for line in ["setup: npm i", "test: npm test", "tabs: claude", "shared: node_modules", "issueCommand: Fix {title}", "recipe.commit: also run x"] {

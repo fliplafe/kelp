@@ -38,7 +38,7 @@ extension Daemon {
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
                                                           GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self]
                                                           + gitMethods + workspaceMethods + sessionMethods + integrationMethods
-                                                          + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
+                                                          + projectMethods + launchMethods + uiMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if let r = try refuseRemoteForge(method, p) { return r }
@@ -71,8 +71,6 @@ extension Daemon {
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
         if let t = Self.typed[method] { return try t.run(p, self, conn: conn) }   // also for notifications applied in order
-        // Not declared: ui.* (relayed to the app as sent).
-        if let r = try handleUI(method, p, conn: conn) { return r }
         throw RPCError.methodNotFound
     }
 }

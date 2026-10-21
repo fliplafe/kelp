@@ -215,7 +215,7 @@ enum ExtActions {
             else { Banner.show(String(localized: "“\(a.title)” would run a command or an agent from its data; it opens links and files only.")) }
         }
         // Typed, not sent: `item` is a command's output (an issue's title, a PR's body), someone else's words.
-        else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), extra: ["draft": true]) }
+        else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), draft: true) }
         else if let r = a.run {
             let cmd = expand(r, item: item, quote: true)
             Task {
