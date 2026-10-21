@@ -75,8 +75,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         w.title = String(localized: "Kelp"); w.setFrameAutosaveName("main"); w.delegate = self
         if w.frame.origin == .zero { w.center() }
         track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
-        track { SettingsStore.shared.bool("workbench.sidebar.autoHide") == true } changed: { [weak self] in self?.setAutoHide(sidebar: true, $0) }
-        track { SettingsStore.shared.bool("workbench.inspector.autoHide") == true } changed: { [weak self] in self?.setAutoHide(sidebar: false, $0) }
+        track { SettingsStore.shared.bool("workbench.sidebar.autoHide") == true } changed: { [weak self] in
+            self?.setAutoHide(sidebar: true, $0)
+            self?.sidebarToggle.menu = Self.autoHideMenu(String(localized: "Auto-Hide Sidebar"), "workbench.sidebar.autoHide", $0)
+        }
+        track { SettingsStore.shared.bool("workbench.inspector.autoHide") == true } changed: { [weak self] in
+            self?.setAutoHide(sidebar: false, $0)
+            self?.inspectorToggle.menu = Self.autoHideMenu(String(localized: "Auto-Hide Inspector"), "workbench.inspector.autoHide", $0)
+        }
+    }
+    /// The toggles' right-click menu: the panel's auto-hide, as in Settings › Appearance.
+    private static func autoHideMenu(_ title: String, _ key: String, _ on: Bool) -> NSMenu {
+        let m = NSMenu()
+        m.add(title) { SettingsStore.shared.set(key, .bool(!on)) }.state = on ? .on : .off
+        return m
     }
     required init?(coder: NSCoder) { fatalError() }
 
