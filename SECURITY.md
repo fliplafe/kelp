@@ -1,0 +1,5 @@
+# Security
+
+Report vulnerabilities privately through GitHub's "Report a vulnerability" (Security tab) instead of a public issue.
+Kelp runs locally: `kelpd` listens on a Unix socket in `~/.kelp` and makes no network calls of its own besides the tools
+you configure (`git`, `gh`, `glab`, agents) and update checks.
