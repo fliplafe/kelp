@@ -78,7 +78,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     var typedYet = false
     /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
     var pasteMode = false
-    private var pasteCarry = ""
+    private var pasteCarry = Data()
     /// Text typed in order, Enter included (see send).
     let sends = DispatchQueue(label: "kelp.session.send")
     private var inputLine = ""
@@ -160,14 +160,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if logSize > Self.logLimit { trimLogToItsTail() }
         let text = String(decoding: d, as: UTF8.self)
         let said = (record.summary, record.progress)
-        let probe = readReports(text)
-        let topic = readTopic(text)
+        let probe = readReports(text, d)
+        let topic = readTopic(text, d)
         // The chunk without escapes, once, for the two readers that want it.
         let plain = interruptArmed != nil || (!sawURL && onLocalURL != nil) ? StatusDetector.stripANSI(text) : ""
         if let arm = interruptArmed { interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
         if Date() > redrawUntil { detector.output(text); lastOutputAt = Date() }
-        notePasteMode(text)
-        let answer = autoAnswer(), url = localURL(plain), limits = newLimits(text)
+        notePasteMode(d)
+        let answer = autoAnswer(), url = localURL(plain), limits = newLimits(d)
         let subs = attached, sid = record.id   // read under the lock: other threads write `record`
         emit(sync() ?? (said != (record.summary, record.progress) ? record : nil))
         lock.unlock()
@@ -179,12 +179,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         onOutput?(sid, d, subs)
     }
 
-    // What a chunk of output says, read by handleOutput (each one: the caller holds the lock).
+    // What a chunk of output says, read by handleOutput (each one: the caller holds the lock). Whether a chunk has a
+    // sequence at all is asked of its bytes: String.contains compares Characters, and on a stream of output that was
+    // most of the daemon's time.
 
     /// OSC 7501 reports (true: the agent asked whether Kelp reads them) and ConEmu progress.
-    private func readReports(_ text: String) -> Bool {
+    private func readReports(_ text: String, _ d: Data) -> Bool {
         var probe = false
-        if !hooked, text.contains(ProgramStatus.prefix) || !oscCarry.isEmpty {
+        if !hooked, d.range(of: Data(ProgramStatus.prefix.utf8)) != nil || !oscCarry.isEmpty {
             for m in ProgramStatus.scan(text, carry: &oscCarry) {
                 switch m {
                 case .query: probe = true
@@ -193,13 +195,13 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
                 }
             }
         }
-        if text.contains(ProgramStatus.conEmuPrefix), let p = ProgramStatus.conEmuProgress(text).last { record.progress = p }
+        if d.range(of: Data(ProgramStatus.conEmuPrefix.utf8)) != nil, let p = ProgramStatus.conEmuProgress(text).last { record.progress = p }
         return probe
     }
 
     /// A new topic from the terminal title the agent sets.
-    private func readTopic(_ text: String) -> String? {
-        guard onTopic != nil, text.contains("\u{1B}]") || !titleCarry.isEmpty,
+    private func readTopic(_ text: String, _ d: Data) -> String? {
+        guard onTopic != nil, d.range(of: Data("\u{1B}]".utf8)) != nil || !titleCarry.isEmpty,
               let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic else {
             return nil
         }
@@ -208,10 +210,10 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     }
 
     /// Bracketed paste switched on or off (the sequence can be split across two reads).
-    private func notePasteMode(_ text: String) {
-        let scan = pasteCarry + text
-        if let on = scan.range(of: "\u{1B}[?2004", options: .backwards), let mode = scan[on.upperBound...].first { pasteMode = mode == "h" }
-        pasteCarry = String(text.suffix(7))
+    private func notePasteMode(_ d: Data) {
+        let scan = pasteCarry + d
+        if let on = scan.range(of: Data("\u{1B}[?2004".utf8), options: .backwards), on.upperBound < scan.endIndex { pasteMode = scan[on.upperBound] == UInt8(ascii: "h") }
+        pasteCarry = Data(d.suffix(7))
     }
 
     /// The keys that answer a question the manifest knows (a menu is steered instead, see steer()).
@@ -249,8 +251,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     }
 
     /// Plan limits Claude Code printed, when they changed.
-    private func newLimits(_ text: String) -> [ClaudeLimits.Reading] {
-        guard onLimits != nil, text.contains("limit") else { return [] }
+    private func newLimits(_ d: Data) -> [ClaudeLimits.Reading] {
+        guard onLimits != nil, d.range(of: Data("limit".utf8)) != nil else { return [] }
         let found = ClaudeLimits.parse(StatusDetector.stripANSI(String(decoding: ring.suffix(1200), as: UTF8.self)))
         guard !found.isEmpty, found != lastLimits else { return [] }
         lastLimits = found

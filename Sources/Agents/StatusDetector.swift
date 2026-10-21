@@ -30,14 +30,15 @@ public struct StatusDetector: Sendable {
     private var settled: Bool { status == .hibernated || status == .exited }
 
     public mutating func output(_ chunk: String, at now: Date = Date()) {
-        guard !hooked, !settled else { return }   // the agent reports itself: nothing here is read (tick checks the same)
+        // The agent reports itself: nothing here is read (tick checks the same). Plain shells don't track status.
+        guard !hooked, !settled, manifest.quietSeconds < 1e8 else { return }
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
         // Redraws with no words (spinners, timers, borders) aren't the agent doing anything.
         guard active, Self.hasWords(text), now.timeIntervalSince(settledAt ?? .distantPast) > 4,
               now.timeIntervalSince(typedAt ?? .distantPast) > 2 else { return }
         lastOutput = now
-        if !hooked, manifest.quietSeconds < 1e8 { status = .working }   // plain shells don't track status
+        status = .working
     }
 
     private static let letters = CharacterSet.letters
