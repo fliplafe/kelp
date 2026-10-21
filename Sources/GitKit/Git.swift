@@ -36,57 +36,16 @@ public enum Git {
                 executable = RemoteHost.ssh; cwd = NSHomeDirectory()
             }
         }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: executable)
-        p.arguments = args
-        p.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["GIT_TERMINAL_PROMPT"] = "0"; env["LC_ALL"] = "C"
         env["GIT_OPTIONAL_LOCKS"] = "0"   // a status doesn't rewrite the index (which would wake the file watchers again)
         env.merge(extra) { $1 }
-        p.environment = env
-        let out = Pipe(), err = Pipe(), inp = Pipe()
-        p.standardOutput = out; p.standardError = err
-        if stdin != nil { p.standardInput = inp }
-        try p.run()
-        // A host that drops packets or a credential helper waiting on nobody must not hold this thread for good.
-        // Its children too (ssh during a fetch, a credential helper): they hold the pipes open, so stopping git alone would
-        // leave the reads below waiting.
-        let watchdog = DispatchWorkItem { if p.isRunning { Self.stopTree(p.processIdentifier) } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeLimit, execute: watchdog)
-        defer { watchdog.cancel() }
-        if let stdin {
-            let w = inp.fileHandleForWriting
-            _ = fcntl(w.fileDescriptor, F_SETNOSIGPIPE, 1)   // git (or ssh) gone early fails the write; its exit status says why
-            try? w.write(contentsOf: stdin); try? w.close()
+        // A host that drops packets or a credential helper waiting on nobody is stopped at the time limit, with its children.
+        let r = try Subprocess.run([executable] + args, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit)
+        guard ok.contains(r.status), !r.timedOut else {
+            throw GitError(args: args, status: r.status, stderr: String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        // Drain both pipes concurrently to avoid deadlock on large output. stderr gets a thread of its own: GCD's global
-        // queue gets none while every cooperative thread is blocked (callers on the Swift pool, parallel tests) — a hang.
-        let errBox = Locked(Data())
-        let g = DispatchGroup(); g.enter()
-        Thread.detachNewThread { let d = err.fileHandleForReading.readDataToEndOfFile(); errBox.withLock { $0 = d }; g.leave() }
-        let outData = out.fileHandleForReading.readDataToEndOfFile()
-        g.wait(); p.waitUntilExit()
-        guard ok.contains(p.terminationStatus) else {
-            throw GitError(args: args, status: p.terminationStatus, stderr: String(decoding: errBox.current, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return outData
-    }
-
-    /// SIGTERM to `pid` and everything it started, children first (found before the parent goes, while they're still its),
-    /// then SIGKILL to whatever is left after 2 s: one that ignores SIGTERM would hold the pipes, and this thread, for good.
-    /// Limit: a pid could be reused within those 2 s; start times would rule that out.
-    static func stopTree(_ pid: pid_t) {
-        let all = tree(pid)
-        for p in all.reversed() { kill(p, SIGTERM) }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { for p in all where kill(p, 0) == 0 { kill(p, SIGKILL) } }
-    }
-
-    /// `pid` and its descendants, parents before children.
-    static func tree(_ pid: pid_t) -> [pid_t] {
-        var kids = [pid_t](repeating: 0, count: 256)
-        let n = Int(proc_listchildpids(pid, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
-        return [pid] + kids.prefix(max(0, n)).filter { $0 > 0 }.flatMap(tree)
+        return r.stdout
     }
 
     /// File names as pathspecs that mean just those files: "[id].tsx" isn't a pattern for "i.tsx" or "d.tsx".

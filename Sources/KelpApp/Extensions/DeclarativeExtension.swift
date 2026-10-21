@@ -221,47 +221,16 @@ enum Shell {
         await exec(["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout)
     }
 
-    /// A program by path (`argv[0]`), with the same PATH, pipes and timeout (killed then: its code is the signal's).
+    /// A program by path (`argv[0]`), with the same PATH and a time limit (stopped then, with what it started).
     static func exec(_ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60) async -> Result {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: argv.first ?? "/usr/bin/false"); p.arguments = Array(argv.dropFirst())
-        p.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory())
         var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
-        p.environment = env
-        let out = PipeText(), err = PipeText()
-        let stdin = input.map { _ in Pipe() }
-        p.standardOutput = out.pipe; p.standardError = err.pipe; p.standardInput = stdin ?? FileHandle.nullDevice
-        var failed: String?
-        let code: Int32 = await withCheckedContinuation { c in
-            p.terminationHandler = { c.resume(returning: $0.terminationStatus) }
-            do { try p.run() } catch { failed = error.localizedDescription; c.resume(returning: -1); return }
-            if let stdin, let input {   // written alongside the reads, so a big text can't block on a full pipe
-                let h = stdin.fileHandleForWriting
-                _ = fcntl(h.fileDescriptor, F_SETNOSIGPIPE, 1)   // a command that exits unread fails the write, not the app
-                DispatchQueue.global().async { try? h.write(contentsOf: Data(input.utf8)); try? h.close() }
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { if p.isRunning { p.terminate() } }
-        }
-        if let failed { return Result(code: -1, stdout: "", stderr: failed) }
-        // The output still on its way; a background child that keeps the pipes open isn't waited for.
-        for _ in 0..<20 where !(out.ended && err.ended) { try? await Task.sleep(for: .milliseconds(25)) }
-        return Result(code: code, stdout: out.text, stderr: err.text)
-    }
-}
-
-/// A pipe's output, collected as it arrives (on the file handle's own queue).
-private final class PipeText: Sendable {
-    let pipe = Pipe()
-    private let state = Locked<(data: Data, eof: Bool)>((Data(), false))
-    init() {
-        pipe.fileHandleForReading.readabilityHandler = { [state] h in
-            let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil }
-            state.withLock { if d.isEmpty { $0.eof = true } else { $0.data.append(d) } }
+        let dir = FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory()
+        do {
+            let r = try await Subprocess.run(argv, cwd: dir, env: env, stdin: input.map { Data($0.utf8) }, timeLimit: timeout)
+            // Lossy on purpose: a tool's output with a stray byte should still show.
+            return Result(code: r.status, stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self))
+        } catch {
+            return Result(code: -1, stdout: "", stderr: error.localizedDescription)
         }
     }
-    var ended: Bool { state.current.eof }
-    // Lossy on purpose: a tool's output with a stray byte should still show.
-    // swiftlint:disable:next optional_data_string_conversion
-    var text: String { String(decoding: state.current.data, as: UTF8.self) }
 }

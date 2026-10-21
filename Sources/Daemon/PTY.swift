@@ -218,13 +218,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 
     /// The program and everything it started, read now: a shell runs each job in a process group of its own, and once
     /// the shell is gone its jobs belong to launchd and can't be found from here any more.
-    public func tree() -> [pid_t] { life.withLock { reaped ? [] : [pid] + Self.descendants(of: pid) } }
-
-    static func descendants(of p: pid_t) -> [pid_t] {
-        var kids = [pid_t](repeating: 0, count: 256)
-        let n = Int(proc_listchildpids(p, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
-        return kids.prefix(max(0, n)).filter { $0 > 0 }.flatMap { [$0] + descendants(of: $0) }
-    }
+    public func tree() -> [pid_t] { life.withLock { reaped ? [] : Subprocess.tree(pid) } }
 
     /// Hangup and SIGTERM to the program and everything it started (a server in a shell's job too), then SIGKILL to
     /// whatever is still there after `grace` seconds (some TUIs ignore SIGTERM, servers treat SIGHUP as "reload").

@@ -7,21 +7,11 @@ import Agents
 /// RPCs that chain several steps or wait on other processes.
 extension Daemon {
 
-    /// What a short command prints (stdout and stderr), or nil if it fails or takes longer than `timeout`.
-    /// The pipe is read while the command runs (`ps` on a busy Mac prints more than a pipe holds), and the exit is watched
-    /// from before it starts (one that exits at once isn't missed).
+    /// What a short command prints (stdout, then stderr), or nil if it fails or takes longer than `timeout`.
     static func run(_ argv: [String], path: String, timeout: Double) -> String? {
-        let p = Process(); p.executableURL = URL(fileURLWithPath: argv[0]); p.arguments = Array(argv.dropFirst())
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = path; env["NO_COLOR"] = "1"; p.environment = env
-        let out = Pipe(); p.standardOutput = out; p.standardError = out; p.standardInput = FileHandle.nullDevice
-        let exited = DispatchSemaphore(value: 0), read = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in exited.signal() }
-        guard (try? p.run()) != nil else { return nil }
-        let data = Locked(Data())
-        Thread.detachNewThread { let d = out.fileHandleForReading.readDataToEndOfFile(); data.withLock { $0 = d }; read.signal() }
-        // A child that keeps the pipe open past the exit (a daemon it started) doesn't hold this up either.
-        guard exited.wait(timeout: .now() + timeout) == .success, read.wait(timeout: .now() + 1) == .success else { p.terminate(); return nil }
-        return p.terminationStatus == 0 ? String(decoding: data.current, as: UTF8.self) : nil
+        var env = ProcessInfo.processInfo.environment; env["PATH"] = path; env["NO_COLOR"] = "1"
+        guard let r = try? Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeout), r.status == 0, !r.timedOut else { return nil }
+        return String(decoding: r.stdout + r.stderr, as: UTF8.self)
     }
 
     /// "claude 2.1.3 (Claude Code)" → "2.1.3".
