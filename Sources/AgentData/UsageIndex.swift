@@ -1,13 +1,14 @@
 import Foundation
+import os
 
 /// What Claude Code used, by local day, model and folder, kept up to date cheaply: each transcript is read once, then only
 /// the bytes appended since (the index remembers how far it got, on disk). Lines are not parsed whole: only their small
 /// `usage` object and a few fields are, so gigabytes of transcripts take seconds the first time and nothing after.
-public final class UsageIndex: @unchecked Sendable {   // files under lock
+public final class UsageIndex: Sendable {
     public struct Tally: Codable, Sendable, Equatable {
         public var tokens = TokenCounts(); public var cost = 0.0
     }
-    struct FileState: Codable {
+    struct FileState: Codable, Sendable {
         var offset: UInt64; var born: Double
         var tallies: [String: Tally] = [:]   // "day|model|cwd"
         /// The last day by UTC hour and model ("epoch|model"), for the 5-hour block. nil: indexed before it existed (read again).
@@ -18,20 +19,19 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
     public struct Row: Sendable { public var day: String, model: String, cwd: String; public var tally: Tally }
     public struct Hour: Sendable { public var start: Date, model: String; public var tally: Tally }
 
-    private let lock = NSLock()
     private let cacheURL: URL
-    private var files: [String: FileState]
+    /// Path → what's been read of it. Updates hold the lock while they read (one at a time: the first one reads gigabytes).
+    private let files: OSAllocatedUnfairLock<[String: FileState]>
 
     public init(cache: URL) {
         cacheURL = cache
-        files = (try? JSONDecoder().decode([String: FileState].self, from: Data(contentsOf: cache))) ?? [:]
+        files = OSAllocatedUnfairLock(initialState: (try? JSONDecoder().decode([String: FileState].self, from: Data(contentsOf: cache))) ?? [:])
     }
 
     /// Reads what's new in transcripts under `roots` changed since `since`, then everything known from `since` on.
     public func rows(roots: [URL], since: Date) -> [Row] {
-        lock.lock(); defer { lock.unlock() }
         let first = Self.day(since)
-        return update(roots: roots, since: since).flatMap { $0.tallies }.compactMap { key, t in
+        return files.withLock { update(&$0, roots: roots, since: since) }.flatMap { $0.tallies }.compactMap { key, t in
             let p = key.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
             return p.count == 3 && p[0] >= first ? Row(day: p[0], model: p[1], cwd: p[2], tally: t) : nil
         }
@@ -39,9 +39,8 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
 
     /// The 5-hour block `now` falls in (nil when the last one reset), from transcripts changed in the last 10 hours.
     public func currentBlock(roots: [URL], now: Date = Date()) -> ClaudeUsage.Block? {
-        lock.lock(); defer { lock.unlock() }
         let since = now.addingTimeInterval(-10 * 3600).timeIntervalSince1970
-        let hours = update(roots: roots, since: Date(timeIntervalSince1970: since)).flatMap { $0.hours ?? [:] }.compactMap { key, t -> Hour? in
+        let hours = files.withLock { update(&$0, roots: roots, since: Date(timeIntervalSince1970: since)) }.flatMap { $0.hours ?? [:] }.compactMap { key, t -> Hour? in
             let p = key.split(separator: "|", maxSplits: 1)
             guard p.count == 2, let h = Double(p[0]), h > since - 3600 else { return nil }
             return Hour(start: Date(timeIntervalSince1970: h), model: String(p[1]), tally: t)
@@ -62,27 +61,26 @@ public final class UsageIndex: @unchecked Sendable {   // files under lock
                                  estimatedCostUSD: inBlock.reduce(0) { $0 + $1.tally.cost }, models: Set(inBlock.map(\.model)).sorted())
     }
 
-    /// Reads what's new in transcripts under `roots` changed since `since`; the states of the files under them.
-    /// The caller holds the lock.
-    private func update(roots: [URL], since: Date) -> [FileState] {
+    /// Reads what's new in transcripts under `roots` changed since `since` into `known`; the states of the files under them.
+    private func update(_ known: inout [String: FileState], roots: [URL], since: Date) -> [FileState] {
         var changed = false
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey, .fileSizeKey]
         for root in roots {
             for case let f as URL in FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys)) ?? NSEnumerator() where f.pathExtension == "jsonl" {
                 guard let v = try? f.resourceValues(forKeys: keys), (v.contentModificationDate ?? .distantPast) >= since else { continue }
                 let size = UInt64(v.fileSize ?? 0)
-                var st = files[f.path] ?? FileState(offset: 0, born: (v.creationDate ?? .distantPast).timeIntervalSince1970)
+                var st = known[f.path] ?? FileState(offset: 0, born: (v.creationDate ?? .distantPast).timeIntervalSince1970)
                 if size < st.offset || st.hours == nil { st = FileState(offset: 0, born: st.born) }   // rewritten, or indexed without hours
                 guard size > st.offset else { continue }
                 Self.read(f, into: &st)
-                files[f.path] = st; changed = true
+                known[f.path] = st; changed = true
             }
         }
-        if changed, let d = try? JSONEncoder().encode(files) { try? d.write(to: cacheURL, options: .atomic) }
+        if changed, let d = try? JSONEncoder().encode(known) { try? d.write(to: cacheURL, options: .atomic) }
         // These roots only (one account). The enumerator may report /private/var/… for /var/… (and the other way round).
         func plain(_ p: String) -> String { p.hasPrefix("/private/") ? String(p.dropFirst("/private".count)) : p }
         let prefixes = roots.map { plain($0.path) + "/" }
-        return files.filter { path, _ in prefixes.contains { plain(path).hasPrefix($0) } }.map(\.value)
+        return known.filter { path, _ in prefixes.contains { plain(path).hasPrefix($0) } }.map(\.value)
     }
 
     /// Days `from`…`to` (local, inclusive) as one block: what Usage's "today" and "this week" show.

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 
 /// `Content-Length` framed JSON-RPC, as LSP speaks over stdio.
@@ -30,20 +31,26 @@ public struct Location: Sendable, Equatable { public var path: String; public va
 
 /// One language server process for one workspace root. Once the process has exited every request fails at once
 /// (the manager starts a new client); a request the server never answers fails after its timeout.
-public final class LSPClient: @unchecked Sendable {   // pending, versions, opened under lock; stdin writes serialized on writes
+public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't Sendable; everything that changes is in `state`
     private let proc = Process()
     private let input = Pipe(), output = Pipe()
-    private let lock = NSLock()
     /// stdin writes, in order and off the caller's thread: a server that stops reading must not block the UI.
     private let writes = DispatchQueue(label: "kelp.lsp.stdin")
-    private var nextID = 1
-    private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
-    private var versions: [String: Int] = [:]
-    private var opened: [String: Int] = [:]   // path -> how many tabs have it open (didOpen once, didClose after the last)
-    private var exited = false
+    private struct State {
+        var nextID = 1
+        var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+        var versions: [String: Int] = [:]
+        var opened: [String: Int] = [:]   // path -> how many tabs have it open (didOpen once, didClose after the last)
+        var exited = false
+        var onIdle: (@Sendable () -> Void)?
+    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
     public let root: String
     /// The last open document was closed.
-    public var onIdle: (@Sendable () -> Void)?
+    public var onIdle: (@Sendable () -> Void)? {
+        get { state.withLock { $0.onIdle } }
+        set { state.withLock { $0.onIdle = newValue } }
+    }
 
     /// `argv[0]` is looked up on the login-shell PATH, which the server gets too (npm servers need `node`).
     public init?(argv: [String], root: String) {
@@ -66,17 +73,17 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
 
     deinit {
         terminate()
-        pending.values.forEach { $0.resume(throwing: RPCError.internalError("language server stopped")) }
+        state.withLock { $0.pending }.values.forEach { $0.resume(throwing: RPCError.internalError("language server stopped")) }
     }
 
     public func terminate() { if proc.isRunning { proc.terminate() } }
-    public var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return !exited }
-    public var isIdle: Bool { lock.lock(); defer { lock.unlock() }; return opened.isEmpty }
+    public var isRunning: Bool { state.withLock { !$0.exited } }
+    public var isIdle: Bool { state.withLock { $0.opened.isEmpty } }
     /// Open documents and how many tabs hold each (to open them again in a restarted server).
-    public var openDocuments: [String: Int] { lock.lock(); defer { lock.unlock() }; return opened }
+    public var openDocuments: [String: Int] { state.withLock { $0.opened } }
 
     private func fail(_ e: RPCError) {
-        lock.lock(); exited = true; let all = pending; pending = [:]; lock.unlock()
+        let all = state.withLock { s in defer { s.pending = [:] }; s.exited = true; return s.pending }
         all.values.forEach { $0.resume(throwing: e) }
     }
 
@@ -89,7 +96,7 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
             return
         }
         guard let id = id?.int else { return }
-        lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
+        let c = state.withLock { $0.pending.removeValue(forKey: id) }
         if let e = m["error"], e != .null {
             c?.resume(throwing: RPCError(code: e["code"]?.int ?? -32603, message: e["message"]?.string ?? "language server error"))
         } else { c?.resume(returning: m["result"] ?? .null) }
@@ -106,13 +113,16 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
 
     public func request(_ method: String, _ params: JSONValue, timeout: TimeInterval = 30) async throws -> JSONValue {
         try await withCheckedThrowingContinuation { c in
-            lock.lock()
-            if exited { lock.unlock(); c.resume(throwing: RPCError.internalError("language server exited")); return }
-            let id = nextID; nextID += 1; pending[id] = c; lock.unlock()
+            let id = state.withLock { s -> Int? in
+                guard !s.exited else { return nil }
+                defer { s.nextID += 1 }
+                s.pending[s.nextID] = c; return s.nextID
+            }
+            guard let id else { c.resume(throwing: RPCError.internalError("language server exited")); return }
             send(["jsonrpc": "2.0", "id": .int(id), "method": .string(method), "params": params])
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard let self else { return }
-                lock.lock(); let c = pending.removeValue(forKey: id); lock.unlock()
+                let c = state.withLock { $0.pending.removeValue(forKey: id) }
                 c?.resume(throwing: RPCError.internalError("no answer to \(method) from the language server in \(Int(timeout)) s"))
             }
         }
@@ -137,20 +147,24 @@ public final class LSPClient: @unchecked Sendable {   // pending, versions, open
     /// One server can serve several languages (typescript, javascriptreact…), so each file says which it is.
     /// Two tabs of one file share the document: didOpen goes out for the first, didClose after the last.
     public func open(_ path: String, text: String, languageId: String) {
-        lock.lock(); let n = opened[path, default: 0]; opened[path] = n + 1; if n == 0 { versions[path] = 1 }; lock.unlock()
+        let n = state.withLock { s in let n = s.opened[path, default: 0]; s.opened[path] = n + 1; if n == 0 { s.versions[path] = 1 }; return n }
         guard n == 0 else { return }
         notify("textDocument/didOpen", .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(languageId), "version": 1, "text": .string(text)])]))
     }
     public func change(_ path: String, text: String) {
-        lock.lock(); let v = versions[path].map { $0 + 1 }; if let v { versions[path] = v }; lock.unlock()
+        let v = state.withLock { s in let v = s.versions[path].map { $0 + 1 }; if let v { s.versions[path] = v }; return v }
         guard let v else { return }   // not open here (a server started after the tab)
         notify("textDocument/didChange", .obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])]))
     }
     public func close(_ path: String) {
-        lock.lock(); let n = opened[path] ?? 0; opened[path] = n > 1 ? n - 1 : nil; if n == 1 { versions[path] = nil }; let idle = opened.isEmpty; lock.unlock()
+        let (n, idle) = state.withLock { s in
+            let n = s.opened[path] ?? 0; s.opened[path] = n > 1 ? n - 1 : nil
+            if n == 1 { s.versions[path] = nil }
+            return (n, s.opened.isEmpty ? s.onIdle : nil)
+        }
         guard n == 1 else { return }
         notify("textDocument/didClose", .obj(["textDocument": .obj(["uri": Self.uri(path)])]))
-        if idle { onIdle?() }
+        idle?()
     }
 
     private func at(_ path: String, _ line: Int, _ col: Int) -> JSONValue { .obj(["textDocument": .obj(["uri": Self.uri(path)]), "position": Self.pos(line, col)]) }
