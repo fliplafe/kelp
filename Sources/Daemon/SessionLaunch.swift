@@ -99,6 +99,9 @@ extension Daemon {
            !Self.changesAgentConfig(w.path, base: r.baseBranch) {
             project = r.path
         }
+        // The config the agent will read: the session's variables over the daemon's own (a kelpd started from a shell
+        // passes on that shell's CLAUDE_CONFIG_DIR), as PTY builds its environment.
+        let env = ProcessInfo.processInfo.environment.merging(env) { $1 }
         let expectedAndSettled = RemoteHost.of(cwd) == nil && !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
             && project.map { AgentTrust.trusts(agent: m.id, folders: [$0], env: env) } == true
         guard !expectedAndSettled else { return m }
@@ -159,6 +162,15 @@ extension Daemon {
         return own.map { base + [flag, $0.id] } ?? base
     }
 
+    /// A running session's record as it is when written, in order with its status changes (see LiveSession.emit): a copy
+    /// taken on a request's thread could otherwise land after a newer status and put an old one back.
+    func publish(_ ls: LiveSession) {
+        ls.inOrder { [weak self, weak ls] in
+            guard let self, let ls, !ls.isDiscarded else { return }
+            self.publish(ls.snapshot)
+        }
+    }
+
     func publish(_ s: Session) {
         do { try store.update(s) } catch { return }   // deleted meanwhile (closed, its project removed): not brought back
         if let v = try? JSONValue.from(s) { notify("event.session", v) }
@@ -171,7 +183,7 @@ extension Daemon {
         guard let ls = existing(id), !ls.snapshot.titleManual, ls.topic == nil else { return }   // the agent's own topic is better
         let title = Naming.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }
-        publish(s)
+        publish(ls)
         // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
         let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
             if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
@@ -195,7 +207,7 @@ extension Daemon {
         guard let ls = existing(id), !ls.snapshot.titleManual, ls.snapshot.title != topic else { return }
         let old = ls.snapshot.title
         let s = ls.update { if !$0.titleManual { $0.title = topic } }
-        publish(s)
+        publish(ls)
         let renamed = try? store.updateWorktree(s.worktreeId ?? "") { w in
             if (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = topic }
         }

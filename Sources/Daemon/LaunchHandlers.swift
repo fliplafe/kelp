@@ -80,7 +80,7 @@ extension SessionHook: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         guard let ls = d.existing(id) else { return .null }
         if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript }
-        if let cwd, let s = ls.workIn(cwd) { d.publish(s) }
+        if let cwd, ls.workIn(cwd) != nil { d.publish(ls) }
         if let notification, Hooks.isIdleReminder(notification) { return .null }
         guard let event else { throw RPCError.invalidParams("missing event") }
         let background = Hooks.hasBackgroundWork(.obj(["background_tasks": .array(backgroundTasks ?? [])]))
@@ -92,7 +92,7 @@ extension SessionHook: Handled {
 extension SessionAnnotate: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         guard let ls = d.existing(id) else { return .null }
-        if let summary { d.publish(ls.update { $0.summary = summary }) }
+        if let summary { _ = ls.update { $0.summary = summary }; d.publish(ls) }
         if let st = status.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
         return .null
     }
@@ -164,7 +164,8 @@ extension TaskFromIssue: AsyncHandled {
             var text = cfg.issueCommand.map { Daemon.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
             var o = Daemon.Launch()
-            o.model = model; o.effort = effort; o.profile = profile; o.draft = draft == true; o.openURLs = openURLs == true
+            // Typed, not sent, unless asked: the issue's text is whoever filed it, not the user (it could tell the agent anything).
+            o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
             (o.cols, o.rows) = Daemon.Launch.size(.obj(["cols": .int(cols ?? 0), "rows": .int(rows ?? 0)]))
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
             return (w, try d.spawn(cwd: w.path, manifest: d.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))

@@ -495,3 +495,12 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(throws: (any Error).self) { try Git.runData(["-c", "trap '' TERM; sleep 30"], cwd: "/tmp", executable: "/bin/sh", timeLimit: 0.5) }
     #expect(Date().timeIntervalSince(start) < 10)   // SIGKILL 2 s after the SIGTERM it ignored
 }
+
+/// A file whose name has ":" in it is found like any other: the path ends where the tool says it does (NUL).
+@Test func searchFindsAFileWithAColonInItsName() throws {
+    let repo = try tempRepo()
+    try "a needle\n".write(toFile: repo + "/a:b.txt", atomically: true, encoding: .utf8)
+    #expect(try ProjectFiles.search(repo, query: "needle") == [SearchMatch(path: "a:b.txt", line: 1, text: "a needle")])
+    // git grep -z (remote projects, or no ripgrep) writes NUL after the line number too.
+    #expect(ProjectFiles.parseGrep("a:b.txt\u{0}3\u{0}x: y\n") == [SearchMatch(path: "a:b.txt", line: 3, text: "x: y")])
+}

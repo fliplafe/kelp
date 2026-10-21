@@ -13,6 +13,7 @@ extension Daemon {
 
     /// Every project keeps at least one desk; desks follow the folder's checked-out branch.
     func syncMainWorkspaces() throws {
+        deskLock.lock(); defer { deskLock.unlock() }
         let all = try store.worktrees(repo: nil)
         for r in try store.repos() {
             let desks = all.filter { isMain($0, r) }
@@ -32,6 +33,7 @@ extension Daemon {
 
     /// A new desk in the project's folder: instant, named "Workspace N" until its first prompt names it (see autoTitle).
     func createDesk(in r: Repo) throws -> Worktree {
+        deskLock.lock(); defer { deskLock.unlock() }   // its "Workspace N" counts the desks there now
         try syncMainWorkspaces()   // names the project's first desk, so the new one doesn't take "Workspace 1"
         let taken = Set(try store.worktrees(repo: r.id).map(\.note))
         var n = 1

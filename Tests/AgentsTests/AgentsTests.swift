@@ -279,3 +279,12 @@ import Core
     try #"{"projects":{}}"#.write(toFile: home + "/profile/.claude.json", atomically: true, encoding: .utf8)
     #expect(!AgentTrust.trusts(agent: "claude", folders: [home + "/p/known"], env: ["CLAUDE_CONFIG_DIR": home + "/profile"], home: home))
 }
+
+/// The test process is isolated as it loads, before this (or any) test touches anything: run alone, a target still
+/// can't read the user's own agent config or keychain.
+@Test func theProcessIsIsolatedBeforeAnyTestRuns() {
+    let env = ProcessInfo.processInfo.environment
+    #expect(env["KELP_TEST_ISOLATED"] == "1")
+    for key in ["KELP_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"] { #expect(env[key]?.hasPrefix("/tmp/kr-") == true, "\(key)") }
+    #expect(env["KELP_KEYCHAIN_SERVICE"]?.hasPrefix("dev.kelp.tests.") == true && env["GIT_CONFIG_GLOBAL"] == "/dev/null")
+}

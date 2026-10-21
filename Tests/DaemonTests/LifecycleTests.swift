@@ -35,9 +35,13 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 @Test func restartLeavesNoGhost() async throws {
     let (d, c, w, root) = try await project(); defer { d.stop() }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "sleep 30"]), as: Session.self)
+    let old = try #require(d.existing(s.id))
     let r: Session = try await c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
     #expect(try await waitFor(10) { kill(s.pid, 0) != 0 })   // the old program is gone
-    try await Task.sleep(for: .milliseconds(300))           // a window for its exit to be handled: this checks that nothing comes back
+    // Its exit handled (the old session says exited) and everything that queued (a save, an event) done: then nothing
+    // can come back later.
+    #expect(try await waitFor(10) { old.snapshot.status == .exited })
+    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in old.inOrder { c.resume() } }
     let ids = try await c.call("session.list", as: [Session].self).map(\.id)
     #expect(ids.contains(r.id) && !ids.contains(s.id))
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("history/\(s.id).log").path))
@@ -128,7 +132,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     let (d, c, w, root) = try await project(); defer { d.stop() }
     let count = "i=0; while [ $i -lt 300000 ]; do i=$((i+1)); echo n$i; done; sleep 30"
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": .string(count)]), as: Session.self)
-    try await Task.sleep(for: .milliseconds(300))
+    #expect(try await waitFor(10) { (try await c.call("session.read", .obj(["id": .string(s.id), "bytes": 100]))).string?.contains("n") == true })
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
     var tv = timeval(tv_sec: 2, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: "session.stream", params: .obj(["id": .string(s.id)]))))

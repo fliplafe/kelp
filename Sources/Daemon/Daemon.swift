@@ -39,7 +39,9 @@ public final class Daemon: Sendable {
     func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
     let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
     let wakeLock = NSLock()   // one wake per session even when several clients open it at once; pausing holds it too
-    let trustLock = NSLock()  // trusted-configs.json: read-modify-write under it
+    let trustLock = NSLock()
+    /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
+    let deskLock = NSRecursiveLock()  // trusted-configs.json: read-modify-write under it
 
     /// `extra` lets integrations (GitHub, Linear) plug in methods without Daemon depending on them.
     public init(root: URL = Paths.root, store: Store? = nil, extra: [String: @Sendable (Daemon, JSONValue) async throws -> JSONValue] = [:]) throws {

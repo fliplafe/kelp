@@ -30,12 +30,12 @@ public enum ProjectFiles {
         guard !query.isEmpty else { return [] }
         var out: String
         if let rg = ripgrep, RemoteHost.of(root) == nil {   // remote: git grep runs on the host
-            var a = ["--line-number", "--no-heading", "--color=never", "--max-columns=300", "--max-count=200"]
+            var a = ["--line-number", "--no-heading", "--null", "--color=never", "--max-columns=300", "--max-count=200"]
             if !regex { a.append("--fixed-strings") }
             if !caseSensitive { a.append("--ignore-case") }   // like git grep -i below (smart-case would honour capitals)
             out = try Git.run(a + ["--", query, "."], cwd: root, executable: rg, ok: [0, 1])   // 1 = no matches
         } else {
-            var a = ["grep", "-n", "--untracked", "-I"]
+            var a = ["grep", "-n", "-z", "--untracked", "-I"]
             if !regex { a.append("-F") }
             if !caseSensitive { a.append("-i") }
             out = try Git.run(a + ["-e", query], cwd: root, ok: [0, 1])
@@ -43,14 +43,16 @@ public enum ProjectFiles {
         return parseGrep(out, limit: limit)
     }
 
-    /// `path:line:text` lines.
+    /// `path NUL line : text` (rg --null) or `path NUL line NUL text` (git grep -z) lines: the path ends at the NUL, so a
+    /// file named "a:b.txt" is found like any other.
     public static func parseGrep(_ s: String, limit: Int = .max) -> [SearchMatch] {
         var r: [SearchMatch] = []
         for l in s.split(separator: "\n", omittingEmptySubsequences: true) {
-            let p = l.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
-            guard p.count == 3, let n = Int(p[1]) else { continue }
-            var path = String(p[0]); if path.hasPrefix("./") { path.removeFirst(2) }
-            r.append(SearchMatch(path: path, line: n, text: String(p[2]).trimmingCharacters(in: .whitespaces)))
+            guard let nul = l.firstIndex(of: "\0") else { continue }
+            var path = String(l[..<nul]); if path.hasPrefix("./") { path.removeFirst(2) }
+            let rest = l[l.index(after: nul)...]
+            guard let end = rest.firstIndex(where: { $0 == ":" || $0 == "\0" }), let n = Int(rest[..<end]) else { continue }
+            r.append(SearchMatch(path: path, line: n, text: String(rest[rest.index(after: end)...]).trimmingCharacters(in: .whitespaces)))
             if r.count >= limit { break }
         }
         return r

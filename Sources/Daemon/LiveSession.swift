@@ -89,11 +89,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         struct File: Codable, Sendable { var path: String; var added: Int; var removed: Int }
         var files: [File]; var seconds: Double
     }
-    private(set) var turnBase: String?
-    /// Where the agent worked when its last turn started: `turnBase` is a snapshot of that folder.
-    private(set) var turnDir: String?
+    // Written by turnWork, read by requests: only under the lock, through the properties below.
+    private var turnTree: String?, turnFolder: String?, turnResult: Turn?
     private var turnStart: Date?
-    private(set) var lastTurn: Turn?
+    /// The tree when its last turn started.
+    var turnBase: String? { lock.withLock { turnTree } }
+    /// Where the agent worked when its last turn started: `turnBase` is a snapshot of that folder.
+    var turnDir: String? { lock.withLock { turnFolder } }
+    var lastTurn: Turn? { lock.withLock { turnResult } }
     private var inTurn = false
     static let stoppedMarkers = ["Interrupted", "What should Claude do instead", "tell Claude what to do"]
 
@@ -240,6 +243,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         statusQueue.async { self.onStatus?(s) }   // held until it ran: a session just taken out of `live` still says so
     }
     private let statusQueue = DispatchQueue(label: "kelp.session.status")
+    /// `body` on the status queue, after every change queued before it.
+    func inOrder(_ body: @escaping @Sendable () -> Void) { lock.withLock { statusQueue.async(execute: body) } }
 
     func sync() -> Session? {
         let s = detector.status
@@ -256,9 +261,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         // would copy the index and hash the tree again.
         let shell = record.agent == "shell" || record.agent == "custom"
         let starting = s == .working && !inTurn, ending = inTurn && s != .working
-        if starting { inTurn = true; turnStart = Date(); turnDir = record.currentDir }
+        if starting { inTurn = true; turnStart = Date(); turnFolder = record.currentDir }
         if ending { inTurn = false }
-        let start = turnStart, cwd = turnDir ?? record.cwd
+        let start = turnStart, cwd = turnFolder ?? record.cwd
         lock.unlock()
         guard !shell, starting || ending else { return }
         // One after another, per session: a short turn's end waits for its own start snapshot instead of diffing against
@@ -266,10 +271,10 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         turnWork.async { [weak self] in
             if starting {
                 let tree = try? Git.snapshotTree(cwd)
-                self?.lock.withLock { self?.turnBase = tree }
-            } else if let start, let base = self?.lock.withLock({ self?.turnBase }) {
+                self?.lock.withLock { self?.turnTree = tree }
+            } else if let start, let base = self?.turnBase {
                 let files = ((try? Git.changesSince(tree: base, cwd: cwd)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
-                self?.lock.withLock { self?.lastTurn = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
+                self?.lock.withLock { self?.turnResult = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
             }
         }
     }

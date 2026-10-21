@@ -22,8 +22,9 @@ usage: kelp <command>
   report <working|blocked|done|error|idle|clear> [message] [--progress 0-100] [--kind permission|question|auth]
                                        inside a session: what you're doing, on your row and tab
   install | uninstall                  launchd agent for the daemon
-  github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n>
-  linear login <key> | tasks | start <ENG-123>
+  github prs|issues [--filter mine|review] | checks [pr] | pr-create [--title t] [--draft] | pr-merge | issue <n> [--send]
+  linear login <key> | tasks | start <ENG-123> [--send]
+                                       issue / start: the brief is typed into the new agent, not sent (--send sends it)
   open <path[:line]|url> [--split right|down] [--focus]   open a tab in the app (relative paths are fine);
                                                 --focus also brings Kelp forward and shows that workspace
   settings | settings get <key> | set <key> <json-or-text> | unset <key>
@@ -269,8 +270,10 @@ func plist() -> String {
                 guard let i = (try await c.call("linear.issues").array ?? []).first(where: { $0["identifier"]?.string?.lowercased() == ref.lowercased() }) else { fail("\(ref) not found in your Linear issues") }
                 p["ref"] = i["identifier"] ?? ""; p["title"] = i["title"] ?? ""; p["body"] = i["description"] ?? ""; p["url"] = i["url"] ?? ""; p["linearId"] = i["id"] ?? ""
             }
+            if has("--send") { p["draft"] = false }
             let r = try await c.call("task.fromIssue", .object(p))
             print("\(r["worktree"]?["branch"]?.string ?? "")  \(r["worktree"]?["path"]?.string ?? "")")
+            if !has("--send") { print("The issue's text is typed into the agent, not sent: look it over in Kelp and press Return.") }
             if r["setupNeedsTrust"]?.bool == true { print("Its .kelp.yaml setup didn't run: open the project in Kelp to look at it and trust it.") }
         case ("linear", "tasks"):
             for x in try await c.call("linear.issues").array ?? [] {

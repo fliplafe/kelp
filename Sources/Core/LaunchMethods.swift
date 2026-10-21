@@ -37,7 +37,8 @@ public struct SessionHandoff: RPCMethod, LaunchOptions {
 }
 
 /// An issue or task → a branch with its number, a worktree, an agent briefed with its text → {worktree, session, setupNeedsTrust}.
-/// (`title` is the issue's: the session's is "ref title".)
+/// (`title` is the issue's: the session's is "ref title".) The brief is typed, not sent, unless `draft` is false: the issue's
+/// text is whoever filed it.
 public struct TaskFromIssue: RPCMethod {
     public static let name = "task.fromIssue"; public typealias Result = JSONValue
     public var repoId: String, ref: String, title: String, body: String?, url: String?, branch: String?, branchPrefix: String?

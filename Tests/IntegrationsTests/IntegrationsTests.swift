@@ -148,6 +148,11 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(BitbucketClient.slug(remote: "git@bitbucket.org:team/repo.git")! == ("team", "repo"))
     #expect(BitbucketClient.slug(remote: "https://user@bitbucket.org/team/repo")! == ("team", "repo"))
     #expect(BitbucketClient.slug(remote: "git@github.com:a/b.git") == nil)
+    // Only bitbucket.org as the host: a path or another host that merely contains it isn't Bitbucket.
+    #expect(BitbucketClient.slug(remote: "https://example.com/bitbucket.org/team/repo") == nil)
+    #expect(BitbucketClient.slug(remote: "git@github.com:me/bitbucket.org-mirror.git") == nil)
+    #expect(BitbucketClient.slug(remote: "https://notbitbucket.org/team/repo") == nil)
+    #expect(BitbucketClient.slug(remote: "ssh://git@bitbucket.org/team/repo.git")! == ("team", "repo"))
     let prs = #"{"values":[{"id":12,"title":"Add API","state":"OPEN","draft":false,"author":{"display_name":"Ann"},"source":{"branch":{"name":"feat/api"}},"links":{"html":{"href":"https://bitbucket.org/team/repo/pull-requests/12"}}}]}"#
     let p = try BitbucketClient.parsePullRequests(Data(prs.utf8))
     #expect(p.count == 1 && p[0].number == 12 && p[0].headRefName == "feat/api" && p[0].author == "Ann")

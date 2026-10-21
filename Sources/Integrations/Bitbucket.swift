@@ -9,9 +9,22 @@ public struct BitbucketClient: Sendable {
     public init(user: String, token: String) { self.user = user; self.token = token }
 
     /// "git@bitbucket.org:team/repo.git" / "https://bitbucket.org/team/repo" → ("team", "repo")
+    /// Only when bitbucket.org is the remote's host: "https://example.com/bitbucket.org/x" or a fork named so isn't one.
     public static func slug(remote: String) -> (workspace: String, repo: String)? {
-        guard let r = remote.range(of: "bitbucket.org") else { return nil }
-        var rest = remote[r.upperBound...].drop { $0 == "/" || $0 == ":" }
+        let rest: Substring
+        if let u = URL(string: remote), let host = u.host, u.scheme != nil {   // https://, ssh://
+            guard host.lowercased() == "bitbucket.org" else { return nil }
+            rest = Substring(u.path)
+        } else if let colon = remote.firstIndex(of: ":") {   // scp style: git@bitbucket.org:team/repo.git
+            let host = remote[..<colon].split(separator: "@").last.map(String.init) ?? ""
+            guard host.lowercased() == "bitbucket.org" else { return nil }
+            rest = remote[remote.index(after: colon)...]
+        } else { return nil }
+        return Self.slug(path: rest)
+    }
+
+    private static func slug(path: Substring) -> (workspace: String, repo: String)? {
+        var rest = path.drop { $0 == "/" }
         if rest.hasSuffix(".git") { rest = rest.dropLast(4) }
         let parts = rest.split(separator: "/")
         return parts.count >= 2 ? (String(parts[0]), String(parts[1])) : nil

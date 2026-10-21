@@ -99,7 +99,7 @@ extension SessionRename: Handled {
     func handle(_ d: Daemon) throws -> Done {
         // Under wakeLock: a paused record read here and saved back must not land over a wake that started meanwhile.
         try d.wakeLock.withLock {
-            if let ls = d.existing(id) { d.publish(ls.update { $0.title = title; $0.titleManual = !title.isEmpty }) }
+            if let ls = d.existing(id) { _ = ls.update { $0.title = title; $0.titleManual = !title.isEmpty }; d.publish(ls) }
             else if var s = try d.store.session(id) { s.title = title; s.titleManual = !title.isEmpty; d.publish(s) }
         }
         return Done()

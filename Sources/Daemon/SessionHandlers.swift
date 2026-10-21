@@ -73,8 +73,8 @@ extension SessionKill: Handled {
 
 extension SessionChoose: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        guard let s = d.existing(id)?.choose(answer) else { return .bool(false) }
-        d.publish(s)
+        guard let ls = d.existing(id), ls.choose(answer) != nil else { return .bool(false) }
+        d.publish(ls)
         return .bool(true)
     }
 }
@@ -117,8 +117,8 @@ extension SessionRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { 
 extension SessionContext: Handled { func handle(_ d: Daemon) throws -> JSONValue { try d.printed(id, bytes: bytes ?? 24_000) } }
 
 /// Never re-inserts a deleted one (publish only updates).
-extension SessionMarkRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let r = d.existing(id)?.markRead() { d.publish(r) }; return .null } }
-extension SessionMarkUnread: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let r = d.existing(id)?.markUnread() { d.publish(r) }; return .null } }
+extension SessionMarkRead: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.markRead() != nil { d.publish(ls) }; return .null } }
+extension SessionMarkUnread: Handled { func handle(_ d: Daemon) throws -> JSONValue { if let ls = d.existing(id), ls.markUnread() != nil { d.publish(ls) }; return .null } }
 
 extension SessionTurn: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {

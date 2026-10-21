@@ -1,7 +1,8 @@
 import Foundation
+import TestSupportC
 
-/// One isolation for every test target (they all run in one process): the first to ask sets all of it, so nothing
-/// depends on which target happens to start first.
+/// One isolation for the whole test process, set up as it loads (TestSupportC's constructor), before any test of any
+/// target runs, whichever runs first or alone:
 /// - keys (Jira, Linear, agent secrets) go to a keychain service of their own, never the real one;
 /// - KELP_HOME, CLAUDE_CONFIG_DIR and CODEX_HOME are throwaway folders and PATH is given (KELP_LOGIN_PATH): nothing reads
 ///   the user's ~/.kelp, ~/.claude or ~/.codex, nor runs their shell profile;
@@ -9,17 +10,10 @@ import Foundation
 /// Values inherited from outside are replaced, not kept: `swift test` run by an agent inside Kelp inherits the real
 /// KELP_HOME (and a profile's config dir).
 public enum TestIsolation {
-    /// The process's own folder (short: a Unix socket path inside it has to fit in 104 bytes), removed when it exits.
+    /// The process's own folder, removed when it exits.
     public static let root: String = {
-        let r = "/tmp/kr-\(UUID().uuidString.prefix(6))"
-        try? FileManager.default.createDirectory(atPath: r, withIntermediateDirectories: true)
-        let vars = ["KELP_HOME": r + "/home", "CLAUDE_CONFIG_DIR": r + "/claude", "CODEX_HOME": r + "/codex",
-                    "KELP_LOGIN_PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
-                    "KELP_KEYCHAIN_SERVICE": "dev.kelp.tests.\(UUID().uuidString)",
-                    "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "KELP_TEST_ISOLATED": "1",
-                    // In-process daemons take this test process for Kelp's window (set once, before any daemon reads it).
-                    "KELP_APP_EXECUTABLE": (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath().path]
-        for (k, v) in vars { setenv(k, v, 1) }
+        let r = String(cString: kelp_test_root())
+        precondition(!r.isEmpty && ProcessInfo.processInfo.environment["KELP_TEST_ISOLATED"] == "1", "test isolation didn't run")
         atexit { try? FileManager.default.removeItem(atPath: TestIsolation.root) }
         return r
     }()

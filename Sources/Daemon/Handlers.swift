@@ -147,7 +147,7 @@ extension SessionReport: Handled {
         guard let ls = d.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
         let r = ProgramStatus.Report(state: state, kind: state == "blocked" ? kind : nil, msg: message,
                                      progress: state == "working" ? progress.map { min(100, max(0, $0)) } : nil)
-        if let s = ls.report(r) { d.publish(s) }
+        if ls.report(r) != nil { d.publish(ls) }
         return Done()
     }
 }

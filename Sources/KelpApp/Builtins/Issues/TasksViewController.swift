@@ -281,13 +281,14 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         return row
     }
 
-    /// The default agent starts on the issue in the workspace on screen, briefed with its text.
+    /// The default agent starts on the issue in the workspace on screen, its text typed in but not sent: whoever filed the
+    /// issue wrote it, so the user reads it before the agent acts on it.
     private func startTask(_ r: JSONValue, linear: Bool, jira: Bool = false) {
         let ref = jira ? (r["key"]?.string ?? "") : linear ? (r["identifier"]?.string ?? "") : "#\(r["number"]?.int ?? 0)"
         let body = ((linear || jira) ? r["description"] : r["body"])?.string ?? ""
         let brief = ["Work on \(ref): \(r["title"]?.string ?? "")", body, r["url"]?.string ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         guard let editor = Workbench.editor else { NSSound.beep(); return }
-        editor.newAgent(nil, prompt: brief)
+        editor.newAgent(nil, prompt: brief, extra: ["draft": true])
     }
 
     private func agentSession(_ wt: Worktree) -> String? {
@@ -297,8 +298,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         guard let sid = agentSession(wt) else { status.stringValue = String(localized: "No running agent in \(wt.branch) — start one first"); return }
         var v: [String: JSONValue] = [:]; for (k, x) in vars { v[k] = .string(x) }
         guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wt.id), "name": .string(name), "vars": .object(v)]))?.string else { return }
-        await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text)]))
-        status.stringValue = String(localized: "Sent to \(AppModel.shared.session(sid)?.displayTitle ?? "agent")")
+        // Typed, not sent: review comments and CI logs are other people's text; the user presses Return once it reads right.
+        await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text), "enter": false]))
+        status.stringValue = String(localized: "Typed into \(AppModel.shared.session(sid)?.displayTitle ?? "agent") — press Return there to send")
     }
     private func fixCheck(_ name: String, _ run: Int, _ wt: Worktree) {
         guard let repoId else { return }

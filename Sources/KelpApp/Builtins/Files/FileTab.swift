@@ -209,11 +209,16 @@ final class FileTab: SavableTab {
         guard let e = editor, let w = view.window, w.attachedSheet == nil else { return }   // asked again on the next change or ⌘S
         let a = NSAlert(); a.messageText = String(localized: "\(title) changed on disk")
         a.informativeText = String(localized: "An agent edited this file while you had unsaved changes.")
-        a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: String(localized: "Use Disk Version"))
+        // No longer text (another encoding, binary): there's no disk version to show, and an empty one would throw the
+        // edits away. Keep Mine writes them; Cancel leaves the tab and the file as they are.
+        let notText: Bool = if case .present(nil) = self.disk { true } else { false }
+        if notText { a.informativeText = String(localized: "The file on disk is no longer text (another encoding, or binary). Keep Mine writes your version over it.") }
+        a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: notText ? String(localized: "Cancel") : String(localized: "Use Disk Version"))
         // Holds the tab until answered: closing it meanwhile mustn't throw away the user's choice (or their edits).
         a.beginSheetModal(for: w) { r in
             MainActor.assumeIsolated {
-                if r == .alertFirstButtonReturn { self.lastSaved = disk; self.write() } else { e.setText(disk); self.lastSaved = disk; self.markdown?.textChanged() }
+                if r == .alertFirstButtonReturn { self.lastSaved = disk; self.write() }
+                else if !notText { e.setText(disk); self.lastSaved = disk; self.markdown?.textChanged() }
                 self.editedStateMayHaveChanged()
             }
         }
