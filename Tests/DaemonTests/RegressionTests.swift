@@ -538,3 +538,26 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     w.c.notify("state.set", .obj(["key": "lsp.trusted", "value": .array([.string(w.repo.path)])]))
     #expect(try await waitFor(5) { try await w.c.call("state.get", .obj(["prefix": "lsp."]))["lsp.trusted"]?.array?.count == 1 })
 }
+
+/// A cloned repository whose HEAD names a branch that reads as an option (refs/heads/--output=<file>) can't make git
+/// write that file: Kelp takes no such name as a base or current branch, and the agent-config check that runs at every
+/// agent start refuses a base like it rather than handing it to `git diff`.
+@Test func aBranchNameThatReadsAsAnOptionNeverReachesGit() async throws {
+    let victim = tmp().path + "-victim.txt"
+    try "keep me\n".write(toFile: victim, atomically: true, encoding: .utf8)
+    let evil = "--output=" + victim
+    let origin = try makeRepo()
+    let sha = try Git.run(["rev-parse", "HEAD"], cwd: origin).trimmingCharacters(in: .whitespacesAndNewlines)
+    try Git.run(["update-ref", "refs/heads/" + evil, sha], cwd: origin)
+    try Git.run(["symbolic-ref", "HEAD", "refs/heads/" + evil], cwd: origin)
+    let clone = tmp().path
+    try Git.run(["clone", "-q", "--", origin, clone], cwd: "/tmp")
+    #expect(Git.defaultBranch(repo: clone) != "--output=" + victim && !Git.defaultBranch(repo: clone).hasPrefix("-"))
+    #expect(throws: GitError.self) { try Git.currentBranch(clone) }
+    #expect(Daemon.changesAgentConfig(clone, base: evil))   // refused: asked, not compared
+    let w = try await world(); defer { w.d.stop() }
+    let repo: Repo = try await w.c.call("repo.add", .obj(["path": .string(clone)]), as: Repo.self)
+    #expect(!repo.baseBranch.hasPrefix("-"))
+    _ = try await w.c.call("worktree.list", as: [Worktree].self)
+    #expect(try String(contentsOfFile: victim, encoding: .utf8) == "keep me\n")
+}

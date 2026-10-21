@@ -56,10 +56,17 @@ public enum Git {
         try run(["rev-parse", "--show-toplevel"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// A branch name Kelp may pass to git as a revision: never one that reads as an option. Git won't create such a
+    /// name, but a cloned repository's HEAD can point at one (refs/heads/--output=/some/file), and `git diff <it>` would
+    /// take it as --output and overwrite that file. Names read from git go through this; names from clients through
+    /// the daemon's `ref`.
+    public static func isRevision(_ name: String) -> Bool { !name.isEmpty && !name.hasPrefix("-") }
+
     /// Default branch: origin/HEAD if set, else current branch of the main checkout.
     public static func defaultBranch(repo: String) -> String {
         if let s = try? run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd: repo) {
-            return String(s.trimmingCharacters(in: .whitespacesAndNewlines).drop(while: { $0 != "/" }).dropFirst())
+            let b = String(s.trimmingCharacters(in: .whitespacesAndNewlines).drop(while: { $0 != "/" }).dropFirst())
+            if isRevision(b) { return b }
         }
         for b in ["main", "master"] where (try? run(["rev-parse", "--verify", b], cwd: repo)) != nil { return b }
         return (try? currentBranch(repo)) ?? "main"
@@ -68,10 +75,13 @@ public enum Git {
     /// Every workspace list asks this for each project: a local checkout's HEAD file answers without a git process.
     /// Detached, a linked worktree (.git is a file), a reftable repository or a remote project: git itself.
     public static func currentBranch(_ path: String) throws -> String {
+        var name = ""
         if RemoteHost.of(path) == nil, let head = try? String(contentsOfFile: path + "/.git/HEAD", encoding: .utf8), head.hasPrefix("ref: refs/heads/") {
-            let name = String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
-            if name != ".invalid" { return name }   // a reftable repository's stub HEAD: the real one is in its tables
+            name = String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if name == ".invalid" { name = "" }   // a reftable repository's stub HEAD: the real one is in its tables
         }
-        return try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { name = try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard isRevision(name) else { throw GitError(args: ["rev-parse", "HEAD"], status: 1, stderr: "the branch's name reads as an option: \(name)") }
+        return name
     }
 }

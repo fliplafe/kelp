@@ -48,7 +48,7 @@ extension Git {
         try run(["worktree", "list", "--porcelain"], cwd: repo).components(separatedBy: "\n\n").dropFirst().compactMap { b in
             let lines = b.split(separator: "\n")
             guard let p = lines.first(where: { $0.hasPrefix("worktree ") }) else { return nil }
-            let branch = lines.first { $0.hasPrefix("branch refs/heads/") }.map { String($0.dropFirst(18)) }
+            let branch = lines.first { $0.hasPrefix("branch refs/heads/") }.map { String($0.dropFirst(18)) }.flatMap { Git.isRevision($0) ? $0 : nil }
             return (String(p.dropFirst(9)), branch, lines.contains { $0 == "locked" || $0.hasPrefix("locked ") })
         }
     }

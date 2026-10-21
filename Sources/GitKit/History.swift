@@ -115,6 +115,7 @@ extension Git {
                 continue
             }
             let name = String(f[1].dropFirst("refs/heads/".count))
+            guard Git.isRevision(name) else { continue }   // one that reads as an option isn't offered (nor pushed, merged…)
             b.local.append(name)
             guard f[0] == "*" else { continue }
             b.current = name; b.head = f[2]
@@ -127,7 +128,7 @@ extension Git {
         }
         if b.current == nil {
             let c = try run(["symbolic-ref", "--short", "-q", "HEAD"], cwd: path, ok: [0, 1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            b.current = c.isEmpty ? nil : c
+            b.current = Git.isRevision(c) ? c : nil
             b.head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         b.merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path)) != nil

@@ -29,7 +29,7 @@ extension Daemon {
 
     /// The branch checked out in the folder now (a workspace's record can be stale after a switch).
     func checkedOut(_ w: Worktree) -> String {
-        (try? Git.run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: w.path))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? w.branch
+        (try? Git.currentBranch(w.path)) ?? w.branch
     }
 
     static let bitbucketNeedsCredentials = RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations")
