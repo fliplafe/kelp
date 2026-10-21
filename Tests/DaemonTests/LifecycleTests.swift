@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import Core
 import GitKit
@@ -160,10 +161,10 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 /// request. On the global pool (64 threads, shared with Swift's own tasks) everything stopped.
 @Test func aRequestIsAnsweredWhileManySlowOnesRun() async throws {
     let release = DispatchSemaphore(value: 0), held = 80
-    let started = Locked(0)
+    let started = OSAllocatedUnfairLock(initialState: 0)
     let (d, _, root) = try daemon(); defer { for _ in 0..<held { release.signal() }; d.stop() }
     for _ in 0..<held { Task { try? await d.offload { started.withLock { $0 += 1 }; release.wait() } } }
-    #expect(try await waitFor(10) { started.current == held })   // all of them running, holding their threads
+    #expect(try await waitFor(10) { started.withLock { $0 } == held })   // all of them running, holding their threads
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
     var tv = timeval(tv_sec: 5, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     Unix.writeAll(fd, try Wire.line(RPCRequest(id: 1, method: "session.list")))

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 
 /// Who is connected to the socket: each client, which of them are raw byte pipes (`kelp attach`), which is Kelp's window
@@ -15,7 +16,7 @@ final class Clients: Sendable {
         var app = Set<Int>()          // Kelp's window (ui.publish): it gets event.ui
         var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
     }
-    private let state = Locked(State())
+    private let state = OSAllocatedUnfairLock(initialState: State())
 
     func add(fd: Int32) -> Connection {
         state.withLock { s in let c = Connection(id: s.next, fd: fd); s.next += 1; s.all[c.id] = c; return c }
@@ -34,7 +35,7 @@ final class Clients: Sendable {
     func setRaw(_ id: Int, _ on: Bool) { state.withLock { s in if on { s.raw.insert(id) } else { s.raw.remove(id) } } }
 
     /// Runs `body` only while `id` is still connected, under this lock (see the lock order above).
-    func ifConnected(_ id: Int, _ body: () -> Void) { state.withLock { if $0.all[id] != nil { body() } } }
+    func ifConnected(_ id: Int, _ body: () -> Void) { state.withLockUnchecked { if $0.all[id] != nil { body() } } }   // body runs here, never later
 
     /// Subscribers of a session's output: the raw ones (bytes) and the rest (a JSON event).
     func split(_ subs: Set<Int>) -> (raw: [Connection], json: Set<Int>) {

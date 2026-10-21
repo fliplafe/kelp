@@ -17,4 +17,8 @@ public enum Paths {
     public static func ensure(_ u: URL) throws {
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
     }
+
+    /// `path` with its symlinks resolved, "/private" kept (/tmp → /private/tmp; resolvingSymlinksInPath strips it).
+    /// Nil when it isn't there.
+    public static func real(_ path: String) -> String? { realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) } }
 }

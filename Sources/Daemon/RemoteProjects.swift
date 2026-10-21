@@ -46,7 +46,7 @@ extension RepoAddRemote: Handled {
         // Already added (the folder's marker names this host and path): that project, whatever its folder is called.
         // The marker keeps git's answer for the top folder (symlinks resolved, ~ expanded): match the path as typed, the
         // same path resolved where that's possible here (the "host" can be this Mac), and ~/… by its tail.
-        let real = realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) }
+        let real = Paths.real(path)
         func same(_ m: RemoteHost) -> Bool {
             m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
         }

@@ -1,5 +1,6 @@
 import Foundation
 import CoreServices
+import Core
 
 /// FSEvents on a directory tree, debounced; reports changed absolute paths on the main thread. Build output under the
 /// root (node_modules, .build…: ignored, never in the tree) is dropped on the stream's own queue first: a build or an
@@ -15,7 +16,7 @@ final class FileWatcher {
     private let sink: Sink
 
     init?(root: String, latency: Double = 0.25, handler: @escaping ([String]) -> Void) {
-        sink = Sink(Array(Set([root, Self.real(root)].map { $0.hasSuffix("/") ? $0 : $0 + "/" })), handler)
+        sink = Sink(Array(Set([root, Paths.real(root) ?? root].map { $0.hasSuffix("/") ? $0 : $0 + "/" })), handler)
         var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(sink).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
             guard let info else { return }
@@ -32,11 +33,6 @@ final class FileWatcher {
         stream = s
         FSEventStreamSetDispatchQueue(s, queue)
         FSEventStreamStart(s)
-    }
-
-    /// The path FSEvents reports for `path`: /private/tmp for /tmp (URL.resolvingSymlinksInPath strips /private again).
-    static func real(_ path: String) -> String {
-        realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? path
     }
 
     static func isBuildOutput(_ path: String, under roots: [String]) -> Bool {

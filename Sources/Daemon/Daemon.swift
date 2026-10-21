@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import GitKit
 import Agents
@@ -17,25 +18,25 @@ public final class Daemon: Sendable {
         var listenFD: Int32 = -1, instanceLock: Int32 = -1
         var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?
     }
-    private let running = Locked(Running())
+    private let running = OSAllocatedUnfairLock(initialState: Running())
     let settings: SettingsStore
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
-    let sleepAssertion = Locked<(id: UInt32, type: String?)>((0, nil))
-    let usageCache = Locked<(at: Date, value: JSONValue)?>(nil)
-    let prCache = Locked<[String: (at: Date, value: JSONValue)]>([:])   // "path@branch" → its PR (github.branchPR)
+    let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
+    let usageCache = OSAllocatedUnfairLock<(at: Date, value: JSONValue)?>(initialState: nil)
+    let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: JSONValue)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.
-    let longContextModels = Locked<Set<String>?>(nil)
+    let longContextModels = OSAllocatedUnfairLock<Set<String>?>(initialState: nil)
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
     let usageIndex: UsageIndex
     /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
-    let agentHomes = Locked((claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot))
+    let agentHomes = OSAllocatedUnfairLock(initialState: (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot))
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
-    let claudeLimits = Locked<[String: (reading: ClaudeLimits.Reading, at: Date)]>([:])
+    let claudeLimits = OSAllocatedUnfairLock<[String: (reading: ClaudeLimits.Reading, at: Date)]>(initialState: [:])
     /// From the agents' own /usage screens, by agent id (UsageProbe).
-    let plans = Locked<[String: PlanState]>([:])
+    let plans = OSAllocatedUnfairLock<[String: PlanState]>(initialState: [:])
     func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
-    let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
+    let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now

@@ -132,7 +132,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         worktree = next
         matches = []; results.reloadData()
         watcher = worktree.flatMap { w in
-            let real = FileWatcher.real(w.path) + "/"
+            let real = (Paths.real(w.path) ?? w.path) + "/"
             return FileWatcher(root: w.path) { [weak self] paths in
                 if paths.contains(where: { Self.affectsTree(String($0.dropFirst($0.hasPrefix(real) ? real.count : 0))) }) { self?.scheduleReload() }
             }

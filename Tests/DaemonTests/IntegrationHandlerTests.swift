@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import Core
 import GitKit
@@ -61,7 +62,7 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
     /// name the branch it had before a switch.
     @Test func aBitbucketPullRequestComesFromTheBranchCheckedOut() async throws {
         let (d, c, _) = try daemon(); defer { d.stop(); clearKeys() }
-        let sent = Locked("")
+        let sent = OSAllocatedUnfairLock(initialState: "")
         StubURL.serve("api.bitbucket.org") { r in
             sent.withLock { $0 = r.body }
             return (201, #"{"links":{"html":{"href":"https://bitbucket.org/w/r/pull-requests/7"}}}"#)

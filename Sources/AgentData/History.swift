@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// One resumable conversation of a CLI coding agent, read from its on-disk transcript.
 public struct AgentSessionInfo: Codable, Sendable, Equatable, Identifiable {
@@ -46,8 +47,7 @@ public enum ClaudeHistory {
 
     /// The folder of `cwd`'s conversations under `root`.
     public static func folder(cwd: String, root: URL = defaultRoot) -> URL {
-        // realpath, not resolvingSymlinksInPath: that one strips "/private", and Claude keeps it (/tmp → /private/tmp).
-        let real = realpath(cwd, nil).map { p in defer { free(p) }; return String(cString: p) } ?? cwd
+        let real = Paths.real(cwd) ?? cwd   // "/private" kept, as Claude does
         return root.appendingPathComponent(String(real.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }))
     }
 

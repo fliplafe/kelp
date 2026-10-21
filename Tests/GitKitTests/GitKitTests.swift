@@ -5,13 +5,9 @@ import Core
 import TestSupport
 
 /// This process's git and Kelp see none of the user's own (TestIsolation). Repos live under its folder.
-let gitTestRoot: String = TestIsolation.root + "/git"
-
 func tempRepo() throws -> String {
-    let d = gitTestRoot + "/" + UUID().uuidString
-    try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+    let d = tmp().path
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
-    try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
     try "a\nb\nc\n".write(toFile: d + "/f.txt", atomically: true, encoding: .utf8)
     try "SECRET=1\n".write(toFile: d + "/.env", atomically: true, encoding: .utf8)
     try Git.run(["add", "f.txt"], cwd: d); try Git.run(["commit", "-qm", "init"], cwd: d)
@@ -206,10 +202,8 @@ func fuzzy(_ path: String, _ query: String) -> Int? { ProjectFiles.fuzzyScore(.i
 }
 
 @Test func snapshotSeesNewAndChangedFiles() throws {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("snap-\(UUID().uuidString.prefix(6))").path
-    try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+    let d = tmp().path
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
-    try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
     try "a\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)
     try Git.run(["add", "."], cwd: d); try Git.run(["commit", "-qm", "init"], cwd: d)
     try "a\nb\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)   // changed before the turn: not the agent's

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import Core
 @testable import Agents
+import TestSupport
 
 @Test func heuristicWaitingVsDone() throws {
     let t0 = Date()
@@ -30,8 +31,7 @@ import Core
 }
 
 @Test func manifestFilesOverridePresets() throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let dir = tmp()
     try JSONEncoder().encode(AgentManifest(id: "mine", name: "Mine", command: "mine-cli")).write(to: dir.appendingPathComponent("mine.json"))
     try Data("{bad".utf8).write(to: dir.appendingPathComponent("bad.json"))
     let all = AgentManifest.load(dir: dir)
@@ -242,7 +242,7 @@ import Core
 }
 
 @Test func agentTrustIsReadFromEachAgentsOwnConfig() throws {
-    let home = FileManager.default.temporaryDirectory.appendingPathComponent("trust-\(UUID().uuidString.prefix(6))").path
+    let home = tmp().path
     let fm = FileManager.default
     for d in ["/p/known/desk", "/p/other", "/.codex", "/.gemini", "/profile"] { try fm.createDirectory(atPath: home + d, withIntermediateDirectories: true) }
     try #"{"projects":{"\#(home)/p/known":{"hasTrustDialogAccepted":true},"\#(home)/p/other":{"hasTrustDialogAccepted":false}}}"#

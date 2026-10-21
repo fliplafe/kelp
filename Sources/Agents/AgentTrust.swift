@@ -1,4 +1,5 @@
 import Foundation
+import Core
 
 /// Folders an agent already trusts, read from its own config (never written). Kelp answers an agent's "trust this
 /// folder?" itself only inside them; anywhere else the question is the user's, as the agent intends (a repository's own
@@ -52,7 +53,7 @@ public enum AgentTrust {
 
     /// Symlinks resolved where the folder exists (/tmp is /private/tmp), no trailing slash.
     public static func normal(_ p: String) -> String {
-        let real = realpath(p, nil).map { r in defer { free(r) }; return String(cString: r) } ?? p
+        let real = Paths.real(p) ?? p
         return real.count > 1 && real.hasSuffix("/") ? String(real.dropLast()) : real
     }
 }

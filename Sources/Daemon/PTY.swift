@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 
 /// Why a terminal couldn't be started: which step failed and with what errno, so "Input/output error" says where.
@@ -235,7 +236,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 /// Closes an fd from a dispatch source's cancel handler, only when asked to (a source cancelled at EOF leaves it open).
 private final class FDCloser: Sendable {
     let fd: Int32
-    private let state = Locked<(asked: Bool, done: Bool)>((false, false))
+    private let state = OSAllocatedUnfairLock<(asked: Bool, done: Bool)>(initialState: (false, false))
     init(_ fd: Int32) { self.fd = fd }
     func ask() { state.withLock { $0.asked = true } }
     func cancelled() { state.withLock { if $0.asked && !$0.done { $0.done = true; close(fd) } } }

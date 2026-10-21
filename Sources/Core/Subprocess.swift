@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Runs a program to its end and collects what it printed: git, gh, ssh, `ps`, an extension's command. One way for all
 /// of them, so each gets the same care:
@@ -74,8 +75,8 @@ public enum Subprocess {
     private final class Reader: Sendable {
         let pipe = Pipe()
         let done = DispatchSemaphore(value: 0)
-        private let collected = Locked(Data())
-        var data: Data { collected.current }
+        private let collected = OSAllocatedUnfairLock(initialState: Data())
+        var data: Data { collected.withLock { $0 } }
         func start() {
             let fd = pipe.fileHandleForReading.fileDescriptor
             Thread.detachNewThread { [pipe, collected, done] in
@@ -84,7 +85,7 @@ public enum Subprocess {
                 var buf = [UInt8](repeating: 0, count: 1 << 16)
                 while true {
                     let n = read(fd, &buf, buf.count)
-                    if n > 0 { collected.withLock { $0.append(contentsOf: buf[0..<n]) } } else if n < 0, errno == EINTR { continue } else { break }
+                    if n > 0 { let chunk = Data(buf[0..<n]); collected.withLock { $0.append(chunk) } } else if n < 0, errno == EINTR { continue } else { break }
                 }
                 withExtendedLifetime(pipe) { done.signal() }
             }

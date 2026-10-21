@@ -1,14 +1,13 @@
 import Foundation
 import Testing
 @testable import GitKit
+import TestSupport
 
 /// What Source Control shows about branches, read from one for-each-ref: checked against what git itself says.
 @Test func branchInfoMatchesGitInEveryState() throws {
     let origin = try tempRepo()
-    let repo = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
-    try Git.run(["clone", "-q", origin, repo], cwd: FileManager.default.temporaryDirectory.path)
-    defer { try? FileManager.default.removeItem(atPath: origin); try? FileManager.default.removeItem(atPath: repo) }
-    try Git.run(["config", "user.email", "t@t"], cwd: repo); try Git.run(["config", "user.name", "t"], cwd: repo)
+    let repo = tmp().path
+    try Git.run(["clone", "-q", origin, repo], cwd: TestIsolation.root)
     func commit(_ dir: String, _ name: String) throws {
         try name.write(toFile: dir + "/" + name, atomically: true, encoding: .utf8)
         try Git.run(["add", name], cwd: dir); try Git.run(["commit", "-qm", name], cwd: dir)
@@ -40,9 +39,7 @@ import Testing
     #expect(b.current == nil && b.head == head && b.upstream == nil)
 
     // Before the first commit: the branch HEAD will be on, no hash.
-    let empty = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
-    try FileManager.default.createDirectory(atPath: empty, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: empty) }
+    let empty = tmp().path
     try Git.run(["init", "-q", "-b", "trunk"], cwd: empty)
     b = try Git.branches(empty)
     #expect(b.current == "trunk" && b.head == nil && b.local.isEmpty)
@@ -91,11 +88,9 @@ import Testing
 }
 
 @Test func theBranchOfAReftableRepository() throws {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString)").path
-    try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: d) }
+    let d = tmp().path
     guard (try? Git.run(["init", "-q", "-b", "trunk", "--ref-format=reftable"], cwd: d)) != nil else { return }   // git before 2.45
     #expect(try String(contentsOfFile: d + "/.git/HEAD", encoding: .utf8).contains(".invalid"))   // the stub the fast path must not believe
-    try Git.run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"], cwd: d)
+    try Git.run(["commit", "-q", "--allow-empty", "-m", "i"], cwd: d)
     #expect(try Git.currentBranch(d) == "trunk")
 }

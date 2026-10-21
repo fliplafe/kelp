@@ -32,7 +32,6 @@ func trustQuestionStandIn() -> String {
     // Someone else pushes a commit to that branch; fetch sees it, pull brings it in.
     let other = tmp().path
     try Git.run(["clone", "-q", "-b", "feat/net", bare, other], cwd: tmp().path)
-    try Git.run(["config", "user.email", "t@t"], cwd: other); try Git.run(["config", "user.name", "t"], cwd: other)
     try "theirs\n".write(toFile: other + "/theirs.txt", atomically: true, encoding: .utf8)
     try Git.run(["add", "."], cwd: other); try Git.run(["commit", "-qm", "theirs"], cwd: other); try Git.run(["push", "-q"], cwd: other)
     _ = try await w.c.call("git.remote", .obj(["id": .string(wt.id), "op": "fetch"]))
@@ -383,7 +382,6 @@ func trustQuestionStandIn() -> String {
 }
 
 @Test func testsRunInTheirOwnHomeWhateverWasInherited() throws {
-    _ = isolatedKeychain
     let home = NSHomeDirectory()
     for (key, real) in [("KELP_HOME", home + "/.kelp"), ("CLAUDE_CONFIG_DIR", home + "/.claude"), ("CODEX_HOME", home + "/.codex")] {
         let v = String(cString: getenv(key))

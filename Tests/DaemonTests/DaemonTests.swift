@@ -4,10 +4,9 @@ import Core
 import GitKit
 @testable import Daemon
 import Agents
-import TestSupport
+@_exported import TestSupport   // tmp() and the rest, for every file of these tests
 
-/// Every test that starts a daemon goes through `tmp()`, which isolates the whole test process first (TestIsolation).
-let isolatedKeychain = TestIsolation.keychainService
+/// Every test that starts a daemon goes through `tmp()` (TestSupport), which isolates the whole test process first.
 let testRoot = TestIsolation.root
 
 /// `ssh` that runs the command here (the host is this Mac). One for the whole test process, made before anything reads
@@ -24,13 +23,6 @@ let localSSH: String = {
     return shim.path
 }()
 
-func tmp() -> URL {
-    _ = isolatedKeychain
-    let u = URL(fileURLWithPath: testRoot + "/" + UUID().uuidString.prefix(8))
-    try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
-    return u
-}
-
 /// What the app does: show the .kelp.yaml (scripts.list), then trust the digest of what was shown.
 
 func trustAsShown(_ c: RPCClient, _ worktreeId: JSONValue) async throws -> JSONValue {
@@ -42,7 +34,6 @@ func trustAsShown(_ c: RPCClient, _ worktreeId: JSONValue) async throws -> JSONV
 func makeRepo() throws -> String {
     let d = tmp().path
     try Git.run(["init", "-q", "-b", "main"], cwd: d)
-    try Git.run(["config", "user.email", "t@t"], cwd: d); try Git.run(["config", "user.name", "t"], cwd: d)
     try "hello\n".write(toFile: d + "/a.txt", atomically: true, encoding: .utf8)
     try "setup: touch SETUP_RAN\n".write(toFile: d + "/.kelp.yaml", atomically: true, encoding: .utf8)
     try "SETUP_RAN\n".write(toFile: d + "/.gitignore", atomically: true, encoding: .utf8)
@@ -495,11 +486,11 @@ final class NoteBox: @unchecked Sendable {
     let every = try #require(Daemon.planProbes.first { $0.agent == "claude" }).every
     d.plans.withLock { $0["claude"] = .init(at: Date()) }
     d.planUsed("claude")
-    let due = try #require(d.plans.current["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
+    let due = try #require(d.plans.withLock { $0 }["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
     #expect(due > 25 && due <= 30)
     d.plans.withLock { $0["claude"]?.at = .distantPast }
     d.planUsed("claude")
-    #expect(d.plans.current["claude"]?.at == .distantPast)
+    #expect(d.plans.withLock { $0 }["claude"]?.at == .distantPast)
 }
 
 /// Twice as many stuck git / gh calls as there are cores still leave the daemon answering (they don't hold the cooperative pool).

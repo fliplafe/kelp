@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 
 /// `settings.json` in the Kelp home: one flat object with dotted keys (VS Code style).
@@ -6,7 +7,7 @@ import Core
 final class SettingsStore: Sendable {
     let url: URL
     /// The settings and the file's date as last read or written; reads and writes of the file happen under it too.
-    private let state = Locked<(values: [String: JSONValue], mtime: Date?)>(([:], nil))
+    private let state = OSAllocatedUnfairLock<(values: [String: JSONValue], mtime: Date?)>(initialState: ([:], nil))
 
     /// config.json keys from before settings.json; read once, when settings.json doesn't exist yet.
     static let legacyKeys = ["hibernateMinutes": "sessions.hibernateMinutes", "keepAwake": "power.keepAwake", "profiles": "accounts.profiles"]
@@ -21,8 +22,8 @@ final class SettingsStore: Sendable {
         }
     }
 
-    var all: JSONValue { .object(state.current.values) }
-    subscript(key: String) -> JSONValue? { state.current.values[key] }
+    var all: JSONValue { .object(state.withLock { $0 }.values) }
+    subscript(key: String) -> JSONValue? { state.withLock { $0 }.values[key] }
     func number(_ key: String) -> Double? { self[key]?.number }
 
     /// nil or .null removes the key.

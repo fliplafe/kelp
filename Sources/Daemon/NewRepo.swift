@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import GitKit
 
@@ -7,7 +8,7 @@ import GitKit
 extension Daemon {
     /// Running clones by the id the app gave them, for `repo.cloneCancel`.
     final class Clones: Sendable {
-        private let running = Locked<[String: Process]>([:])
+        private let running = OSAllocatedUnfairLock<[String: Process]>(initialState: [:])
         func set(_ id: String, _ p: Process?) { running.withLock { $0[id] = p } }
         func cancel(_ id: String) { running.withLock { $0[id] }?.interrupt() }
     }
@@ -79,7 +80,7 @@ extension Daemon {
 
 /// git's stderr during a clone: the last progress line, and what it said when it failed.
 final class CloneLog: Sendable {
-    private let state = Locked<(text: String, sent: Date)>(("", .distantPast))
+    private let state = OSAllocatedUnfairLock<(text: String, sent: Date)>(initialState: ("", .distantPast))
 
     /// The newest complete line, when it's time to show one.
     func add(_ d: Data) -> String? {
@@ -95,7 +96,7 @@ final class CloneLog: Sendable {
 
     /// "fatal: repository 'x' not found" → "Repository 'x' not found".
     var failure: String? {
-        let lines = state.current.text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
+        let lines = state.withLock { $0 }.text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
         guard let f = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.hasPrefix("ERROR:") }) ?? lines.last else { return nil }
         var m = f.replacingOccurrences(of: #"^(fatal|error|ERROR): ?"#, with: "", options: .regularExpression)
         m = m.prefix(1).uppercased() + m.dropFirst()

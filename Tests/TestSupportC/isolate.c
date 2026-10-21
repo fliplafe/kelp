@@ -33,6 +33,9 @@ __attribute__((constructor)) static void kelp_isolate(void) {
     setenv("KELP_KEYCHAIN_SERVICE", service, 1);
     setenv("GIT_CONFIG_GLOBAL", "/dev/null", 1);
     setenv("GIT_CONFIG_NOSYSTEM", "1", 1);
+    // Who the tests' commits are by, with no config to say it.
+    setenv("GIT_AUTHOR_NAME", "t", 1); setenv("GIT_AUTHOR_EMAIL", "t@t", 1);
+    setenv("GIT_COMMITTER_NAME", "t", 1); setenv("GIT_COMMITTER_EMAIL", "t@t", 1);
     setenv("KELP_TEST_ISOLATED", "1", 1);
     // In-process daemons take this test process for Kelp's window (only it may trust a project's commands).
     char exe[PATH_MAX], real[PATH_MAX];

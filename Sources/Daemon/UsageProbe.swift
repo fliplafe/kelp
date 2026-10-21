@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import Agents
 import GitKit
@@ -46,7 +47,7 @@ extension Daemon {
                         try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8)
                     }
                 }
-                plans.withLock { plans in
+                plans.withLock { [readings] plans in
                     if !readings.isEmpty { plans[probe.agent]?.readings = readings; plans[probe.agent]?.readAt = Date() }
                     // A failed probe retries in 2 minutes rather than waiting a whole round.
                     plans[probe.agent]?.at = readings.isEmpty ? Date().addingTimeInterval(120 - probe.every) : Date()
@@ -143,11 +144,11 @@ extension Daemon {
 
 /// Output collected from a probe's PTY.
 private final class ScreenBuffer: Sendable {
-    private let state = Locked<(data: Data, last: Date)>((Data(), Date()))
+    private let state = OSAllocatedUnfairLock<(data: Data, last: Date)>(initialState: (Data(), Date()))
     func append(_ d: Data) { state.withLock { $0.data.append(d); $0.last = Date() } }
     // swiftlint:disable:next optional_data_string_conversion
-    var text: String { String(decoding: state.current.data, as: UTF8.self) }   // lossy on purpose: TUI output
-    var quietFor: TimeInterval { Date().timeIntervalSince(state.current.last) }
+    var text: String { String(decoding: state.withLock { $0 }.data, as: UTF8.self) }   // lossy on purpose: TUI output
+    var quietFor: TimeInterval { Date().timeIntervalSince(state.withLock { $0 }.last) }
     func wait(_ seconds: TimeInterval, until ok: (String) -> Bool) -> Bool {
         let end = Date().addingTimeInterval(seconds)
         while Date() < end {

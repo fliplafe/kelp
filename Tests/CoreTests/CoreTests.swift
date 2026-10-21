@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import Core
 import TestSupport
@@ -223,9 +224,9 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
 }
 
 @Test func lockedKeepsEveryChangeFromManyThreads() async {
-    let n = Locked(0)
+    let n = OSAllocatedUnfairLock(initialState: 0)
     await withTaskGroup(of: Void.self) { g in for _ in 0..<1000 { g.addTask { n.withLock { $0 += 1 } } } }
-    #expect(n.current == 1000)
+    #expect(n.withLock { $0 } == 1000)
 }
 
 /// Two changes to one workspace at once (a rename and a PR link) both stay: neither saves back a copy read before the other.

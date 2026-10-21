@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 import Testing
 @testable import Daemon
@@ -218,7 +219,7 @@ final class Box: @unchecked Sendable {
     #expect(PTY.trampoline != nil)
     var pty: PTY? = try PTY(argv: ["/bin/zsh", "-c", "echo up; exec yes > /dev/null"], cwd: "/tmp", env: [:])
     let pid = try #require(pty?.pid)
-    let out = Locked("")
+    let out = OSAllocatedUnfairLock(initialState: "")
     pty?.onOutput = { d in out.withLock { $0 += String(decoding: d, as: UTF8.self) } }
     pty?.start()
     #expect(try await waitFor(5) { out.withLock { $0 }.contains("up") })

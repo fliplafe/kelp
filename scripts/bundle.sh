@@ -26,7 +26,7 @@ cp -p "$BIN/kelpd" "$BIN/kelp" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # from AppIcon.svg: scripts/icon.sh
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
-for b in "$BIN"/*.bundle(N); do [[ $b == */Krill_* ]] || cp -R "$b" "$APP/Contents/Resources/"; done   # Krill_: left from before the rename
+for b in "$BIN"/*.bundle(N); do cp -R "$b" "$APP/Contents/Resources/"; done
 scripts/strings.sh install "$APP/Contents/Resources"   # English and Russian
 if [ -n "${SIGN_ID:-}" ]; then
   SIGN=(codesign --force --options runtime --timestamp --sign "$SIGN_ID")

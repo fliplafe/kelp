@@ -1,11 +1,12 @@
 import Foundation
+import os
 import Core
 
 /// One lock per session for what changes whether its program runs: waking it, pausing it, stopping it, deleting it.
 /// Per session, not one for the daemon: waiting for one program to exit (up to 3 s) or a slow host doesn't hold up
 /// opening any other session.
 final class WakeLocks: Sendable {
-    private let locks = Locked<[String: NSLock]>([:])
+    private let locks = OSAllocatedUnfairLock<[String: NSLock]>(initialState: [:])
 
     private func lock(_ id: String) -> NSLock {
         locks.withLock { all in

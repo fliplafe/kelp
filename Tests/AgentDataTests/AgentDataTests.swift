@@ -1,12 +1,7 @@
 import Foundation
 import Testing
 @testable import AgentData
-
-private func tmp() throws -> URL {
-    let u = FileManager.default.temporaryDirectory.appendingPathComponent("agentdata-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
-    return u
-}
+import TestSupport
 
 @discardableResult
 private func write(_ dir: URL, _ name: String, _ lines: [Any]) throws -> URL {
@@ -34,7 +29,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func claudeSessionTitles() throws {
-    let root = try tmp(), p = root.appendingPathComponent("-work-demo")
+    let root = tmp(), p = root.appendingPathComponent("-work-demo")
     let long = "  Fix the\n login   bug " + String(repeating: "a", count: 100)
     try write(p, "s1.jsonl", [
         ["type": "mode", "mode": "normal", "sessionId": "s1"],
@@ -68,7 +63,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func claudeLargeFileReadsHeadAndTail() throws {
-    let root = try tmp(), p = root.appendingPathComponent("-work-big")
+    let root = tmp(), p = root.appendingPathComponent("-work-big")
     let pad = String(repeating: "x", count: 1000)
     var lines: [Any] = [user("big task", "2026-10-18T08:00:00.000Z")]
     for i in 0..<300 { lines.append(assistant("m\(i)", "r\(i)", "2026-10-18T09:00:00.000Z", text: pad)) }
@@ -83,7 +78,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func hugeLastLineIsStillRead() throws {
-    let root = try tmp(), p = root.appendingPathComponent("-work-huge")
+    let root = tmp(), p = root.appendingPathComponent("-work-huge")
     let pad = String(repeating: "x", count: 1000)
     var lines: [Any] = [user("huge task", "2026-10-18T08:00:00.000Z")]
     for i in 0..<100 { lines.append(assistant("m\(i)", "r\(i)", "2026-10-18T09:00:00.000Z", text: pad)) }
@@ -96,7 +91,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func usageIndexDedupesAcrossReads() throws {
-    let root = try tmp(), p = root.appendingPathComponent("-work-demo")
+    let root = tmp(), p = root.appendingPathComponent("-work-demo")
     let now = ISO8601DateFormatter().string(from: Date())
     let f = try write(p, "s1.jsonl", [assistant("m1", "r1", now), assistant("m1", "r1", now), assistant("m2", "r2", now, model: "<synthetic>")])
     try write(p, "s1/subagents/agent-a.jsonl", [assistant("m3", "r3", now)])
@@ -142,7 +137,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func codexSessionsAndLimits() throws {
-    let root = try tmp()
+    let root = tmp()
     let id1 = "019f47f3-8f9b-7823-98a3-9195ae68d901", id2 = "019f47f3-8f9b-7823-98a3-9195ae68d902"
     func item(_ role: String, _ text: String, _ ts: String) -> [String: Any] {
         ["timestamp": ts, "type": "response_item", "payload": ["type": "message", "role": role, "content": [["type": role == "user" ? "input_text" : "output_text", "text": text]]]]
@@ -185,7 +180,7 @@ private func assistant(_ id: String, _ req: String, _ ts: String, model: String 
 }
 
 @Test func searchAndResume() throws {
-    let root = try tmp(), p = root.appendingPathComponent("-work-demo")
+    let root = tmp(), p = root.appendingPathComponent("-work-demo")
     try write(p, "a.jsonl", [user("deploy the app", "2026-10-18T10:00:00Z", sid: "a"), assistant("m1", "r1", "2026-10-18T10:01:00Z", text: "the flux capacitor is fine")])
     try write(p, "b.jsonl", [user("write docs", "2026-10-18T11:00:00Z", sid: "b"), assistant("m2", "r2", "2026-10-18T11:01:00Z", text: "nothing here")])
     let s = ClaudeHistory.sessions(root: root)

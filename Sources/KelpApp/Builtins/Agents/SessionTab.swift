@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import os
 import WorkbenchKit
 
 /// An agent or terminal session as a tab (libghostty via PaneView; the daemon keeps the process).
@@ -72,9 +73,9 @@ final class SessionTab: TabContent {
     /// Limit: blocks up to 300 ms on the daemon round trip; a slower daemon closes the tab as before.
     private static func busy(_ sid: String) -> String? {
         guard let c = AppModel.shared.client else { return nil }   // the client answers on its own thread, not the main one
-        let done = DispatchSemaphore(value: 0), answer = Locked<String?>(nil)
+        let done = DispatchSemaphore(value: 0), answer = OSAllocatedUnfairLock<String?>(initialState: nil)
         Task.detached { let name = try? await c.call("session.busy", .obj(["id": .string(sid)])).string; answer.withLock { $0 = name }; done.signal() }
         _ = done.wait(timeout: .now() + 0.3)
-        return answer.current   // under its lock: a late answer can't be written while this reads
+        return answer.withLock { $0 }   // under its lock: a late answer can't be written while this reads
     }
 }
