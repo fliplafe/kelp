@@ -142,6 +142,20 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     #expect(zip(numbers, numbers.dropFirst()).allSatisfy { $0 < $1 })
 }
 
+/// Modes a program set before the replayed megabyte still reach a new terminal: Codex's alternate screen and mouse
+/// reporting (else the wheel scrolls the terminal, not Codex), in their order; synchronized output doesn't.
+@Test func attachRestoresModesSetBeforeTheReplay() async throws {
+    let (d, c, w, _) = try await project(); defer { d.stop() }
+    let modes = "printf '\\033[?1049h\\033[?1000;1006h\\033[?1007l\\033[?2026h'; head -c 3000000 /dev/zero | tr '\\0' x; echo; echo tail-mark; sleep 30"
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": .string(modes)]), as: Session.self)
+    #expect(try await waitFor(30) { try await c.call("session.read", .obj(["id": .string(s.id), "bytes": 200])).string?.contains("tail-mark") == true })
+    let h = try await c.call("session.attach", .obj(["id": .string(s.id)]))
+    let history = String(bytes: Data(base64Encoded: h["history"]?.string ?? "") ?? Data(), encoding: .utf8) ?? ""
+    let restored = history.prefix { $0 != "x" }
+    #expect(restored.contains("\u{1B}[?1049h\u{1B}[?1000h\u{1B}[?1006h\u{1B}[?1007l"))
+    #expect(!restored.contains("2026"))
+}
+
 /// A session's log keeps what it printed across a pause (see hibernateAndWake) and stops growing at `logLimit`.
 @Test func historyLogStaysBounded() async throws {
     let (d, c, w, root) = try await project(); defer { d.stop() }

@@ -14,6 +14,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     var record: Session
     let pty: PTY
     var ring = Data()
+    /// The modes in effect where the ring starts (what it dropped had set them).
+    private var ringModes = TerminalModes()
     var detector: StatusDetector
     private let log: FileHandle?
     private var logSize = 0
@@ -155,7 +157,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         ring.append(d)
         // A copy, at twice the limit: removeFirst on Data only re-slices, and the storage kept every byte the session
         // ever printed (300 MB of output held 300 MB). The slack makes the copy rare.
-        if ring.count > 2 * Self.ringLimit { ring = Data(ring.suffix(Self.ringLimit)) }
+        if ring.count > 2 * Self.ringLimit { ringModes.read(ring.dropLast(Self.ringLimit)); ring = Data(ring.suffix(Self.ringLimit)) }
         try? log?.write(contentsOf: d); logSize += d.count
         if logSize > Self.logLimit { trimLogToItsTail() }
         let text = String(decoding: d, as: UTF8.self)
@@ -439,12 +441,15 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
 
     func tail(_ n: Int) -> Data { lock.lock(); defer { lock.unlock() }; return ring.suffix(min(max(0, n), Self.ringLimit)) }
     /// The history, `conn` gets the output from here on. `send` runs under the lock with that history, so it goes out
-    /// before any of the live output that follows.
+    /// before any of the live output that follows. It starts by setting the modes the cut-off part had set (Codex's
+    /// alternate screen and mouse reporting): without them the new terminal keeps the wheel and clicks to itself.
     @discardableResult
     func attach(_ conn: Int, send: (Data) -> Void = { _ in }) -> Data {
         lock.lock(); defer { lock.unlock() }
         attached.insert(conn)
-        let history = TerminalReplies.withoutQueries(ring.suffix(Self.ringLimit)); send(history); return history
+        var modes = ringModes
+        modes.read(ring.dropLast(Self.ringLimit))
+        let history = modes.restore + TerminalReplies.withoutQueries(ring.suffix(Self.ringLimit)); send(history); return history
     }
     func detach(_ conn: Int) { lock.lock(); attached.remove(conn); lock.unlock() }
     var snapshot: Session { lock.lock(); defer { lock.unlock() }; return record }
