@@ -152,9 +152,5 @@ struct UsageView: View {
         }
     }
 
-    private static func until(_ ts: Double) -> String {
-        let s = max(0, ts - Date().timeIntervalSince1970)
-        let left = s >= 86400 ? String(localized: "\(Int(s) / 86400)d \(Int(s) % 86400 / 3600)h") : String(localized: "\(Int(s) / 3600)h \(Int(s) % 3600 / 60)m")
-        return String(localized: "in \(left)")
-    }
+    private static func until(_ ts: Double) -> String { String(localized: "in \(shortSpan(ts - Date().timeIntervalSince1970, units: 2))") }
 }

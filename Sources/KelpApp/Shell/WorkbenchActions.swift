@@ -20,7 +20,7 @@ extension Workbench {
             shared.visits = Array(shared.visits.prefix(shared.visitAt + 1).suffix(49)) + [id]
             shared.visitAt = shared.visits.count - 1
         }
-        Perf.measure("workspace") { window?.showWorkspace(id) }
+        window?.showWorkspace(id)
     }
 
     /// ⌃⌘← / ⌃⌘→: the workspace shown before / after this one (closed ones are skipped).

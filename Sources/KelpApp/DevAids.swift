@@ -1,13 +1,10 @@
 import AppKit
-import TerminalKit
 import WebKit
 
 /// Developer aids driven by environment variables; inert in normal use.
 ///   KELP_SNAPSHOT=/x.png  render the window to a PNG and quit (no screen-recording permission needed)
-///   KELP_SNAPSHOT_MODE / _WORKTREE / _OPEN / _RUN / _WINDOW / _DELAY  set the scene first
+///   KELP_SNAPSHOT_WORKTREE / _OPEN / _INSPECTOR / _SIZE / _SHEET / _WINDOW / _DELAY  set the scene first
 extension AppDelegate {
-    /// Dev aid: KELP_SNAPSHOT=/path.png writes the window contents and quits (works without screen-recording permission).
-    /// KELP_SNAPSHOT_MODE=Review|Terminals picks the mode first.
     /// KELP_HANG_WATCH=1: logs every main-thread stall over 150 ms (what users feel as freezes).
     static func watchHangs() {
         guard ProcessInfo.processInfo.environment["KELP_HANG_WATCH"] != nil else { return }
@@ -60,7 +57,7 @@ extension AppDelegate {
         }
     }
 
-    /// KELP_TYPE, KELP_CLICK, KELP_TERM_HOVER, KELP_MOVE, KELP_SWITCH: real input events, as a user would make them.
+    /// KELP_TYPE, KELP_CLICK, KELP_SWITCH: real input events, as a user would make them.
     private func driveInput(_ env: [String: String]) {
         if let keys = env["KELP_TYPE"] { typeKeys(keys) }
         // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
@@ -70,20 +67,6 @@ extension AppDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 0.8) { [self] in click(text: String(t)) }
             }
         }
-        // KELP_TERM_HOVER="app.py:2": the pointer rests on that text in a terminal (path previews).
-        #if canImport(GhosttyKit)
-        if let t = env["KELP_TERM_HOVER"], let v = main.window?.contentView {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                guard let g = v.allSubviews(of: GhosttyTerminalView.self).first, let p = g.location(of: t),
-                      let e = NSEvent.mouseEvent(with: .mouseMoved, location: g.convert(p, to: nil), modifierFlags: [], timestamp: 0,
-                                                 windowNumber: v.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)
-                      else { print("TERM_HOVER no", t); return }
-                g.mouseMoved(with: e); print("TERM_HOVER", t, p)
-            }
-        }
-        #endif
-        // KELP_MOVE="Workspace 1": the pointer comes to rest on that text (hover cards): a mouse-moved event for whatever tracks it.
-        if let t = env["KELP_MOVE"], let w = main.window, let v = w.contentView { Self.move(t, in: v, window: w) }
         // KELP_SWITCH="a,b,a": switch workspaces (by name or branch) every 0.7 s, timing each switch.
         if let names = env["KELP_SWITCH"]?.split(separator: ",") {
             for (i, n) in names.enumerated() {
@@ -161,22 +144,6 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
-    /// The nearest view above the label `text` that tracks the mouse gets mouseEntered, like a real pointer would send.
-    static func move(_ text: String, in root: NSView, window: NSWindow) {
-        guard let label = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text }) else { print("MOVE no", text); return }
-        let p = label.convert(NSPoint(x: label.bounds.midX, y: label.bounds.midY), to: nil)
-        guard let e = NSEvent.mouseEvent(with: .mouseMoved, location: p, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
-                                         context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { return }
-        var v: NSView? = label
-        while let x = v {
-            for a in x.trackingAreas where a.options.contains(.mouseMoved) {
-                (a.owner as? NSResponder)?.mouseMoved(with: e); print("MOVE", text, "→", type(of: a.owner as Any)); return
-            }
-            v = x.superview
-        }
-        print("MOVE nothing tracks", text)
-    }
-
     static func hover(_ text: String, in root: NSView, window: NSWindow) {
         guard let label = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text }) else { print("HOVER no", text); return }
         var v: NSView? = label

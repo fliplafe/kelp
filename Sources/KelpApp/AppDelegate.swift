@@ -18,12 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         Self.watchHangs()
         LatinShortcuts.install()
-        // Kelp no longer ships example extensions; remove the copies older versions wrote into its home.
-        try? FileManager.default.removeItem(at: Paths.root.appendingPathComponent("bundled-extensions"))
-        Perf.measure("registry") { ExtensionRegistry.shared.reload() }
-        Perf.measure("window") { main = MainWindowController() }
-        Perf.measure("show") { main.showWindow(nil) }
-        notifier.onOpen = { id in Workbench.focus(session: id) }
+        ExtensionRegistry.shared.reload()
+        main = MainWindowController()
+        main.showWindow(nil)
         ScratchWindow.shared.registerHotKey()
         notifier.start()
         buildMenu()

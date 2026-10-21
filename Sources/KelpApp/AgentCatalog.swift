@@ -41,7 +41,7 @@ enum AgentCatalog {
 
     /// The agent's real icon when there is one (AgentIcons), else its initial on a tile of the same shape; a terminal's symbol.
     @MainActor static func icon(_ id: String?, size: CGFloat = 16) -> NSImage? {
-        guard let id, id != "shell", id != "custom" else { return .symbol(symbol(id)) }
+        guard let id, id != "shell", id != "custom" else { return .symbol(id == "custom" ? "apple.terminal" : "terminal") }
         guard let real = AgentIcons.shared.image(id)?.copy() as? NSImage else { return IconTile.letter(name(id), color: brand[id], size: size) }
         real.size = NSSize(width: size, height: size)
         return real
@@ -50,21 +50,6 @@ enum AgentCatalog {
     @MainActor private static let brand: [String: NSColor] = ["claude": NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1),
                                                               "codex": NSColor(white: 0.15, alpha: 1), "grok": NSColor(white: 0.15, alpha: 1),
                                                               "cursor": NSColor(white: 0.15, alpha: 1), "gemini": .systemBlue]
-
-    /// A few agents have a fitting symbol; any other one gets its initial on a filled tile, the shape of the real logos.
-    static func symbol(_ id: String?) -> String {
-        switch id {
-        case "claude": "sparkle"
-        case "codex": "chevron.left.forwardslash.chevron.right"
-        case "gemini": "star.circle"
-        case "opencode": "curlybraces"
-        case "cursor": "cursorarrow.rays"
-        case "amp": "bolt"
-        case "shell", nil: "terminal"
-        case "custom": "apple.terminal"
-        case let id?: id.first.flatMap { $0.isASCII && $0.isLetter ? "\($0.lowercased()).square.fill" : nil } ?? "cpu"
-        }
-    }
 }
 
 /// Which agent CLIs run on this Mac: found on the login shell's PATH and answering `--version` — a shim whose binary

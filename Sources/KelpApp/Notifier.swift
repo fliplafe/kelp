@@ -5,7 +5,6 @@ import Core
 /// Banner + dock badge when an agent finishes or waits; clicking opens the right pane.
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    var onOpen: ((String) -> Void)?
     /// macOS lets Kelp show banners (false: they're off in System Settings).
     private var allowed = true
     private let center: UNUserNotificationCenter? = Bundle.main.bundleIdentifier != nil ? .current() : nil   // needs an app bundle
@@ -95,10 +94,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let line = Self.firstSentence(reply)
             s.summary = line
             _ = try? await c.call("session.annotate", .obj(["id": .string(s.id), "summary": .string(line)]))
-            post(s); return
         }
-        // Other agents: no summary; the state says enough.
-        post(s)
+        post(s)   // other agents: no summary; the state says enough
     }
 
     /// "I added `mul(a, b)` to `calc.py`. It returns…" → "Added mul(a, b) to calc.py".
@@ -118,7 +115,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func post(_ s: Session) {
-        // No banner if the user is already looking at that pane.
         // No banner if the user is already looking at that pane (what it asks stays marked until it's answered).
         if NSApp.isActive, (NSApp.delegate as? AppDelegate)?.isViewing(session: s.id) == true { return }
         let wt = AppModel.shared.worktree(s.worktreeId)
@@ -148,11 +144,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard let id = r.notification.request.content.userInfo["session"] as? String else { return }
         let action = r.actionIdentifier
         await MainActor.run {
-            guard action == "allow" || action == "deny" else { NSApp.activate(); self.onOpen?(id); return }
+            guard action == "allow" || action == "deny" else { NSApp.activate(); Workbench.focus(session: id); return }
             Task {
                 // Answered without Kelp coming forward; if the menu is gone (answered in the terminal), show the agent.
                 let ok = await AppModel.shared.call("session.choose", .obj(["id": .string(id), "answer": .string(action)]))?.bool ?? false
-                if !ok { NSApp.activate(); self.onOpen?(id) }
+                if !ok { NSApp.activate(); Workbench.focus(session: id) }
             }
         }
     }

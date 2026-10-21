@@ -4,7 +4,7 @@ import Core
 /// The first launch, in one sheet: the agents found on this Mac and which one New Agent starts, a test notification
 /// (so a silent banner setting shows up now, not when an agent is waiting), and Add Project.
 @MainActor
-final class OnboardingSheet: NSWindowController {
+final class OnboardingSheet: SheetController {
     private static var shown: OnboardingSheet?
     private let agents = NSStackView()
     private let pick = NSPopUpButton()
@@ -18,11 +18,11 @@ final class OnboardingSheet: NSWindowController {
     }
 
     static func show() {
-        guard shown == nil, let w = Workbench.window?.window ?? NSApp.mainWindow else { return }
-        let s = OnboardingSheet(window: NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 10), styleMask: [.titled], backing: .buffered, defer: true))
-        guard let sheet = s.window else { return }
-        s.build(); shown = s
-        w.beginSheet(sheet) { _ in shown = nil; UserDefaults.standard.set(true, forKey: "onboarding.done") }
+        guard shown == nil else { return }
+        let s = OnboardingSheet(width: 460)
+        s.build()
+        guard s.begin(ended: { shown = nil; UserDefaults.standard.set(true, forKey: "onboarding.done") }) else { return }
+        shown = s
     }
 
     private func build() {
@@ -99,6 +99,4 @@ final class OnboardingSheet: NSWindowController {
             self?.notifyStatus.textColor = ok ? .secondaryLabelColor : .systemRed
         }
     }
-
-    override func close() { if let w = window { w.sheetParent?.endSheet(w) } }
 }

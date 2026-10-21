@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import Core
 import GitKit
 
@@ -202,11 +201,6 @@ final class SidebarCell: NSTableCellView {
         window?.makeFirstResponder(title)
         title.currentEditor()?.selectAll(nil)
     }
-}
-
-/// Bottom of the sidebar: agent limits, when any agent reports them. (Add Project is beside the search above.)
-struct SidebarFooterView: View {
-    var body: some View { UsageView() }
 }
 
 /// The source list puts a project's workspaces level with its name; set in, they read as the project's.

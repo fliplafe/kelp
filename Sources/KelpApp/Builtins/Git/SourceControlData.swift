@@ -126,7 +126,7 @@ extension SourceControlController {
         guard let wid = worktreeId, let c = AppModel.shared.client else { return }
         let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)]))
         guard wid == worktreeId else { return }
-        if let r, let list = Perf.measure("graph decode", { try? r["commits"]?.decode([GraphCommit].self) }) {
+        if let r, let list = try? r["commits"]?.decode([GraphCommit].self) {
             commits = list; more = r["more"]?.bool == true
             let before = unpushed
             unpushed = Git.unpushed(list, remotes: Set(info?.remote ?? []))
@@ -136,7 +136,7 @@ extension SourceControlController {
             graphWidth = GraphView.width(lanes: min(lanes + 1, GraphView.maxLanes))
         }
         loadingMore = false
-        Perf.measure("graph rows") { rebuild() }
+        rebuild()
         // Landed once: a later rebuild (a commit unfolded) shows them as they are now.
         if !landing.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.landing = [:] } }
     }

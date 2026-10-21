@@ -116,12 +116,7 @@ final class EditorArea: NSViewController {
     }
 
     /// Where a tab dropped at the editor area's outer edge will go: half of the whole area along that side.
-    private let outerHint: NSView = {
-        let v = NSView(); v.wantsLayer = true; v.isHidden = true
-        v.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-        v.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; v.layer?.borderWidth = 1; v.layer?.cornerRadius = 6
-        return v
-    }()
+    private let outerHint = GroupView.dropHint()
     private func showOuterHint(_ edge: NSRectEdge?) {
         guard let edge else { outerHint.isHidden = true; return }
         if outerHint.superview !== view { view.addSubview(outerHint, positioned: .above, relativeTo: nil) }

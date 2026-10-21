@@ -101,33 +101,28 @@ final class AgentIcons {
     }
 
     /// More than a fifth of the logo is see-through: it's a mark, not an app icon's square.
-    private static func transparent(_ img: NSImage) -> Bool {
-        let n = 16
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                                         isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
-        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        img.draw(in: NSRect(x: 0, y: 0, width: n, height: n)); NSGraphicsContext.restoreGraphicsState()
-        var clear = 0
-        for x in 0..<n { for y in 0..<n where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) < 0.3 { clear += 1 } }
-        return clear > n * n / 5
-    }
+    private static func transparent(_ img: NSImage) -> Bool { pixels(img).filter { $0.alphaComponent < 0.3 }.count > 16 * 16 / 5 }
 
     /// Average lightness of the opaque pixels — nil for colorful or fully opaque artwork, which needs no tile.
     private static func luminance(_ img: NSImage) -> CGFloat? {
-        let n = 16
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                                         isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
-        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        img.draw(in: NSRect(x: 0, y: 0, width: n, height: n)); NSGraphicsContext.restoreGraphicsState()
         var sum: CGFloat = 0, count: CGFloat = 0, transparent = 0, saturated: CGFloat = 0
-        for x in 0..<n { for y in 0..<n {
-            guard let c = rep.colorAt(x: x, y: y) else { continue }
+        for c in pixels(img) {
             if c.alphaComponent < 0.3 { transparent += 1; continue }
             sum += (c.redComponent + c.greenComponent + c.blueComponent) / 3; count += 1
             saturated += max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent)
-        } }
+        }
         // A logo on transparency and without much color is monochrome: it needs contrast behind it.
-        guard count > 0, transparent > n * n / 5, saturated / count < 0.25 else { return nil }
+        guard count > 0, transparent > 16 * 16 / 5, saturated / count < 0.25 else { return nil }
         return sum / count
+    }
+
+    /// The logo drawn 16×16, pixel by pixel.
+    private static func pixels(_ img: NSImage) -> [NSColor] {
+        let n = 16
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return [] }
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        img.draw(in: NSRect(x: 0, y: 0, width: n, height: n)); NSGraphicsContext.restoreGraphicsState()
+        return (0..<n).flatMap { x in (0..<n).compactMap { rep.colorAt(x: x, y: $0) } }
     }
 }

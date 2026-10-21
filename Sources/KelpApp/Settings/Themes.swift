@@ -60,7 +60,7 @@ final class ThemeManager {
     /// What terminals are painted with now (Ghostty's own config when the theme leaves it to Ghostty).
     var terminalBackground: NSColor {
         let hex = lastTerminal?.background ?? (lastTerminal?.useGhosttyConfig != false ? GhosttyConfig.load()?.background : nil)
-        return hex.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } ?? .textBackgroundColor
+        return hex.flatMap { NSColor(hex: $0) } ?? .textBackgroundColor
     }
 
     var isDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
@@ -119,5 +119,13 @@ final class ThemeManager {
             CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font; CodeEditor.showMinimap = minimap
             editorRevision += 1
         }
+    }
+}
+
+extension NSColor {
+    /// "#rrggbb", as themes and Ghostty's config write colours.
+    convenience init?(hex: String) {
+        guard let c = GhosttyConfig.rgb(hex.trimmingCharacters(in: .whitespaces)) else { return nil }
+        self.init(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
     }
 }

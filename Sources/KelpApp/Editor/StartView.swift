@@ -51,7 +51,7 @@ final class StartView: NSView, NSTextFieldDelegate {
         var others = [StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") }]
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
-            let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(StartRow.symbols)
+            let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
             others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.current) })
         }
         let card = StartCard(rows: rows, others: others)
@@ -206,15 +206,4 @@ private final class StartRow: NSView {
     override func mouseExited(with e: NSEvent) { hover = false }
     override func mouseUp(with e: NSEvent) { if bounds.contains(convert(e.locationInWindow, from: nil)) { action() } }
     override func accessibilityPerformPress() -> Bool { action(); return true }
-
-    /// "shift+cmd+b" → "⇧⌘B".
-    static func symbols(_ key: String) -> String? {
-        guard let k = KeySpec(key) else { return nil }
-        var s = ""
-        if k.mods.contains(.control) { s += "⌃" }
-        if k.mods.contains(.option) { s += "⌥" }
-        if k.mods.contains(.shift) { s += "⇧" }
-        if k.mods.contains(.command) { s += "⌘" }
-        return s + k.key.uppercased()
-    }
 }

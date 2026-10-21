@@ -48,8 +48,8 @@ final class RowBadges {
         guard let s, s.totalAdded + s.totalRemoved > 0 else { return nil }
         return changes(added: s.totalAdded, removed: s.totalRemoved)
     }
-    static func changes(added: Int, removed: Int, font: NSFont = .uiDigits(11, weight: .regular)) -> NSAttributedString {
-        let t = NSMutableAttributedString()
+    static func changes(added: Int, removed: Int) -> NSAttributedString {
+        let t = NSMutableAttributedString(), font = NSFont.uiDigits(11, weight: .regular)
         for (text, n, color) in [("+\(added)", added, NSColor.textGreen), ("−\(removed)", removed, NSColor.textRed)] where n > 0 {
             t.append(NSAttributedString(string: (t.length > 0 ? " " : "") + text, attributes: [.font: font, .foregroundColor: color]))
         }

@@ -367,68 +367,6 @@
       }
     },
     "%lld%%": {},
-    "%lldd": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld д"
-          }
-        }
-      }
-    },
-    "%lldd %lldh": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$lldd %2$lldh"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld д %lld ч"
-          }
-        }
-      }
-    },
-    "%lldh": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld ч"
-          }
-        }
-      }
-    },
-    "%lldh %lldm": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$lldh %2$lldm"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld ч %lld мин"
-          }
-        }
-      }
-    },
-    "%lldm": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld мин"
-          }
-        }
-      }
-    },
     "+%lld": {},
     "1 running agent stops. Files in the project are not touched.": {
       "localizations": {
@@ -1443,16 +1381,6 @@
         }
       }
     },
-    "Close pane": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Закрыть панель"
-          }
-        }
-      }
-    },
     "Close without committing": {
       "localizations": {
         "ru": {
@@ -2323,16 +2251,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Черновик"
-          }
-        }
-      }
-    },
-    "Drag to move this pane; drop on an edge of another pane to split": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Перетащите, чтобы переместить панель; отпустите у края другой панели, чтобы разделить"
           }
         }
       }

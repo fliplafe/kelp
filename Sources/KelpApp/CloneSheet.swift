@@ -4,7 +4,7 @@ import Core
 /// Clone a repository by URL, in a sheet that does the work in place: git's progress, its error in the sheet, and
 /// Cancel stops it and removes the half-made folder.
 @MainActor
-final class CloneSheet: NSWindowController, NSPathControlDelegate {
+final class CloneSheet: SheetController, NSPathControlDelegate {
     private let field = NSTextField()
     private let place = NSPathControl()
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -15,16 +15,14 @@ final class CloneSheet: NSWindowController, NSPathControlDelegate {
 
     /// `start`: filled in and begun at once (the snapshot dev aid; a background app's sheet gets no keys).
     static func show(start text: String? = nil) {
-        guard let w = Workbench.window?.window ?? NSApp.mainWindow else { return }
         let s = CloneSheet()
-        guard let sheet = s.window else { return }
+        guard s.begin(ended: { shown = nil }) else { return }
         shown = s
-        w.beginSheet(sheet) { _ in shown = nil }
         if let text { s.field.stringValue = text; s.start() }
     }
 
     private init() {
-        super.init(window: NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 10), styleMask: [.titled], backing: .buffered, defer: true))
+        super.init(width: 480)
         build()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -103,9 +101,5 @@ final class CloneSheet: NSWindowController, NSPathControlDelegate {
     @objc private func stop() {
         if let id = running { status.stringValue = String(localized: "Cancelling…"); Task { await AppModel.shared.call("repo.cloneCancel", .obj(["id": .string(id)])) }; return }
         close()
-    }
-
-    override func close() {
-        if let w = window { w.sheetParent?.endSheet(w) }
     }
 }

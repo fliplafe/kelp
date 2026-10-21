@@ -63,7 +63,7 @@ enum DeclarativeExtension {
     /// A reload starts over (nil: every extension; uninstalled ones go); an extension turned off takes its views along.
     static func forget(_ id: String? = nil) { views = id.map { id in views.filter { $0.value.0.id != id } } ?? [:] }
 
-    static func load(_ folder: URL, builtin: Bool = false, checkRequirements: Bool = true) -> (info: ExtensionInfo, contributions: Contributions) {
+    static func load(_ folder: URL, checkRequirements: Bool = true) -> (info: ExtensionInfo, contributions: Contributions) {
         let fallbackId = folder.lastPathComponent
         do {
             let own = folder.appendingPathComponent("extension.json"), vscode = folder.appendingPathComponent("package.json")
@@ -71,7 +71,7 @@ enum DeclarativeExtension {
                 ? try JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: vscode)).manifest
                 : try JSONDecoder().decode(ExtManifest.self, from: Data(contentsOf: own))
             var info = ExtensionInfo(id: m.id, name: m.name, description: m.description ?? "", version: m.version ?? "", icon: m.icon ?? "puzzlepiece.extension",
-                                     builtin: builtin, path: folder, enabled: true)
+                                     builtin: false, path: folder, enabled: true)
             if checkRequirements, let missing = (m.requires ?? []).first(where: { (try? LoginPath.resolve($0)) == nil }) {
                 info.unavailable = String(localized: "Needs `\(missing)` — not found on this Mac.")
                 return (info, Contributions())

@@ -137,11 +137,7 @@ final class AppModel {
     /// otherwise ask, because restarting ends running sessions. Returns true when a restart is in progress.
     private func checkDaemonVersion(_ c: RPCClient) async -> Bool {
         guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return false }
-        let info: DaemonInfo.Result
-        do { info = try await c.call(DaemonInfo()) } catch let e as RPCError where e.code == RPCError.methodNotFound.code {
-            let live = ((try? await c.call("session.list").array) ?? []).filter { $0["status"]?.string != "exited" }.count
-            info = .init(path: "", binaryMTime: nil, pid: 0, liveSessions: live)   // predates daemon.info
-        } catch { return false }
+        guard let info = try? await c.call(DaemonInfo()) else { return false }
         // Older daemons don't report binaryMTime (and their "mtime" was read from disk, i.e. already the new file): restart them.
         let samePath = info.path == bundledDaemon.resolvingSymlinksInPath().path
         guard !(samePath && abs((info.binaryMTime ?? 0) - mine) < 1), !restartAttempted else { return false }
@@ -276,32 +272,24 @@ final class AppModel {
 
     /// Errors show as a banner, never a blocking alert.
     @discardableResult
-    func call(_ method: String, _ params: JSONValue? = nil) async -> JSONValue? {
-        guard let c = client else { Banner.show(Self.noService, style: .error); return nil }
-        do { return try await c.call(method, params) }
-        catch {
-            Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error)
-            return nil
-        }
-    }
+    func call(_ method: String, _ params: JSONValue? = nil) async -> JSONValue? { Self.banner(await tryCall(method, params)) }
     @discardableResult
-    func call<M: RPCMethod>(_ m: M) async -> M.Result? {
-        guard let c = client else { Banner.show(Self.noService, style: .error); return nil }
-        do { return try await c.call(m) }
-        catch { Banner.show((error as? RPCError)?.message ?? error.localizedDescription, style: .error); return nil }
+    func call<M: RPCMethod>(_ m: M) async -> M.Result? { Self.banner(await tryCall(m)) }
+    private static func banner<T>(_ r: (value: T?, error: String?)) -> T? {
+        if let e = r.error { Banner.show(e, style: .error) }
+        return r.value
     }
 
     /// Like `call`, but a failure comes back as its message (for actions that offer a way out) instead of a banner.
     func tryCall(_ method: String, _ params: JSONValue? = nil) async -> (value: JSONValue?, error: String?) {
         guard let c = client else { return (nil, Self.noService) }
-        do { return (try await c.call(method, params), nil) }
-        catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
+        do { return (try await c.call(method, params), nil) } catch { return (nil, Self.message(error)) }
     }
     func tryCall<M: RPCMethod>(_ m: M) async -> (value: M.Result?, error: String?) {
         guard let c = client else { return (nil, Self.noService) }
-        do { return (try await c.call(m), nil) }
-        catch { return (nil, (error as? RPCError)?.message ?? error.localizedDescription) }
+        do { return (try await c.call(m), nil) } catch { return (nil, Self.message(error)) }
     }
+    static func message(_ e: Error) -> String { (e as? RPCError)?.message ?? e.localizedDescription }
 
     /// Replays history, then streams live output into `sink`.
     /// The daemon sends the history before any live output, but the two reach the main actor by different hops: live

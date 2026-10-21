@@ -333,11 +333,7 @@ private struct ExtensionsSettings: View {
 }
 
 extension Color {
-    init?(hex: String) {
-        var h = hex.trimmingCharacters(in: .whitespaces); if h.hasPrefix("#") { h.removeFirst() }
-        guard h.count == 6, let v = UInt32(h, radix: 16) else { return nil }
-        self = Color(red: Double(v >> 16 & 0xff) / 255, green: Double(v >> 8 & 0xff) / 255, blue: Double(v & 0xff) / 255)
-    }
+    init?(hex: String) { guard let c = NSColor(hex: hex) else { return nil }; self.init(nsColor: c) }
     var hex: String {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
         return String(format: "#%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))

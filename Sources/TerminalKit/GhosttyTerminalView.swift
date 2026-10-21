@@ -361,16 +361,6 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         defer { ghostty_surface_free_text(surface, &t) }
         return String(cString: t.text)
     }
-    /// Where `text` is on screen, in this view (dev aids and tests rest the pointer on it).
-    public func location(of text: String) -> NSPoint? {
-        guard let surface else { return nil }
-        let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
-        let lines = visibleText.components(separatedBy: "\n")
-        guard let row = lines.firstIndex(where: { $0.contains(text) }), let r = lines[row].range(of: text) else { return nil }
-        let col = lines[row].distance(from: lines[row].startIndex, to: r.lowerBound) + 1
-        return NSPoint(x: 6 + (Double(col) + 0.5) * Double(s.cell_width_px) / scale, y: bounds.height - 4 - (Double(row) + 0.5) * Double(s.cell_height_px) / scale)
-    }
-
     /// Type text as if pasted by the user (used for drops into the prompt).
     public func insert(_ text: String) {
         guard let surface else { return }

@@ -9,11 +9,9 @@ import WorkbenchKit
 @MainActor
 final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate, NSSearchFieldDelegate {
     final class Node: NSObject {
-        /// `section`: "Needs You" / "Pinned" over the projects; `needs`: an agent listed there (it's also under its workspace).
-        enum Kind { case project(String), workspace(String), agent(String), section(String), needs(String) }
-        let kind: Kind
+        let kind: SidebarItem.Kind
         var children: [Node] = []
-        init(_ k: Kind) { kind = k }
+        init(_ k: SidebarItem.Kind) { kind = k }
         var key: String {
             switch kind {
             case .project(let id): "p:" + id
@@ -46,18 +44,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     var query = ""
     let card = HoverCard()
     /// The search field's menu (its magnifier): which workspaces to show. The one on screen always stays.
-    enum Filter: String, CaseIterable {
-        case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request"
-        var tree: SidebarFilter {
-            switch self {
-            case .all: .all
-            case .working: .working
-            case .needsYou: .needsYou
-            case .withPR: .withPR
-            }
-        }
-    }
-    var filter = Filter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
+    var filter = SidebarFilter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
     static var pinned: [String] {
         get { UIState.strings("sidebar.pinned") }
         set { UIState["sidebar.pinned"] = try? .from(newValue) }
@@ -86,7 +73,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             MainActor.assumeIsolated { self?.keepOpenInView() }
         }
 
-        let footer = NSHostingView(rootView: SidebarFooterView())
+        let footer = NSHostingView(rootView: UsageView())   // agent limits, when any agent reports them
         footer.sizingOptions = [.intrinsicContentSize]
         let v = NSView()
         search.placeholderString = String(localized: "Workspace or agent"); search.delegate = self; search.controlSize = .small
@@ -152,14 +139,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     private func setFilterMenu() {
         let m = NSMenu()
-        for f in Filter.allCases {
+        for f in SidebarFilter.allCases {
             let i = m.add(loc(f.rawValue)) { [weak self] in self?.setFilter(f) }
             i.state = f == filter ? .on : .off
         }
         search.searchMenuTemplate = m
         search.placeholderString = filter == .all ? String(localized: "Workspace or agent") : String(localized: "Search \(loc(filter.rawValue))")
     }
-    private func setFilter(_ f: Filter) {
+    private func setFilter(_ f: SidebarFilter) {
         filter = f; UserDefaults.standard.set(f.rawValue, forKey: "sidebar.filter")
         setFilterMenu(); refresh()
     }
@@ -192,20 +179,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue.sessions)
         tree.pinned = Self.pinned
         tree.query = query
-        tree.filter = filter.tree
+        tree.filter = filter
         tree.current = Workbench.shared.workspaceId
         tree.statusLabel = { $0.label }
         tree.hasPR = { w in (RowBadges.folder(workspace: w.id) ?? RowBadges.folder(project: w.repoId)).map { RowBadges.shared.prs[$0.id] != nil } ?? false }
         tree.stableOrder = { [unowned self] in needsOrder($0) }
         func node(_ i: SidebarItem) -> Node {
-            let n: Node
-            switch i.kind {
-            case .project(let id): n = Node(.project(id))
-            case .workspace(let id): n = Node(.workspace(id))
-            case .agent(let id): n = Node(.agent(id))
-            case .section(let s): n = Node(.section(s))
-            case .needs(let id): n = Node(.needs(id))
-            }
+            let n = Node(i.kind)
             n.children = i.children.map(node)
             return n
         }

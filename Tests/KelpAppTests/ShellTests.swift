@@ -7,7 +7,7 @@ import Testing
     func ago(_ s: Double) -> String { shortAgo(now.addingTimeInterval(-s), now: now) }
     #expect(ago(5) == "now" && ago(59) == "now")
     #expect(ago(60) == "1m" && ago(3599) == "59m")
-    #expect(ago(3600) == "1h" && ago(86399) == "23h")
+    #expect(ago(3600) == "1h" && ago(82799) == "23h" && ago(86399) == "1d")   // the one part shown is rounded
     #expect(ago(86400 * 3) == "3d")
     #expect(shortAgo(now.addingTimeInterval(60), now: now) == "now")   // a clock a little ahead never shows a negative age
     #expect(shortAgo(nil) == "")

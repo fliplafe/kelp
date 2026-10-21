@@ -3,7 +3,10 @@ import Core
 
 /// What the sidebar lists, decided without a window: projects → workspaces → agents, narrowed by a filter and a search,
 /// with what needs you and what you pinned lifted above the projects.
-public enum SidebarFilter: Sendable, CaseIterable { case all, working, needsYou, withPR }
+/// The raw values are the menu's English titles (and what UserDefaults keeps).
+public enum SidebarFilter: String, Sendable, CaseIterable {
+    case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request"
+}
 
 public struct SidebarItem: Equatable, Sendable {
     /// `section`: "Needs You" / "Pinned"; `needs`: an agent listed in the first of them (it's also under its workspace).

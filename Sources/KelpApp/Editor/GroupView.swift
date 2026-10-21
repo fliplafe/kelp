@@ -6,7 +6,7 @@ final class GroupView: NSView {
     let groupId: String
     let strip = TabStrip()
     private let container = NSView()
-    private let hint = NSView()
+    private let hint = GroupView.dropHint()
     private weak var shown: NSView?
     private let veil = Veil()
     private let ring = Veil()
@@ -38,9 +38,7 @@ final class GroupView: NSView {
         veil.wantsLayer = true; veil.isHidden = true
         ring.wantsLayer = true; ring.isHidden = true; ring.layer?.borderWidth = 2; ring.layer?.cornerRadius = 5
         for v in [strip, container, veil, ring] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        hint.wantsLayer = true; hint.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-        hint.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; hint.layer?.borderWidth = 1
-        hint.layer?.cornerRadius = 6; hint.isHidden = true; addSubview(hint)
+        addSubview(hint)
         NSLayoutConstraint.activate([
             strip.topAnchor.constraint(equalTo: topAnchor), strip.leadingAnchor.constraint(equalTo: leadingAnchor), strip.trailingAnchor.constraint(equalTo: trailingAnchor),
             container.topAnchor.constraint(equalTo: strip.bottomAnchor), container.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -53,6 +51,14 @@ final class GroupView: NSView {
         registerForDraggedTypes([.kelpTab])
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Where a dropped tab will go (here and at the editor area's outer edges): accent fill, accent border.
+    static func dropHint() -> NSView {
+        let v = NSView(); v.wantsLayer = true; v.isHidden = true
+        v.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+        v.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; v.layer?.borderWidth = 1; v.layer?.cornerRadius = 6
+        return v
+    }
 
     func show(_ v: NSView?) {
         guard v !== shown || v?.superview !== container else { return }

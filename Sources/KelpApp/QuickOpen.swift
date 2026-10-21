@@ -125,7 +125,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     /// Themes side by side in an 18 pt tile: each its background with two lines of "text" in its foreground and blue.
     static func swatch(_ themes: [Theme]) -> NSImage {
-        func color(_ hex: String?) -> NSColor { hex.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } ?? .gray }
+        func color(_ hex: String?) -> NSColor { hex.flatMap { NSColor(hex: $0) } ?? .gray }
         return NSImage(size: NSSize(width: 18, height: 18), flipped: true) { r in
             let tile = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
             NSGraphicsContext.saveGraphicsState(); tile.addClip()
@@ -297,13 +297,11 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         return parts.count > 1 && parts.allSatisfy({ p in words.contains { $0.hasPrefix(p) } }) ? 40 : nil
     }
 
+    /// An uppercase key equivalent means ⇧ too.
     static func shortcut(_ i: NSMenuItem) -> String {
-        var s = ""
-        let m = i.keyEquivalentModifierMask
-        if m.contains(.control) { s += "⌃" }; if m.contains(.option) { s += "⌥" }
-        if m.contains(.shift) || i.keyEquivalent != i.keyEquivalent.lowercased() { s += "⇧" }; if m.contains(.command) { s += "⌘" }
-        let k = ["\r": "↩", "\t": "⇥", "\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→"][i.keyEquivalent] ?? i.keyEquivalent.uppercased()
-        return s + k
+        var m = KeySpec.Modifiers(i.keyEquivalentModifierMask)
+        if i.keyEquivalent != i.keyEquivalent.lowercased() { m.insert(.shift) }
+        return KeyBindings.display(KeySpec(key: i.keyEquivalent, mods: m))
     }
 
     @objc private func filterAction() { filter() }

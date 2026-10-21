@@ -12,8 +12,7 @@ final class Workbench {
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.
     var focusedTab: String?
     var focusedFile: String?
-    var inspectorPanel: String = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_INSPECTOR"]
-        ?? UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {
+    var inspectorPanel: String = UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {
         didSet { UserDefaults.standard.set(inspectorPanel, forKey: "inspectorPanel") }
     }
     /// Workspaces in the order they were shown, for Back / Forward (⌃⌘← / ⌃⌘→), like a browser's history.

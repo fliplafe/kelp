@@ -5,7 +5,7 @@ import Core
 /// there from a list, as an open panel does (double-click goes in, repositories are marked). Open takes the selected
 /// folder, else the one listed; one that isn't in a repository yet gets `git init` first, and the button says so.
 @MainActor
-final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewDataSource, NSTableViewDelegate {
+final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSource, NSTableViewDelegate {
     /// The host, as after `ssh` (the hosts in ~/.ssh/config to pick from).
     private let host = NSComboBox()
     /// The folder listed; a path typed here is gone to on Return.
@@ -22,11 +22,9 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
 
     /// `start`: "host" or "host:/path", connected to at once (the snapshot dev aid; a background app's sheet gets no keys).
     static func show(start text: String? = nil) {
-        guard let w = Workbench.window?.window ?? NSApp.mainWindow else { return }
         let s = RemoteSheet()
-        guard let sheet = s.window else { return }
+        guard s.begin(ended: { shown = nil }) else { return }
         shown = s
-        w.beginSheet(sheet) { _ in shown = nil }
         if let text {
             let hp = text.split(separator: ":", maxSplits: 1).map(String.init)
             s.host.stringValue = hp[0]; s.list(hp[0], hp.count > 1 ? hp[1] : "~")
@@ -36,7 +34,7 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
     private init() {
         grid = NSGridView(views: [[NSTextField(labelWithString: String(localized: "Host:")), host],
                                   [NSTextField(labelWithString: String(localized: "Folder:")), path]])
-        super.init(window: NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 10), styleMask: [.titled], backing: .buffered, defer: true))
+        super.init(width: 480)
         build()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -172,9 +170,5 @@ final class RemoteSheet: NSWindowController, NSComboBoxDelegate, NSTableViewData
         cell.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
         return cell
-    }
-
-    override func close() {
-        if let w = window { w.sheetParent?.endSheet(w) }
     }
 }
