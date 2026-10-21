@@ -180,6 +180,16 @@
         }
       }
     },
+    "%@ to the Right": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ справа"
+          }
+        }
+      }
+    },
     "%@ wants to merge %@%@%@": {
       "localizations": {
         "en": {
@@ -454,6 +464,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ссылка просит открыть %@ как проект."
+          }
+        }
+      }
+    },
+    "Agents Side by Side": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты рядом"
           }
         }
       }
@@ -4703,6 +4724,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открыть настройки"
+          }
+        }
+      }
+    },
+    "Open to the Side": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть рядом"
           }
         }
       }

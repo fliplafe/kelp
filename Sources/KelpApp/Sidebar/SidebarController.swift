@@ -330,7 +330,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard !syncing, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node else { return }
         switch node.kind {
         case .workspace(let id): Workbench.show(workspace: id)
-        case .agent(let id), .needs(let id): Workbench.focus(session: id)
+        // ⌥-click, as in Xcode: in a pane of its own to the right.
+        case .agent(let id), .needs(let id):
+            if NSApp.currentEvent?.modifierFlags.contains(.option) == true { AgentActions.openToTheSide(id) } else { Workbench.focus(session: id) }
         case .project, .section: break
         }
     }

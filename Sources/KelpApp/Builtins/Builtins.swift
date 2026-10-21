@@ -77,6 +77,7 @@ enum Builtins {
             cmd("terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
             cmd("terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
             cmd("terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
+            cmd("agents.sideBySide", "Agents Side by Side", "ctrl+cmd+t") { editor?.tileAgents() },
             cmd("agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
             cmd("agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
             cmd("agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() },

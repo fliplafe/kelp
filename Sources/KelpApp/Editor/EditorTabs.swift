@@ -104,6 +104,17 @@ extension EditorArea {
         render(); focusSelected()
     }
 
+    /// ⌃⌘T: every agent here in a pane of its own, side by side; terminals, commands and files share one more pane.
+    func tileAgents() {
+        let agents = layout.allTabs.filter { t in
+            TabURI.scheme(t.uri) == "session" && !["shell", "custom"].contains(AppModel.shared.session(TabURI.body(t.uri))?.agent ?? "shell")
+        }
+        guard !agents.isEmpty else { NSSound.beep(); return }
+        zoomed = nil
+        layout.tile(agents.map(\.id))
+        render(); focusSelected()
+    }
+
     func tabMenu(_ id: String) -> NSMenu {
         let m = NSMenu()
         m.add(String(localized: "Split Right")) { [weak self] in self?.select(id); self?.splitFocused(.right) }
@@ -151,6 +162,12 @@ extension EditorArea {
                 self?.newAgent(a.id)
             }
             item.image = AgentCatalog.icon(a.id)
+            // With ⌥ held: the new agent in a pane of its own to the right.
+            let right = m.add(String(localized: "\(a.name) to the Right")) { [weak self] in
+                if let group { self?.layout.focused = group }
+                self?.newAgent(a.id, split: .right)
+            }
+            right.image = item.image; right.isAlternate = true; right.keyEquivalentModifierMask = .option
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }

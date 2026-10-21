@@ -129,7 +129,7 @@ extension AppDelegate {
         b.add(view, "-", "view.biggerText")
         // ⌘= enlarges too, as in Ghostty, VS Code and Safari (+ is the shifted =).
         b.hide(view.add("Bigger Text", key: "=") { Self.run("view.biggerText") })
-        b.add(view, "view.smallerText", "view.defaultTextSize", "-", "terminal.splitRight", "terminal.splitDown", "view.maximizePane", "view.equalizePanes")
+        b.add(view, "view.smallerText", "view.defaultTextSize", "-", "terminal.splitRight", "terminal.splitDown", "agents.sideBySide", "view.maximizePane", "view.equalizePanes")
         let panes = NSMenu(title: "Select Pane")
         b.add(panes, "view.nextPane", "view.previousPane", "-", "view.paneLeft", "view.paneRight", "view.paneAbove", "view.paneBelow")
         view.setSubmenu(panes, for: view.addItem(withTitle: "Select Pane", action: nil, keyEquivalent: ""))
