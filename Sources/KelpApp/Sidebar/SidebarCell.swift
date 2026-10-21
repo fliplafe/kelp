@@ -125,7 +125,7 @@ final class SidebarCell: NSTableCellView {
         case .project(let id):
             let r = m.repo(id)
             let missing = r.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false
-            icon.image = missing ? .symbol("questionmark.folder") : r.map { ProjectIcon.image(for: $0.path) }
+            if let r, !missing { ProjectIcon.show(r.path, in: icon) } else { icon.image = missing ? .symbol("questionmark.folder") : nil }
             icon.contentTintColor = .secondaryLabelColor
             title.stringValue = r?.name ?? ""
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path

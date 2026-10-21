@@ -91,7 +91,8 @@ final class WorkspaceSwitcher {
         let lead = agents.filter { SidebarCell.shownStatus($0) == top }.max { ($0.statusAt ?? $0.createdAt) < ($1.statusAt ?? $1.createdAt) }
         let mark = StatusMark(size: 14); mark.status = top; mark.unread = agents.contains { SidebarCell.shownStatus($0) == top && $0.unread }
 
-        let icon = NSImageView(image: m.repo(w.repoId).map { ProjectIcon.image(for: $0.path) } ?? .symbol("folder"))
+        let icon = NSImageView(image: .symbol("folder"))
+        if let r = m.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) }
         icon.widthAnchor.constraint(equalToConstant: 20).isActive = true; icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
         let name = label(w.displayName, .systemFont(ofSize: 14, weight: .medium))
         let repo = m.repo(w.repoId)

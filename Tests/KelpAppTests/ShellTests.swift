@@ -1,6 +1,21 @@
+import AppKit
 import Foundation
 import Testing
 @testable import KelpApp
+
+/// A project's icon is looked for off the main thread: its initial shows at once, the icon once it's found.
+@MainActor @Test func aProjectsIconIsFoundOffTheMainThread() async throws {
+    let dir = testHome + "/icon-\(UUID().uuidString.prefix(6))"
+    try FileManager.default.createDirectory(atPath: dir + "/public", withIntermediateDirectories: true)
+    let svg = #"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="10" fill="red"/></svg>"#
+    try svg.write(toFile: dir + "/public/favicon.svg", atomically: true, encoding: .utf8)
+    let view = NSImageView()
+    ProjectIcon.show(dir, in: view)
+    let initial = try #require(view.image)
+    for _ in 0..<100 where view.image === initial { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(view.image !== initial && view.image?.size == NSSize(width: 32, height: 32))
+    #expect(ProjectIcon.image(for: dir) === view.image)   // found once
+}
 
 @Test func agesAreAsShortAsARowAllows() {
     let now = Date(timeIntervalSince1970: 1_000_000)

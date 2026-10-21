@@ -72,6 +72,30 @@ extension SharedAppModel {
         #expect(await tab.close())   // nothing edited: closes without asking
     }
 
+    /// A keystroke at the end of a big file doesn't compare all of it with the saved text on the main thread (that took
+    /// 110 ms for 3 MB, each one); a letter typed over and back still clears the dot, compared off it.
+    @Test func typingInABigFileDoesntCompareItAll() async throws {
+        let line = "let label = \"größe\" // a line of code\n"
+        let p = try file(String(repeating: line, count: 3_000_000 / line.utf8.count))
+        let tab = FileTab(uri: TabURI.file(p))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = tab.view
+        let tv = try #require(tab.editor?.controller.textView)
+        let end = tv.textStorage.length - 10
+        let t0 = Date()
+        for _ in 0..<5 { tv.replaceCharacters(in: NSRange(location: end, length: 0), with: "x") }
+        #expect(Date().timeIntervalSince(t0) < 0.15)
+        #expect(tab.isEdited)
+        #expect(await tab.save())
+        #expect(!tab.isEdited)
+        let was = (tv.string as NSString).substring(with: NSRange(location: end, length: 1))
+        tv.replaceCharacters(in: NSRange(location: end, length: 1), with: "y")   // the saved length, other text
+        #expect(tab.isEdited)
+        tv.replaceCharacters(in: NSRange(location: end, length: 1), with: was)   // the saved text again
+        for _ in 0..<100 where tab.isEdited { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!tab.isEdited)
+    }
+
     /// A 60 MB log or a pipe isn't read whole on the main thread: the tab says why instead (a pipe used to block forever,
     /// /dev/zero to eat memory). A terminal path that's a pipe isn't a file to preview either.
     @Test func hugeFilesAndPipesAreNotReadIntoTheEditor() throws {

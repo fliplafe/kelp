@@ -18,12 +18,19 @@ public enum FileSync {
         case missing
     }
 
+    /// The same text unit for unit, as the file's bytes would be. Not `==`: the editor's text is an NSString, which Swift
+    /// compares against a Swift string character by character, normalizing — 170 ms for 5 MB, on every keystroke.
+    /// `buffer` first: the editor's copy compares fastest as the receiver.
+    public static func same(_ buffer: String, _ other: String) -> Bool {
+        buffer.utf16.count == other.utf16.count && (buffer as NSString).isEqual(to: other)
+    }
+
     /// ⌘S, autosave, closing: `saved` is what the buffer was last loaded from or written as.
     public static func save(buffer: String, saved: String, disk: Disk) -> Action {
-        guard buffer != saved else { return .none }
+        guard !same(buffer, saved) else { return .none }
         switch disk {
         case .missing: return .missing
-        case .present(let text?) where text != saved: return .conflict(text)
+        case .present(let text?) where !same(text, saved): return .conflict(text)
         case .present(nil): return .conflict("")   // not readable as text: someone wrote it another way; never written over unasked
         case .present: return .write
         }
@@ -33,7 +40,7 @@ public enum FileSync {
     public static func diskChanged(buffer: String, saved: String, disk: Disk) -> Action {
         switch disk {
         case .missing: return .missing
-        case .present(let text?) where text != saved: return buffer == saved ? .follow(text) : .conflict(text)
+        case .present(let text?) where !same(text, saved): return same(buffer, saved) ? .follow(text) : .conflict(text)
         case .present(nil): return .conflict("")   // no longer text (another encoding, binary): ask, as save does
         case .present: return .none
         }

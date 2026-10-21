@@ -45,7 +45,9 @@ public final class CodeEditor: NSObject {
 
     /// Replace contents (e.g. the file changed on disk) without echoing a change event.
     public func setText(_ s: String) {
-        guard s != controller.text else { return }
+        // Unit for unit, not `==`: that compares the text view's NSString character by character (170 ms for 5 MB).
+        let now = controller.text
+        guard now.utf16.count != s.utf16.count || !(now as NSString).isEqual(to: s) else { return }
         let cursors = controller.cursorPositions
         suppress = true; controller.setText(s); suppress = false
         controller.setCursorPositions(cursors.map { CursorPosition(line: $0.start.line, column: $0.start.column) })

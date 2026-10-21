@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import os
 import WorkbenchKit
 
 /// The app's side of language servers, which run in the daemon (one per project and server command, shared by every
@@ -59,6 +60,7 @@ final class LSPManager {
     /// `retry` runs once the user trusts it).
     func open(root: String, path: String, text: String, retry: @escaping @MainActor () -> Void) async -> Bool {
         guard enabled, let lang = language(path), let server = lang.server else { return false }
+        await sent()   // after the file's close from a tab just closed, never before it
         do {
             _ = try await AppModel.shared.get(LSPOpen(root: root, path: path, languageId: lang.id, command: server.command, args: server.args, text: text))
             return true
@@ -72,9 +74,23 @@ final class LSPManager {
         }
     }
 
-    /// The file's whole text, as typed (in order: notifications on one connection).
-    func change(root: String, path: String, text: String) { AppModel.shared.client?.notify(LSPChange(root: root, path: path, text: text)) }
-    func close(root: String, path: String) { AppModel.shared.client?.notify(LSPClose(root: root, path: path)) }
+    /// The file's whole text, as typed. Encoded and sent off the main thread (5 MB took 140 ms to encode on it), from one
+    /// queue, so they stay in order with each other and with the close; one still waiting takes the newer text instead.
+    func change(root: String, path: String, text: String) {
+        guard let c = AppModel.shared.client else { return }
+        let key = root + "\n" + path
+        let waiting = changes.withLock { q in defer { q[key] = LSPChange(root: root, path: path, text: text) }; return q[key] != nil }
+        guard !waiting else { return }
+        outbox.async { [changes] in if let m = changes.withLock({ $0.removeValue(forKey: key) }) { c.notify(m) } }
+    }
+    func close(root: String, path: String) {
+        guard let c = AppModel.shared.client else { return }
+        outbox.async { c.notify(LSPClose(root: root, path: path)) }
+    }
+    private let outbox = DispatchQueue(label: "dev.kelp.lsp-changes")
+    private let changes = OSAllocatedUnfairLock<[String: LSPChange]>(initialState: [:])
+    /// Once what's queued is on its way.
+    private func sent() async { await withCheckedContinuation { c in outbox.async { c.resume() } } }
 
     /// Completions at a 1-based position; none when the server can't say (quietly: they're offered while typing).
     func completion(root: String, path: String, line: Int, column: Int) async -> [CodeCompletion] {

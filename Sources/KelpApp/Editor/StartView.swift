@@ -16,7 +16,8 @@ final class StartView: NSView, NSTextFieldDelegate {
     init(worktree w: Worktree) {
         super.init(frame: .zero)
         let repo = AppModel.shared.repo(w.repoId)
-        let icon = NSImageView(image: repo.map { ProjectIcon.image(for: $0.path) } ?? .symbol("folder"))
+        let icon = NSImageView(image: .symbol("folder"))
+        if let repo { ProjectIcon.show(repo.path, in: icon) }
         icon.imageScaling = .scaleProportionallyUpOrDown; icon.symbolConfiguration = .init(pointSize: 40, weight: .light)
         icon.contentTintColor = .secondaryLabelColor
         let title = NSTextField(labelWithString: w.displayName)
