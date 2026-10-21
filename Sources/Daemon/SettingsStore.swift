@@ -75,7 +75,7 @@ extension Daemon {
     /// themselves the wrong way round (the app takes each event as the whole of the settings).
     func settingsChanged() {
         settingsEvents.async { [self] in
-            notify("event.settings", .obj(["settings": settings.all]))
+            notify(SettingsEvent(settings: settings.values))
             applyKeepAwake()
         }
     }

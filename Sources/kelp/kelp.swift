@@ -77,18 +77,18 @@ func show<T: Encodable>(_ v: T) { show((try? JSONValue.from(v)) ?? .null) }
 func jsonOrText(_ s: String) -> JSONValue { (try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))) ?? .string(s) }
 
 /// The workspace the current directory is in; an agent's own one (KELP_SESSION) when several share the folder.
-func currentWorktree(_ c: RPCClient) async throws -> JSONValue {
-    guard let w = try await IDE.workspace(cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }) else {
+func currentWorktree(_ c: RPCClient) async throws -> Worktree {
+    guard let w = try await IDE.workspace(cwd: FileManager.default.currentDirectoryPath, client: c) else {
         throw RPCError.invalidParams("not inside a kelp worktree")   // throws: callers use try? to fall back
     }
     return w
 }
-func currentWorktreeID(_ c: RPCClient) async throws -> String { try await currentWorktree(c)["id"]?.string ?? "" }
+func currentWorktreeID(_ c: RPCClient) async throws -> String { try await currentWorktree(c).id }
 func currentRepoID(_ c: RPCClient) async throws -> String {
     if let r = flag("--repo") { return r }
     let cwd = FileManager.default.currentDirectoryPath
     if let id = try await c.call(RepoList()).first(where: { IDE.inside(cwd, $0.path) })?.id { return id }
-    if let id = (try? await currentWorktree(c))?["repoId"]?.string { return id }
+    if let id = (try? await currentWorktree(c))?.repoId { return id }
     fail("no repo here; pass --repo <id> or run `kelp repo add`")
 }
 
@@ -168,7 +168,7 @@ func plist() -> String {
         let focus = has("--focus") || sub == "--focus"
         guard let target = sub.flatMap({ $0 == "--focus" ? nil : $0 }) ?? args.first else { fail("open <path|url> [--split right|down] [--focus]") }
         let cwd = FileManager.default.currentDirectoryPath
-        show(try await IDE.open(target, split: split, cwd: cwd, focus: focus, call: { try await c.call($0, $1) }))
+        show(try await IDE.open(target, split: split, cwd: cwd, focus: focus, client: c))
     }
 
     /// `status`, `repo …`, `worktree …`.
@@ -196,7 +196,7 @@ func plist() -> String {
         case ("worktree", "list"): show(try await c.call(WorktreeList(archived: has("--all") ? true : nil)))
         case ("worktree", "current"): show(try await currentWorktree(c))
         case ("worktree", "note"):
-            _ = try await c.call(WorktreeNote(id: try await currentWorktree(c)["id"]?.string ?? "", note: args.joined(separator: " ")))
+            _ = try await c.call(WorktreeNote(id: try await currentWorktreeID(c), note: args.joined(separator: " ")))
         case ("worktree", "remove"), ("worktree", "archive"):
             let force = has("--force"), drop = has("--drop-commits")   // two separate losses, each asked for by name
             let id = try await resolve(c, args.first ?? "", "worktree.list")
@@ -213,11 +213,11 @@ func plist() -> String {
             var p = SessionCreate(agent: flag("--agent"), command: flag("--cmd"))
             // A session outside every workspace would run where no tab or sidebar row shows it.
             if let w = flag("--worktree") { p.worktreeId = try await resolve(c, w, "worktree.list") }
-            else if let w = try? await currentWorktree(c) { p.worktreeId = w["id"]?.string }
+            else if let w = try? await currentWorktree(c) { p.worktreeId = w.id }
             else { fail("not inside a Kelp project: run it in a project's folder or pass --worktree <id> (see `kelp status`)") }
             let s = try await c.call(p), id = s.id
             // Its tab beside yours; without the app it runs all the same (its row shows once the app opens).
-            if let split { _ = try? await IDE.open("session:\(id)", split: split, cwd: FileManager.default.currentDirectoryPath, call: { try await c.call($0, $1) }) }
+            if let split { _ = try? await IDE.open("session:\(id)", split: split, cwd: FileManager.default.currentDirectoryPath, client: c) }
             guard wait else { show(try .from(s)); return }
             print(id)   // for `kelp terminal read`, once it ends
             exit(Int32(try await waitFor(c, id, timeout: nil) { $0.status == .exited }?.exitCode ?? 1))
@@ -282,13 +282,13 @@ func plist() -> String {
             for x in try await c.call(GitHubIssues(repoId: try await currentRepoID(c), filter: flag("--filter"))) { print("#\(x.number)  \(x.title)  \(x.url)") }
         case ("github", "checks"):
             let w = try await currentWorktree(c)
-            let pr = args.first.flatMap(Int.init) ?? w["prNumber"]?.int ?? 0
-            for x in try await c.call(GitHubChecks(worktreeId: w["id"]?.string, pr: pr)) { print("\(x.bucket)\t\(x.name)\t\(x.link)") }
+            let pr = args.first.flatMap(Int.init) ?? w.prNumber ?? 0
+            for x in try await c.call(GitHubChecks(worktreeId: w.id, pr: pr)) { print("\(x.bucket)\t\(x.name)\t\(x.link)") }
         case ("github", "pr-create"):
-            let wid = try await currentWorktree(c)["id"]?.string ?? ""
+            let wid = try await currentWorktreeID(c)
             show(.string(try await c.call(GitHubPRCreate(worktreeId: wid, title: flag("--title"), draft: has("--draft") ? true : nil)).url))
         case ("github", "pr-merge"):
-            let wid = try await currentWorktree(c)["id"]?.string ?? ""
+            let wid = try await currentWorktreeID(c)
             show(try .from(try await c.call(GitHubPRMerge(worktreeId: wid, method: flag("--method") ?? "squash"))))
         case ("github", "issue"), ("linear", "start"):   // kelp github issue 123 | kelp linear start ENG-123
             let repo = try await currentRepoID(c)
@@ -339,10 +339,9 @@ func plist() -> String {
     }
 
     static func ext(_ sub: String?, _ c: RPCClient) async throws {
-        let call: IDE.Call = { try await c.call($0, $1) }
         switch sub {
         case "list":
-            for e in try await IDE.extensions(call: call).array ?? [] {
+            for e in try await IDE.extensions(client: c).array ?? [] {
                 let tags = [e["builtin"]?.bool == true ? "(built-in)" : nil, e["enabled"]?.bool == false ? "(disabled)" : nil].compactMap { $0 }
                 print(([e["id"]?.string ?? "", e["name"]?.string ?? ""] + tags).joined(separator: "\t"))
             }
@@ -353,7 +352,7 @@ func plist() -> String {
             print("created \(folder.path)\nguide:   \(folder.deletingLastPathComponent().appendingPathComponent("EXTENSIONS.md").path)")
         case "enable", "disable":
             guard let id = args.first else { fail("ext enable|disable <id>") }
-            try await IDE.setExtension(id, enabled: sub == "enable", call: call)
+            try await IDE.setExtension(id, enabled: sub == "enable", client: c)
         case "reload": show(try .from(try await c.call(UICommand(id: "extensions.reload"))))
         case "path": print(Paths.extensions.path)
         default: print(usage)

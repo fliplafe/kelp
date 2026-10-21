@@ -16,7 +16,7 @@ extension RepoAdd: Handled {
         let root = try Git.root(of: path)
         if let r = try d.store.repos().first(where: { $0.path == root }) { return r }
         let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
-        try d.store.save(r); try d.syncMainWorkspaces(); d.notify("event.changed", "repo")
+        try d.store.save(r); try d.syncMainWorkspaces(); d.notify(ChangedEvent.repo)
         return r
     }
 }
@@ -38,7 +38,7 @@ extension ScratchEnsure: Handled {
         guard let repo = r, let w = try d.store.worktrees(repo: repo.id).first(where: { !$0.archived }) else {
             throw RPCError.internalError("no scratch workspace")
         }
-        d.notify("event.changed", "repo")
+        d.notify(ChangedEvent.repo)
         return w
     }
 }
@@ -49,7 +49,7 @@ extension RepoRelocate: Handled {
         let root = try Git.root(of: path), old = r.path
         r.path = root; try d.store.save(r)
         for w in try d.store.worktrees(repo: r.id) where w.path == old { try d.store.update(Worktree.self, w.id) { $0.path = root } }
-        d.notify("event.changed", "repo")
+        d.notify(ChangedEvent.repo)
         return r
     }
 }
@@ -60,7 +60,7 @@ extension RepoRemove: Handled {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let desks = Set(try d.store.worktrees(repo: r.id).map(\.id))
         for s in try d.store.sessions() where desks.contains(s.worktreeId ?? "") { d.discard(s) }
-        try d.store.delete(r); d.notify("event.changed", "repo")
+        try d.store.delete(r); d.notify(ChangedEvent.repo)
         return Done()
     }
 }
@@ -98,7 +98,7 @@ extension WorktreeCreate: Handled {
             let s = try d.spawn(cwd: path, manifest: .custom(cmd), worktreeId: w.id, o)
             result.setupSession = s.id
         }
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         return result
     }
 }
@@ -133,7 +133,7 @@ extension WorktreeRemove: Handled {
         }
         for s in try d.store.sessions() where s.worktreeId == w.id { d.discard(s) }
         try d.store.delete(w)
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         return Done()
     }
 }
@@ -141,7 +141,7 @@ extension WorktreeRemove: Handled {
 extension WorktreeUnarchive: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard try d.store.update(Worktree.self, id, { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         return Done()
     }
 }

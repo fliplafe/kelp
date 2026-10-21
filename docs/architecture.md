@@ -94,17 +94,21 @@ else a `NotificationCenter` name (`kelpGitChanged`: after a git action the windo
   connections and the 2 Hz ticker (session ticks, keep-awake, pausing idle agents, settings.json polling) have their own
   queues.
 - **Ordering.** Replies to one connection can come back in any order, as in JSON-RPC and LSP; clients match them by id.
-  What is only right in the order it was sent runs on the reader thread, one after another: keystrokes
-  (`session.write`), `session.resize`, `state.set` and `ui.publish`. A session's status changes run in order on its
-  own queue (`LiveSession.inOrder`). `session.stream` turns its connection into a raw byte pipe; the history goes out
-  under the session's lock, so no live output gets ahead of it.
+  What is only right in the order it was sent says so on its type (`Handled.inOrder`: keystrokes `session.write`,
+  `session.resize`, `state.set`, `ui.publish`) and, sent as a notification, runs on the reader thread, one after
+  another. A session's status changes run in order on its own queue (`LiveSession.inOrder`). `session.stream`, the one
+  method the reader knows by name, turns its connection into a raw byte pipe; the history goes out under the session's
+  lock, so no live output gets ahead of it. Events (`event.*`) are typed too (`RPCEvent` in Core), one encode each.
 - **Writes to a client** leave in order from that connection's own queue. A client whose writes make no progress for
   30 s is hung up on, and so is one more than 256 MiB behind.
 - **Locks**, outermost first: a session's wake lock (`WakeLocks`; several are taken in id order) → `SessionTable` →
   `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another is taken.
-  `deskLock` makes listing desks and adding a missing one a single step, and `trustLock` guards trusted-configs.json.
+  `deskLock` makes listing desks and adding a missing one a single step (taken once, never again inside), and
+  `trustLock` guards trusted-configs.json.
 - **Deadlines.** Every git, gh and ssh run has a time limit (300 s by default) and is stopped with its children
-  (`Subprocess`). Language-server requests time out. Calls from the app wait for their reply.
+  (`Subprocess`). A call waits for its reply as long as its method says (`RPCMethod.timeout`: 330 s, just past that;
+  `repo.clone` waits for good, its Cancel stops it), so a reply that never comes fails the call instead of hanging it.
+  Language-server requests time out.
 - **Checked by** DaemonTests, which run against a real daemon with real PTYs and git, also under Thread Sanitizer in CI.
 
 ## What Kelp trusts (threat model)

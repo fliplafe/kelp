@@ -185,7 +185,7 @@ extension TaskFromIssue: AsyncHandled {
         }
         await d.moveLinear(w, to: .inProgress)
         await d.moveJira(w, toName: "progress", category: "indeterminate")
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         // An untrusted .kelp.yaml's setup didn't run: said, as worktree.create says it, so the caller can ask.
         return Result(worktree: w, session: s, setupNeedsTrust: wv["setupNeedsTrust"]?.bool == true)
     }

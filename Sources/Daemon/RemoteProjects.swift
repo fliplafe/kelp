@@ -79,7 +79,7 @@ extension RepoAddRemote: Handled {
         }
         try mark(RemoteHost(host: host, path: top))
         let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
-        try d.store.save(r); try d.syncMainWorkspaces(); d.notify("event.changed", "repo")
+        try d.store.save(r); try d.syncMainWorkspaces(); d.notify(ChangedEvent.repo)
         return r
     }
 }

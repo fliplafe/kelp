@@ -41,7 +41,7 @@ public final class Daemon: Sendable {
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
     /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
-    let deskLock = NSRecursiveLock()
+    let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
 
     public init(root: URL = Paths.root, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
@@ -160,17 +160,14 @@ public final class Daemon: Sendable {
                             Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) { c.send(d) }
                         continue
                     }
-                    if req.isNotification, req.method == "session.write" {   // keystrokes: in order, on this thread
-                        if let sid = req.params?["id"]?.string, let b = req.params?["base64"]?.string, let d = Data(base64Encoded: b) { existing(sid)?.userInput(d) }
+                    // Quick, and only right in the order they were sent (keystrokes; a saved layout or a terminal size that
+                    // finished second must not win over the newer one): applied here, one after another (`Handled.inOrder`).
+                    if req.isNotification, let t = Self.typed[req.method], t.inOrder {
+                        _ = try? t.run(req.params ?? .null, self, conn: c.id)
                         continue
                     }
-                    // Quick, and only right in the order they were sent: a saved layout or a terminal size that finished second
-                    // must not win over the newer one. Applied here, one after another, like keystrokes.
-                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" || req.method == UIPublish.name {
-                        _ = try? handleSync(req.method, req.params ?? .null, conn: c.id)
-                        continue
-                    }
-                    if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)
+                    // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
+                    if req.method == "session.stream" {
                         stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
                         break reading
                     }
@@ -210,7 +207,7 @@ public final class Daemon: Sendable {
     func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
         let (raw, json) = clients.split(subs)
         raw.forEach { $0.send(data) }
-        if !json.isEmpty { notify("event.output", .obj(["session": .string(id), "data": .string(data.base64EncodedString())]), to: json) }
+        if !json.isEmpty { notify(OutputEvent(session: id, data: data), to: json) }
     }
 
     private func respond(_ req: Request, conn c: Connection) async {
@@ -236,8 +233,8 @@ public final class Daemon: Sendable {
         if !req.isNotification, let d = try? Wire.line(reply) { c.send(d) }
     }
 
-    func notify(_ method: String, _ params: JSONValue, to only: Set<Int>? = nil) {
-        guard let d = try? Wire.line(RPCRequest(id: nil, method: method, params: params)) else { return }
+    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) {
+        guard let d = try? Wire.line(RPCNotification(e)) else { return }
         clients.targets(only).forEach { $0.send(d) }
     }
 
@@ -301,7 +298,7 @@ public final class Daemon: Sendable {
         let sid = rec.id
         wire(ls)
         if o.openURLs, let wid = worktreeId {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
-            ls.onLocalURL = { [weak self] url in self?.notify("event.devserver", .obj(["worktree": .string(wid), "url": .string(url), "session": .string(sid)])) }
+            ls.onLocalURL = { [weak self] url in self?.notify(DevServerEvent(worktree: wid, url: url, session: sid)) }
         }
         // The record first: a program nobody has a record of could be neither seen nor stopped.
         do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
@@ -311,7 +308,7 @@ public final class Daemon: Sendable {
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
         }
         ls.start()   // after the record is saved: its first status must not be overwritten
-        notify("event.session", try .from(rec))
+        notify(rec)
         return rec
     }
 

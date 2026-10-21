@@ -142,7 +142,7 @@ extension GitHubPRCreate: AsyncHandled {
             url = try await d.offload { [title, body] in try GitHub.createPR(cwd: path, title: title, body: body, base: prBase, draft: draft) }
         }
         try d.store.update(Worktree.self, w.id) { $0.prURL = url; $0.prNumber = Int(url.split(separator: "/").last ?? "") }
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         await d.moveLinear(w, to: .inReview)
         await d.moveJira(w, toName: "review", category: "indeterminate")
         return Result(url: url, title: title)
@@ -163,7 +163,7 @@ extension GitHubPRMerge: AsyncHandled {
         }
         await d.moveLinear(w, to: .done)
         await d.moveJira(w, toName: "done", category: "done")
-        d.notify("event.changed", "worktree")
+        d.notify(ChangedEvent.worktree)
         return Done()
     }
 }

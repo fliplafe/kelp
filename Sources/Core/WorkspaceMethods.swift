@@ -165,6 +165,7 @@ public struct SessionLastReply: RPCMethod { public static let name = "session.la
 /// Clones `url` into a new folder in `parent` → the added project; progress comes as `event.clone` {id, line}.
 public struct RepoClone: RPCMethod {
     public static let name = "repo.clone"; public typealias Result = Repo; public var url: String, parent: String, id: String?
+    public static var timeout: TimeInterval? { nil }   // a big repository takes as long as it takes; Cancel stops it
     public init(url: String, parent: String, id: String? = nil) { self.url = url; self.parent = parent; self.id = id }
 }
 /// Stops clone `id` (its half-made folder is removed).

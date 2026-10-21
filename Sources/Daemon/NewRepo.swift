@@ -56,7 +56,7 @@ extension Daemon {
         let log = CloneLog()
         err.fileHandleForReading.readabilityHandler = { [weak self] h in
             guard let line = log.add(h.availableData) else { return }
-            self?.notify("event.clone", .obj(["id": .string(id), "line": .string(line)]), to: [conn])
+            self?.notify(CloneEvent(id: id, line: line), to: [conn])
         }
         Self.clones.set(id, proc)
         let status: (Int32, Process.TerminationReason) = try await withCheckedThrowingContinuation { c in

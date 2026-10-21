@@ -216,26 +216,27 @@ final class AppModel {
     func listen(_ c: RPCClient) { c.onNotification = { [weak self] m, p in Task { @MainActor in self?.handle(m, p) } } }
 
     private func handle(_ method: String, _ p: JSONValue) {
+        func event<E: RPCEvent>(_: E.Type) -> E? { try? p.decode(E.self) }
         switch method {
-        case "event.session":
-            guard let s = try? p.decode(Session.self) else { return }
+        case Session.name:
+            guard let s = event(Session.self) else { return }
             sessionEvents[s.id, default: 0] += 1
             let old = sessions.first { $0.id == s.id }
             if old != s { upsert(s) }   // views follow `sessions`
             (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
             if old?.status != s.status, s.agent != "shell" { readContext(s.id) }
-        case "event.devserver":
+        case DevServerEvent.name:
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
             // The keys stay where they are: the page comes while you may be typing.
-            if let w = p["worktree"]?.string, let u = p["url"]?.string, w == Workbench.shared.workspaceId { Workbench.open(u, split: .right, workspace: w, focus: false) }
-        case "event.changed":
+            if let e = event(DevServerEvent.self), e.worktree == Workbench.shared.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
+        case ChangedEvent.name:
             Task { await refresh() }
-        case "event.clone":
-            CloneSheet.cloneProgress(id: p["id"]?.string, line: p["line"]?.string)
-        case "event.settings":
-            if case .object(let o)? = p["settings"] { SettingsStore.shared.apply(o) }
-        case "event.ui":
-            UIRequests.handle(p)
+        case CloneEvent.name:
+            if let e = event(CloneEvent.self) { CloneSheet.cloneProgress(id: e.id, line: e.line) }
+        case SettingsEvent.name:
+            if let e = event(SettingsEvent.self) { SettingsStore.shared.apply(e.settings) }
+        case UIEvent.name:
+            if let e = event(UIEvent.self) { UIRequests.handle(e) }
         default: break
         }
     }

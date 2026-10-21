@@ -13,11 +13,15 @@ extension JSONValue {
 /// A method declared in Core (`RPCMethod`) that the daemon answers: params decoded, result encoded, run through `offload`.
 /// `handle(_:conn:)` for the few that need the asking connection (attach, detach, ui.publish); the rest write `handle(_:)`.
 protocol Handled: RPCMethod {
+    /// Sent as a notification, it runs on the connection's reader thread, after the ones before it: only right in the
+    /// order sent, and quick. Everything else runs on a task of its own, so its replies can come back in any order.
+    static var inOrder: Bool { get }
     func handle(_ d: Daemon) throws -> Result
     func handle(_ d: Daemon, conn: Int) throws -> Result
 }
 
 extension Handled {
+    static var inOrder: Bool { false }
     func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
 
     static func run(_ p: JSONValue, _ d: Daemon, conn: Int = -1) throws -> JSONValue { try .from(decoded(p).handle(d, conn: conn)) }
@@ -97,7 +101,7 @@ extension GitDiscardHunk: Handled {
 extension WorktreeNote: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard try d.store.update(Worktree.self, id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
-        d.notify("event.changed", "worktree"); return Done()
+        d.notify(ChangedEvent.worktree); return Done()
     }
 }
 

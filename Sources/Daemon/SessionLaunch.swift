@@ -182,7 +182,7 @@ extension Daemon {
 
     func publish(_ s: Session) {
         do { try store.update(s) } catch { return }   // deleted meanwhile (closed, its project removed): not brought back
-        if let v = try? JSONValue.from(s) { notify("event.session", v) }
+        notify(s)
         if s.status == .done || s.status == .waiting, let a = s.agent { planUsed(a) }
     }
 
@@ -197,7 +197,7 @@ extension Daemon {
         let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
             if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
         }
-        if renamed?.note == title { notify("event.changed", "worktree") }
+        if renamed?.note == title { notify(ChangedEvent.worktree) }
         if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
            let r = try? store.repo(w.repoId), w.path != r.path {
             let base = Naming.slug(prompt)
@@ -205,7 +205,7 @@ extension Daemon {
             while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
             if !base.isEmpty, (try? Git.renameBranch(w.path, from: w.branch, to: b)) != nil {
                 _ = try? store.update(Worktree.self, w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } }
-                notify("event.changed", "worktree")
+                notify(ChangedEvent.worktree)
             }
         }
     }
@@ -220,7 +220,7 @@ extension Daemon {
         let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
             if (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = topic }
         }
-        if renamed?.note == topic { notify("event.changed", "worktree") }
+        if renamed?.note == topic { notify(ChangedEvent.worktree) }
     }
 
     func manifest(_ id: String?, command: String?, fallbackArgv: [String]? = nil) throws -> AgentManifest {

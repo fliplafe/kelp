@@ -167,23 +167,23 @@ enum KelpLinks {
 /// switch the workspace on screen unless asked (`--focus`): a tab for another workspace waits there.
 @MainActor
 enum UIRequests {
-    static func handle(_ p: JSONValue) {
-        switch p["action"]?.string {
+    static func handle(_ e: UIEvent) {
+        switch e.action {
         case "open":
-            guard let uri = p["uri"]?.string else { return }
-            let split = p["split"]?.string.flatMap(SplitDirection.init(rawValue:))
-            let focus = p["focus"]?.bool == true
-            if let w = p["worktreeId"]?.string, w != Workbench.shared.workspaceId, !focus, Workbench.shared.workspaceId != nil {
+            guard let uri = e.uri else { return }
+            let split = e.split.flatMap(SplitDirection.init(rawValue:))
+            let focus = e.focus == true
+            if let w = e.worktreeId, w != Workbench.shared.workspaceId, !focus, Workbench.shared.workspaceId != nil {
                 Workbench.window?.editors.openInBackground(uri, workspace: w)
                 return
             }
-            Workbench.open(uri, split: split, workspace: p["worktreeId"]?.string)
+            Workbench.open(uri, split: split, workspace: e.worktreeId)
             if focus { NSApp.activate() }
         case "command":
-            guard let id = p["id"]?.string else { return }
+            guard let id = e.id else { return }
             if id == "extensions.reload" { ExtensionRegistry.shared.reload(); return }
             guard let c = ExtensionRegistry.shared.command(id) else { Banner.show(String(localized: "Unknown command \(id)"), style: .error); return }
-            if case .object(let args)? = p["args"] { c.run(args) } else { c.run([:]) }
+            if case .object(let args)? = e.args { c.run(args) } else { c.run([:]) }
         default: break
         }
     }

@@ -5,6 +5,7 @@ import Core
 /// The app publishes what it shows (`ui.publish`) so agents can read it back (`ui.state`), and keeps what it restores
 /// (each workspace's layout, the sidebar's order…) in the database with `state.*`, so every KELP_HOME has its own.
 extension UIPublish: Handled {
+    static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) throws -> Done {
         guard case .object = state else { throw RPCError.invalidParams("state must be an object") }
@@ -20,22 +21,20 @@ extension UIStateGet: Handled { func handle(_ d: Daemon) throws -> JSONValue { d
 extension UIOpen: Handled {
     func handle(_ d: Daemon) throws -> Delivered {
         if let split, split != "right", split != "down" { throw RPCError.invalidParams("split must be \"right\" or \"down\"") }
-        return try d.relay("open", self)
+        return try d.relay(UIEvent(self))
     }
 }
 
-extension UICommand: Handled { func handle(_ d: Daemon) throws -> Delivered { try d.relay("command", self) } }
+extension UICommand: Handled { func handle(_ d: Daemon) throws -> Delivered { try d.relay(UIEvent(self)) } }
 
 extension Daemon {
     static let uiMethods: [any Handled.Type] = [UIPublish.self, UIStateGet.self, UIOpen.self, UICommand.self]
 
-    /// To every Kelp window as `event.ui`: the request's fields and `action`.
-    fileprivate func relay(_ action: String, _ request: some RPCMethod) throws -> Delivered {
+    /// To every Kelp window as `event.ui`.
+    fileprivate func relay(_ e: UIEvent) throws -> Delivered {
         let apps = clients.apps
         guard !apps.isEmpty else { throw RPCError.internalError("The Kelp app isn't running") }
-        var params: [String: JSONValue] = if case .object(let o)? = try request.params() { o } else { [:] }
-        params["action"] = .string(action)
-        notify("event.ui", .object(params), to: apps)
+        notify(e, to: apps)
         return Delivered(delivered: apps.count)
     }
 }
@@ -49,6 +48,7 @@ extension StateGet: Handled {
 }
 
 extension StateSet: Handled {
+    static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) throws -> Done {
         // Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window

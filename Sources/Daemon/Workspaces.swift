@@ -12,8 +12,10 @@ extension Daemon {
     func isMain(_ w: Worktree, _ r: Repo) -> Bool { w.path == r.path }
 
     /// Every project keeps at least one desk; desks follow the folder's checked-out branch.
-    func syncMainWorkspaces() throws {
-        deskLock.lock(); defer { deskLock.unlock() }
+    func syncMainWorkspaces() throws { try deskLock.withLock { try syncDesks() } }
+
+    /// The caller holds `deskLock`.
+    private func syncDesks() throws {
         let all = try store.worktrees(repo: nil)
         for r in try store.repos() {
             let desks = all.filter { isMain($0, r) }
@@ -33,15 +35,17 @@ extension Daemon {
 
     /// A new desk in the project's folder: instant, named "Workspace N" until its first prompt names it (see autoTitle).
     func createDesk(in r: Repo) throws -> Worktree {
-        deskLock.lock(); defer { deskLock.unlock() }   // its "Workspace N" counts the desks there now
-        try syncMainWorkspaces()   // names the project's first desk, so the new one doesn't take "Workspace 1"
-        let taken = Set(try store.worktrees(repo: r.id).map(\.note))
-        var n = 1
-        while taken.contains("Workspace \(n)") { n += 1 }
-        let branch = (try? Git.currentBranch(r.path)) ?? r.baseBranch
-        let w = Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace \(n)", base: branch)
-        try store.save(w)
-        notify("event.changed", "worktree")
+        let w = try deskLock.withLock {   // its "Workspace N" counts the desks there now
+            try syncDesks()   // names the project's first desk, so the new one doesn't take "Workspace 1"
+            let taken = Set(try store.worktrees(repo: r.id).map(\.note))
+            var n = 1
+            while taken.contains("Workspace \(n)") { n += 1 }
+            let branch = (try? Git.currentBranch(r.path)) ?? r.baseBranch
+            let w = Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace \(n)", base: branch)
+            try store.save(w)
+            return w
+        }
+        notify(ChangedEvent.worktree)
         return w
     }
 
@@ -86,7 +90,7 @@ extension Daemon {
         }
         try pauseSessions(of: w.id)
         try store.update(Worktree.self, w.id) { $0.archived = true }
-        notify("event.changed", "worktree")
+        notify(ChangedEvent.worktree)
     }
 
     func removeDesk(_ w: Worktree, _ r: Repo) throws {
@@ -95,7 +99,7 @@ extension Daemon {
         }
         for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
         try store.delete(w)
-        notify("event.changed", "worktree")
+        notify(ChangedEvent.worktree)
     }
 
     /// "Workspace 3" on branch "ws-3": instant, and renamed from the first prompt later (see autoTitle).

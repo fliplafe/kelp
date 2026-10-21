@@ -35,6 +35,13 @@ public struct RPCMessage: Codable, Sendable {
 public protocol RPCMethod: Codable, Sendable {
     associatedtype Result: Codable & Sendable
     static var name: String { get }
+    /// How long a call waits for the reply before it fails: nil waits for good (a method that takes as long as it takes).
+    static var timeout: TimeInterval? { get }
+}
+
+extension RPCMethod {
+    /// Past the daemon's own limit on any git, gh or ssh run (300 s, `Git.run`): only a reply that never comes ends here.
+    public static var timeout: TimeInterval? { 330 }
 }
 
 extension RPCMethod {

@@ -29,6 +29,7 @@ extension SessionDetach: Handled {
 }
 
 extension SessionWrite: Handled {
+    static var inOrder: Bool { true }   // keystrokes
     func handle(_ d: Daemon) throws -> Done {
         let s = try d.liveSession(id)
         if let base64, let data = Data(base64Encoded: base64) { s.userInput(data) }
@@ -49,6 +50,7 @@ extension SessionSend: Handled {
 
 /// A running one only: a size never wakes a paused agent (a wake gets the size it's shown at anyway).
 extension SessionResize: Handled {
+    static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
         let (c, r) = Daemon.Launch.size(cols: cols, rows: rows)
         d.existing(id)?.resize(cols: c, rows: r)

@@ -91,8 +91,9 @@ public final class RPCClient: Sendable {
             }
             guard let id else { c.resume(throwing: RPCError.internalError("connection closed")); return }
             if let timeout {
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [self] in
-                    state.withLock { $0.pending.removeValue(forKey: id) }?.resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
+                // Weak: every typed call has one now, and a dropped connection's client mustn't wait them out.
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    self?.state.withLock { $0.pending.removeValue(forKey: id) }?.resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
                 }
             }
             do { write(try Wire.line(RPCRequest(id: id, method: method, params: params))) }
@@ -104,8 +105,9 @@ public final class RPCClient: Sendable {
         try await call(method, params).decode(T.self)
     }
 
+    /// `timeout`: sooner than the method's own (`RPCMethod.timeout`).
     public func call<M: RPCMethod>(_ m: M, timeout: TimeInterval? = nil) async throws -> M.Result {
-        try await call(M.name, m.params(), timeout: timeout).decode(M.Result.self)
+        try await call(M.name, m.params(), timeout: timeout ?? M.timeout).decode(M.Result.self)
     }
     public func notify<M: RPCMethod>(_ m: M) { notify(M.name, try? m.params()) }
 }

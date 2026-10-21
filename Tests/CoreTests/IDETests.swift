@@ -41,17 +41,12 @@ import Testing
 }
 
 /// Workspaces of a project share its folder: `kelp open` from an agent means that agent's own workspace.
-@Test func workspaceOfTheCallingAgent() async throws {
+@Test func workspaceOfTheCallingAgent() {
     let dir = FileManager.default.temporaryDirectory.path
-    let call: IDE.Call = { method, _ in
-        switch method {
-        case "worktree.list": JSONValue.array([.obj(["id": "w1", "path": .string(dir)]), .obj(["id": "w2", "path": .string(dir)]), .obj(["id": "w3", "path": "/nowhere"])])
-        case "session.list": JSONValue.array([.obj(["id": "s2", "worktreeId": "w2"]), .obj(["id": "s3", "worktreeId": "w3"])])
-        default: JSONValue.null
-        }
-    }
-    #expect(try await IDE.workspace(cwd: dir, session: "s2", call: call)?["id"] == "w2")
-    #expect(try await IDE.workspace(cwd: dir, session: nil, call: call)?["id"] == "w1")
-    #expect(try await IDE.workspace(cwd: dir, session: "s3", call: call)?["id"] == "w1")   // its workspace isn't here
-    #expect(try await IDE.workspace(cwd: "/elsewhere", session: "s2", call: call) == nil)
+    let all = [Worktree(id: "w1", repoId: "r", branch: "main", path: dir), Worktree(id: "w2", repoId: "r", branch: "main", path: dir),
+               Worktree(id: "w3", repoId: "r", branch: "main", path: "/nowhere")]
+    #expect(IDE.workspace(cwd: dir, among: all, own: "w2")?.id == "w2")
+    #expect(IDE.workspace(cwd: dir, among: all, own: nil)?.id == "w1")
+    #expect(IDE.workspace(cwd: dir, among: all, own: "w3")?.id == "w1")   // its workspace isn't here
+    #expect(IDE.workspace(cwd: "/elsewhere", among: all, own: "w2") == nil)
 }

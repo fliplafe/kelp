@@ -2,9 +2,6 @@ import Foundation
 
 /// The IDE verbs of `kelp`: how agents drive the app (through the daemon's `ui.*` / `settings.*`).
 public enum IDE {
-    /// A daemon RPC: method, params → result.
-    public typealias Call = @Sendable (String, JSONValue) async throws -> JSONValue
-
     /// A path dropped into an agent's prompt: backslash escapes, which shells and agents (Claude Code, Codex) all read;
     /// Claude strips only one pair of quotes, so the POSIX `'…'\''…'` form leaks into the path (Ghostty does the same).
     public static func escapedPath(_ path: String) -> String {
@@ -29,22 +26,23 @@ public enum IDE {
 
     /// Opens `target` in the editor area of the workspace that contains `cwd` (when there is one).
     /// `focus`: bring Kelp to the front and switch to that workspace (otherwise the tab waits there quietly).
-    public static func open(_ target: String, split: String?, cwd: String, focus: Bool = false, call: Call) async throws -> JSONValue {
-        var p: [String: JSONValue] = ["uri": .string(uri(for: target, cwd: cwd))]
-        if let split { p["split"] = .string(split) }
-        if focus { p["focus"] = true }
-        if let w = try? await workspace(cwd: cwd, call: call) { p["worktreeId"] = w["id"] }
-        return try await call("ui.open", .object(p))
+    public static func open(_ target: String, split: String?, cwd: String, focus: Bool = false, client c: RPCClient) async throws -> Delivered {
+        let w = try? await workspace(cwd: cwd, client: c)
+        return try await c.call(UIOpen(uri: uri(for: target, cwd: cwd), split: split, focus: focus ? true : nil, worktreeId: w?.id))
     }
 
-    /// The workspace a command run in `cwd` means. Workspaces of a project share its folder, so the folder alone can't
-    /// tell them apart: an agent's own (KELP_SESSION) wins when it holds `cwd`, else the first one that does.
-    public static func workspace(cwd: String, session: String? = ProcessInfo.processInfo.environment["KELP_SESSION"], call: Call) async throws -> JSONValue? {
-        let here = (try await call("worktree.list", .null).array ?? []).filter { $0["path"]?.string.map { inside(cwd, $0) } ?? false }
-        if let session, here.count > 1,
-           let wid = (try? await call("session.list", .null))?.array?.first(where: { $0["id"]?.string == session })?["worktreeId"],
-           let own = here.first(where: { $0["id"] == wid }) { return own }
-        return here.first
+    /// The workspace a command run in `cwd` means (`workspace(cwd:among:own:)`), from the daemon's lists.
+    public static func workspace(cwd: String, session: String? = ProcessInfo.processInfo.environment["KELP_SESSION"], client c: RPCClient) async throws -> Worktree? {
+        let all = try await c.call(WorktreeList())
+        let own = session == nil ? nil : (try? await c.call(SessionList()))?.first { $0.id == session }?.worktreeId
+        return workspace(cwd: cwd, among: all, own: own)
+    }
+
+    /// Workspaces of a project share its folder, so the folder alone can't tell them apart: the agent's own (`own`, its
+    /// KELP_SESSION's workspace) wins when it holds `cwd`, else the first one that does.
+    public static func workspace(cwd: String, among all: [Worktree], own: String?) -> Worktree? {
+        let here = all.filter { inside(cwd, $0.path) }
+        return here.first { $0.id == own } ?? here.first
     }
 
     static func absolute(_ path: String, cwd: String) -> String {
@@ -61,9 +59,9 @@ public enum IDE {
     public static func isValidExtensionID(_ id: String) -> Bool { id.wholeMatch(of: /[a-z0-9][a-z0-9.-]*/) != nil }
 
     /// What the app shows (`ui.state`) when it runs, else the folders in `dir`.
-    public static func extensions(call: Call, dir: URL = Paths.extensions) async throws -> JSONValue {
-        if let shown = try await call("ui.state", .null)["extensions"] { return shown }
-        let disabled = try await disabledExtensions(call: call)
+    public static func extensions(client c: RPCClient, dir: URL = Paths.extensions) async throws -> JSONValue {
+        if let shown = try await c.call(UIStateGet())["extensions"] { return shown }
+        let disabled = try await disabledExtensions(client: c)
         let folders = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         return .array(folders.sorted { $0.path < $1.path }.compactMap { f in
             guard let d = try? Data(contentsOf: f.appendingPathComponent("extension.json")) else { return nil }
@@ -74,15 +72,15 @@ public enum IDE {
     }
 
     /// Enabling/disabling is the `extensions.disabled` setting; the app applies it.
-    public static func setExtension(_ id: String, enabled: Bool, call: Call) async throws {
+    public static func setExtension(_ id: String, enabled: Bool, client c: RPCClient) async throws {
         guard isValidExtensionID(id) else { throw invalidID(id) }
-        let rest = try await disabledExtensions(call: call).filter { $0 != id }
+        let rest = try await disabledExtensions(client: c).filter { $0 != id }
         let list = enabled ? rest : rest + [id]
-        _ = try await call("settings.set", .obj(["key": "extensions.disabled", "value": .array(list.map { .string($0) })]))
+        _ = try await c.call(SettingsSet(key: "extensions.disabled", value: .array(list.map { .string($0) })))
     }
 
-    static func disabledExtensions(call: Call) async throws -> [String] {
-        (try await call("settings.get", .null)["extensions.disabled"]?.array ?? []).compactMap(\.string)
+    static func disabledExtensions(client c: RPCClient) async throws -> [String] {
+        (try await c.call(SettingsGet())["extensions.disabled"]?.array ?? []).compactMap(\.string)
     }
 
     static func invalidID(_ id: String) -> RPCError {
