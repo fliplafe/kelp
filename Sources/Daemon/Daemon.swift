@@ -99,9 +99,13 @@ public final class Daemon: Sendable {
         // by a slow git or ssh in `offload`), so new connections and status keep going whatever is stuck.
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: DispatchQueue(label: "kelp.accept"))
         src.setCancelHandler { close(listenFD) }   // after any accept still running, not under it
-        src.setEventHandler { [self] in
+        src.setEventHandler { [self, weak src] in
             let fd = accept(listenFD, nil, nil)
-            guard fd >= 0 else { return }
+            guard fd >= 0 else {
+                // Out of fds, the socket stays readable and this would run again at once, spinning: wait for some to free.
+                if errno == EMFILE || errno == ENFILE, let src { src.suspend(); DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { src.resume() } }
+                return
+            }
             if Unix.peerIsUs(fd) { Unix.noSigPipe(fd); serve(fd) } else { close(fd) }
         }
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))

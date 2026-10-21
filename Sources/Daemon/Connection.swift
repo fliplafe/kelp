@@ -10,13 +10,20 @@ final class Connection: @unchecked Sendable {   // queued/closing/closed under l
     private let q = DispatchQueue(label: "kelp.connection")
     private let lock = NSLock()
     private var queued = 0, closing = false, closed = false
-    /// A client this far behind isn't reading: it's hung up on rather than waited for.
-    static let backlogLimit = 16 << 20
+    /// More than this queued costs too much memory even from a client that still reads: it's hung up on. Far above any
+    /// one reply (a monorepo's file list, a big diff); a client that stopped reading is noticed by time instead (`stall`).
+    static let backlogLimit = 256 << 20
+    /// A write that makes no progress this long (then `writeAll`'s own 5 s): nobody reads, the client is hung up on.
+    static let stall = timeval(tv_sec: 25, tv_usec: 0)
 
     /// The program that connected (`Unix.peerExecutable`), for what only Kelp's window may do.
     let peer: String?
 
-    init(id: Int, fd: Int32) { self.id = id; self.fd = fd; peer = Unix.peerExecutable(fd) }
+    init(id: Int, fd: Int32) {
+        self.id = id; self.fd = fd; peer = Unix.peerExecutable(fd)
+        var t = Self.stall
+        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
+    }
 
     func send(_ d: Data) {
         // Queued under the lock that `close` takes too: a write checked before the close is also queued before it, so
@@ -25,7 +32,7 @@ final class Connection: @unchecked Sendable {   // queued/closing/closed under l
             guard !closing else { return nil }
             queued += d.count
             q.async { [self] in
-                Unix.writeAll(fd, d)
+                if !Unix.writeAll(fd, d) { hangUp() }
                 lock.withLock { queued -= d.count }
             }
             return queued

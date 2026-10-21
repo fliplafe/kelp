@@ -3,6 +3,11 @@ import Daemon
 
 // kelpd: background daemon. Run by launchd (see `kelp install`) or started on demand by the app/CLI.
 signal(SIGPIPE, SIG_IGN)
+// launchd gives 256 fds; every agent holds 3, every open terminal 2 more, every git or gh run 2: take what's allowed.
+var files = rlimit()
+if getrlimit(RLIMIT_NOFILE, &files) == 0, files.rlim_cur < rlim_t(OPEN_MAX) {
+    files.rlim_cur = min(files.rlim_max, rlim_t(OPEN_MAX)); setrlimit(RLIMIT_NOFILE, &files)
+}
 nonisolated(unsafe) var signalSources: [DispatchSourceSignal] = []   // must outlive this scope or the handlers vanish
 do {
     let d = try Daemon()

@@ -568,3 +568,25 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     for k in ["\u{1B}", "\u{03}", "\u{1B}[27u", "\u{1B}[99;5u", "\u{1B}[1089::99;5u"] { #expect(LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
     for k in ["\u{1B}[A", "\u{1B}[99u", "\u{1B}[199;5u", "\u{1B}[27;2u", "q"] { #expect(!LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
 }
+
+/// One reply bigger than 16 MiB (a monorepo's file list) reaches a client that reads it; it used to hang that client up.
+@Test func aHugeReplyReachesAClientThatReads() async throws {
+    var sv: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+    Unix.noSigPipe(sv[0])   // as the daemon does for every client
+    let c = Connection(id: 1, fd: sv[0])
+    let big = Data(repeating: 0x61, count: 20 << 20), tail = Data("\n".utf8)
+    let fd = sv[1], want = big.count + tail.count
+    let reader = Task.detached { () -> Int in
+        var total = 0, b = [UInt8](repeating: 0, count: 1 << 16)
+        while total < want {
+            let n = read(fd, &b, b.count)
+            if n <= 0 { break }
+            total += n
+        }
+        return total
+    }
+    c.send(big); c.send(tail)
+    #expect(await reader.value == want)
+    c.close(); close(fd)
+}
