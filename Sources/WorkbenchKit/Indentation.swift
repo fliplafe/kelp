@@ -7,10 +7,18 @@ public enum Indentation: Equatable, Sendable {
     /// Read from the file's first lines: tabs if most indented lines start with one; else the widest step (8, 4, 3, 2)
     /// that nine in ten of the indented lines are a multiple of. Nil when nothing is indented.
     public static func detect(_ text: String) -> Indentation? {
-        var tabs = 0, widths: [Int] = []
-        for line in text.split(whereSeparator: \.isNewline).prefix(2000) {   // "\r\n" is one Character, not "\n"
-            if line.hasPrefix("\t") { tabs += 1; continue }
-            let n = line.prefix { $0 == " " }.count
+        var tabs = 0, widths: [Int] = [], lines = 0
+        // Bytes, stopping at the 2000th line: splitting all of a 5 MB file into Characters took 80 ms of main thread.
+        let b = text.utf8
+        var i = b.startIndex
+        while i < b.endIndex, lines < 2000 {
+            let end = b[i...].firstIndex { (10...13).contains($0) } ?? b.endIndex   // \n, \r (\r\n leaves an empty line), VT, FF
+            let line = b[i..<end]
+            i = end < b.endIndex ? b.index(after: end) : end
+            guard !line.isEmpty else { continue }
+            lines += 1
+            if line.first == 9 { tabs += 1; continue }
+            let n = line.prefix { $0 == 32 }.count
             if n > 0, n < line.count { widths.append(n) }
         }
         if tabs > widths.count { return .tabs }

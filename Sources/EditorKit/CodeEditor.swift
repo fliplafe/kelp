@@ -25,7 +25,7 @@ public final class CodeEditor: NSObject {
     public init(text: String, url: URL, editable: Bool = true) {
         _ = Self.tuned
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
-        big = text.utf8.lazy.filter { $0 == 10 }.count > Self.bigLines
+        big = text.utf8.lazy.filter { $0 == 10 }.dropFirst(Self.bigLines).first != nil   // stops at the line past the limit
         let cfg = SourceEditorConfiguration(
             appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
             behavior: .init(isEditable: editable),

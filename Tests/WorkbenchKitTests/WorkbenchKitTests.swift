@@ -198,6 +198,7 @@ private func sh(_ shell: String, _ cmd: String) throws -> String {
     #expect(Indentation.detect("func f() {\n\tx\n\t\ty\n}\n") == .tabs)
     #expect(Indentation.detect("one\ntwo\n") == nil)
     #expect(Indentation.detect("a {\r\n    b\r\n    c\r\n}\r\n") == .spaces(4))   // Windows line endings
+    #expect(Indentation.detect(String(repeating: "\tx\n\n", count: 2000) + String(repeating: "  y\n", count: 5000)) == .tabs)   // the first 2000 lines decide
     #expect(LanguageSpec.word(in: "x\r\ndef test_a():\r\n", line: 2, column: 6) == "test_a")
 }
 
