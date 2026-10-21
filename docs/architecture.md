@@ -110,7 +110,9 @@ else a `NotificationCenter` name (`kelpGitChanged`: after a git action the windo
 - **Writes to a client** leave in order from that connection's own queue. A client whose writes make no progress for
   30 s is hung up on, and so is one more than 256 MiB behind.
 - **Locks**, outermost first: a session's wake lock (`WakeLocks`; several are taken in id order) → `SessionTable` →
-  `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another is taken.
+  `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another session's is taken.
+  Everything about a session that changes is one struct (`LiveSession.State`) under that lock, touched only inside
+  `withLock`, so the compiler checks it; what it tells the daemon (`LiveSession.Callbacks`) is fixed at launch.
   `deskLock` makes listing desks and adding a missing one a single step (taken once, never again inside), and
   `trustLock` guards trusted-configs.json.
 - **Deadlines.** Every git, gh and ssh run has a time limit (300 s by default) and is stopped with its children

@@ -147,9 +147,8 @@ extension Daemon {
         rec.status = .idle
         let ls = try LiveSession(record: rec, manifest: liveManifest(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m, tmux: rec.tmux), env: env,
-                                 historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows)
+                                 historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows, callbacks: callbacks(for: rec))
         if rec.tmux != nil { ls.attachedToRunning() }
-        wire(ls)
         live.add(ls)
         publish(ls.snapshot)
         ls.start()

@@ -329,14 +329,11 @@ public final class Daemon: Sendable {
         let env = launchEnv(manifest, rec)
         let ls = try LiveSession(record: rec, manifest: liveManifest(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
                                  argv: try launchArgv(argv, cwd: cwd, manifest: manifest, tmux: rec.tmux), env: env,
-                                 historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows)
+                                 historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows,
+                                 callbacks: callbacks(for: rec, devServerIn: o.openURLs ? worktreeId : nil))   // e.g. Jupyter Lab's URL
         if o.tmux != nil { ls.attachedToRunning() }
         rec = ls.snapshot
         let sid = rec.id
-        wire(ls)
-        if o.openURLs, let wid = worktreeId {   // e.g. Jupyter Lab: its URL opens in the worktree's browser
-            ls.onLocalURL = { [weak self] url in self?.notify(DevServerEvent(worktree: wid, url: url, session: sid)) }
-        }
         // The record first: a program nobody has a record of could be neither seen nor stopped.
         do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
         live.add(ls)
@@ -364,27 +361,31 @@ public final class Daemon: Sendable {
         return [try LoginPath.resolve(exe)] + run.dropFirst()
     }
 
-    /// Output, status and limits go out from the first byte (`start()` comes after). An ended session leaves `live`:
-    /// its fd and pid belong to nobody now, and its log still shows what it printed.
-    func wire(_ ls: LiveSession) {
-        ls.onOutput = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        ls.onStatus = { [weak self, weak ls] s in
-            guard let self, let ls, !ls.isDiscarded else { return }
+    /// What a session tells the daemon, from its first byte on. An ended session leaves `live`: its fd and pid belong to
+    /// nobody now, and its log still shows what it printed. `devServerIn`: the first local URL it prints opens in that
+    /// workspace's browser.
+    func callbacks(for rec: Session, devServerIn worktree: String? = nil) -> LiveSession.Callbacks {
+        let sid = rec.id
+        var c = LiveSession.Callbacks()
+        c.output = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
+        c.status = { [weak self] ls, s in
+            guard let self, !ls.isDiscarded else { return }
             // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
             // The turn bookkeeping gets each change, in order.
             publish(ls.snapshot); ls.noteTurn(s.status)
             if s.status == .exited { _ = live.remove(ls) }
         }
-        if ls.snapshot.agent == "claude" { ls.onLimits = { [weak self] r in self?.recordLimits(r) } }
+        if rec.agent == "claude" { c.limits = { [weak self] r in self?.recordLimits(r) } }
         // Naming follows the session however it started (created, or woken from a pause).
-        let sid = ls.snapshot.id
-        ls.onFirstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
-        if !["shell", "custom"].contains(ls.snapshot.agent ?? "custom") {
-            ls.onTopic = { [weak self] t in
+        c.firstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
+        if !["shell", "custom"].contains(rec.agent ?? "custom") {
+            c.topic = { [weak self] t in
                 guard let self else { return }
                 DispatchQueue.global(qos: .utility).async { self.retitle(session: sid, topic: t) }
             }
         }
+        if let worktree { c.localURL = { [weak self] url in self?.notify(DevServerEvent(worktree: worktree, url: url, session: sid)) } }
+        return c
     }
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.

@@ -3,7 +3,7 @@ import Foundation
 /// The terminal modes a program switched on or off (alternate screen, mouse reporting, bracketed paste, cursor keys),
 /// read from its output so a terminal that's shown only the tail of it starts in them. Codex sets them once, at start:
 /// a terminal attached after its first megabyte scrolled its own scrollback instead of sending the wheel to Codex.
-public struct TerminalModes {
+public struct TerminalModes: Sendable {
     /// Each mode's last setting, oldest first: the mouse modes replace one another, the last one set wins.
     private var last: [(mode: Int, on: Bool)] = []
     // Synchronized output (2026) stays out: restored mid-frame, the screen would freeze until the next frame ends it.

@@ -4,85 +4,82 @@ import Agents
 
 /// Typing into a session: what holds text back (a trust question, a startup menu, text queued before it), answering an
 /// agent's menu, and sending text as text.
-extension LiveSession {
-    /// Caller holds the lock.
-    func trustQuestionOpen() -> Bool {
-        guard !dialogSettled else { return false }
-        return StartupQuestion.trustAsked(StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self)))
-    }
+extension LiveSession.State {
+    func trustQuestionOpen() -> Bool { !dialogSettled && StartupQuestion.trustAsked(screen(4000)) }
 
     /// A numbered menu with its cursor on screen ("❯ 1. Use this and all future MCP servers"). The input box's own "❯"
-    /// is followed by text, not "1.", and once a menu is answered the newer cursor is the input box's. Caller holds the lock.
-    func menuOpen() -> Bool {
-        StartupQuestion.menuOpen(StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self)))
-    }
+    /// is followed by text, not "1.", and once a menu is answered the newer cursor is the input box's.
+    func menuOpen() -> Bool { StartupQuestion.menuOpen(screen(1500)) }
 
+    /// Nothing on screen that typed text with its Enter would answer: no question or numbered menu open (their default
+    /// is usually "Yes": trusting a project, its new MCP servers), no menu being answered, no unread draft in the input box.
+    func readyForText() -> Bool { steering == nil && !draftWaiting && !trustQuestionOpen() && !menuOpen() }
+}
+
+extension LiveSession {
     /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
     func steer() {
-        lock.lock()
-        guard let st = steering else { lock.unlock(); return }
-        if Date().timeIntervalSince(st.since) > 30 { steering = nil; lock.unlock(); return }
-        guard Date().timeIntervalSince(st.lastKey) > 0.7 else { lock.unlock(); return }
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        // The dialog it was armed for has to be the one on screen, at every key: another menu is never pressed.
-        if let must = st.screen, must.firstMatch(in: screen, range: NSRange(screen.startIndex..., in: screen)) == nil || typedYet {
-            steering = nil; lock.unlock(); return
+        let key = state.withLock { s -> String? in
+            guard let st = s.steering else { return nil }
+            if Date().timeIntervalSince(st.since) > 30 { s.steering = nil; return nil }
+            guard Date().timeIntervalSince(st.lastKey) > 0.7 else { return nil }
+            let screen = s.screen(1500)
+            // The dialog it was armed for has to be the one on screen, at every key: another menu is never pressed.
+            if let must = st.screen, must.firstMatch(in: screen, range: NSRange(screen.startIndex..., in: screen)) == nil || s.typedYet {
+                s.steering = nil; return nil
+            }
+            guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { return nil }
+            if st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil {
+                s.steering = nil; s.dialogSettled = true; return "\r"
+            }
+            s.steering?.lastKey = Date(); return "\u{1B}[B"   // menus wrap, so stepping down always reaches it
         }
-        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { lock.unlock(); return }
-        let onTarget = st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil
-        let key: String
-        if onTarget { key = "\r"; steering = nil; dialogSettled = true }
-        else { key = "\u{1B}[B"; steering?.lastKey = Date() }   // menus wrap, so stepping down always reaches it
-        lock.unlock()
-        pty.write(Data(key.utf8))
+        if let key { pty.write(Data(key.utf8)) }
     }
 
     /// Answers the menu the agent shows (a permission request) from outside the terminal — a notification's Allow / Deny.
     /// The cursor is walked to the option and Enter pressed only there (see `steer`). nil: no such menu on screen.
     func choose(_ answer: String) -> Session? {
-        lock.lock()
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        let pattern = answer == "allow" ? #"^(\d+\.\s*)?(Yes|Allow|Approve)\b(?!,)"# : #"^(\d+\.\s*)?(No|Deny|Reject)\b"#
-        let lines = screen.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ❯›>")) }
-        guard AgentManifest.AutoAnswer.optionAtCursor(screen) != nil, let re = try? NSRegularExpression(pattern: pattern),
-              lines.contains(where: { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) else { lock.unlock(); return nil }
-        steering = (re, Date(), .distantPast, nil)
-        detector.input(); record.unread = false
-        if hooked { detector.override(.working); interruptArmed = (Date(), "") }   // a "No" ends the turn: the screen says so
-        let changed = sync() ?? record
-        lock.unlock()
-        return changed
+        state.withLock { s in
+            let screen = s.screen(1500)
+            let pattern = answer == "allow" ? #"^(\d+\.\s*)?(Yes|Allow|Approve)\b(?!,)"# : #"^(\d+\.\s*)?(No|Deny|Reject)\b"#
+            let lines = screen.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ❯›>")) }
+            guard AgentManifest.AutoAnswer.optionAtCursor(screen) != nil, let re = try? NSRegularExpression(pattern: pattern),
+                  lines.contains(where: { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) else { return nil }
+            s.steering = (re, Date(), .distantPast, nil)
+            s.detector.input(); s.record.unread = false
+            if s.hooked { s.detector.override(.working); s.interruptArmed = (Date(), "") }   // a "No" ends the turn: the screen says so
+            return s.sync() ?? s.record
+        }
     }
 
     func resize(cols: UInt16, rows: UInt16) {
-        lock.withLock { redrawUntil = Date().addingTimeInterval(1) }
+        state.withLock { $0.redrawUntil = Date().addingTimeInterval(1) }
         pty.resize(cols: cols, rows: rows)
     }
 
     /// A task's text (a launch prompt): typed once the program is ready, as a paste, so a leading "!" or "/" is text.
-    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompts.append((p, draft, true)); sawFirstPrompt = true; lock.unlock() }
+    func queuePrompt(_ p: String, draft: Bool = false) {
+        state.withLock { s in s.pendingPrompts.append((p, draft, true)); s.sawFirstPrompt = true }
+    }
 
     /// Text sent from outside (`session.send`: `kelp send`, review comments): one gate for all of it. Typed now when the
     /// program is ready for it, else queued and typed once it is — in the order sent, none overtaking another.
     func submit(_ text: String, enter: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        if startedUp, pendingPrompts.isEmpty, readyForText() { type(text, enter: enter, paste: false) }
-        else { pendingPrompts.append((text, !enter, false)); sawFirstPrompt = true }
+        state.withLock { s in
+            if s.startedUp, s.pendingPrompts.isEmpty, s.readyForText() { type(text, enter: enter, paste: false, &s) }
+            else { s.pendingPrompts.append((text, !enter, false)); s.sawFirstPrompt = true }
+        }
     }
 
-    /// Nothing on screen that typed text with its Enter would answer: no question or numbered menu open (their default
-    /// is usually "Yes": trusting a project, its new MCP servers), no menu being answered, no unread draft in the input
-    /// box. Caller holds the lock.
-    func readyForText() -> Bool { steering == nil && !draftWaiting && !trustQuestionOpen() && !menuOpen() }
-
     /// Type text into the agent, now (the gate is `submit`). Multi-line text goes as a bracketed paste so TUIs don't
-    /// submit each line. The caller holds the lock: the write is queued under it, so the order of these calls is the order typed.
-    /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is
-    /// text, not a mode or command. Without it one line is typed, so `kelp send <id> /compact` still runs the command.
-    func type(_ text: String, enter: Bool, paste: Bool) {
-        detector.input(); typedYet = true
-        if !enter { draftWaiting = true }   // left for the user to read and send
-        let takesPastes = pasteMode
+    /// submit each line. Called inside `state.withLock`: the write is queued under it, so the order of these calls is the
+    /// order typed. `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an
+    /// issue title) is text, not a mode or command. Without it one line is typed, so `kelp send <id> /compact` still runs it.
+    func type(_ text: String, enter: Bool, paste: Bool, _ s: inout State) {
+        s.detector.input(); s.typedYet = true
+        if !enter { s.draftWaiting = true }   // left for the user to read and send
+        let takesPastes = s.pasteMode
         var text = Self.typeable(text)
         // Not to be sent (a draft: an issue's text, say) to a program that takes no pastes: each newline would submit a
         // line of it. One line instead, so nothing goes before the user presses Return.
