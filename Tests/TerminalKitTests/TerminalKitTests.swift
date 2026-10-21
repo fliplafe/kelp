@@ -1,4 +1,7 @@
 import AppKit
+#if canImport(GhosttyKit)
+import GhosttyKit
+#endif
 import SwiftTerm
 import Testing
 @testable import TerminalKit
@@ -42,7 +45,17 @@ import Testing
 #if canImport(GhosttyKit)
 @MainActor
 /// Programs can't put text on the clipboard (OSC 52): it would run on the user's next ⌘V in a shell that takes no pastes.
-@Test func programsDontWriteTheClipboard() {
+@Test func programsDontWriteTheClipboard() throws {
     #expect(GhosttyRuntime.overrides.contains("clipboard-write = deny"))
+    // And Ghostty takes every line of Kelp's settings (a wrong key or value would be dropped with a diagnostic).
+    try #require(ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS)   // config needs it; no app
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-overrides-\(UUID().uuidString).conf")
+    try GhosttyRuntime.overrides.write(to: file, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cfg = ghostty_config_new()
+    ghostty_config_load_file(cfg, file.path); ghostty_config_finalize(cfg)
+    let problems = (0..<ghostty_config_diagnostics_count(cfg)).map { String(cString: ghostty_config_get_diagnostic(cfg, $0).message) }
+    ghostty_config_free(cfg)
+    #expect(problems.isEmpty, "\(problems)")
 }
 #endif
