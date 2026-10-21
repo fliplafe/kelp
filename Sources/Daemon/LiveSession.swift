@@ -10,11 +10,11 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Past this the log keeps only what the ring holds: a chatty dev server must not fill the disk.
     static let logLimit = 8 << 20
 
-    private let lock = NSLock()
-    private(set) var record: Session
+    let lock = NSLock()
+    var record: Session
     let pty: PTY
-    private var ring = Data()
-    private var detector: StatusDetector
+    var ring = Data()
+    var detector: StatusDetector
     private let log: FileHandle?
     private var logSize = 0
     private var logURL: URL?
@@ -53,33 +53,36 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     var isAttached: Bool { lock.withLock { !attached.isEmpty } }
     private var lastOutputAt: Date?
     /// TUIs redraw everything after a resize; that output isn't the agent working.
-    private var redrawUntil = Date.distantPast
+    var redrawUntil = Date.distantPast
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     /// Text waiting until the program is ready (drawn, quiet, no question open), first in first out: the launch prompt,
     /// then whatever was sent while it waited.
-    private var pendingPrompts: [(text: String, draft: Bool)] = []
+    var pendingPrompts: [(text: String, draft: Bool)] = []
     /// Someone answered the agent's first question (the user typed, or Kelp's auto-answer pressed its key): from then on
     /// a trust dialog's words left in the scrollback no longer hold the launch prompt back.
-    private var dialogSettled = false
+    var dialogSettled = false
     /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
     /// `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the user answers
     /// from a notification.
-    private var steering: (choose: NSRegularExpression, since: Date, lastKey: Date, screen: NSRegularExpression?)?
+    var steering: (choose: NSRegularExpression, since: Date, lastKey: Date, screen: NSRegularExpression?)?
     /// Anything typed into it yet, by the user or by Kelp (a prompt): startup answers are only for what the agent asks
     /// before that. After it, a matching line is something the agent read or wrote, not its own dialog.
-    private var typedYet = false
+    var typedYet = false
     /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
-    private var pasteMode = false, pasteCarry = ""
+    var pasteMode = false
+    private var pasteCarry = ""
+    /// Text typed in order, Enter included (see send).
+    let sends = DispatchQueue(label: "kelp.session.send")
     private var inputLine = ""
-    private var sawFirstPrompt = false
+    var sawFirstPrompt = false
     /// Agents with hooks report their state themselves; the others may through OSC 7501 (ProgramStatus).
-    private let hooked: Bool
+    let hooked: Bool
     private var oscCarry = ""
     private var lastHookAt = Date.distantPast
     /// Esc / ⌃C / an answer while it works or asks: Claude Code sends no hook when a turn is cut short, so the
     /// screen decides ("Interrupted…") within a few seconds. `seen` is the text printed since.
-    private var interruptArmed: (at: Date, seen: String)?
+    var interruptArmed: (at: Date, seen: String)?
     private var compactManual = false
     /// One turn of the agent: the tree when it started working, and what it changed by the time it stopped.
     struct Turn: Codable, Sendable {
@@ -238,7 +241,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     }
     private let statusQueue = DispatchQueue(label: "kelp.session.status")
 
-    private func sync() -> Session? {
+    func sync() -> Session? {
         let s = detector.status
         guard s != record.status, record.status != .exited else { return nil }
         record.status = s
@@ -292,93 +295,6 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         lock.unlock()
         if let prompt { send(prompt.text, enter: !prompt.draft, paste: true) }   // a task's text: never keys
-    }
-
-    /// Caller holds the lock.
-    private func trustQuestionOpen() -> Bool {
-        guard !dialogSettled else { return false }
-        let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
-        return Self.trustQuestion?.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
-    }
-    private static let trustQuestion = try? NSRegularExpression(pattern: AgentManifest.trust.pattern)
-
-    /// A numbered menu with its cursor on screen ("❯ 1. Use this and all future MCP servers"). The input box's own "❯"
-    /// is followed by text, not "1.", and once a menu is answered the newer cursor is the input box's. Caller holds the lock.
-    private func menuOpen() -> Bool {
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { return false }
-        return option.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil
-    }
-
-    /// Called on every tick. Reads the latest menu render; Enter only when the cursor sits on the wanted option.
-    private func steer() {
-        lock.lock()
-        guard let st = steering else { lock.unlock(); return }
-        if Date().timeIntervalSince(st.since) > 30 { steering = nil; lock.unlock(); return }
-        guard Date().timeIntervalSince(st.lastKey) > 0.7 else { lock.unlock(); return }
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        // The dialog it was armed for has to be the one on screen, at every key: another menu is never pressed.
-        if let must = st.screen, must.firstMatch(in: screen, range: NSRange(screen.startIndex..., in: screen)) == nil || typedYet {
-            steering = nil; lock.unlock(); return
-        }
-        guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { lock.unlock(); return }
-        let onTarget = st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil
-        let key: String
-        if onTarget { key = "\r"; steering = nil; dialogSettled = true }
-        else { key = "\u{1B}[B"; steering?.lastKey = Date() }   // menus wrap, so stepping down always reaches it
-        lock.unlock()
-        pty.write(Data(key.utf8))
-    }
-
-    /// Answers the menu the agent shows (a permission request) from outside the terminal — a notification's Allow / Deny.
-    /// The cursor is walked to the option and Enter pressed only there (see `steer`). nil: no such menu on screen.
-    func choose(_ answer: String) -> Session? {
-        lock.lock()
-        let screen = StatusDetector.stripANSI(String(decoding: ring.suffix(1500), as: UTF8.self))
-        let pattern = answer == "allow" ? #"^(\d+\.\s*)?(Yes|Allow|Approve)\b(?!,)"# : #"^(\d+\.\s*)?(No|Deny|Reject)\b"#
-        let lines = screen.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ❯›>")) }
-        guard AgentManifest.AutoAnswer.optionAtCursor(screen) != nil, let re = try? NSRegularExpression(pattern: pattern),
-              lines.contains(where: { re.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) else { lock.unlock(); return nil }
-        steering = (re, Date(), .distantPast, nil)
-        detector.input(); record.unread = false
-        if hooked { detector.override(.working); interruptArmed = (Date(), "") }   // a "No" ends the turn: the screen says so
-        let changed = sync() ?? record
-        lock.unlock()
-        return changed
-    }
-
-    func resize(cols: UInt16, rows: UInt16) {
-        lock.withLock { redrawUntil = Date().addingTimeInterval(1) }
-        pty.resize(cols: cols, rows: rows)
-    }
-
-    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompts.append((p, draft)); sawFirstPrompt = true; lock.unlock() }
-    /// Text still waiting for the program: anything sent now goes behind it.
-    var hasPendingInput: Bool { lock.withLock { !pendingPrompts.isEmpty } }
-
-    /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
-    /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is
-    /// text, not a mode or command.
-    /// Without it one line is typed, so `kelp send <id> /compact` still runs the command.
-    func send(_ text: String, enter: Bool, paste: Bool = false) {
-        let pasteMode = lock.withLock { detector.input(); typedYet = true; return pasteMode }
-        let text = Self.typeable(text)
-        // A program that never asked for pastes (a plain line reader) has no modes to trip: it gets the text as is.
-        let body = (paste || text.contains("\n")) && pasteMode ? "\u{1B}[200~" + text + "\u{1B}[201~" : text
-        // One after another, Enter included: two quick sends must arrive as text, Enter, text, Enter, not text, text, Enter, Enter.
-        sends.async { [weak self] in
-            self?.pty.write(Data(body.utf8))
-            if enter { Thread.sleep(forTimeInterval: 0.3); self?.pty.write(Data("\r".utf8)) }
-        }
-    }
-    private let sends = DispatchQueue(label: "kelp.session.send")
-
-    /// Text from elsewhere (an issue, a recipe, a review comment) as plain text: no escape sequences and no control keys but
-    /// newlines and tabs. An issue body with ESC[201~ would end the paste, then Return, Shift-Tab or "!cmd" would act as keys.
-    static func typeable(_ s: String) -> String {
-        String(String.UnicodeScalarView(s.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.filter { c in
-            c == "\n" || c == "\t" || !(c.value < 0x20 || c.value == 0x7F || (0x80...0x9F).contains(c.value))
-        }))
     }
 
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
