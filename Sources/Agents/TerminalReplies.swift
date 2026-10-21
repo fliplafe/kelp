@@ -12,6 +12,7 @@ public enum TerminalReplies {
         #"\x1B\[\??[0-9;]*\$p"#,                        // DECRQM
         #"\x1B\[(?:1[1-9]|2[01])(?:;[0-9]*)*t"#,        // window size reports
         #"\x1B\][0-9]+(?:;[^\x07\x1B]*)?;\?(?:\x07|\x1B\\)"#,   // OSC color / clipboard queries
+        #"\x1B\]52;[^\x07\x1B]*(?:\x07|\x1B\\)"#,       // OSC 52 copies: replayed, they'd put old text on the clipboard
         #"\x1BP[+$]q[^\x1B]*\x1B\\"#,                   // XTGETTCAP, DECRQSS
         #"\x1BZ"#
     ].joined(separator: "|"))
@@ -24,7 +25,7 @@ public enum TerminalReplies {
     ].joined(separator: "|"))
 
     /// History to replay into a new terminal, minus the agent's old questions to its terminal: answered again, the
-    /// answers would reach the agent as typing (">|ghostty 1.3.2" in its prompt).
+    /// answers would reach the agent as typing (">|ghostty 1.3.2" in its prompt). Its old clipboard copies go too.
     public static func withoutQueries(_ d: Data) -> Data {
         guard let q = queries, let s = String(data: d, encoding: .isoLatin1) else { return d }
         let out = q.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")

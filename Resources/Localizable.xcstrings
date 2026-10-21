@@ -10061,6 +10061,16 @@
           }
         }
       }
+    },
+    "Not pasted: a program put these lines on the clipboard, and this terminal would run them as typed. Copy them yourself to paste here.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вставлено: эти строки положила в буфер обмена программа, а этот терминал выполнил бы их как набранные. Скопируйте их сами, чтобы вставить сюда."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

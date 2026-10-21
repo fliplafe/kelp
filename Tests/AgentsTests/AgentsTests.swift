@@ -153,6 +153,8 @@ import TestSupport
 @Test func terminalRepliesAreNotTyping() {
     let hist = Data("\u{1B}[>0q\u{1B}[c\u{1B}[?u\u{1B}]11;?\u{07}\u{1B}[1mGrok\u{1B}[0m \u{1B}[6n".utf8)
     #expect(String(bytes: TerminalReplies.withoutQueries(hist), encoding: .utf8) == "\u{1B}[1mGrok\u{1B}[0m ")
+    let copied = Data("a\u{1B}]52;c;aGk=\u{07}b\u{1B}]52;c;aGk=\u{1B}\\c".utf8)   // Claude Code's copies over ssh
+    #expect(String(bytes: TerminalReplies.withoutQueries(copied), encoding: .utf8) == "abc")
     #expect(TerminalReplies.isReply(Data("\u{1B}P>|ghostty 1.3.2\u{1B}\\\u{1B}[?62;22c\u{1B}[?1u\u{1B}[12;5R".utf8)))
     #expect(TerminalReplies.isReply(Data("\u{1B}]11;rgb:1e1e/1e1e/2222\u{07}".utf8)))
     #expect(!TerminalReplies.isReply(Data("\u{1B}[A".utf8)))     // arrow key

@@ -40,6 +40,8 @@ public final class GhosttyRuntime {
     public private(set) static var started = false
     /// Copying from a terminal drops what TUIs draw around text: borders, the agent's gutter, trailing spaces.
     public static var cleanCopy = true
+    /// The pasteboard's `changeCount` after a program in a terminal last wrote it (OSC 52), while nothing else has.
+    static var programCopy: Int?
 
     /// Applies a new appearance to every open terminal.
     public func configure(_ a: TerminalAppearance) {
@@ -95,8 +97,8 @@ public final class GhosttyRuntime {
         keybind = super+home=scroll_to_top
         keybind = super+end=scroll_to_bottom
         confirm-close-surface = false
-        clipboard-paste-protection = false
-        clipboard-write = deny
+        clipboard-paste-protection = true
+        clipboard-write = ask
         window-padding-x = 12
         window-padding-y = 8
         """
@@ -112,10 +114,11 @@ public final class GhosttyRuntime {
         rt.read_clipboard_cb = { ud, _, state, mimes, count, _ in
             MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.readClipboard(state: state, mimes: mimes, count: count) ?? GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
         }
-        rt.confirm_read_clipboard_cb = { ud, _, state, _ in
-            MainActor.assumeIsolated { if let v = GhosttyTerminalView.from(ud), let s = v.surface { ghostty_surface_deny_clipboard_request(s, state) } }
+        rt.confirm_read_clipboard_cb = { ud, confirm, state, request in
+            MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.confirmClipboard(confirm, state: state, request: request) }
         }
-        rt.write_clipboard_cb = { _, _, contents, count, _ in
+        // `fromProgram`: an OSC 52 write (Claude Code copies that way over ssh), which `clipboard-write = ask` flags.
+        rt.write_clipboard_cb = { _, _, contents, count, fromProgram in
             guard let contents, count > 0 else { return }
             var text: String?
             for i in 0..<count {
@@ -125,8 +128,10 @@ public final class GhosttyRuntime {
             }
             if let raw = text {
                 DispatchQueue.main.async { MainActor.assumeIsolated {
-                    let text = GhosttyRuntime.cleanCopy ? TerminalCopy.clean(raw) : raw
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+                    let text = GhosttyRuntime.cleanCopy && !fromProgram ? TerminalCopy.clean(raw) : raw
+                    let pb = NSPasteboard.general
+                    pb.clearContents(); pb.setString(text, forType: .string)
+                    GhosttyRuntime.programCopy = fromProgram ? pb.changeCount : nil
                 } }
             }
         }
@@ -198,6 +203,8 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public var onOpenPath: ((String, NSEvent.ModifierFlags) -> Bool)?
     /// The pointer came to rest on a word (a path, maybe), or left it (nil); the rect is the word's, in this view.
     public var onHoverWord: ((String?, NSRect) -> Void)?
+    /// ⌘V was refused: a program put that text on the clipboard and here its line breaks would run it.
+    public var onPasteRefused: (() -> Void)?
     private var hoverTimer: Timer?
     private var hovered: NSRect?
     private var clickTaken = false
@@ -649,13 +656,27 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
                 var content = ghostty_clipboard_content_s(mime: mime, data: d.baseAddress, len: d.count - 1)
                 withUnsafePointer(to: &content) { cp in
                     var done = ghostty_clipboard_complete_s()
-                    // Not confirmed: Ghostty applies its policy (`clipboard-read = ask` for OSC 52 / Kitty reads) and
-                    // asks confirm_read_clipboard_cb, which denies. A paste goes through (paste protection is off).
+                    // Not confirmed: Ghostty applies its policy (`clipboard-read = ask` for OSC 52 / Kitty reads, paste
+                    // protection) and asks `confirmClipboard`.
                     done.contents = cp; done.contents_len = 1; done.confirmed = false
                     ghostty_surface_complete_clipboard_request(surface, &done, state)
                 }
             }
         }
         return GHOSTTY_CLIPBOARD_READ_STARTED
+    }
+
+    /// Ghostty asks before a paste that would run as typed (a line break, no bracketed paste) and before a program reads
+    /// the clipboard or writes it the Kitty way. The paste goes through, unless a program put that text there: lines you
+    /// never saw mustn't run on ⌘V. The rest is refused.
+    func confirmClipboard(_ c: UnsafePointer<ghostty_clipboard_confirm_s>?, state: UnsafeMutableRawPointer?, request: ghostty_clipboard_request_e) {
+        guard let surface else { return }
+        guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE, let c else { ghostty_surface_deny_clipboard_request(surface, state); return }
+        if GhosttyRuntime.programCopy == NSPasteboard.general.changeCount {
+            ghostty_surface_deny_clipboard_request(surface, state); onPasteRefused?(); return
+        }
+        var done = ghostty_clipboard_complete_s()
+        done.contents = c.pointee.contents; done.contents_len = c.pointee.contents_len; done.confirmed = true
+        ghostty_surface_complete_clipboard_request(surface, &done, state)
     }
 }
