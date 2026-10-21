@@ -98,15 +98,11 @@ final class ThemeManager {
         t.fontSize = s.number("terminal.fontSize")
         t.cursorStyle = s.string("terminal.cursorStyle")
         t.optionAsAlt = s.bool("terminal.optionAsAlt") ?? false
-        #if canImport(GhosttyKit)
         GhosttyRuntime.cleanCopy = s.bool("terminal.cleanCopy") ?? true
-        #endif
         if t != lastTerminal {
             lastTerminal = t
-            #if canImport(GhosttyKit)
             GhosttyRuntime.appearance = t
             if GhosttyTerminalView.isLoaded { GhosttyRuntime.shared.configure(t) }
-            #endif
         }
 
         let e = theme?.editor

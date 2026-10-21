@@ -3,80 +3,51 @@ import Core
 import TerminalKit
 import WorkbenchKit
 
-/// One terminal bound to one daemon session. libghostty renders it when available (attached via `kelp attach`,
-/// so the daemon keeps the process); SwiftTerm is the fallback.
+/// One terminal bound to one daemon session, rendered by libghostty (attached via `kelp attach`, so the daemon keeps
+/// the process).
 @MainActor
-final class PaneView: NSView, NSMenuItemValidation {
+final class PaneView: NSView {
     let sessionId: String
-    private var termView = NSView()
-    #if canImport(GhosttyKit)
-    private var ghostty: GhosttyTerminalView?
-    #endif
-    private var swiftTerm: RemoteTerminalView?
+    private let ghostty: GhosttyTerminalView
     private let ended = NSStackView()
-    private var lastActivity = Date()
 
     var onClose: ((PaneView) -> Void)?
     var onRestart: ((PaneView) -> Void)?
 
-    static var useGhostty: Bool {
-        #if canImport(GhosttyKit)
-        return UserDefaults.standard.string(forKey: "terminalBackend") != "swiftterm" && GhosttyTerminalView.isAvailable
-        #else
-        return false
-        #endif
-    }
-
     init(session: Session) {
         sessionId = session.id
+        let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
+        ghostty = GhosttyTerminalView(command: IDE.shellWord(kelp) + " attach \(session.id)", cwd: session.cwd,
+                                      env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
         super.init(frame: .zero)
         wantsLayer = true
         buildTerminal(session)
         buildEndedOverlay()
-        for v in [termView, ended] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [ghostty, ended] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
-            termView.topAnchor.constraint(equalTo: topAnchor), termView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            termView.trailingAnchor.constraint(equalTo: trailingAnchor), termView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            ended.centerXAnchor.constraint(equalTo: termView.centerXAnchor), ended.centerYAnchor.constraint(equalTo: termView.centerYAnchor)
+            ghostty.topAnchor.constraint(equalTo: topAnchor), ghostty.leadingAnchor.constraint(equalTo: leadingAnchor),
+            ghostty.trailingAnchor.constraint(equalTo: trailingAnchor), ghostty.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ended.centerXAnchor.constraint(equalTo: ghostty.centerXAnchor), ended.centerYAnchor.constraint(equalTo: ghostty.centerYAnchor)
         ])
         registerForDraggedTypes([.fileURL, .png, .tiff, .string])
         update(session)
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    isolated deinit { if swiftTerm != nil { AppModel.shared.detach(session: sessionId) } }
-
     private let preview = PathPreview()
 
     private func buildTerminal(_ s: Session) {
-        let id = s.id
-        #if canImport(GhosttyKit)
-        if Self.useGhostty {
-            let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
-            let cmd = IDE.shellWord(kelp) + " attach \(id)"
-            let g = GhosttyTerminalView(command: cmd, cwd: s.cwd, env: ["KELP_SOCKET": Paths.socket.path, "KELP_HOME": Paths.root.path])
-            g.onExit = { [weak self] in self?.sessionEnded() }
-            g.onSearch = { [weak self] in self?.searchEvent($0) }
-            g.onOpenURL = Self.openLink
-            // Paths the agent prints are its folder's: its own worktree once it went into one.
-            let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
-            g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
-            g.onHoverWord = { [weak self, weak g] token, rect in
-                guard let self, let g else { return }
-                self.preview.show(token, rect: rect, in: g, cwd: cwd(), worktree: wid)
-            }
-            ghostty = g; termView = g
-            return
+        let id = s.id, g = ghostty
+        g.onExit = { [weak self] in self?.sessionEnded() }
+        g.onSearch = { [weak self] in self?.searchEvent($0) }
+        g.onOpenURL = Self.openLink
+        // Paths the agent prints are its folder's: its own worktree once it went into one.
+        let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
+        g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
+        g.onHoverWord = { [weak self, weak g] token, rect in
+            guard let self, let g else { return }
+            self.preview.show(token, rect: rect, in: g, cwd: cwd(), worktree: wid)
         }
-        #endif
-        let t = RemoteTerminalView(frame: .zero)
-        t.onOpenURL = Self.openLink
-        t.onInput = { AppModel.shared.write(session: id, $0) }
-        t.onResize = { AppModel.shared.resize(session: id, cols: $0, rows: $1) }
-        Task { await AppModel.shared.attach(session: id) { [weak self] in self?.swiftTerm?.feed($0); self?.lastActivity = Date() } }
-        swiftTerm = t; termView = t
-        applySwiftTermAppearance()
-        NotificationCenter.default.addObserver(self, selector: #selector(applySwiftTermAppearance), name: UserDefaults.didChangeNotification, object: nil)
     }
 
     private func buildEndedOverlay() {
@@ -103,7 +74,7 @@ final class PaneView: NSView, NSMenuItemValidation {
     }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance() }
 
-    /// A link ⌘-clicked in either terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
+    /// A link ⌘-clicked in the terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
     /// the two. Files open as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target
     /// behind any text), and an app, a .command file or another app's scheme would run.
     static func openLink(_ url: URL) {
@@ -118,29 +89,11 @@ final class PaneView: NSView, NSMenuItemValidation {
         }
     }
 
-    /// SwiftTerm only (Ghostty reads its own config): Settings first, then the Ghostty config, then defaults.
-    @objc private func applySwiftTermAppearance() {
-        guard let t = swiftTerm else { return }
-        let d = UserDefaults.standard
-        let g = d.object(forKey: "ghosttyTheme") as? Bool ?? true ? GhosttyConfig.load() : nil
-        let size = d.object(forKey: "terminalFontSize") as? Double ?? g?.fontSize ?? 13
-        let name = (d.string(forKey: "terminalFont")).flatMap { $0.isEmpty ? nil : $0 } ?? g?.fontFamily
-        t.setFont(name: name, size: CGFloat(size))
-        func color(_ h: String?) -> NSColor? { h.flatMap(GhosttyConfig.rgb).map { NSColor(srgbRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) } }
-        if let bg = color(g?.background), let fg = color(g?.foreground) { t.apply(theme: TerminalTheme(background: bg, foreground: fg)) }
-    }
-
     func update(_ s: Session) {
         if s.status == .exited { sessionEnded() } else { ended.isHidden = true }
-        if s.status == .done || s.status == .waiting { lastActivity = Date() }
     }
 
-    func focus() {
-        #if canImport(GhosttyKit)
-        if let g = ghostty { g.focus(); return }
-        #endif
-        swiftTerm?.focus()
-    }
+    func focus() { ghostty.focus() }
 
     /// Columns × rows now; the last one seen anywhere sizes the next terminal before it's on screen.
     static var lastGrid: (cols: Int, rows: Int)? = {   // kept across launches: the window usually opens at the same size
@@ -150,33 +103,19 @@ final class PaneView: NSView, NSMenuItemValidation {
         didSet { if let g = lastGrid, g != oldValue ?? (0, 0) { UserDefaults.standard.set([g.cols, g.rows], forKey: "terminal.lastGrid") } }
     }
     var gridSize: (cols: Int, rows: Int)? {
-        #if canImport(GhosttyKit)
-        if let g = ghostty?.gridSize { Self.lastGrid = g; return g }
-        #endif
+        if let g = ghostty.gridSize { Self.lastGrid = g; return g }
         return nil
     }
 
     /// What's on screen (tests, "copy context" fallback).
-    var visibleText: String {
-        #if canImport(GhosttyKit)
-        if let g = ghostty { return g.visibleText }
-        #endif
-        return swiftTerm?.text ?? ""
-    }
+    var visibleText: String { ghostty.visibleText }
 
     /// Text dropped or dictated into the prompt.
-    func insert(_ text: String) {
-        #if canImport(GhosttyKit)
-        if let g = ghostty { g.insert(text); return }
-        #endif
-        AppModel.shared.write(session: sessionId, Data(text.utf8))
-    }
+    func insert(_ text: String) { ghostty.insert(text) }
 
     /// Right-click where the program in the terminal doesn't take the mouse itself, like Terminal's menu.
     override func menu(for event: NSEvent) -> NSMenu? {
-        #if canImport(GhosttyKit)
-        guard let g = ghostty else { return nil }
-        let m = NSMenu()
+        let g = ghostty, m = NSMenu()
         m.addItem(withTitle: String(localized: "Copy"), action: #selector(GhosttyTerminalView.copy(_:)), keyEquivalent: "").target = g
         m.items.last?.isEnabled = g.hasSelection; m.autoenablesItems = false
         m.addItem(withTitle: String(localized: "Paste"), action: #selector(GhosttyTerminalView.paste(_:)), keyEquivalent: "").target = g
@@ -187,44 +126,31 @@ final class PaneView: NSView, NSMenuItemValidation {
         m.add(String(localized: "Split Right")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.right) }
         m.add(String(localized: "Split Down")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.down) }
         return m
-        #else
-        return nil
-        #endif
     }
 
     // MARK: find (Edit › Find reaches the pane through the responder chain)
     private var findBar: FindBar?
 
     @objc func performFindPanelAction(_ sender: Any?) {
-        #if canImport(GhosttyKit)
-        guard let g = ghostty else { return }
+        let g = ghostty
         switch NSFindPanelAction(rawValue: UInt((sender as? NSMenuItem)?.tag ?? 1)) {
         case .next?: g.perform(action: "navigate_search:next")
         case .previous?: g.perform(action: "navigate_search:previous")
         case .setFindString?: g.perform(action: "search_selection")   // Ghostty answers with start_search and the text
         default: showFind(nil)
         }
-        #endif
     }
 
-    func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        #if canImport(GhosttyKit)
-        if item.action == #selector(performFindPanelAction(_:)) { return ghostty != nil }
-        #endif
-        return true
-    }
-
-    #if canImport(GhosttyKit)
     private func showFind(_ needle: String?) {
-        guard let g = ghostty else { return }
+        let g = ghostty
         let bar = findBar ?? {
             let b = FindBar()
             b.onSearch = { g.perform(action: "search:" + $0) }
             b.onStep = { g.perform(action: "navigate_search:" + ($0 ? "next" : "previous")) }
             b.onClose = { [weak self] in g.perform(action: "end_search"); self?.focus() }
             b.translatesAutoresizingMaskIntoConstraints = false; addSubview(b)
-            NSLayoutConstraint.activate([b.topAnchor.constraint(equalTo: termView.topAnchor, constant: 8),
-                                         b.trailingAnchor.constraint(equalTo: termView.trailingAnchor, constant: -14)])
+            NSLayoutConstraint.activate([b.topAnchor.constraint(equalTo: ghostty.topAnchor, constant: 8),
+                                         b.trailingAnchor.constraint(equalTo: ghostty.trailingAnchor, constant: -14)])
             findBar = b; return b
         }()
         bar.begin(needle)
@@ -238,7 +164,6 @@ final class PaneView: NSView, NSMenuItemValidation {
         case .selected(let n): findBar?.selected = n
         }
     }
-    #endif
 
     @objc private func closeTapped() { onClose?(self) }
     @objc private func restartTapped() { onRestart?(self) }

@@ -18,7 +18,6 @@ final class AppModel {
     var contextShare: [String: Double] = [:]
     @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
 
-    @ObservationIgnored private var outputHandlers: [String: (Data) -> Void] = [:]
     /// `event.session`s handled so far, per session: a list asked for before one of them may be older than it.
     @ObservationIgnored private var sessionEvents: [String: Int] = [:]
     /// The refresh under way, and whether another was asked for meanwhile (a burst of `event.changed` makes one more).
@@ -215,8 +214,6 @@ final class AppModel {
 
     private func handle(_ method: String, _ p: JSONValue) {
         switch method {
-        case "event.output":
-            if let id = p["session"]?.string, let b = p["data"]?.string, let d = Data(base64Encoded: b) { outputHandlers[id]?(d) }
         case "event.session":
             guard let s = try? p.decode(Session.self) else { return }
             sessionEvents[s.id, default: 0] += 1
@@ -290,23 +287,6 @@ final class AppModel {
         do { return (try await c.call(m), nil) } catch { return (nil, Self.message(error)) }
     }
     static func message(_ e: Error) -> String { (e as? RPCError)?.message ?? e.localizedDescription }
-
-    /// Replays history, then streams live output into `sink`.
-    /// The daemon sends the history before any live output, but the two reach the main actor by different hops: live
-    /// output that gets here first waits, so the screen shows the history and then what followed it.
-    func attach(session id: String, sink: @escaping (Data) -> Void) async {
-        earlyOutput[id] = []
-        outputHandlers[id] = { [weak self] d in self?.earlyOutput[id]?.append(d) }
-        if let r = try? await client?.call("session.attach", .obj(["id": .string(id)])),
-           let h = r["history"]?.string, let d = Data(base64Encoded: h) { sink(d) }
-        (earlyOutput.removeValue(forKey: id) ?? []).forEach(sink)
-        if outputHandlers[id] != nil { outputHandlers[id] = sink }   // not if it was detached meanwhile
-    }
-    @ObservationIgnored private var earlyOutput: [String: [Data]] = [:]
-    func detach(session id: String) { outputHandlers[id] = nil; Task { _ = try? await client?.call("session.detach", .obj(["id": .string(id)])) } }
-    func write(session id: String, _ d: Data) { client?.notify("session.write", .obj(["id": .string(id), "base64": .string(d.base64EncodedString())])) }
-    /// A notification, sent in call order and applied in that order: the last size is the one the terminal keeps.
-    func resize(session id: String, cols: Int, rows: Int) { client?.notify("session.resize", .obj(["id": .string(id), "cols": .int(cols), "rows": .int(rows)])) }
 
     func worktree(_ id: String?) -> Worktree? { worktrees.first { $0.id == id } }
     func repo(_ id: String?) -> Repo? { repos.first { $0.id == id } }

@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import GhosttyKit
 
 /// Colors and font from the IDE's theme and settings (nil = keep Ghostty's config / defaults).
 public struct TerminalAppearance: Equatable, Sendable {
@@ -24,10 +25,6 @@ public struct TerminalAppearance: Equatable, Sendable {
         return lines.joined(separator: "\n")
     }
 }
-
-#if canImport(GhosttyKit)
-import AppKit
-import GhosttyKit
 
 // Terminal backend on libghostty (Metal rendering, Ghostty's input and selection). Input handling follows
 // Ghostty's own macOS SurfaceView (MIT): https://github.com/ghostty-org/ghostty/tree/main/macos/Sources/Ghostty
@@ -215,7 +212,6 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     private var lastPerformKeyEvent: TimeInterval?
     private var trackingArea: NSTrackingArea?
 
-    public static var isAvailable: Bool { GhosttyRuntime.shared.app != nil }
     /// True once a terminal has started libghostty (so appearance changes don't start it just to apply).
     public static var isLoaded: Bool { GhosttyRuntime.started }
 
@@ -663,4 +659,3 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         return GHOSTTY_CLIPBOARD_READ_STARTED
     }
 }
-#endif

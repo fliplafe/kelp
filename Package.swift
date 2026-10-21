@@ -1,14 +1,10 @@
 // swift-tools-version:6.0
 import PackageDescription
-import Foundation
 
-/// libghostty is built locally by scripts/build-ghostty.sh (too big for git); its targets exist only when it's there.
+/// libghostty: Vendor/GhosttyKit.xcframework, built by scripts/build-ghostty.sh (too big for git).
 let ghosttyLinks: [LinkerSetting] = [.linkedFramework("Metal"), .linkedFramework("MetalKit"), .linkedFramework("QuartzCore"), .linkedFramework("CoreText"),
                                       .linkedFramework("CoreGraphics"), .linkedFramework("IOSurface"), .linkedFramework("Carbon"),
                                       .linkedFramework("UniformTypeIdentifiers"), .linkedLibrary("c++")]
-/// KELP_NO_GHOSTTY=1 leaves them out (release builds: the probe isn't shipped and libghostty is arm64-only).
-let hasGhostty = FileManager.default.fileExists(atPath: Context.packageDirectory + "/Vendor/GhosttyKit.xcframework")
-    && Context.environment["KELP_NO_GHOSTTY"] == nil
 
 let package = Package(
     name: "Kelp",
@@ -20,7 +16,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.2.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
         .package(url: "https://github.com/CodeEditApp/CodeEditSourceEditor", from: "0.15.0"),
     ],
@@ -30,8 +25,7 @@ let package = Package(
         .target(name: "Agents", dependencies: ["Core"]),
         .target(name: "AgentData", dependencies: ["Core"]),
         .target(name: "Daemon", dependencies: ["Core", "GitKit", "Agents", "Integrations", "AgentData"]),
-        .target(name: "TerminalKit", dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm"), "Core"] + (hasGhostty ? ["GhosttyKit"] : []),
-                linkerSettings: hasGhostty ? ghosttyLinks : []),
+        .target(name: "TerminalKit", dependencies: ["Core", "GhosttyKit"], linkerSettings: ghosttyLinks),
         .executableTarget(name: "kelpd", dependencies: ["Daemon"]),
         .executableTarget(name: "kelp", dependencies: ["Core"]),
         .target(name: "LSPKit", dependencies: ["Core"]),
@@ -41,8 +35,8 @@ let package = Package(
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "Integrations", .product(name: "Sparkle", package: "Sparkle")]
-                + (hasGhostty ? ["GhosttyKit"] : []),
+            dependencies: ["Core", "GitKit", "Agents", "TerminalKit", "EditorKit", "LSPKit", "Markdown", "WorkbenchKit", "Integrations", "GhosttyKit",
+                           .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
             // macOS 14 look (compatibility mode). Naming a current SDK gets the system's own design on macOS 26+.
@@ -63,11 +57,6 @@ let package = Package(
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core", "TestSupport"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
         .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"], swiftSettings: [.swiftLanguageMode(.v5)]),
-    ]
-)
-
-if hasGhostty {
-    package.targets += [
         .binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework"),
     ]
-}
+)

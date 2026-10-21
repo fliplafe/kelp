@@ -14,6 +14,7 @@ Requires macOS 14+.
 ## Build and run
 
 ```sh
+scripts/build-ghostty.sh         # once: libghostty into Vendor/ (downloads zig 0.16 into a cache)
 swift build                      # everything
 swift test                       # all tests
 scripts/bundle.sh                # dist/Kelp.app + dist/Kelp.dmg (universal, release)

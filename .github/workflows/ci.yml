@@ -15,6 +15,15 @@ jobs:
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+      - name: Cache libghostty
+        id: ghostty
+        uses: actions/cache@v4
+        with:
+          path: Vendor/GhosttyKit.xcframework
+          key: ghostty-${{ hashFiles('scripts/build-ghostty.sh') }}   # the script pins GHOSTTY_COMMIT
+      - name: Build libghostty
+        if: steps.ghostty.outputs.cache-hit != 'true'
+        run: scripts/build-ghostty.sh
       - name: Build
         run: swift build
       - name: Test

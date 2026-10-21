@@ -1,5 +1,5 @@
 {
-  "originHash" : "8fbb42ba9a74f9e3f3eea781256ac827b4a0ed0dc1478eabac86b615d0218a23",
+  "originHash" : "3eb23274b3dfc4c9eca5970e8588f46de135cac85eb5b48660d0b7b4a1cce06b",
   "pins" : [
     {
       "identity" : "codeeditlanguages",
@@ -47,15 +47,6 @@
       }
     },
     {
-      "identity" : "h",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/rarestype/h",
-      "state" : {
-        "revision" : "aa3626829160917d4378330617971977cbd78f5b",
-        "version" : "1.0.1"
-      }
-    },
-    {
       "identity" : "rearrange",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/Rearrange",
@@ -74,15 +65,6 @@
       }
     },
     {
-      "identity" : "swift-argument-parser",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-argument-parser",
-      "state" : {
-        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
-        "version" : "1.8.2"
-      }
-    },
-    {
       "identity" : "swift-collections",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections.git",
@@ -92,30 +74,12 @@
       }
     },
     {
-      "identity" : "swift-png",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tayloraswift/swift-png",
-      "state" : {
-        "revision" : "8a0bcd4df5e4b307c804937776a56dd6ecdf6396",
-        "version" : "4.5.1"
-      }
-    },
-    {
       "identity" : "swiftlintplugin",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/lukepistrol/SwiftLintPlugin",
       "state" : {
         "revision" : "b384a67cf45d9989aed5aab23e226cbc7bc2cd54",
         "version" : "0.65.0"
-      }
-    },
-    {
-      "identity" : "swiftterm",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/migueldeicaza/SwiftTerm",
-      "state" : {
-        "revision" : "2dad6a1e516f755bed77cf9bbd09455062f54758",
-        "version" : "1.99.0"
       }
     },
     {
