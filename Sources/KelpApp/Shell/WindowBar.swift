@@ -37,6 +37,9 @@ final class WindowBar: NSView {
         context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
         awake.target = self; awake.action = #selector(toggleAwake)
         sideBySide.target = self; sideBySide.action = #selector(toggleSideBySide)
+        let hide = NSMenu()
+        hide.add(String(localized: "Hide Button")) { SettingsStore.shared.set("workbench.sideBySideButton", .bool(false)) }
+        sideBySide.menu = hide
         back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
         let nav = NSStackView(views: [back, forward]); nav.spacing = 0
         for v in [context, nav, search, awake, sideBySide] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
@@ -62,6 +65,7 @@ final class WindowBar: NSView {
         }
         track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
         track(owner: self) { Workbench.shared.sideBySide } changed: { [weak self] in self?.showSideBySide($0) }
+        track(owner: self) { SettingsStore.shared.bool("workbench.sideBySideButton") ?? true } changed: { [weak self] in self?.sideBySide.isHidden = !$0 }
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }
             self.info = nil; self.reload()
@@ -186,6 +190,7 @@ final class WindowBar: NSView {
     @objc private func toggleAwake() { ExtensionRegistry.shared.command("power.keepAwake")?.run([:]) }
 
     /// Filled while the workspace puts its agents side by side; a click shows them as tabs in one pane, and back.
+    /// A right-click hides it (Settings › Appearance brings it back).
     private func showSideBySide(_ on: Bool) {
         sideBySide.image = .symbol(on ? "rectangle.split.3x1.fill" : "rectangle.split.3x1", String(localized: "Agents Side by Side"))
         sideBySide.toolTip = on ? String(localized: "Agents side by side. Click to show them as tabs (⌃⌘T)")

@@ -479,6 +479,17 @@
         }
       }
     },
+    "Agents Side by Side button": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка «Агенты рядом»"
+          }
+        }
+      }
+    },
     "Agents side by side. Click to show them as tabs (⌃⌘T)": {
       "localizations": {
         "ru": {
@@ -2952,6 +2963,16 @@
         }
       }
     },
+    "Hide Button": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть кнопку"
+          }
+        }
+      }
+    },
     "Hide Inspector": {
       "localizations": {
         "ru": {
@@ -3042,6 +3063,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "В /%@"
+          }
+        }
+      }
+    },
+    "In the title bar, right of the search; right-click it to hide it. ⌃⌘T works either way.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В заголовке окна, справа от поиска; правый клик по ней скрывает её. ⌃⌘T работает в любом случае."
           }
         }
       }
@@ -3958,6 +3990,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Никогда"
+          }
+        }
+      }
+    },
+    "New %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый %@"
+          }
+        }
+      }
+    },
+    "New %@ (⌥⌘T)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новый %@ (⌥⌘T)"
           }
         }
       }

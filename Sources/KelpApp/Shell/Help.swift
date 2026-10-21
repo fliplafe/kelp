@@ -33,11 +33,12 @@ enum Help {
     when it resets. Settings › Agents › Show plan limits turns it off.
 
     ## The middle: tabs and splits
-    The **+** at the end of a pane's tabs opens an agent, a terminal, a browser or what extensions add. ⌘D splits right,
+    The **+** at the end of a pane's tabs opens an agent, a terminal, a browser or what extensions add; the agent's icon
+    before it starts the default agent (Settings › Agents) in one click. ⌘D splits right,
     ⇧⌘D down; drag a tab to an edge to split, between groups to move it. Dividers stay where you drag them (View ›
     Equalize Panes evens them out); ⌥⌘ arrows move to the pane on that side. ⇧⌘↩ lets the focused pane fill the area
     and brings the others back. Agents open side by side, each in a pane of its own (four make a 2×2 grid); terminals and
-    files share one more pane. The button right of the search (⌃⌘T) shows them as tabs in one pane instead, and back;
+    files share one more pane. The button right of the search (⌃⌘T; right-click hides it) shows them as tabs in one pane instead, and back;
     splitting or dragging a tab to another pane arranges the panes by hand from then on.
     ⌘W closes a tab (in an empty workspace, the workspace). Edited files show a dot on their tab and in the window's close
     button; ⌘S saves.

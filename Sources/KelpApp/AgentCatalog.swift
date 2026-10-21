@@ -22,6 +22,8 @@ enum AgentCatalog {
         if let d = SettingsStore.shared.string("agents.default"), installed.contains(where: { $0.id == d }) { return d }
         return installed.first?.id ?? "claude"
     }
+    /// The default agent, nil while no agent CLI is found (nothing to start).
+    @MainActor static var startable: String? { installed(all).isEmpty ? nil : defaultAgent }
     @MainActor static func name(_ id: String?) -> String {
         guard let id else { return "Terminal" }
         if id == "shell" { return "Terminal" }

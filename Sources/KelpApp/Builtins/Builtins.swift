@@ -225,7 +225,9 @@ enum Builtins {
               "Level with the tabs or under the panel. Drag an icon to move it; right-click the icons to hide them.",
               options: ["top", "bottom"]),
             s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock."),
-            s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge.")
+            s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge."),
+            s("workbench.sideBySideButton", "Agents Side by Side button", "boolean", true,
+              "In the title bar, right of the search; right-click it to hide it. ⌃⌘T works either way.")
         ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", specs: [],
                             custom: { AnyView(KeyboardSettings()) })]
         return c

@@ -22,6 +22,7 @@ final class TabStrip: NSView {
     var onMenu: ((String) -> NSMenu?)?
     var onDropTab: ((String, Int) -> Void)?        // tab id, index in this strip
     var addMenu: (() -> NSMenu)?
+    var onNewAgent: (() -> Void)?
     var onUnzoom: (() -> Void)?
     /// This group fills the editor area (⇧⌘↩); the button says so and brings the other panes back.
     var zoomed = false { didSet { unzoom.isHidden = !zoomed } }
@@ -31,6 +32,9 @@ final class TabStrip: NSView {
     private let scroll = NSScrollView()
     private let overflow = NSButton()
     private let add = NSButton()
+    /// The default agent, one click away beside "+" (no list to pick from).
+    private let newAgent = NSButton()
+    private let adds = NSStackView()
     private var items: [Item] = []
     private var selectedId: String?
     private var buttons: [TabButton] = []
@@ -56,25 +60,29 @@ final class TabStrip: NSView {
         add.contentTintColor = .secondaryLabelColor
         add.symbolConfiguration = .init(pointSize: 12, weight: .medium); add.toolTip = String(localized: "New tab: an agent (⌥⌘T), a terminal (⌘T), a browser…")
         add.target = self; add.action = #selector(addTapped)
+        newAgent.bezelStyle = .recessed; newAgent.showsBorderOnlyWhileMouseInside = true; newAgent.imageScaling = .scaleNone
+        newAgent.target = self; newAgent.action = #selector(newAgentTapped); newAgent.isHidden = true
+        adds.setViews([newAgent, add], in: .leading); adds.spacing = 0; adds.detachesHiddenViews = true
         let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6; trailing.detachesHiddenViews = true
         scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
         scroll.automaticallyAdjustsContentInsets = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         let sep = NSBox(); sep.boxType = .separator
-        for v in [scroll, add, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        for v in [scroll, adds, trailing, sep] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(insertion)
-        let lead = add.leadingAnchor.constraint(equalTo: leadingAnchor); addLead = lead
+        let lead = adds.leadingAnchor.constraint(equalTo: leadingAnchor); addLead = lead
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.height),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor), trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            scroll.trailingAnchor.constraint(equalTo: add.leadingAnchor), lead,
-            add.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -2),
+            scroll.trailingAnchor.constraint(equalTo: adds.leadingAnchor), lead,
+            adds.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -2),
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor), add.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailing.centerYAnchor.constraint(equalTo: centerYAnchor), adds.centerYAnchor.constraint(equalTo: centerYAnchor),
             overflow.widthAnchor.constraint(equalToConstant: 18), add.widthAnchor.constraint(equalToConstant: 26), add.heightAnchor.constraint(equalToConstant: 26),
+            newAgent.widthAnchor.constraint(equalToConstant: 26), newAgent.heightAnchor.constraint(equalToConstant: 26),
             sep.leadingAnchor.constraint(equalTo: leadingAnchor), sep.trailingAnchor.constraint(equalTo: trailingAnchor), sep.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
@@ -107,7 +115,7 @@ final class TabStrip: NSView {
         // Before super.layout(): set after it, the constant only took effect on the next pass, so a tab whose title
         // grew (a page finishing loading) stayed clipped until something else laid the strip out.
         let natural = stack.fittingSize.width
-        let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - 26
+        let room = bounds.width - 6 - (overflow.superview?.fittingSize.width ?? 0) - 2 - (newAgent.isHidden ? 26 : 52)
         let x = max(0, min(natural, room))
         if abs((addLead?.constant ?? 0) - x) > 0.5 { addLead?.constant = x }
         overflow.isHidden = natural <= room + 1
@@ -122,6 +130,13 @@ final class TabStrip: NSView {
     }
 
     @objc private func unzoomTapped() { onUnzoom?() }
+    /// The agent "+" would start first (nil: no agent CLI found, the button hides).
+    func setNewAgent(icon: NSImage?, name: String) {
+        newAgent.isHidden = icon == nil
+        newAgent.image = icon
+        newAgent.toolTip = String(localized: "New \(name) (⌥⌘T)"); newAgent.setAccessibilityLabel(String(localized: "New \(name)"))
+    }
+    @objc private func newAgentTapped() { onNewAgent?() }
     @objc private func addTapped() { addMenu?().popUp(positioning: nil, at: NSPoint(x: 0, y: add.bounds.height + 4), in: add) }
 
     @objc private func overflowTapped() {

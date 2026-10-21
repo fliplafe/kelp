@@ -40,6 +40,10 @@ final class EditorArea: NSViewController {
             self?.rebuildStart()
             for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }   // agent tabs get the real icon
         }
+        // The default agent's button beside each "+".
+        track(owner: self) { AgentCatalog.startable } changed: { [weak self] _ in
+            for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }
+        }
     }
 
     /// Turning an extension off takes its open tabs' content with it (they say how to turn it back on); turning it on
@@ -143,6 +147,7 @@ final class EditorArea: NSViewController {
         g.strip.onClose = { [weak self] id in self?.closeTab(id) }
         g.strip.onMenu = { [weak self] id in self?.tabMenu(id) }
         g.strip.addMenu = { [weak self] in self?.newTabMenu(group: gid) ?? NSMenu() }
+        g.strip.onNewAgent = { [weak self] in self?.layout.focused = gid; self?.newAgent() }
         g.strip.onUnzoom = { [weak self] in self?.toggleZoom() }
         g.strip.onDropTab = { [weak self] id, index in
             guard let self else { return }
@@ -178,6 +183,8 @@ final class EditorArea: NSViewController {
         guard let g = groupViews[gid], let model = layout.groups[gid] else { return }
         g.strip.focused = layout.focused == gid || (layout.focused == nil && layout.root?.sessions.first == gid)
         g.strip.zoomed = zoomed == gid
+        let agent = AgentCatalog.startable
+        g.strip.setNewAgent(icon: agent.flatMap { AgentCatalog.icon($0) }, name: AgentCatalog.name(agent))
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(Self.disambiguated(model.tabs.map { t in
