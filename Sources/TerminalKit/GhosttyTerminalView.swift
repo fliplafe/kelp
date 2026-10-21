@@ -656,7 +656,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     // MARK: clipboard
 
     func readClipboard(state: UnsafeMutableRawPointer?, mimes: UnsafePointer<UnsafePointer<CChar>?>?, count: Int) -> ghostty_clipboard_read_result_e {
-        guard let surface, let text = NSPasteboard.general.string(forType: .string) else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+        guard let surface, let text = TerminalPaste.text(from: .general) else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
         let data = text.utf8CString   // its length goes along: a NUL inside the text must not cut it short
         data.withUnsafeBufferPointer { d in
             "text/plain;charset=utf-8".withCString { mime in

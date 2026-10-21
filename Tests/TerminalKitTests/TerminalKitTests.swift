@@ -59,3 +59,21 @@ import Testing
     #expect(problems.isEmpty, "\(problems)")
 }
 #endif
+
+@Test @MainActor func pasteTypesAnImageAsItsPath() throws {
+    let pb = NSPasteboard(name: .init("kelp-test-\(UUID().uuidString)"))
+    defer { pb.releaseGlobally() }
+    let img = NSImage(size: NSSize(width: 4, height: 4))
+    img.lockFocus(); NSColor.red.setFill(); NSRect(x: 0, y: 0, width: 4, height: 4).fill(); img.unlockFocus()
+    // A screenshot (an image and no text): a PNG on disk, typed as its path.
+    pb.clearContents(); pb.writeObjects([img])
+    let typed = try #require(TerminalPaste.text(from: pb))
+    #expect(typed.hasSuffix(".png "))
+    #expect(NSImage(contentsOfFile: String(typed.dropLast())) != nil)
+    // Text wins over an image that came with it (a table copied from a spreadsheet).
+    pb.clearContents(); pb.writeObjects([img, "a b" as NSString])
+    #expect(TerminalPaste.text(from: pb) == "a b")
+    // A file copied in Finder: its path, escaped, not just its name.
+    pb.clearContents(); pb.writeObjects([URL(fileURLWithPath: "/tmp/my shot.png") as NSURL])
+    #expect(TerminalPaste.text(from: pb) == "/tmp/my\\ shot.png ")
+}

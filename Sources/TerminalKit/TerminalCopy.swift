@@ -1,4 +1,26 @@
 import AppKit
+import Core
+
+/// What a paste types into a terminal: copied files as their paths, else the text, else an image (a screenshot,
+/// "Copy Image") saved as a PNG, as its path — agents attach an image they're given by path.
+public enum TerminalPaste {
+    public static func text(from pb: NSPasteboard) -> String? {
+        let files = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        if !files.isEmpty { return paths(files.map(\.path)) }
+        if let s = pb.string(forType: .string) { return s }
+        return savedImage(pb).map { paths([$0]) }
+    }
+
+    public static func paths(_ p: [String]) -> String { p.map(IDE.escapedPath).joined(separator: " ") + " " }
+
+    /// The pasteboard's image as a PNG in the temporary folder.
+    public static func savedImage(_ pb: NSPasteboard) -> String? {
+        guard let tiff = NSImage(pasteboard: pb)?.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
+        let u = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString.prefix(8)).png")
+        return (try? png.write(to: u)) == nil ? nil : u.path
+    }
+}
 
 /// Text as it should leave a terminal: what TUIs paint around it (box borders, an agent's indented gutter, padding to the
 /// right edge) isn't part of it.

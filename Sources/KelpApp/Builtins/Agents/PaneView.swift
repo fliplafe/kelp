@@ -319,14 +319,10 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
         let pb = sender.draggingPasteboard
         if let id = pb.string(forType: .kelpPane) { onDrop?(id, self, edge(sender)); return true }
         var paths = (pb.readObjects(forClasses: [NSURL.self]) as? [URL])?.map(\.path) ?? []
-        if paths.isEmpty, let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]) {
-            let u = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-\(UUID().uuidString.prefix(8)).png")
-            try? png.write(to: u); paths = [u.path]
-        }
+        if paths.isEmpty, let png = TerminalPaste.savedImage(pb) { paths = [png] }
         if paths.isEmpty, let text = pb.string(forType: .string) { insert(text); return true }
         guard !paths.isEmpty else { return false }
-        insert(paths.map(IDE.escapedPath).joined(separator: " ") + " ")
+        insert(TerminalPaste.paths(paths))
         focus()
         return true
     }
