@@ -46,7 +46,7 @@ final class LSPManager {
         waiting[root, default: []].append(start)
         if first {
             let name = (root as NSString).lastPathComponent
-            Banner.show(String(localized: "Language servers run code from “\(name)” (build scripts, its own TypeScript…). Start them for this project?"),
+            Banner.show(String(localized: "Language servers can run code from “\(name)” (its build scripts and plugins). Start them for this project?"),
                         action: (String(localized: "Trust and Start"), { LSPManager.shared.trust(root) }))
         }
         return false

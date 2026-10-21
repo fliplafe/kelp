@@ -3487,6 +3487,16 @@
         }
       }
     },
+    "Language servers can run code from “%@” (its build scripts and plugins). Start them for this project?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Языковые серверы могут запускать код из «%@» (его скрипты сборки и плагины). Запустить их для этого проекта?"
+          }
+        }
+      }
+    },
     "Last Turn": {
       "localizations": {
         "ru": {
@@ -7290,6 +7300,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Доверять и выполнить"
+          }
+        }
+      }
+    },
+    "Trust and Start": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доверять и запустить"
           }
         }
       }
