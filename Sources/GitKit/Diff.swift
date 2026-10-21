@@ -58,17 +58,47 @@ extension Git {
         return files
     }
 
+    /// How much of a diff one reply carries (git's output and a little per line, `Allowance`): a file past its share
+    /// comes back with its header only (`tooLarge`), and so does every file once the whole is spent, so an agent
+    /// regenerating a lock file or writing thousands of files can't make a reply the app chokes on. In a review (every
+    /// file) one file gets an eighth, so a regenerated lock file doesn't push the rest out; asked for alone, the whole.
+    public static let diffBudget = 8 << 20
+
+    /// What's left of `diffBudget` while a diff is read. A file costs its bytes and 40 for each line: about its size in
+    /// the reply, where each line is an object of its own (and a row on screen).
+    struct Allowance {
+        var left = Git.diffBudget
+        let perFile: Int
+        init(oneFile: Bool) { perFile = oneFile ? Git.diffBudget : Git.diffBudget / 8 }
+        /// Whether this many bytes could still go in, whatever their lines.
+        func fits(_ n: Int) -> Bool { n <= min(left, perFile) }
+        /// Whether this file's text still goes in (counted if so).
+        mutating func take(_ d: Data) -> Bool {
+            guard fits(d.count) else { return false }
+            let lines = d.withUnsafeBytes { b in b.reduce(0) { $1 == 0x0A ? $0 + 1 : $0 } }
+            guard fits(d.count + 40 * lines) else { return false }
+            left -= d.count + 40 * lines; return true
+        }
+    }
+
     /// Each file of git's diff output decoded on its own: as UTF-8, or byte for byte (Latin-1) when it isn't, so a patch
-    /// built back from it applies (a lossy decode would put U+FFFD where the file has other bytes).
-    public static func parseDiff(_ d: Data) -> [FileDiff] {
-        if let s = String(data: d, encoding: .utf8) { return parseDiff(s) }
+    /// built back from it applies (a lossy decode would put U+FFFD where the file has other bytes). A file past what's
+    /// left of `budget` is read up to its first hunk only.
+    static func parseDiff(_ d: Data, budget: inout Allowance) -> [FileDiff] {
         let mark = Data("\ndiff --git ".utf8)
         var starts = [d.startIndex], from = d.startIndex
         while let r = d.range(of: mark, in: from..<d.endIndex) { starts.append(r.lowerBound + 1); from = r.upperBound }
         return zip(starts, starts.dropFirst() + [d.endIndex]).flatMap { a, b -> [FileDiff] in
-            let chunk = d[a..<b]
-            if let s = String(data: chunk, encoding: .utf8) { return parseDiff(s) }
-            return parseDiff(String(data: chunk, encoding: .isoLatin1) ?? "").map { var f = $0; f.latin1 = true; return f }
+            var chunk = d[a..<b]
+            let fits = budget.take(chunk)
+            if !fits, let hunks = chunk.range(of: Data("\n@@".utf8)) { chunk = chunk[..<hunks.lowerBound] }
+            let s = String(data: chunk, encoding: .utf8)
+            return parseDiff(s ?? String(data: chunk, encoding: .isoLatin1) ?? "").map {
+                var f = $0
+                if s == nil { f.latin1 = true }
+                if !fits { f.tooLarge = true }
+                return f
+            }
         }
     }
 
@@ -109,26 +139,33 @@ extension Git {
         case .since(let tree): a += [try rev(tree), try snapshotTree(path)]   // two trees: new files included, nothing staged
         }
         if let file { a += ["--"] + literal([file]) }
-        var diffs = parseDiff(try runData(a, cwd: path))
+        var budget = Allowance(oneFile: file != nil)
+        var diffs = parseDiff(try runData(a, cwd: path), budget: &budget)
         // Untracked files are invisible to `git diff`; show them as all-added for working-tree sources.
-        if case .unstaged = source { diffs += try untrackedDiffs(path, only: file) }
-        if case .allUncommitted = source { diffs += try untrackedDiffs(path, only: file) }
+        if case .unstaged = source { diffs += try untrackedDiffs(path, only: file, budget: &budget) }
+        if case .allUncommitted = source { diffs += try untrackedDiffs(path, only: file, budget: &budget) }
         return diffs
     }
 
-    static func untrackedDiffs(_ path: String, only: String?) throws -> [FileDiff] {
+    static func untrackedDiffs(_ path: String, only: String?, budget: inout Allowance) throws -> [FileDiff] {
         let remote = RemoteHost.of(path)
         let files = try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }
         // On the host: all of them in one round trip, each at most a byte past the limit (the folder here is a marker).
-        let there = remote.map { r in (try? untrackedOnHost(r, files.map(\.path))) ?? [:] } ?? [:]
+        let there = remote.map { r in (try? untrackedOnHost(r, files.map(\.path), budget: budget.left)) ?? [:] } ?? [:]
         return files.compactMap { f in
             let full = (path as NSString).appendingPathComponent(f.path)
             let mode = FileManager.default.isExecutableFile(atPath: full) ? "100755" : "100644"   // staged as it is: a script stays runnable
             let hdr = "diff --git a/\(f.path) b/\(f.path)\nnew file mode \(mode)\n--- /dev/null\n+++ b/\(f.path)"
             let asBinary = FileDiff(path: f.path, header: hdr, hunks: [], binary: true)
+            let tooLarge = FileDiff(path: f.path, header: hdr, hunks: [], binary: false, tooLarge: true)
             if remote != nil {
-                guard let data = there[f.path], data.count <= 1_000_000 else { return asBinary }
-                return added(data, f.path, hdr) ?? asBinary
+                switch there[f.path] {
+                case .none: return asBinary
+                case .some(.none): return tooLarge   // the host read no more: the budget was spent
+                case .some(.some(let data)):
+                    guard data.count <= 1_000_000 else { return asBinary }
+                    return budget.take(data) ? added(data, f.path, hdr) ?? asBinary : tooLarge
+                }
             }
             // A symlink is shown as git stores it, its target path; following it could read /dev/zero or a huge file.
             if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: full) {
@@ -137,27 +174,32 @@ extension Git {
             }
             guard let size = (try? FileManager.default.attributesOfItem(atPath: full))?[.size] as? Int else { return nil }
             guard size <= 1_000_000 else { return asBinary }   // a log, a dataset, a folder that should be ignored: not read
+            guard budget.fits(size) else { return tooLarge }   // not read
             guard let data = FileManager.default.contents(atPath: full) else { return nil }
-            return added(data, f.path, hdr) ?? asBinary
+            return budget.take(data) ? added(data, f.path, hdr) ?? asBinary : tooLarge
         }
     }
 
     /// Untracked files on a remote project's host, one ssh round trip per 200 (a command line has a length limit): each
-    /// its first 1 MB and a byte; one that isn't a regular file or can't be read is left out (shown as binary).
-    static func untrackedOnHost(_ r: RemoteHost, _ paths: [String]) throws -> [String: Data] {
-        var out: [String: Data] = [:]
+    /// its first 1 MB and a byte; one that isn't a regular file or can't be read is left out (shown as binary). Once
+    /// `budget` bytes came the host reads no more: those files are there as nil.
+    static func untrackedOnHost(_ r: RemoteHost, _ paths: [String], budget: Int) throws -> [String: Data?] {
+        var out: [String: Data?] = [:], left = budget
         for start in stride(from: 0, to: paths.count, by: 200) {
             let chunk = paths[start..<min(start + 200, paths.count)]
+            guard left > 0 else { chunk.forEach { out[$0] = .some(nil) }; continue }
             let names = chunk.map { RemoteHost.quote(r.path + "/" + $0) }.joined(separator: " ")
-            // Each file as a line with its length (-1: not read) and then that many bytes.
-            let script = "t=$(mktemp) || exit 1; for f in \(names); do if [ -f \"$f\" ] && head -c 1000001 -- \"$f\" > \"$t\" 2>/dev/null; "
-                + "then echo $(wc -c < \"$t\"); cat \"$t\"; else echo -1; fi; done; rm -f \"$t\""
+            // Each file as a line with its length (-1: not read, -2: the budget is spent) and then that many bytes.
+            let script = "t=$(mktemp) || exit 1; left=\(left); for f in \(names); do if [ $left -le 0 ]; then echo -2; "
+                + "elif [ -f \"$f\" ] && head -c 1000001 -- \"$f\" > \"$t\" 2>/dev/null; "
+                + "then n=$(wc -c < \"$t\"); left=$((left - n)); echo $n; cat \"$t\"; else echo -1; fi; done; rm -f \"$t\""
             var rest = try r.run(script)[...]
             for p in chunk {
                 guard let nl = rest.firstIndex(of: 0x0A), let n = Int(String(decoding: rest[..<nl], as: UTF8.self)) else { break }
                 rest = rest[(nl + 1)...]
+                if n == -2 { out[p] = .some(nil); left = 0; continue }
                 guard n >= 0, rest.count >= n else { continue }
-                out[p] = Data(rest.prefix(n)); rest = rest.dropFirst(n)
+                out[p] = Data(rest.prefix(n)); rest = rest.dropFirst(n); left -= n
             }
         }
         return out

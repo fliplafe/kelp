@@ -14,7 +14,8 @@ final class DiffTab: TabContent {
     var view: NSView { controller.view }
     var title: String {
         guard let file else { return source == "turn" ? String(localized: "Last Turn") : String(localized: "Changes") }
-        let what = commit.map { String($0.prefix(7)) } ?? (source == "staged" ? String(localized: "Index") : String(localized: "Working Tree"))
+        let what = commit.map { String($0.prefix(7)) } ?? (source == "staged" ? String(localized: "Index")
+            : source == "branch" ? String(localized: "Branch vs base") : String(localized: "Working Tree"))
         return "\((file as NSString).lastPathComponent) (\(what))"
     }
     var icon: NSImage? { .symbol("plusminus") }
@@ -29,13 +30,14 @@ final class DiffTab: TabContent {
         _ = controller.view
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
-        // Its workspace's git, pushed when its files change (a commit's diff doesn't change): read the diff again.
+        // Its workspace's git, pushed when its files change (a commit's diff doesn't change): read the diff again if it
+        // changed what the diff is read from.
         guard commit == nil else { return }
         gitWatch.key = worktreeId
         var shown = false   // the first value is what was just loaded
-        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] _ in
+        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] e in
             guard let self, shown else { shown = true; return }
-            if controller.view.window == nil { controller.stale = true } else { controller.reload() }
+            controller.gitChanged(e)
         }
     }
     private let gitWatch = Watched(.git)
@@ -46,6 +48,25 @@ final class DiffTab: TabContent {
         var c = URLComponents()
         c.queryItems = [("file", file), ("source", source), ("commit", commit)].compactMap { n, v in v.map { URLQueryItem(name: n, value: $0) } }
         return "diff:\(worktree)" + (c.queryItems?.isEmpty == false ? "?" + (c.percentEncodedQuery ?? "") : "")
+    }
+}
+
+extension GitDiff {
+    /// What of a workspace's git this diff is read from: an event that leaves it as it was (a fetch moving ahead/behind,
+    /// a branch made elsewhere; for a branch's or a commit's diff, edits too) needs no new read. Edits and staging show
+    /// in the status and the line counts, commits in HEAD.
+    struct Basis: Equatable {
+        var changes: [FileChange]?, stats: LineStats?, head: String?, branches: BranchInfo?, error: String?
+    }
+
+    func basis(_ e: GitEvent?) -> Basis? {
+        guard let e else { return nil }
+        switch source ?? "all" {
+        case "branch": return Basis(branches: e.branches, error: e.error)   // HEAD against its base's merge base
+        case "commit": return Basis(head: commit == "HEAD" ? e.branches?.head : nil, error: e.error)
+        case "unstaged", "turn": return Basis(changes: e.changes, stats: e.stats, error: e.error)   // the files against the index, or a snapshot
+        default: return Basis(changes: e.changes, stats: e.stats, head: e.branches?.head, error: e.error)   // against HEAD
+        }
     }
 }
 

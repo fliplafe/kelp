@@ -9,6 +9,7 @@ public enum DiffRow: Equatable, Sendable {
     case line(file: Int, DiffLine)             // inline
     case pair(file: Int, left: DiffLine?, right: DiffLine?)   // side-by-side
     case binary(path: String)
+    case tooLarge(path: String)                // past what one diff reply carries (`FileDiff.tooLarge`)
 }
 
 public enum DiffRows {
@@ -30,6 +31,7 @@ public enum DiffRows {
         var rows: [DiffRow] = []
         for (fi, f) in files.enumerated() {
             rows.append(.file(path: f.path, additions: f.additions, deletions: f.deletions))
+            if f.tooLarge == true { rows.append(.tooLarge(path: f.path)); continue }
             if f.binary { rows.append(.binary(path: f.path)); continue }
             var prevEnd: Int?
             for (hi, h) in f.hunks.enumerated() {

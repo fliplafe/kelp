@@ -105,8 +105,10 @@ public struct FileDiff: Codable, Sendable, Equatable {
     public var binary: Bool
     /// The file isn't UTF-8: its text was read byte for byte (Latin-1), and patches go back the same way.
     public var latin1: Bool?
-    public init(path: String, header: String, hunks: [Hunk], binary: Bool, latin1: Bool? = nil) {
-        self.path = path; self.header = header; self.hunks = hunks; self.binary = binary; self.latin1 = latin1
+    /// Its changes are past what one reply carries (`Git.diffBudget`): no hunks, only the header. Asked for alone, it may fit.
+    public var tooLarge: Bool?
+    public init(path: String, header: String, hunks: [Hunk], binary: Bool, latin1: Bool? = nil, tooLarge: Bool? = nil) {
+        self.path = path; self.header = header; self.hunks = hunks; self.binary = binary; self.latin1 = latin1; self.tooLarge = tooLarge
     }
     public var additions: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .add }.count } }
     public var deletions: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .del }.count } }

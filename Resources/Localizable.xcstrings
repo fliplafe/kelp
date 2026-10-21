@@ -10559,7 +10559,17 @@
         }
       }
     },
-    "GitLab": {}
+    "GitLab": {},
+    "%@ is too large to show here": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл %@ слишком большой, чтобы показать его здесь"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }

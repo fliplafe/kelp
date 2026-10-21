@@ -53,3 +53,52 @@ extension SharedAppModel {
         #expect(said.count == 1, "\(labels(panel.view).map(\.stringValue))")
     }
 }
+
+/// The review reads its diff once at a time: a burst of git events makes one more read, not one each; and an event
+/// that moves nothing the diff is read from (a fetch changing ahead/behind) reads nothing.
+extension SharedAppModel {
+    @Test func gitEventsReadTheReviewOnceAtATimeAndOnlyWhenItsBasisMoved() async throws {
+        let rig = try await AppRig(); defer { rig.done() }
+        try rig.write("f.txt", "b\n")
+        let wid = rig.workspace.id, vc = DiffViewController()
+        defer { AppModel.shared.git[wid] = nil }
+        rig.show(vc, 900, 700)
+        let head = BranchInfo(current: "main", head: "abc1234", local: ["main"], remote: [], upstream: "origin/main", ahead: 0, behind: 0, merging: false)
+        let e = GitEvent(worktree: wid, changes: [FileChange(path: "f.txt", index: ".", worktree: "M")], branches: head,
+                         stats: LineStats(added: [.code: 1], removed: [.code: 1]))
+        AppModel.shared.git[wid] = e
+        vc.show(worktree: wid)
+        await vc.load()
+        var reads = vc.reads
+        for _ in 0..<10 { vc.reload() }
+        await vc.load()
+        #expect((1...2).contains(vc.reads - reads), "\(vc.reads - reads) reads")   // eleven asked: one read, or one more after it
+
+        reads = vc.reads
+        var fetched = e; fetched.branches?.behind = 3
+        AppModel.shared.git[wid] = fetched; vc.gitChanged(fetched)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(vc.reads == reads)
+        var edited = fetched; edited.stats = LineStats(added: [.code: 2], removed: [.code: 1])
+        AppModel.shared.git[wid] = edited; vc.gitChanged(edited)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(vc.reads == reads + 1)
+    }
+
+    /// A file past one file's share of a review is listed, says it's too large, and opens on its own.
+    @Test func aFileTooLargeForTheReviewOffersItsOwnTab() async throws {
+        let lock = (0..<40_000).map { "\"package-\($0)\": \"1.0.\($0)\"" }   // regenerated: its diff is ~2.4 MB
+        let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"]); defer { rig.done() }
+        try rig.write("big.lock", lock.map { $0 + "-2" }.joined(separator: "\n") + "\n")
+        try rig.write("f.txt", "b\n")
+        let vc = DiffViewController()
+        rig.show(vc, 900, 700)
+        vc.show(worktree: rig.workspace.id)
+        await vc.load()
+        #expect(vc.diffs.map(\.path).sorted() == ["big.lock", "f.txt"])
+        #expect(vc.diffs.first { $0.path == "big.lock" }?.tooLarge == true)
+        vc.view.layoutSubtreeIfNeeded()
+        let open = cells(in: vc.view).flatMap(buttons).filter { $0.title == "Open Changes" }
+        #expect(open.count == 1)
+    }
+}

@@ -286,6 +286,32 @@ func fuzzy(_ path: String, _ query: String) -> Int? { ProjectFiles.fuzzyScore(.i
     #expect(throws: GitError.self) { try Git.commit(repo, message: "markers", all: true) }
 }
 
+/// A reply carries at most `Git.diffBudget` of git's output: a regenerated lock file comes back as its header (still
+/// listed, marked too large) while the files around it show, and asked for alone it shows; new files stop being read
+/// once the whole is spent.
+@Test func aHugeDiffComesBackAsHeadersPastTheBudget() throws {
+    let repo = try tempRepo()
+    let lock = (0..<40_000).map { "\"package-\($0)\": \"1.0.\($0)\"" }   // ~1.2 MB: its diff is past one file's share of a review
+    try (lock.joined(separator: "\n") + "\n").write(toFile: repo + "/a.lock", atomically: true, encoding: .utf8)
+    try Git.run(["add", "a.lock"], cwd: repo); try Git.run(["commit", "-qm", "lock"], cwd: repo)
+    try (lock.map { $0 + "-2" }.joined(separator: "\n") + "\n").write(toFile: repo + "/a.lock", atomically: true, encoding: .utf8)
+    try "a\nB\nc\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+
+    let all = try Git.diff(repo, source: .unstaged)
+    let big = try #require(all.first { $0.path == "a.lock" }), small = try #require(all.first { $0.path == "f.txt" })
+    #expect(big.tooLarge == true && big.hunks.isEmpty && big.header.contains("+++ b/a.lock"))
+    #expect(small.tooLarge == nil && small.hunks.count == 1)
+    let alone = try #require(try Git.diff(repo, source: .unstaged, file: "a.lock").first)
+    #expect(alone.tooLarge == nil && alone.additions == 40_000)
+
+    // Twelve new files of 900 KB in 1000 lines, 940 KB each with the lines' share: what's left of 8 MB holds eight.
+    let line = String(repeating: "x", count: 899) + "\n"
+    for i in 0..<12 { try String(repeating: line, count: 1000).write(toFile: repo + "/gen\(i).txt", atomically: true, encoding: .utf8) }
+    let new = try Git.diff(repo, source: .unstaged).filter { $0.path.hasPrefix("gen") }
+    #expect(new.count == 12)
+    #expect(new.filter { $0.tooLarge == true }.count == 4 && new.filter { !$0.hunks.isEmpty }.count == 8)
+}
+
 @Test func untrackedBigFilesArentRead() throws {
     let repo = try tempRepo()
     try Data(repeating: 0x61, count: 1_200_000).write(to: URL(fileURLWithPath: repo + "/big.log"))

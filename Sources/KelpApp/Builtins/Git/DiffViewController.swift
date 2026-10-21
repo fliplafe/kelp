@@ -127,7 +127,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     func show(worktree id: String?) {
-        worktreeId = id
+        worktreeId = id; asking += 1
         Task { await load() }
     }
 
@@ -146,8 +146,13 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     /// Git changed while the tab was in the background: it reads the diff again when shown, not on every save meanwhile.
     var stale = false
     override func viewDidAppear() { super.viewDidAppear(); if stale { stale = false; reload() } }
+    /// Its workspace's git as pushed: the diff is read again only when what it's read from changed (`GitDiff.basis`).
+    func gitChanged(_ e: GitEvent?) {
+        guard diffRequest().basis(e) != basis else { return }
+        if view.window == nil { stale = true } else { reload() }
+    }
     func showLastTurn() { source.selectItem(at: 5) }
-    @objc private func sourceChanged() { askCommit = source.indexOfSelectedItem == 4; reload() }
+    @objc private func sourceChanged() { askCommit = source.indexOfSelectedItem == 4; asking += 1; reload() }
     private var askCommit = false
     @objc private func layoutChanged() {
         UserDefaults.standard.set(!sideBySide, forKey: "diff.inline")
@@ -169,12 +174,31 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         }
     }
 
-    /// Counts loads: an older one that finishes after a newer one (or after the tab moved on) drops its answers.
-    private var loads = 0
+    /// One read at a time: what asks meanwhile (git events, a click) makes one more read after it, not one each. A caller
+    /// gets a diff read after it asked.
+    private var reading: Task<Void, Never>?
+    private var readAgain = false
+    /// Counts changes to what's asked (another source or workspace): a read of the old one drops its answer.
+    private var asking = 0
+    /// What the diff on screen was read from: a git event that leaves it as it was reads nothing.
+    private var basis: GitDiff.Basis?
 
     func load() async {
-        guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
-        loads += 1; let load = loads
+        if let running = reading { readAgain = true; await running.value; return }
+        let t = Task {
+            repeat { readAgain = false; await loadOnce() } while readAgain
+            reading = nil   // with the last check: no await between, so a later caller starts a new one
+        }
+        reading = t
+        await t.value
+    }
+
+    /// Reads so far: tests see a burst of events make one more, not one each.
+    private(set) var reads = 0
+
+    private func loadOnce() async {
+        reads += 1
+        guard let wid = worktreeId else { builds += 1; diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
             askCommit = false   // before asking: a load that starts while the question is up doesn't ask again
             let log = await AppModel.shared.call(GitLog(id: wid, all: true)) ?? []   // the user picked "a commit": a banner if git can't list them
@@ -190,19 +214,26 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         }
         askCommit = false
         if single == nil, source.indexOfSelectedItem == 5, FileActions.targetAgent == nil {
-            diffs = []; files.reloadData(); rebuildRows(); status.stringValue = String(localized: "No agent in this workspace"); return
+            builds += 1; diffs = []; rows = []; words = [:]; files.reloadData(); table.reloadData()
+            status.stringValue = String(localized: "No agent in this workspace"); return
         }
-        let r = await AppModel.shared.tryCall(diffRequest())
+        let asked = asking, request = diffRequest()
+        basis = request.basis(AppModel.shared.git[wid])
+        let r = await AppModel.shared.tryCall(request)
         let d = r.value ?? []
         var ch: [FileChange] = [], cm: [DiffComment] = []
         if single == nil, r.error == nil {   // the files' letters and the comments: the diff above already said what failed
-            ch = await AppModel.shared.quiet(GitStatus(id: wid)) ?? []
+            // The letters as pushed for this workspace (a review tab watches it), else asked.
+            if let pushed = AppModel.shared.git[wid]?.changes { ch = pushed } else { ch = await AppModel.shared.quiet(GitStatus(id: wid)) ?? [] }
             cm = await AppModel.shared.quiet(CommentList(id: wid)) ?? []
         }
+        let layout = sideBySide, built = await buildRows(d, cm, sideBySide: layout)
         // Rows, cell tags and the hunk buttons index `diffs`: they change together, once every answer is in.
-        guard load == loads, wid == worktreeId else { return }
-        diffs = d; changes = ch; comments = cm
-        files.reloadData(); rebuildRows()
+        guard asked == asking, wid == worktreeId else { return }
+        builds += 1   // rows a layout change is still building are the old diff's
+        diffs = d; changes = ch; comments = cm; (rows, words) = built
+        files.reloadData(); table.reloadData()
+        if layout != sideBySide { rebuildRows() }   // the layout changed while these were built
         if let e = r.error { status.stringValue = e; return }   // why there's nothing, not "0 files"
         let add = diffs.reduce(0) { $0 + $1.additions }, del = diffs.reduce(0) { $0 + $1.deletions }
         let open = comments.filter { $0.state == .open }.count
@@ -211,10 +242,22 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             + (open > 0 ? "  ·  " + String(localized: "\(open) open comments") : "")
     }
 
+    /// The table's rows and changed words, built off the main thread: a big diff is a lot of rows.
+    private func buildRows(_ d: [FileDiff], _ cm: [DiffComment], sideBySide: Bool) async -> ([ReviewRow], [String: NSRange]) {
+        let one = single != nil
+        return await Task.detached { (DiffRows.reviewRows(d, comments: cm, sideBySide: sideBySide, hideFileRows: one), DiffRows.changedWords(d)) }.value
+    }
+
+    /// Counts row builds: one that a newer build or a new diff overtook drops its rows.
+    private var builds = 0
     private func rebuildRows() {
-        rows = DiffRows.reviewRows(diffs, comments: comments, sideBySide: sideBySide, hideFileRows: single != nil)
-        words = DiffRows.changedWords(diffs)
-        table.reloadData()
+        builds += 1
+        let n = builds, d = diffs, cm = comments, layout = sideBySide
+        Task {
+            let built = await buildRows(d, cm, sideBySide: layout)
+            guard n == builds else { return }
+            (rows, words) = built; table.reloadData()
+        }
     }
 
     // MARK: table
@@ -254,6 +297,14 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 let v = label(first ? "\(p)   " + RowBadges.changes(added: a, removed: d).string : "", font: .boldSystemFont(ofSize: 12))
                 v.backgroundColor = .controlBackgroundColor; v.drawsBackground = true; return v
             case .binary(let p): return label(first ? String(localized: "Binary file \(p) not shown") : "", font: font, color: .secondaryLabelColor)
+            case .tooLarge(let p):
+                let said = label(first ? String(localized: "\(p) is too large to show here") : "", font: font, color: .secondaryLabelColor)
+                guard first, let uri = alone(p) else { return said }
+                said.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                let open = ClosureButton(title: String(localized: "Open Changes")) { Workbench.open(uri) }
+                open.bezelStyle = .push; open.controlSize = .small
+                let stack = NSStackView(views: [said, open]); stack.spacing = 8
+                return stack
             case .gap(let n): return band(first ? String(localized: "⋯  \(n) unchanged lines") : "")
             case .hunk(let f, let h, let header):
                 guard first else { return band("") }
@@ -302,11 +353,24 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     /// Hunk buttons only where the hunks shown are the ones git stages: the unstaged or the staged diff, or the uncommitted
     /// one (against HEAD) for a file with nothing staged, whose hunks are the unstaged diff's.
     private func canStageHunks(_ f: Int) -> Bool {
-        if let s = single { return s.commit == nil }
+        if let s = single { return s.commit == nil && (s.source == "unstaged" || s.source == "staged") }
         switch source.indexOfSelectedItem {
         case 1, 2: return true
         case 0: return diffs.indices.contains(f) && changes.first { $0.path == diffs[f].path }?.staged != true
         default: return false
+        }
+    }
+
+    /// One file of the review in a tab of its own, which has room for a whole file's changes; nil for the agent's last turn.
+    private func alone(_ path: String) -> String? {
+        guard single == nil, let wid = worktreeId else { return nil }
+        switch source.indexOfSelectedItem {
+        case 1: return DiffTab.uri(wid, file: path, source: "unstaged")
+        case 2: return DiffTab.uri(wid, file: path, source: "staged")
+        case 3: return DiffTab.uri(wid, file: path, source: "branch")
+        case 4: return DiffTab.uri(wid, file: path, commit: commitHash ?? "HEAD")
+        case 5: return nil
+        default: return DiffTab.uri(wid, file: path, source: "all")
         }
     }
 

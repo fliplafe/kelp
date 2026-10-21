@@ -259,7 +259,7 @@ func plist() -> String {
         switch (cmd, sub) {
         case ("diff", _):
             for f in try await c.call(GitDiff(id: try await currentWorktreeID(c), source: flag("--source") ?? "all")) {
-                print("\(f.path)  +\(f.additions) -\(f.deletions)")
+                print("\(f.path)  " + (f.tooLarge == true ? "(too large to count here)" : "+\(f.additions) -\(f.deletions)"))
             }
         case ("commit", _):
             show(try await c.call(GitCommit(id: try await currentWorktreeID(c), message: ([sub].compactMap { $0 } + args).joined(separator: " "), all: true)))
