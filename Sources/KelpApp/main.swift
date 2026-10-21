@@ -5,6 +5,6 @@ UserDefaults.standard.register(defaults: ["ApplePressAndHoldEnabled": false])
 // Kelp has its own tabs: no "Show Tab Bar" / "Merge All Windows" from AppKit's window tabbing.
 NSWindow.allowsAutomaticWindowTabbing = false
 let app = NSApplication.shared
-let delegate = MainActor.assumeIsolated { AppDelegate() }
+let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

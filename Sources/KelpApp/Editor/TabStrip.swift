@@ -237,7 +237,7 @@ private final class TabButton: NSControl, NSDraggingSource {
         setAccessibilityElement(true); setAccessibilityRole(.radioButton); setAccessibilitySubrole(.init(rawValue: "AXTabButton"))   // kAXTabButtonSubrole
         title.setAccessibilityElement(false); icon.setAccessibilityElement(false)
         setAccessibilityCustomActions([NSAccessibilityCustomAction(name: String(localized: "Close Tab")) { [weak self] in
-            MainActor.assumeIsolated { self?.closeTapped() }; return true
+            MainActor.assumeIsolated { self?.closeTapped() }; return true   // accessibility actions come on main
         }])
     }
     required init?(coder: NSCoder) { fatalError() }

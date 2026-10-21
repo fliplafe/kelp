@@ -327,7 +327,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     private func loadMore() {
         loadingMore = true; limit += 200
-        DispatchQueue.main.async { Task { [weak self] in await self?.loadGraph() } }
+        DispatchQueue.main.async { [weak self] in Task { await self?.loadGraph() } }
     }
 
     // MARK: clicks

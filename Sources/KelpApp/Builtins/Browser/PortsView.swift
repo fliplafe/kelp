@@ -53,7 +53,7 @@ final class PortsView: NSView {
         link.isBordered = false; link.contentTintColor = .linkColor; link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         let what = NSTextField(labelWithString: p.command); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
         let copy = ClosureButton(title: String(localized: "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(address, forType: .string) }
-        let stop = ClosureButton(title: String(localized: "Stop")) { [weak self] in
+        let stop = ClosureButton(title: String(localized: "Stop")) {
             Task {
                 if await AppModel.shared.call(PortsStop(worktreeId: wid, pid: Int(p.pid))) != nil { AppModel.shared.watchAgain(.ports, wid) }
             }

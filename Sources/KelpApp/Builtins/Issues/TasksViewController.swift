@@ -262,7 +262,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         let checksBox = NSStackView(); checksBox.orientation = .vertical; checksBox.alignment = .leading; checksBox.spacing = 4
         detail.addArrangedSubview(label(String(localized: "Checks"), weight: .semibold)); detail.addArrangedSubview(checksBox)
         guard let repoId else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             let read = await AppModel.shared.tryCall(GitHubChecks(repoId: repoId, pr: n))
             let checks = read.value ?? []
             if let e = read.error { checksBox.addArrangedSubview(label(String(localized: "Couldn't read the checks: \(e)"), color: .secondaryLabelColor)) }
@@ -377,8 +378,10 @@ final class ClosureButton: NSButton {
     @objc private func fire() { handler?() }
 }
 
+/// A menu item's or control's action as a closure; AppKit sends actions on the main thread.
+@MainActor
 final class ClosureTarget: NSObject {
-    let f: () -> Void
-    init(_ f: @escaping () -> Void) { self.f = f }
+    let f: @MainActor () -> Void
+    init(_ f: @escaping @MainActor () -> Void) { self.f = f }
     @objc func fire() { f() }
 }

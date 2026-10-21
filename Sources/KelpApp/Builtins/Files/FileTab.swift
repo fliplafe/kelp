@@ -307,7 +307,7 @@ final class FileTab: SavableTab {
         if notText { a.informativeText = String(localized: "The file on disk is no longer text (another encoding, or binary). Keep Mine writes your version over it.") }
         a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: notText ? String(localized: "Cancel") : String(localized: "Use Disk Version"))
         // Holds the tab until answered: closing it meanwhile mustn't throw away the user's choice (or their edits).
-        a.beginSheetModal(for: w) { r in
+        a.beginSheetModal(for: w) { r in   // AppKit: on main
             MainActor.assumeIsolated {
                 if r == .alertFirstButtonReturn { self.lastSaved = disk; self.write() }
                 else if !notText { e.setText(disk); self.lastSaved = disk; self.markdown?.textChanged() }

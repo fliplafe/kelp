@@ -28,6 +28,7 @@ final class HoverRowView: NSTableRowView {
     }
 }
 
+@MainActor
 private func actionButtons(_ actions: [RowAction]) -> NSStackView {
     let s = NSStackView(views: actions.map { a in
         let b = ClosureButton(title: "") { a.run() }
@@ -40,6 +41,7 @@ private func actionButtons(_ actions: [RowAction]) -> NSStackView {
     return s
 }
 
+@MainActor
 private func pinRow(_ cell: NSView, _ views: [NSView], leading: CGFloat, trailing: CGFloat = 10) {
     let row = NSStackView(views: views); row.spacing = 5; row.alignment = .centerY
     row.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(row)

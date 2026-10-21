@@ -1,5 +1,5 @@
 import AppKit
-import UserNotifications
+@preconcurrency import UserNotifications   // its center and settings aren't marked Sendable
 import Core
 
 /// Banner + dock badge when an agent finishes or waits; clicking opens the right pane.
@@ -43,17 +43,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// First launch's "Send Test Notification": a banner now, or `false` when macOS has them turned off for Kelp.
     func sendTest(_ done: @escaping @MainActor (Bool) -> Void) {
         guard let center else { done(false); return }
-        center.getNotificationSettings { s in
+        Task {
+            let s = await center.notificationSettings()
             let off = s.authorizationStatus == .denied || s.alertSetting == .disabled
-            Task { @MainActor in
-                if !off {
-                    let c = UNMutableNotificationContent()
-                    c.title = String(localized: "Kelp can reach you")
-                    c.body = String(localized: "This is how you'll hear that an agent finished or needs you."); c.sound = .default
-                    try? await center.add(UNNotificationRequest(identifier: "kelp-test", content: c, trigger: nil))
-                }
-                done(!off)
+            if !off {
+                let c = UNMutableNotificationContent()
+                c.title = String(localized: "Kelp can reach you")
+                c.body = String(localized: "This is how you'll hear that an agent finished or needs you."); c.sound = .default
+                try? await center.add(UNNotificationRequest(identifier: "kelp-test", content: c, trigger: nil))
             }
+            done(!off)
         }
     }
 

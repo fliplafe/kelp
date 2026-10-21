@@ -55,7 +55,7 @@ extension AppDelegate {
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
             let delay = env["KELP_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5
-            RunLoop.main.add(Timer(timeInterval: delay, repeats: false) { _ in MainActor.assumeIsolated { [self] in snap(env, to: path) } }, forMode: .common)
+            RunLoop.main.add(Timer(timeInterval: delay, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)   // main run loop
         }
     }
 

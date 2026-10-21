@@ -26,11 +26,12 @@ final class UnavailableTab: TabContent {
     func focus() {}
 }
 
+@MainActor
 extension NSMenu {
     /// Closure-backed item (keeps its target alive through representedObject).
     @discardableResult
     func add(_ title: String, symbol: String? = nil, key: String = "", _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
-        let t = ClosureTarget { MainActor.assumeIsolated { action() } }
+        let t = ClosureTarget(action)
         let i = addItem(withTitle: title, action: #selector(ClosureTarget.fire), keyEquivalent: key)
         i.target = t; i.representedObject = t
         if let symbol { i.image = .symbol(symbol) }

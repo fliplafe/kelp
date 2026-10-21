@@ -7,7 +7,7 @@ import Core
 /// What a window would show, without showing one: the real controllers, filled from the model, laid out in a window that
 /// is never ordered on screen. The rows are read back out of the outline the user would be looking at.
 
-private func texts(_ v: NSView) -> [String] {
+@MainActor private func texts(_ v: NSView) -> [String] {
     var out: [String] = []
     if let t = v as? NSTextField, !t.stringValue.isEmpty, !t.isHidden { out.append(t.stringValue) }
     for s in v.subviews where !s.isHidden { out += texts(s) }

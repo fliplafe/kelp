@@ -67,7 +67,7 @@ final class ImagePreview: NSImageView {
 /// Links clicked in a PDF go by the preview's rules (`PreviewLinks.target`): a repo's PDF can link to an app it ships
 /// or to another app's scheme, and PDFKit on its own would open either.
 @MainActor
-final class PDFLinks: NSObject, PDFViewDelegate {
+final class PDFLinks: NSObject, @MainActor PDFViewDelegate {
     static let shared = PDFLinks()
     func pdfViewWillClick(onLink sender: PDFView, with url: URL) { PreviewLinks.open(url) }
 }

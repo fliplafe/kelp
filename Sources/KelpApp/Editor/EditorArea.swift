@@ -61,7 +61,7 @@ final class EditorArea: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         responderObservation = view.window?.observe(\.firstResponder, options: [.new]) { [weak self] w, _ in
-            MainActor.assumeIsolated { self?.responderChanged(w.firstResponder) }
+            MainActor.assumeIsolated { self?.responderChanged(w.firstResponder) }   // the first responder changes on main
         }
         publishFocus()
     }

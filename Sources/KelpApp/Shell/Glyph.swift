@@ -27,7 +27,7 @@ enum Glyph {
         for q in pts.dropFirst() { p.line(to: NSPoint(x: q.0, y: q.1)) }
     }
 
-    private static let shapes: [String: (NSBezierPath) -> Void] = [
+    private static let shapes: [String: @Sendable (NSBezierPath) -> Void] = [
         // Source control: a branch leaving the trunk.
         "arrow.triangle.branch": { p in
             ring(p, 4, 3.5); ring(p, 4, 12.5); ring(p, 12, 5)

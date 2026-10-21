@@ -91,8 +91,10 @@ final class LSPManager {
     private func reportMissing(_ server: LanguageSpec.Server) {
         guard reported.insert(server.command).inserted else { return }
         let name = server.command
-        Banner.show(String(localized: "Language server \(name) isn't installed."), action: server.install.map { cmd in
-            (String(localized: "Install"), { Workbench.editor?.run(command: cmd, title: String(localized: "Install \(name)")) })
-        })
+        var install: (String, @MainActor @Sendable () -> Void)?
+        if let cmd = server.install {
+            install = (String(localized: "Install"), { Workbench.editor?.run(command: cmd, title: String(localized: "Install \(name)")) })
+        }
+        Banner.show(String(localized: "Language server \(name) isn't installed."), action: install)
     }
 }

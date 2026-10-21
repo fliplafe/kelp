@@ -3,6 +3,7 @@ import AppKit
 /// Settings › Appearance › Sidebar and inspector text: larger text there for people who want it (the terminal and the
 /// editor have their own font sizes). Set as settings change, before views that follow the setting hear of it: the
 /// sidebar redraws and the inspector's panels are rebuilt.
+@MainActor
 enum TextSize {
     static var scale: CGFloat = 1
 
@@ -12,6 +13,7 @@ enum TextSize {
     static func of(_ points: CGFloat) -> CGFloat { (points * scale).rounded() }
 }
 
+@MainActor
 extension NSFont {
     /// The system font at `size` for normal text, scaled by the text-size setting (sidebar and inspector).
     static func ui(_ size: CGFloat, weight: Weight = .regular) -> NSFont { .systemFont(ofSize: TextSize.of(size), weight: weight) }

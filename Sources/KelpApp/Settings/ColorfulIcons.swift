@@ -2,6 +2,7 @@ import AppKit
 
 /// The "Colorful" file icon theme: icons picked by name and extension, the way VS Code icon themes do, drawn with SF Symbols
 /// (or a short monogram where no symbol fits). Images draw on demand, so system colors follow light and dark.
+@MainActor
 enum ColorfulIcons {
     static func image(_ name: String, folder: Bool) -> NSImage {
         let (key, style) = folder ? folderStyle(name.lowercased()) : fileStyle(name.lowercased())

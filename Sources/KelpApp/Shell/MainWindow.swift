@@ -203,7 +203,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let p = peeking else { return }
         peeking = nil
         // The editor area fills its place again once the panel is gone (unless another one came in meanwhile).
-        NSAnimationContext.runAnimationGroup { _ in p.animator().isCollapsed = true } completionHandler: { [weak self] in
+        NSAnimationContext.runAnimationGroup { _ in p.animator().isCollapsed = true } completionHandler: { [weak self] in   // on main
             MainActor.assumeIsolated {
                 guard let self, self.peeking == nil else { return }
                 self.window?.contentView?.layoutSubtreeIfNeeded()   // the split at its final widths first, or a terminal sees the narrow one

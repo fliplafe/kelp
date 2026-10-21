@@ -53,8 +53,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     func run(_ name: String) {
         guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
         watch()
-        Task {
-            guard let info = await load(wid, asked: true) else { return }
+        Task { [weak self] in
+            guard let self, let info = await load(wid, asked: true) else { return }
             let scripts = cached[wid] ?? []
             guard name == "setup" || scripts.contains(where: { $0.name == name }) else {
                 // No project command: ⌘R runs the focused file, ⌘U its test at the cursor, when its language says how.
@@ -150,7 +150,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
             for s in ended {
                 guard let r = runs.removeValue(forKey: s.id) else { continue }
                 let name = "“\(r.name)”"
-                let show = (String(localized: "Show Output"), { Workbench.focus(session: s.id) })
+                let id = s.id
+                let show: (String, @MainActor @Sendable () -> Void) = (String(localized: "Show Output"), { Workbench.focus(session: id) })
                 if s.summary.hasPrefix("Ended with an error") {
                     Banner.show(String(localized: "\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))"), style: .error, action: show)
                 } else { Banner.show(String(localized: "\(name) finished"), action: show) }

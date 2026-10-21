@@ -78,7 +78,7 @@ final class ThemeManager {
         if appearanceObserver == nil {
             // macOS switched light/dark: "auto" themes follow (colors only; setting the appearance here would loop).
             appearanceObserver = NSApp.observe(\.effectiveAppearance) { _, _ in
-                DispatchQueue.main.async { MainActor.assumeIsolated { ThemeManager.shared.applyColors() } }
+                DispatchQueue.main.async { ThemeManager.shared.applyColors() }
             }
         }
         applyColors()

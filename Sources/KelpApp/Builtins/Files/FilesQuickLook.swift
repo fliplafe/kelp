@@ -16,8 +16,9 @@ extension FilesPanel: @preconcurrency QLPreviewPanelDataSource, @preconcurrency 
         (outline.item(atRow: outline.selectedRow) as? FileNode).map { URL(fileURLWithPath: root).appendingPathComponent($0.path) }
     }
     override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
-    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = self; panel.delegate = self }
-    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil; panel.delegate = nil }
+    // QuickLook asks the responder chain on the main thread; its informal protocol isn't annotated.
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { MainActor.assumeIsolated { panel.dataSource = self; panel.delegate = self } }
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { MainActor.assumeIsolated { panel.dataSource = nil; panel.delegate = nil } }
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { previewURL == nil ? 0 : 1 }
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! { previewURL as NSURL? }
     /// ↑↓ in the preview walk the tree, like Finder.

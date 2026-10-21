@@ -37,7 +37,6 @@ let package = Package(
             name: "KelpApp",
             dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "Markdown", "WorkbenchKit", "GhosttyKit",
                            .product(name: "Sparkle", package: "Sparkle")],
-            swiftSettings: [.swiftLanguageMode(.v5)],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
             // macOS 14 look (compatibility mode). Naming a current SDK gets the system's own design on macOS 26+.
             // Limit: fixed at 26.0; raise it when a later SDK's look is wanted.
@@ -58,7 +57,7 @@ let package = Package(
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core", "TestSupport"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
         .testTarget(name: "ArchitectureTests"),   // reads the sources: the rules in AGENTS.md
-        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"]),
         .binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework"),
     ]
 )

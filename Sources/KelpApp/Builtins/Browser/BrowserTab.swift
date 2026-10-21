@@ -66,7 +66,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         if let f = previewFile, raw == start {
             let u = URL(fileURLWithPath: f), dir = u.deletingLastPathComponent()
             web.loadFileURL(u, allowingReadAccessTo: dir); address.stringValue = u.absoluteString
-            watcher = FileWatcher(root: dir.path) { [weak self] _ in MainActor.assumeIsolated { self?.web.reload() } }
+            watcher = FileWatcher(root: dir.path) { [weak self] _ in MainActor.assumeIsolated { _ = self?.web.reload() } }   // delivered on main
             return
         }
         let s = raw.trimmingCharacters(in: .whitespaces)
@@ -84,7 +84,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         let m = NSMenu()
         m.add(String(localized: "Reload Ignoring Cache")) { [weak self] in self?.web.reloadFromOrigin() }
         m.add(String(localized: "Copy Screenshot")) { [weak self] in
-            self?.web.takeSnapshot(with: nil) { img, _ in
+            self?.web.takeSnapshot(with: nil) { img, _ in   // WebKit answers on main
                 MainActor.assumeIsolated {
                     guard let img else { return }
                     NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([img]); Banner.show(String(localized: "Screenshot copied"))
@@ -104,7 +104,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         store.fetchDataRecords(ofTypes: types) { [weak self] records in
             guard self != nil else { return }
             let mine = records.filter { host == $0.displayName || host.hasSuffix("." + $0.displayName) }
-            store.removeData(ofTypes: types, for: mine) { [weak self] in
+            store.removeData(ofTypes: types, for: mine) { [weak self] in   // WebKit answers on main
                 MainActor.assumeIsolated {
                     Banner.show(String(localized: "Cleared \(host)'s cookies and data")); self?.web.reload()
                 }
@@ -144,7 +144,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         let r = d["rect"] as? [String: Double] ?? [:]
         let rect = CGRect(x: r["x"] ?? 0, y: r["y"] ?? 0, width: max(1, r["w"] ?? 1), height: max(1, r["h"] ?? 1)).insetBy(dx: -8, dy: -8)
         let cfg = WKSnapshotConfiguration(); cfg.rect = rect.intersection(web.bounds)
-        web.takeSnapshot(with: cfg) { [weak self] img, _ in MainActor.assumeIsolated { self?.sendDesign(d, image: img) } }
+        web.takeSnapshot(with: cfg) { [weak self] img, _ in MainActor.assumeIsolated { self?.sendDesign(d, image: img) } }   // on main
     }
 
     private func sendDesign(_ d: [String: Any], image: NSImage?) {

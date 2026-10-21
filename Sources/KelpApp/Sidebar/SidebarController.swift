@@ -69,7 +69,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.keepOpenInView() }
+            MainActor.assumeIsolated { self?.keepOpenInView() }   // queue: .main
         }
 
         let footer = NSHostingView(rootView: UsageView())   // agent limits, when any agent reports them
@@ -110,7 +110,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
         // "now" becomes "1m": the times on the right move on their own (a clock: nothing is asked of the daemon).
-        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in   // main run loop
             MainActor.assumeIsolated { if self?.view.window?.occlusionState.contains(.visible) == true { self?.updateVisibleCells() } }
         }
     }

@@ -51,7 +51,7 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
     func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { ScratchWindow.shared.toggle() } }
+            DispatchQueue.main.async { ScratchWindow.shared.toggle() }
             return noErr
         }, 1, &spec, nil, nil)
         let id = EventHotKeyID(signature: OSType(0x4B524C4C), id: 1)   // 'KRLL'

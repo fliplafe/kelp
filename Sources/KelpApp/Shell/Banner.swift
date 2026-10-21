@@ -51,7 +51,7 @@ enum Banner {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + (action != nil ? 10 : style == .error ? 6 : 3)) { [weak fx] in
             guard let fx else { return }
-            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; fx.animator().alphaValue = 0 }) { MainActor.assumeIsolated { fx.removeFromSuperview() } }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; fx.animator().alphaValue = 0 }) { MainActor.assumeIsolated { fx.removeFromSuperview() } }   // AppKit: on main
         }
     }
 }

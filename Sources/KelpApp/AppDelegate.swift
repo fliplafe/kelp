@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ScratchWindow.shared.registerHotKey()
         notifier.start()
         buildMenu()
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }   // main run loop
         track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.buildMenu() }
         track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
         track(owner: self) { SettingsStore.shared.value("keys") } changed: { [weak self] _ in self?.buildMenu() }
@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Extension commands and requirement checks need the user's PATH; reading it can take seconds.
         DispatchQueue.global(qos: .utility).async {
             _ = LoginPath.value
-            DispatchQueue.main.async { MainActor.assumeIsolated { ExtensionRegistry.pathReady = true; ExtensionRegistry.shared.reload() } }
+            DispatchQueue.main.async { ExtensionRegistry.pathReady = true; ExtensionRegistry.shared.reload() }
         }
         Task {
             await AppModel.shared.connect()

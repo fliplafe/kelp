@@ -159,7 +159,7 @@ final class ExtensionRegistry {
     func watch() {
         try? FileManager.default.createDirectory(at: Self.userDir, withIntermediateDirectories: true)
         let pending = Debounce()
-        watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in MainActor.assumeIsolated { pending.after(0.3) { self?.reload() } } }
+        watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in MainActor.assumeIsolated { pending.after(0.3) { self?.reload() } } }   // delivered on main
     }
 
     /// Follows symlinks: a VS Code extension can be linked in rather than copied.
