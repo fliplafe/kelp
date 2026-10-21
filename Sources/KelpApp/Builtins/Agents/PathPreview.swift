@@ -27,10 +27,12 @@ enum TerminalPaths {
         return nil
     }
 
-    /// ⌘-click: in Kelp, on its line (the tab it's already in, if any); ⌥⌘-click: the app the file belongs to.
+    /// ⌘-click: in Kelp, on its line (the tab it's already in, if any); ⌥⌘-click: shown in the Finder. Not opened with its
+    /// app: a program printed the path, and a .command file (or any script) would run there — from a cloned repo,
+    /// without Gatekeeper's check.
     static func open(_ token: String, cwd: String, flags: NSEvent.ModifierFlags) -> Bool {
         guard let f = resolve(token, cwd: cwd) else { return false }
-        if flags.contains(.option) { NSWorkspace.shared.open(URL(fileURLWithPath: f.path)); return true }
+        if flags.contains(.option) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: f.path)]); return true }
         Workbench.open(TabURI.file(f.path) + (f.line.map { "#L\($0)" } ?? ""))
         return true
     }

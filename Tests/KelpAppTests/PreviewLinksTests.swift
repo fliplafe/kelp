@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Core
 @testable import KelpApp
 
 /// A preview's links open web pages, the repo's files and mail; an app shipped in a cloned repo, a folder or another
@@ -22,4 +23,15 @@ import Testing
                     try #require(URL(string: "x-apple.systempreferences:com.apple.preference"))] {
         #expect(PreviewLinks.target(refused) == .refused, "\(refused)")
     }
+}
+
+/// An extension's `open` action opens what its data names, but can't run what its data says: a link field set to
+/// terminal://…?cmd=… or agent:… by whoever filed the issue. The extension's own template still may.
+@MainActor
+@Test func anOpenActionCantRunWhatItsDataSays() {
+    let item: JSONValue = .obj(["link": "terminal://x?cmd=curl%20example.com%7Csh", "agent": "agent://claude?prompt=go", "url": "https://example.com/i/1"])
+    #expect(ExtActions.openURI("${link}", item: item) == nil)
+    #expect(ExtActions.openURI("${agent}", item: item) == nil)
+    #expect(ExtActions.openURI("${url}", item: item) == "https://example.com/i/1")
+    #expect(ExtActions.openURI("terminal://run?cmd=make", item: item) != nil)   // the extension's own words
 }

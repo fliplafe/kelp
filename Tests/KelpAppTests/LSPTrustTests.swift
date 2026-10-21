@@ -22,8 +22,6 @@ extension SharedAppModel {
         lsp.trust(root)                                          // the banner's "Trust and Start"
         #expect(started == 2 && lsp.trusted(root))
         #expect(lsp.whenTrusted(root) { started += 1 } && started == 2)   // trusted from now on: no waiting
-        let scratch = Paths.scratch.path
-        #expect(lsp.trusted(scratch) && lsp.trusted(scratch + "/note"))   // Kelp's own scratch desk (the root a file tab passes)
-        #expect(!lsp.trusted(scratch + "-x/repo"))   // not a sibling
+        #expect(!lsp.trusted(Paths.scratch.path))   // the scratch desk is asked about like any project: a clone may land there
     }
 }

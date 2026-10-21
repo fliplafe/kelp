@@ -59,16 +59,33 @@ extension LiveSession {
         pty.resize(cols: cols, rows: rows)
     }
 
-    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompts.append((p, draft)); sawFirstPrompt = true; lock.unlock() }
-    /// Text still waiting for the program: anything sent now goes behind it.
-    var hasPendingInput: Bool { lock.withLock { !pendingPrompts.isEmpty } }
+    /// A task's text (a launch prompt): typed once the program is ready, as a paste, so a leading "!" or "/" is text.
+    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompts.append((p, draft, true)); sawFirstPrompt = true; lock.unlock() }
 
-    /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
+    /// Text sent from outside (`session.send`: `kelp send`, review comments): one gate for all of it. Typed now when the
+    /// program is ready for it, else queued and typed once it is — in the order sent, none overtaking another.
+    func submit(_ text: String, enter: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        if startedUp, pendingPrompts.isEmpty, readyForText() { type(text, enter: enter, paste: false) }
+        else { pendingPrompts.append((text, !enter, false)); sawFirstPrompt = true }
+    }
+
+    /// Nothing on screen that typed text with its Enter would answer: no question or numbered menu open (their default
+    /// is usually "Yes": trusting a project, its new MCP servers), no menu being answered, no unread draft in the input
+    /// box. Caller holds the lock.
+    func readyForText() -> Bool { steering == nil && !draftWaiting && !trustQuestionOpen() && !menuOpen() }
+
+    /// Type text into the agent, now (the gate is `submit`). Multi-line text goes as a bracketed paste so TUIs don't
+    /// submit each line.
+    func send(_ text: String, enter: Bool, paste: Bool = false) { lock.lock(); type(text, enter: enter, paste: paste); lock.unlock() }
+
+    /// `send`, the caller holding the lock: the write is queued under it, so the order of these calls is the order typed.
     /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is
-    /// text, not a mode or command.
-    /// Without it one line is typed, so `kelp send <id> /compact` still runs the command.
-    func send(_ text: String, enter: Bool, paste: Bool = false) {
-        let takesPastes = lock.withLock { detector.input(); typedYet = true; return pasteMode }
+    /// text, not a mode or command. Without it one line is typed, so `kelp send <id> /compact` still runs the command.
+    func type(_ text: String, enter: Bool, paste: Bool) {
+        detector.input(); typedYet = true
+        if !enter { draftWaiting = true }   // left for the user to read and send
+        let takesPastes = pasteMode
         var text = Self.typeable(text)
         // Not to be sent (a draft: an issue's text, say) to a program that takes no pastes: each newline would submit a
         // line of it. One line instead, so nothing goes before the user presses Return.

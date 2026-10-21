@@ -180,6 +180,16 @@ enum ExtActions {
         return quote ? ShellTemplate.fill(template, value) : ShellTemplate.substitute(template) { value($0) ?? "" }
     }
 
+    /// An `open` action's URI: the extension's template with the item's values put in. A URI that runs something
+    /// (terminal:, agent:) has to say so in the extension's own words, never through a value (someone else's: an issue's
+    /// link field set to terminal://…?cmd=…). nil then.
+    static func openURI(_ template: String, item: JSONValue?) -> String? {
+        let uri = TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.current.workspace?.path)
+        let runs = ["terminal", "agent"]
+        guard runs.contains(TabURI.scheme(uri)) else { return uri }
+        return runs.contains { template.hasPrefix($0 + ":") } ? uri : nil
+    }
+
     static func text(_ v: JSONValue) -> String {
         switch v {
         case .string(let s): s
@@ -198,7 +208,10 @@ enum ExtActions {
             guard runAsSheet(alert) == .alertFirstButtonReturn else { return }
         }
         if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
-        else if let o = a.open { Workbench.open(TabURI.normalize(expand(o, item: item, quote: false), cwd: IDEContext.current.workspace?.path)) }
+        else if let o = a.open {
+            if let u = openURI(o, item: item) { Workbench.open(u) }
+            else { Banner.show(String(localized: "“\(a.title)” would run a command or an agent from its data; it opens links and files only.")) }
+        }
         // Typed, not sent: `item` is a command's output (an issue's title, a PR's body), someone else's words.
         else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), extra: ["draft": true]) }
         else if let r = a.run {

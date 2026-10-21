@@ -23,8 +23,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     private var discarded = false
     var isDiscarded: Bool { lock.withLock { discarded } }
     /// Drawn and quiet once (or 25 s up): text typed before then could land in a program still starting.
-    var hasStartedUp: Bool { lock.withLock { startedUp } }
-    private var startedUp = false
+    var startedUp = false
     /// The program exited and that was handled (its record final, its log closed).
     var hasEnded: Bool { lock.withLock { ended } }
     private var ended = false
@@ -63,11 +62,13 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
     /// Text waiting until the program is ready (drawn, quiet, no question open), first in first out: the launch prompt,
     /// then whatever was sent while it waited.
-    var pendingPrompts: [(text: String, draft: Bool)] = []
+    var pendingPrompts: [(text: String, draft: Bool, paste: Bool)] = []
     /// Someone answered the agent's first question (the user typed, or Kelp's auto-answer pressed its key): from then on
     /// a trust dialog's words left in the scrollback no longer hold the launch prompt back.
     var dialogSettled = false
-    /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
+    /// A draft is typed but not sent (an issue's brief, a hand-off's): the user reads it and presses Return. Until they
+    /// type anything, text sent meanwhile waits behind it — its Enter would submit the draft unread.
+    var draftWaiting = false
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
     /// `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the user answers
     /// from a notification.
@@ -171,7 +172,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         if !limits.isEmpty { onLimits?(limits) }
         if let url { onLocalURL?(url) }
         if let topic { onTopic?(topic) }
-        if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pty.write(Data(answer.utf8)) } }
+        if let answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pressIfStillAsked(answer) } }
         onOutput?(sid, d, subs)
     }
 
@@ -211,7 +212,18 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     }
 
     /// The keys that answer a question the manifest knows (a menu is steered instead, see steer()).
-    private func autoAnswer() -> String? {
+    /// The auto-answer's key, once the question has had time to draw: only if it's still the one on screen and nobody
+    /// typed meanwhile (the key would land in their text, or answer whatever came next).
+    private func pressIfStillAsked(_ a: (input: String, asked: NSRegularExpression)) {
+        let still = lock.withLock { () -> Bool in
+            guard !typedYet else { return false }
+            let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
+            return a.asked.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
+        }
+        if still { pty.write(Data(a.input.utf8)) }
+    }
+
+    private func autoAnswer() -> (input: String, asked: NSRegularExpression)? {
         guard !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 else { return nil }
         let tail = StatusDetector.stripANSI(String(decoding: ring.suffix(4000), as: UTF8.self))
         let r = NSRange(tail.startIndex..., in: tail)
@@ -221,8 +233,8 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
             steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
             return nil
         }
-        autoAnswers.remove(at: i); dialogSettled = true
-        return a.input
+        let asked = autoAnswers.remove(at: i).0; dialogSettled = true
+        return (a.input, asked)
     }
 
     /// The first local URL it prints (a dev server), with 0.0.0.0 and [::] as localhost.
@@ -328,15 +340,14 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         emit(sync())
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
-        var prompt: (text: String, draft: Bool)?
-        // Never while a question is open: its Enter would be the prompt's, and the default option is usually "Yes". Kelp
-        // leaves those to the user on purpose (trusting a project, its new MCP servers); the prompt waits.
         let quiet = Date().timeIntervalSince(lastOutputAt ?? started) > 1.5   // a program that prints nothing (cat) is quiet too
         let settled = (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25
         if settled { startedUp = true }
-        if let p = pendingPrompts.first, settled, steering == nil, !trustQuestionOpen(), !menuOpen() { prompt = p; pendingPrompts.removeFirst() }
+        if let p = pendingPrompts.first, settled, readyForText() {
+            pendingPrompts.removeFirst()
+            type(p.text, enter: !p.draft, paste: p.paste)   // queued here, under the lock: nothing sent meanwhile gets ahead
+        }
         lock.unlock()
-        if let prompt { send(prompt.text, enter: !prompt.draft, paste: true) }   // a task's text: never keys
     }
 
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
@@ -344,7 +355,7 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         pty.write(d)
         lock.lock()
         guard !TerminalReplies.isReply(d) else { lock.unlock(); return }   // the terminal answering the agent, not the user typing
-        typedYet = true; dialogSettled = true
+        typedYet = true; dialogSettled = true; draftWaiting = false
         detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
         var read: Session?
         if record.unread { record.unread = false; read = record }   // typing into it is having read it

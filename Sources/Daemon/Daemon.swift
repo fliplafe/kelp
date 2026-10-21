@@ -93,7 +93,11 @@ public final class Daemon: Sendable {
             let since = Calendar.current.date(byAdding: .day, value: -89, to: Calendar.current.startOfDay(for: Date())) ?? Date()
             _ = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
         }
-        let listenFD = try Unix.listen(socketPath)
+        let listenFD: Int32
+        do { listenFD = try Unix.listen(socketPath) } catch {
+            running.withLock { if $0.instanceLock >= 0 { close($0.instanceLock); $0.instanceLock = -1 } }   // not ours to keep
+            throw error
+        }
         // Accept and the ticker have queues of their own (serial queues get a thread even when every pooled one is held
         // by a slow git or ssh in `offload`), so new connections and status keep going whatever is stuck.
         let src = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: DispatchQueue(label: "kelp.accept"))

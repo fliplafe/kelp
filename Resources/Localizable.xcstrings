@@ -9566,6 +9566,16 @@
         }
       }
     },
+    "“%@” would run a command or an agent from its data; it opens links and files only.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» запустил бы команду или агента из своих данных; это действие открывает только ссылки и файлы."
+          }
+        }
+      }
+    },
     "“%@” was moved or deleted": {
       "localizations": {
         "ru": {

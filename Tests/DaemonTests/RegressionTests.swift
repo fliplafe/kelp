@@ -358,10 +358,29 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let s = try #require(r["session"]).decode(Session.self)
     func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
     #expect(try await waitFor(10) { try await screen().contains("second") })   // typed
-    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "", "enter": true]))   // the user's Return
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("\r".utf8).base64EncodedString())]))   // the user's Return
     #expect(try await waitFor(10) { try await screen().contains("GOT[") })
     let shown = try await screen()
     #expect(shown.contains("GOT[Two lines  first second  (Issue: )]"), "\(shown)")   // one line: submitted early it'd read GOT[Two lines]
+}
+
+/// Text sent while an unread draft sits in the input box waits behind it: its Enter would submit the draft (an issue's
+/// text, someone else's words) without the user reading it. Once the user acts on the draft, it goes in.
+@Test func aSendDoesntSubmitAnUnreadDraft() async throws {
+    let reader = #"echo ready; while read -r l; do echo "GOT[$l]"; done"#
+    let plain = AgentManifest(id: "plain2", name: "Plain", command: "/bin/bash", args: ["-c", reader, "x"])
+    let w = try await world(agents: [plain]); defer { w.d.stop() }
+    let r = try await w.c.call("task.fromIssue", .obj(["repoId": .string(w.repo.id), "ref": "#9", "title": "Brief", "body": "rm -rf", "agent": "plain2"]))
+    let s = try #require(r["session"]).decode(Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    #expect(try await waitFor(10) { try await screen().contains("rm -rf") })   // the draft, typed
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "and also this"]))   // `kelp send`, with Enter
+    let ls = try #require(w.d.existing(s.id))
+    for _ in 0..<3 { await withCheckedContinuation { c in ls.inOrder { c.resume() } }; ls.tick() }   // ticks that could deliver it
+    #expect(!(try await screen()).contains("GOT["))   // nothing submitted
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("\r".utf8).base64EncodedString())]))   // the user sends it
+    #expect(try await waitFor(10) { try await screen().contains("GOT[and also this]") })
+    #expect(try await screen().contains("GOT[Brief  rm -rf  (Issue: )]"))
 }
 
 /// Opening a paused session doesn't wait for another session that takes its time to stop (an agent ignoring the
@@ -459,4 +478,45 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "slow2"]), as: Session.self)
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))   // running, but still booting
     #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
+}
+
+/// Text sent while the agent asks a question (trust this folder? use the project's new MCP servers?) waits: its Enter
+/// would pick the default, usually "Yes". Here the agent is up and quiet before it asks, so the send isn't held back
+/// as "still starting"; only the question holds it.
+@Test func aSendNeverAnswersAQuestionOnScreen() async throws {
+    let script = "echo starting; sleep 5; stty -icanon -echo; "
+        + #"printf 'Do you trust the files in this folder?\n\xe2\x9d\xaf 1. Yes, proceed\n  2. No, exit\n'; "#
+        + #"r=NOT-ANSWERED; while IFS= read -rsn1 -t 4 k; do if [[ -z "$k" ]]; then r=ANSWERED-BY-ENTER; break; fi; done; "#
+        + #"echo $r; stty icanon echo; printf '❯ '; exec cat"#   // then its input box, as Claude Code draws it
+    let asker = AgentManifest(id: "asker", name: "Asker", command: "/bin/bash", args: ["-c", script, "x"])
+    let w = try await world(agents: [asker]); defer { w.d.stop() }
+    let wt = try await desk(w, "asks")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "asker"]), as: Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    #expect(try await waitFor(15) { try await screen().contains("Do you trust") })
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))   // `kelp send`, review comments: with Enter
+    #expect(try await waitFor(15) { let t = try await screen(); return t.contains("NOT-ANSWERED") || t.contains("ANSWERED-BY-ENTER") })
+    #expect(try await screen().contains("NOT-ANSWERED"))
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("2".utf8).base64EncodedString())]))   // the user answers
+    #expect(try await waitFor(10) { try await screen().contains("hello") })   // and then it goes in
+}
+
+/// An agent's own auto-answer (a manifest's "press Enter to continue") is pressed a moment after the question draws; if
+/// the user typed meanwhile, it isn't pressed at all (it would land in their text, or answer whatever came next).
+@Test func anAutoAnswerIsntPressedOnceTheUserTyped() async throws {
+    // Asks, then reports every key that comes: the user's, and a late Enter if there is one.
+    let script = #"stty -icanon -echo; echo 'Press Enter to continue'; "#
+        + #"while IFS= read -rsn1 -t 3 k; do if [[ -z "$k" ]]; then echo KEY-ENTER; else echo "KEY-$k"; fi; done; echo QUIET; sleep 30"#
+    let m = AgentManifest(id: "asks2", name: "Asks", command: "/bin/bash", args: ["-c", script, "x"],
+                          autoAnswers: [AgentManifest.AutoAnswer(pattern: "Press Enter to continue", input: "\r")])
+    let w = try await world(agents: [m]); defer { w.d.stop() }
+    let wt = try await desk(w, "typed")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "asks2"]), as: Session.self)
+    func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
+    let end = Date().addingTimeInterval(10)   // watched closely: the user must come within Kelp's 0.4 s
+    while Date() < end, !(try await screen()).contains("Press Enter") { try await Task.sleep(for: .milliseconds(5)) }
+    w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("x".utf8).base64EncodedString())]))   // the user, at once
+    #expect(try await waitFor(15) { try await screen().contains("QUIET") })
+    let shown = try await screen()
+    #expect(shown.contains("KEY-x") && !shown.contains("KEY-ENTER"), "\(shown)")
 }

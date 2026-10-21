@@ -40,12 +40,9 @@ extension SessionWrite: Handled {
 
 extension SessionSend: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        let enter = enter != false
-        let ls = try d.liveSession(id)
-        // Still starting (woken just now, by this send or anyone else): typed once it is ready (drawn, quiet, no question
-        // open), as a launch prompt is; typed at once, it would land in a program still starting. Or behind text still
-        // waiting (a launch prompt, an earlier send): in the order sent, none replacing another.
-        if ls.hasStartedUp, !ls.hasPendingInput { ls.send(text, enter: enter) } else { ls.queuePrompt(text, draft: !enter) }
+        // Still starting (woken just now, by this send or anyone else), a question open, an unread draft in the box, or
+        // text still waiting ahead: queued, and typed once the program is ready for it (`LiveSession.submit`).
+        try d.liveSession(id).submit(text, enter: enter != false)
         return .null
     }
 }
