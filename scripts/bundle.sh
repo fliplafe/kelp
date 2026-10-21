@@ -20,7 +20,9 @@ BIN=$(swift build -c "$CONFIG" "${ARCHS[@]}" --show-bin-path)
 rm -rf "$APP"; [ "$DEV" = dev ] || rm -f dist/Kelp.dmg
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/KelpApp" "$APP/Contents/MacOS/KelpApp"
-cp "$BIN/kelpd" "$BIN/kelp" "$APP/Contents/MacOS/"
+# -p: kelpd keeps its build time, which the app compares with the running daemon's; an update that didn't rebuild
+# the daemon then doesn't offer to restart it (that ends the running agents). Signing below puts the time back.
+cp -p "$BIN/kelpd" "$BIN/kelp" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # from AppIcon.svg: scripts/icon.sh
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
@@ -37,16 +39,17 @@ if [ -n "${SIGN_ID:-}" ]; then
     "${SIGN[@]}" "$SP/Updater.app"
     "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
   fi
-  "${SIGN[@]}" "$APP/Contents/MacOS/kelpd"
+  "${SIGN[@]}" "$APP/Contents/MacOS/kelpd"; touch -r "$BIN/kelpd" "$APP/Contents/MacOS/kelpd"
   "${SIGN[@]}" "$APP/Contents/MacOS/kelp"
   codesign --force --options runtime --timestamp --entitlements Resources/Kelp.entitlements --sign "$SIGN_ID" "$APP"
 fi
 if [ "$DEV" = dev ]; then
   # Ad hoc, inside out; no entitlements, as a debug build runs from Xcode.
   for f in "$APP/Contents/MacOS/kelpd" "$APP/Contents/MacOS/kelp" "$APP"; do codesign --force --sign - "$f"; done
+  touch -r "$BIN/kelpd" "$APP/Contents/MacOS/kelpd"
   open "$APP"; echo "built $APP"; exit 0
 fi
-STAGE=$(mktemp -d); cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
+STAGE=$(mktemp -d); cp -Rp "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
 hdiutil create -quiet -volname Kelp -srcfolder "$STAGE" -ov -format UDZO dist/Kelp.dmg
 if [ -n "${SIGN_ID:-}" ]; then
   codesign --force --timestamp --sign "$SIGN_ID" dist/Kelp.dmg
