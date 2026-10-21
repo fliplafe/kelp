@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import TestSupport
 import Core
 import WorkbenchKit
 @testable import KelpApp
@@ -89,8 +90,26 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     let t = Date(), slow = await Shell.exec(["/bin/sleep", "5"], timeout: 0.2)
     #expect(slow.code != 0 && Date().timeIntervalSince(t) < 2)
     #expect(await Shell.exec(["/nonexistent/tool"]).code == -1)
-    #expect(await AgentAvailability.runs("git"))
-    #expect(!(await AgentAvailability.runs("kelp-no-such-agent")))
+    #expect(await AgentAvailability.runs("git") != nil)
+    #expect(await AgentAvailability.runs("kelp-no-such-agent") == nil)
+}
+
+/// An agent CLI that answered `--version` in the last day isn't started again until it changes.
+@Test func agentThatRanIsNotStartedAgain() async throws {
+    let dir = tmp(), log = dir.appendingPathComponent("log"), cli = dir.appendingPathComponent("agent").path
+    func write(_ body: String) throws {
+        try "#!/bin/sh\necho >> '\(log.path)'\n\(body)\n".write(toFile: cli, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli)
+    }
+    func starts() -> Int { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").count }
+    try write("exit 0")
+    let binary = try #require(await AgentAvailability.runs(cli))
+    let now = Date().timeIntervalSince1970
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now]) == binary && starts() == 1)   // remembered
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now - 2 * 86400]) == binary && starts() == 2)   // a day on: asked again
+    try write("exit 1")   // updated, and broken now
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: cli)
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now]) == nil && starts() == 3)
 }
 
 /// A burst of calls runs once, the last one, after the pause; cancel drops it.

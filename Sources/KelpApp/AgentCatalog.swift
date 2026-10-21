@@ -69,24 +69,33 @@ final class AgentAvailability {
         guard !checking, force || Date().timeIntervalSince(checkedAt) > 300 else { return }
         checking = true
         let commands = AgentCatalog.all.filter { $0.id != "custom" }.map { ($0.id, $0.command) }
+        let ran = UserDefaults.standard.dictionary(forKey: "agents.ran") as? [String: Double] ?? [:]
         Task.detached(priority: .utility) {
-            let ok = await withTaskGroup(of: String?.self) { g in
-                for (id, command) in commands { g.addTask { await Self.runs(command) ? id : nil } }
-                var s = Set<String>()
-                for await id in g { if let id { s.insert(id) } }
-                return s
+            let found = await withTaskGroup(of: (id: String, binary: String)?.self) { g in
+                for (id, command) in commands { g.addTask { await Self.runs(command, ran: ran).map { (id, $0) } } }
+                var all: [(id: String, binary: String)] = []
+                for await r in g { if let r { all.append(r) } }
+                return all
             }
+            let ok = Set(found.map(\.id)), now = Date().timeIntervalSince1970
+            let keep = Dictionary(found.map { ($0.binary, ran[$0.binary] ?? now) }) { a, _ in a }
             await MainActor.run {
                 let me = AgentAvailability.shared
                 me.checking = false; me.checkedAt = Date()
                 if ok != me.ids { me.ids = ok; UserDefaults.standard.set(Array(ok).sorted(), forKey: "agents.available") }
+                UserDefaults.standard.set(keep, forKey: "agents.ran")
             }
         }
     }
 
-    /// `<command> --version` exits 0 within a few seconds. Waits without holding a thread (a dozen agents are asked at once).
-    nonisolated static func runs(_ command: String) async -> Bool {
-        guard let path = try? LoginPath.resolve(command) else { return false }
-        return await Shell.exec([path, "--version"], timeout: 8).code == 0   // hung: killed, counts as missing
+    /// `<command> --version` exits 0 within a few seconds: then the binary (real path and modification time), else nil.
+    /// One that ran in the last day (`ran`: binary → when) and hasn't changed isn't started again: a dozen agent CLIs at
+    /// every launch cost seconds of CPU (one took 2 s). Waits without holding a thread (they're asked at once).
+    nonisolated static func runs(_ command: String, ran: [String: Double] = [:]) async -> String? {
+        guard let path = try? LoginPath.resolve(command), let real = Paths.real(path),
+              let mtime = (try? FileManager.default.attributesOfItem(atPath: real)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return nil }
+        let binary = "\(real)|\(mtime)"
+        if let at = ran[binary], Date().timeIntervalSince1970 - at < 86400 { return binary }
+        return await Shell.exec([path, "--version"], timeout: 8).code == 0 ? binary : nil   // hung: killed, counts as missing
     }
 }
