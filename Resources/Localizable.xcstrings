@@ -3229,16 +3229,6 @@
         }
       }
     },
-    "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Установите GitHub CLI, чтобы видеть запуски CI: brew install gh (glab для GitLab)."
-          }
-        }
-      }
-    },
     "Install…": {
       "localizations": {
         "ru": {
@@ -9337,26 +9327,6 @@
         }
       }
     },
-    "GitHub CLI isn't installed": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "GitHub CLI не установлен"
-          }
-        }
-      }
-    },
-    "GitHub CLI isn't signed in (or GitHub can't be reached)": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "GitHub CLI не авторизован (или GitHub недоступен)"
-          }
-        }
-      }
-    },
     "Is the dev server running?": {
       "localizations": {
         "ru": {
@@ -10284,7 +10254,202 @@
           }
         }
       }
-    }
+    },
+    "Install %@ CLI": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установить %@ CLI"
+          }
+        }
+      }
+    },
+    "Kelp reaches %@ through its CLI, %@. Install it with Homebrew and sign in.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kelp работает с %@ через его CLI — %@. Установите его через Homebrew и войдите."
+          }
+        }
+      }
+    },
+    "Sign In to %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти в %@"
+          }
+        }
+      }
+    },
+    "The %@ CLI (%@) isn't signed in.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ CLI (%@) не авторизован."
+          }
+        }
+      }
+    },
+    "Copied “%@”: run it in Terminal": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировано «%@»: выполните в Терминале"
+          }
+        }
+      }
+    },
+    "This project's origin isn't on GitHub, GitLab or Bitbucket.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "origin этого проекта не на GitHub, GitLab или Bitbucket."
+          }
+        }
+      }
+    },
+    "Repository on %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Репозиторий на %@"
+          }
+        }
+      }
+    },
+    "Actions": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actions"
+          }
+        }
+      }
+    },
+    "Pipelines": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пайплайны"
+          }
+        }
+      }
+    },
+    "Check Again": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить снова"
+          }
+        }
+      }
+    },
+    "It runs in a terminal tab; then Check Again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Команда запустится во вкладке терминала, затем нажмите «Проверить снова»."
+          }
+        }
+      }
+    },
+    "Merge requests, issues and pipelines through the GitLab CLI (glab) and its login, self-managed hosts too.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge request'ы, задачи и пайплайны через GitLab CLI (glab) и его вход, в том числе на своих серверах GitLab."
+          }
+        }
+      }
+    },
+    "Couldn't check": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось проверить"
+          }
+        }
+      }
+    },
+    "%@ CLI isn't installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ CLI не установлен"
+          }
+        }
+      }
+    },
+    "%@ CLI isn't signed in (or %@ can't be reached)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ CLI не авторизован (или %@ недоступен)"
+          }
+        }
+      }
+    },
+    "Open Repository in Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть репозиторий в браузере"
+          }
+        }
+      }
+    },
+    "Open CI/CD in Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть CI/CD в браузере"
+          }
+        }
+      }
+    },
+    "Open Pull Requests in Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть pull request'ы в браузере"
+          }
+        }
+      }
+    },
+    "Open Issues in Browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть задачи в браузере"
+          }
+        }
+      }
+    },
+    "GitLab": {}
   },
   "version": "1.0"
 }

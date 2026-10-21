@@ -75,6 +75,12 @@ extension GitHubStatus: Handled {
         return Result(installed: a.installed, user: a.user)
     }
 }
+extension GitLabStatus: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        let a = GitLab.account()
+        return Result(installed: a.installed, user: a.user)
+    }
+}
 extension GitHubIssues: Handled {
     func handle(_ d: Daemon) throws -> [GitHub.Issue] {
         let (_, path) = try d.repoPath(worktreeId: worktreeId, repoId: repoId)
@@ -253,7 +259,7 @@ extension BitbucketStatus: AsyncHandled {
 
 extension Daemon {
     static let integrationMethods: [any Handled.Type] = [GitHubBranchPR.self, GitHubForge.self, CIRunsList.self, CIJobs.self, CILog.self,
-        CIRerun.self, CIDispatch.self, GitHubStatus.self, GitHubIssues.self, GitHubChecks.self, GitHubFailedLog.self,
+        CIRerun.self, CIDispatch.self, GitHubStatus.self, GitLabStatus.self, GitHubIssues.self, GitHubChecks.self, GitHubFailedLog.self,
         GitHubReviewComments.self, GitHubProjects.self, GitHubProjectItems.self]
     static let asyncMethods: [any AsyncHandled.Type] = [GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,

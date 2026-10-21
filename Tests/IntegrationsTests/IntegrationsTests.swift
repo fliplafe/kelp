@@ -221,6 +221,18 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(!GitLab.isGitLab(remote: ""))
 }
 
+@Test func glabAuthStatusNamesWhoIsSignedInOnEachHost() {
+    let status = """
+    gitlab.com
+      ✓ Logged in to gitlab.com as ada (/Users/ada/.config/glab-cli/config.yml)
+      ✓ Git operations for gitlab.com configured to use ssh protocol.
+    git.acme.dev
+      ✓ Logged in to git.acme.dev as ada.l (/Users/ada/.config/glab-cli/config.yml)
+    """
+    #expect(GitLab.signedIn(status) == "ada on gitlab.com, ada.l on git.acme.dev")
+    #expect(GitLab.signedIn("x gitlab.com has not been authenticated with glab. Run `glab auth login gitlab.com`") == nil)
+}
+
 @Test func gitlabBranchNamesStayOneQueryValue() {
     #expect(GitLab.queryValue("fix+x") == "fix%2Bx")          // "+" would read as a space
     #expect(GitLab.queryValue("a&b=c") == "a%26b%3Dc")        // & and = would start another parameter

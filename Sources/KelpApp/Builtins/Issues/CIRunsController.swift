@@ -2,9 +2,10 @@ import AppKit
 import Core
 
 /// CI of the branch on screen: runs → jobs → steps, the failed job's log under them (the latest failure opens by itself),
-/// Re-run Failed, Ask Agent to Fix, and Run Workflow… for workflows started by hand. GitHub Actions (gh) or GitLab (glab).
+/// Re-run Failed, Ask Agent to Fix, and Run Workflow… for workflows started by hand. GitHub Actions (gh) or GitLab (glab);
+/// without them, a button that installs and signs in. The globe opens the project's pages on its site.
 @MainActor
-final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate {
+final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     private final class Item: NSObject {
         enum Kind { case run(CIRuns.Run), job(CIRuns.Job, run: Int), step(CIRuns.Step) }
         let kind: Kind
@@ -21,6 +22,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private let outline = NSOutlineView()
     private let branch = NSTextField(labelWithString: "")
     private let note = NSTextField(wrappingLabelWithString: "")
+    private let setupButton = NSButton()
+    private var setup: Forge.Setup?
+    private let webButton = NSButton()
+    private var pages: GitWebPages.Pages?
     private let log = NSTextView()
     private let logBar = NSStackView()
     private let workflowsButton = NSButton()
@@ -35,18 +40,26 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     override func loadView() {
         branch.font = .ui(12, weight: .semibold); branch.lineBreakMode = .byTruncatingMiddle
         let refresh = button("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reload() }
-        workflowsButton.image = .symbol("play.circle", String(localized: "Run Workflow…")); workflowsButton.isBordered = false
-        workflowsButton.toolTip = String(localized: "Run Workflow…")
-        workflowsButton.contentTintColor = .secondaryLabelColor; workflowsButton.target = self; workflowsButton.action = #selector(runWorkflow)
         workflowsButton.isHidden = true
-        let header = NSStackView(views: [NSImageView(image: .symbol("arrow.triangle.branch")), branch, NSView(), workflowsButton, refresh])
+        for (b, symbol, tip) in [(workflowsButton, "play.circle", String(localized: "Run Workflow…")), (webButton, "globe", String(localized: "Open in Browser"))] {
+            b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip; b.contentTintColor = .secondaryLabelColor; b.target = self
+        }
+        workflowsButton.action = #selector(runWorkflow); webButton.action = #selector(showPages); webButton.isHidden = true
+        let header = NSStackView(views: [NSImageView(image: .symbol("arrow.triangle.branch")), branch, NSView(), workflowsButton, webButton, refresh])
         header.spacing = 6; header.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 8)
 
         let col = NSTableColumn(identifier: .init("ci")); col.resizingMask = .autoresizingMask
         outline.addTableColumn(col); outline.outlineTableColumn = col; outline.headerView = nil; outline.style = .sourceList
         outline.rowSizeStyle = .custom; outline.dataSource = self; outline.delegate = self
+        outline.menu = NSMenu(); outline.menu?.delegate = self
         let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        note.textColor = .secondaryLabelColor; note.alignment = .center; note.isHidden = true
+        note.textColor = .secondaryLabelColor; note.alignment = .center
+        setupButton.bezelStyle = .push; setupButton.target = self; setupButton.action = #selector(runSetup)
+        if #available(macOS 26, *) { setupButton.tintProminence = .primary }
+        let checkAgain = textButton(String(localized: "Check Again")) { [weak self] in self?.reload() }
+        checkAgain.controlSize = .regular
+        let setupRow = NSStackView(views: [setupButton, checkAgain]); setupRow.spacing = 8
+        let empty = NSStackView(views: [note, setupRow]); empty.orientation = .vertical; empty.spacing = 14; empty.isHidden = true
 
         log.isEditable = false; log.font = .monospacedSystemFont(ofSize: 10, weight: .regular); log.textContainerInset = NSSize(width: 6, height: 6)
         log.isVerticallyResizable = true; log.autoresizingMask = .width; log.drawsBackground = false
@@ -57,7 +70,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         }
         let fix = textButton(String(localized: "Ask Agent to Fix")) { [weak self] in self?.askAgent() }
         let rerun = textButton(String(localized: "Re-run Failed")) { [weak self] in self?.rerun() }
-        let web = textButton(String(localized: "Open in Browser")) { [weak self] in if let u = self?.shownJob?.job.url { Workbench.open(u) } }
+        let web = textButton(String(localized: "Open in Browser")) { [weak self] in if let u = self?.shownJob?.job.url { Forge.open(u) } }
         [copy, fix, rerun, web].forEach { logBar.addArrangedSubview($0) }
         logBar.spacing = 6; logBar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         let bottom = NSStackView(views: [logBar, logScroll]); bottom.orientation = .vertical; bottom.spacing = 0
@@ -67,16 +80,34 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         split.addArrangedSubview(scroll); split.addArrangedSubview(bottom)
         split.setHoldingPriority(.init(260), forSubviewAt: 0)   // the runs keep their room; the log takes what's left
         let v = stacked(header, split)
-        note.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(note)
+        empty.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(empty)
         NSLayoutConstraint.activate([
             header.heightAnchor.constraint(equalToConstant: 32),   // else it and the split share the height
-            note.centerXAnchor.constraint(equalTo: v.centerXAnchor), note.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
-            note.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40),
+            empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
+            empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40),
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload() }
+        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.reload(); self?.loadPages() }
     }
+
+    /// From origin, not gh: there even when gh or glab isn't set up.
+    private func loadPages() {
+        guard let w = worktree else { return }
+        pages = nil; webButton.isHidden = true
+        Task {
+            let p = await AppModel.shared.quiet(GitWebPages(worktreeId: w)) ?? nil   // a decoration: without it there's no globe
+            guard w == worktree else { return }
+            pages = p; webButton.isHidden = p == nil
+        }
+    }
+
+    @objc private func showPages() {
+        guard let pages else { return }
+        Forge.menu(pages).popUp(positioning: nil, at: NSPoint(x: 0, y: webButton.bounds.height + 4), in: webButton)
+    }
+
+    @objc private func runSetup() { if let setup { Forge.run(setup) } }
 
     private func button(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
         let b = ClosureButton(title: "", action: action); b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip
@@ -99,7 +130,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             guard w == worktree else { return }
             if let e = r.error {
                 branch.stringValue = ""; workflowsButton.isHidden = true
-                show(note: e.contains("not found") ? String(localized: "Install the GitHub CLI to see CI runs: brew install gh (glab for GitLab).") : e); return
+                show(note: e, setup: Forge.setup(for: e)); return
             }
             branchName = r.value?.branch ?? ""
             branch.stringValue = branchName
@@ -135,8 +166,13 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         }
     }
 
-    private func show(note text: String?) {
-        note.stringValue = text ?? ""; note.isHidden = text == nil
+    /// `setup`: gh or glab isn't installed or signed in; what it says, and the button that runs the fix in a terminal.
+    private func show(note text: String?, setup: Forge.Setup? = nil) {
+        self.setup = setup
+        note.stringValue = setup.map { $0.note + "\n" + String(localized: "It runs in a terminal tab; then Check Again.") } ?? text ?? ""
+        note.superview?.isHidden = text == nil
+        setupButton.superview?.isHidden = setup == nil
+        if let setup { setupButton.title = setup.title; setupButton.toolTip = setup.command }
         outline.enclosingScrollView?.isHidden = text != nil
         if text != nil { logBar.isHidden = true; log.string = "" }
     }
@@ -180,10 +216,11 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         GitFix.send("fixCI", worktree: w, vars: ["check": j.job.name, "error": shownLog])
     }
 
-    private func rerun() {
-        guard let w = worktree, let j = shownJob else { return }
+    private func rerun() { if let w = worktree, let j = shownJob { rerun(w, run: j.run) } }
+
+    private func rerun(_ w: String, run: Int) {
         Task {
-            if await AppModel.shared.call(CIRerun(worktreeId: w, run: j.run)) != nil {
+            if await AppModel.shared.call(CIRerun(worktreeId: w, run: run)) != nil {
                 Banner.show(String(localized: "Re-running the failed jobs")); try? await Task.sleep(for: .seconds(2)); reload()
             }
         }
@@ -226,6 +263,19 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     }
 
     // MARK: outline
+
+    /// Right-click a run or a job: its page on the site, and Re-run Failed for a failed run.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let item = outline.item(atRow: outline.clickedRow) as? Item else { return }
+        switch item.kind {
+        case .run(let r):
+            menu.add(String(localized: "Open in Browser"), symbol: "globe") { Forge.open(r.url) }
+            if r.failed, let w = worktree { menu.add(String(localized: "Re-run Failed"), symbol: "arrow.clockwise") { [weak self] in self?.rerun(w, run: r.id) } }
+        case .job(let j, _): if let u = j.url { menu.add(String(localized: "Open in Browser"), symbol: "globe") { Forge.open(u) } }
+        case .step: break
+        }
+    }
 
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         guard let i = item as? Item else { return runs.count }

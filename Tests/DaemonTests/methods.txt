@@ -36,6 +36,7 @@ git.stash
 git.status
 git.switch
 git.unstage
+git.webPages
 git.webURL
 github.branchPR
 github.checks
@@ -49,6 +50,7 @@ github.projects
 github.prs
 github.reviewComments
 github.status
+gitlab.status
 history.list
 history.resume
 jira.issues

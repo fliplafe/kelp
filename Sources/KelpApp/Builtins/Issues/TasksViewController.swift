@@ -43,10 +43,12 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         for c in [source, filter] as [NSControl] { c.controlSize = .small; c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         // An inspector panel: controls on one line, the status under them, list above the details.
         let controls = NSStackView(views: [source, filter, refresh]); controls.spacing = 6
-        showAll.bezelStyle = .push; showAll.controlSize = .small; showAll.isHidden = true
+        for b in [showAll, setupButton] { b.bezelStyle = .push; b.controlSize = .small; b.isHidden = true }
         let statusRow = NSStackView(views: [status, showAll]); statusRow.spacing = 6
-        let bar = NSStackView(views: [controls, statusRow]); bar.orientation = .vertical; bar.alignment = .leading; bar.spacing = 4
+        let bar = NSStackView(views: [controls, statusRow, setupButton]); bar.orientation = .vertical; bar.alignment = .leading; bar.spacing = 4
         bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        statusRow.widthAnchor.constraint(equalTo: bar.widthAnchor, constant: -20).isActive = true   // else the status wraps to no width
+        for row in [controls, statusRow] { row.setHuggingPriority(.defaultHigh, for: .vertical) }   // as tall as their views; the list takes the rest
 
         let col = NSTableColumn(identifier: .init("t")); table.addTableColumn(col); table.headerView = nil
         table.rowHeight = TextSize.of(40); table.dataSource = self; table.delegate = self; table.style = .inset
@@ -59,7 +61,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         split.addArrangedSubview(ts); split.addArrangedSubview(ds)
         split.setHoldingPriority(.defaultLow + 1, forSubviewAt: 1)
         view = stacked(bar, split)
-        sourceChanged()
+        sourceChanged(); nameSources()   // the workspace came before the view: show(worktree:) left naming to here
     }
 
     override func viewDidLayout() {
@@ -70,6 +72,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     private lazy var showAll = ClosureButton(title: String(localized: "Show All Open")) { [weak self] in self?.filter.selectItem(at: 0); self?.reload() }
+    /// gh or glab isn't installed or signed in: runs what fixes it in a terminal tab.
+    private var setup: Forge.Setup?
+    private lazy var setupButton = ClosureButton(title: "") { [weak self] in if let s = self?.setup { Forge.run(s) } }
 
     func show(worktree id: String?) {
         let r = AppModel.shared.worktree(id)?.repoId ?? AppModel.shared.repos.first?.id
@@ -156,14 +161,17 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 status.stringValue = rows.isEmpty
                     ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here."))
                     : String(localized: "\(rows.count) items")
-                showAll.isHidden = !narrowed
+                showAll.isHidden = !narrowed; setupButton.isHidden = true
             } catch {
                 guard repoId == self.repoId, src == source.indexOfSelectedItem else { return }
                 showAll.isHidden = true
-                self.rows = []; status.stringValue = (error as? RPCError)?.message ?? "\(error)"
+                let message = (error as? RPCError)?.message ?? "\(error)"
+                setup = src == 2 || src == 3 ? nil : Forge.setup(for: message)
+                setupButton.title = setup?.title ?? ""; setupButton.toolTip = setup?.command; setupButton.isHidden = setup == nil
+                self.rows = []; status.stringValue = setup?.note ?? message
                 if src == 2 { status.stringValue = String(localized: "Connect Linear in Settings › Integrations") }
                 if src == 3 { status.stringValue = String(localized: "Connect Jira in Settings › Integrations") }
-                if src == 4 { status.stringValue = String(localized: "Projects need `gh auth refresh -s read:project`") }
+                if src == 4, setup == nil { status.stringValue = String(localized: "Projects need `gh auth refresh -s read:project`") }
             }
             table.reloadData(); showDetail(nil)
         }

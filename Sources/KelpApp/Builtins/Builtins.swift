@@ -216,6 +216,11 @@ enum Builtins {
         }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController() }]
         c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", specs: [],
                                       custom: { AnyView(IntegrationsSettings()) })]
+        // The workspace's project on GitHub / GitLab / Bitbucket, in the default browser.
+        c.commands = [cmd("forge.openRepo", "Open Repository in Browser") { Forge.open(\.repo) },
+                      cmd("forge.openCI", "Open CI/CD in Browser") { Forge.open(\.ci) },
+                      cmd("forge.openPulls", "Open Pull Requests in Browser") { Forge.open(\.pulls) },
+                      cmd("forge.openIssues", "Open Issues in Browser") { Forge.open(\.issues) }]
         return c
     }
 

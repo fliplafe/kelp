@@ -30,6 +30,19 @@ extension Git {
         return "\(base)/blob/\(sha)/\(f)" + (lines.map { $0.count == 1 ? "#L\($0.lowerBound)" : "#L\($0.lowerBound)-L\($0.upperBound)" } ?? "")
     }
 
+    /// The repository's home, CI, pull/merge requests and issues on its site.
+    public static func webPages(remote: String) -> GitWebPages.Pages? {
+        guard let (host, repo) = webRepo(remote) else { return nil }
+        let base = "https://\(host)/\(repo)"
+        if host.contains("gitlab") {
+            return .init(forge: "gitlab", repo: base, ci: base + "/-/pipelines", pulls: base + "/-/merge_requests", issues: base + "/-/issues")
+        }
+        if host.contains("bitbucket") {
+            return .init(forge: "bitbucket", repo: base, ci: base + "/pipelines", pulls: base + "/pull-requests", issues: base + "/issues")
+        }
+        return .init(forge: "github", repo: base, ci: base + "/actions", pulls: base + "/pulls", issues: base + "/issues")
+    }
+
     /// `git@github.com:o/r.git`, `ssh://git@host:22/o/r`, `https://user@host/o/r.git` → (host, "o/r").
     public static func webRepo(_ remote: String) -> (String, String)? {
         var s = remote

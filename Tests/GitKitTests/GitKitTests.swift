@@ -426,6 +426,15 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     #expect(u("not a remote", nil) == nil)
 }
 
+@Test func eachSiteHasItsOwnPathsForCIAndPullRequests() {
+    let gh = Git.webPages(remote: "git@github.com:o/r.git")
+    #expect(gh?.forge == "github" && gh?.repo == "https://github.com/o/r" && gh?.ci == "https://github.com/o/r/actions" && gh?.pulls == "https://github.com/o/r/pulls")
+    let gl = Git.webPages(remote: "ssh://git@gitlab.example.com:2222/team/sub/r.git")
+    #expect(gl?.forge == "gitlab" && gl?.ci == "https://gitlab.example.com/team/sub/r/-/pipelines" && gl?.pulls == "https://gitlab.example.com/team/sub/r/-/merge_requests")
+    #expect(Git.webPages(remote: "https://bitbucket.org/w/r")?.pulls == "https://bitbucket.org/w/r/pull-requests")
+    #expect(Git.webPages(remote: "/local/path/repo") == nil)
+}
+
 @Test func aSnapshotShowsExactlyWhatChangedAndLeavesTheRealIndexAlone() throws {
     let repo = try tempRepo()
     let before = try Git.snapshotTree(repo)

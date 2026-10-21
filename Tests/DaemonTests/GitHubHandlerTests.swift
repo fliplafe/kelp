@@ -166,3 +166,12 @@ private let fakeGlab: String = {
     #expect(((try? String(contentsOfFile: log, encoding: .utf8)) ?? "").contains("merge_requests/12/merge --raw-field squash=true"))
     #expect(!calls().contains { $0.hasPrefix("pr create") || $0.hasPrefix("pr merge") })   // gh, which can't talk to GitLab, was never asked
 }
+
+@Test func aWorkspaceLinksToItsProjectsPagesFromOrigin() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let wt = try await desk(r, "feat/pages")
+    #expect(try await r.c.call("git.webPages", .obj(["worktreeId": .string(wt.id)])) == .null)   // no origin: nothing to open
+    try Git.run(["remote", "add", "origin", "git@gitlab.example.com:g/r.git"], cwd: wt.path)
+    let pages = try await r.c.call("git.webPages", .obj(["worktreeId": .string(wt.id)]))
+    #expect(pages["forge"]?.string == "gitlab" && pages["ci"]?.string == "https://gitlab.example.com/g/r/-/pipelines")
+}

@@ -9,7 +9,7 @@ public enum FixRecipes {
     static let known: [(match: [String], fix: Fix)] = [
         (["agreed to the Xcode license", "Xcode license agreement"], Fix(command: "sudo xcodebuild -license accept", blocking: true)),
         (["invalid active developer path", "No developer tools were found", "xcrun: error"], Fix(command: "xcode-select --install", blocking: true)),
-        (["gh CLI not found", "gh: command not found", "Install the GitHub CLI"], Fix(command: "brew install gh")),
+        (["gh CLI not found", "gh: command not found", "Install the GitHub CLI", "Install GitHub CLI"], Fix(command: "brew install gh")),
         (["glab CLI not found", "glab: command not found"], Fix(command: "brew install glab")),
         (["gh auth login", "not logged into any GitHub hosts", "authentication token"], Fix(command: "gh auth login")),
         (["glab auth login", "401 Unauthorized"], Fix(command: "glab auth login")),

@@ -118,6 +118,19 @@ public struct GitWebURL: RPCMethod {
     public var path: String, start: Int?, end: Int?
     public init(path: String, start: Int? = nil, end: Int? = nil) { self.path = path; self.start = start; self.end = end }
 }
+/// The project's pages on its website (from origin), or null when origin isn't on GitHub, GitLab or Bitbucket.
+public struct GitWebPages: RPCMethod {
+    public static let name = "git.webPages"; public typealias Result = Pages?
+    /// `forge`: "github" | "gitlab" | "bitbucket"; `ci`: Actions / Pipelines; `pulls`: pull or merge requests.
+    public struct Pages: Codable, Sendable, Equatable {
+        public var forge: String, repo: String, ci: String, pulls: String, issues: String
+        public init(forge: String, repo: String, ci: String, pulls: String, issues: String) {
+            self.forge = forge; self.repo = repo; self.ci = ci; self.pulls = pulls; self.issues = issues
+        }
+    }
+    public var worktreeId: String?, repoId: String?
+    public init(worktreeId: String? = nil, repoId: String? = nil) { self.worktreeId = worktreeId; self.repoId = repoId }
+}
 
 /// The project's files, relative paths.
 public struct FilesList: RPCMethod {

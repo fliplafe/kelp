@@ -6,7 +6,21 @@ import GitKit
 /// issues and pipelines in GitHub's shapes, so the panels show either. Self-managed hosts work as glab knows them.
 public enum GitLab {
     /// `KELP_GLAB` names another program (tests use a stand-in), like `KELP_GH` for gh.
-    static let glabPath = ProcessInfo.processInfo.environment["KELP_GLAB"] ?? (try? LoginPath.resolve("glab"))
+    static var glabPath: String? { ProcessInfo.processInfo.environment["KELP_GLAB"] ?? (try? LoginPath.resolve("glab")) }
+
+    /// For Settings: is glab installed, and who it's signed in as ("ada on gitlab.com"; nil: not signed in anywhere).
+    /// `glab auth status` covers self-managed hosts too, where `glab api user` would only ask gitlab.com.
+    public static func account() -> (installed: Bool, user: String?) {
+        guard let exe = glabPath else { return (false, nil) }
+        let out = try? Subprocess.run([exe, "auth", "status"], cwd: NSHomeDirectory(), env: ProcessInfo.processInfo.environment, timeLimit: 20)
+        return (true, out.flatMap { signedIn(String(decoding: $0.stdout + $0.stderr, as: UTF8.self)) })
+    }
+
+    /// "✓ Logged in to gitlab.com as ada (…/config.yml)" → "ada on gitlab.com", each host's.
+    static func signedIn(_ status: String) -> String? {
+        let who = status.matches(of: /Logged in to (\S+) as (\S+)/).map { "\($0.2) on \($0.1)" }
+        return who.isEmpty ? nil : who.joined(separator: ", ")
+    }
 
     /// The checkout's origin is a GitLab (gitlab.com or a host with "gitlab" in its name).
     public static func isGitLab(cwd: String) -> Bool {

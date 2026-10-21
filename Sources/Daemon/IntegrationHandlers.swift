@@ -86,6 +86,7 @@ extension LocalForge { static var quietOnRemote: Bool { false } }
 extension GitHubBranchPR: LocalForge { static var quietOnRemote: Bool { true } }
 extension GitHubForge: LocalForge { static var quietOnRemote: Bool { true } }
 extension GitHubStatus: LocalForge {}
+extension GitLabStatus: LocalForge {}
 extension GitHubIssues: LocalForge {}
 extension GitHubChecks: LocalForge {}
 extension GitHubFailedLog: LocalForge {}

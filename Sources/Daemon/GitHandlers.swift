@@ -119,6 +119,14 @@ extension GitWebURL: Handled {
     }
 }
 
+extension GitWebPages: Handled {
+    func handle(_ d: Daemon) throws -> Pages? {
+        let path = try d.repoPath(worktreeId: worktreeId, repoId: repoId).1
+        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path) else { return nil }   // no origin: nothing to link to
+        return Git.webPages(remote: origin.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
 extension FilesList: Handled { func handle(_ d: Daemon) throws -> Result { try ProjectFiles.list(d.cwd(forWorktree: id).path) } }
 extension FilesSearch: Handled {
     func handle(_ d: Daemon) throws -> Result {
@@ -169,6 +177,6 @@ extension CommentSend: Handled {
 extension Daemon {
     static let gitMethods: [any Handled.Type] = [GitStatus.self, GitBranches.self, GitLineStats.self, GitPush.self, GitDiff.self, GitLog.self,
         GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self,
-        GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, FilesList.self, FilesSearch.self,
+        GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesSearch.self,
         CommentAdd.self, CommentList.self, CommentSetState.self, CommentSend.self]
 }

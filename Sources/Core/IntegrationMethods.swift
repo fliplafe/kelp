@@ -24,6 +24,11 @@ public struct GitHubStatus: RPCMethod {
     }
     public init() {}
 }
+/// The same for glab; `user` names each host it's signed in to ("ada on gitlab.com").
+public struct GitLabStatus: RPCMethod {
+    public static let name = "gitlab.status"; public typealias Result = GitHubStatus.Result
+    public init() {}
+}
 /// `filter`: mine, else open.
 public struct GitHubIssues: RPCMethod {
     public static let name = "github.issues"; public typealias Result = [GitHub.Issue]
