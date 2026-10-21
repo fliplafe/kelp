@@ -30,6 +30,9 @@ usage: kelp <command>
   ui state                             what the app shows: workspace, tabs, extensions, commands
   run <command-id> [json-args]         run an app command (ids from `kelp ui state`)
   ext list | new <id> [--name N] [--description D] | enable <id> | disable <id> | reload | path
+  ext search [text]                    the extension library (github.com/nikiomori/kelp-extensions)
+  ext install <id | github-url | ./folder>   from the library, any GitHub folder (…/tree/<branch>/<path>) or disk
+  ext update [id]                      what came from GitHub, to the library's latest (or its branch's)
 """
 
 // Internal: the daemon starts agents through this so the PTY becomes their controlling terminal
@@ -355,8 +358,56 @@ func plist() -> String {
             try await IDE.setExtension(id, enabled: sub == "enable", client: c)
         case "reload": show(try .from(try await c.call(UICommand(id: "extensions.reload"))))
         case "path": print(Paths.extensions.path)
+        case "search":
+            let q = args.joined(separator: " ").lowercased()
+            for e in try await c.call(ExtensionLibrary()) where q.isEmpty || [e.id, e.name, e.description ?? ""].contains(where: { $0.lowercased().contains(q) }) {
+                print([e.id, e.version, e.name, e.description ?? ""].joined(separator: "\t"))
+            }
+        case "install":
+            guard let what = args.first else { fail("ext install <id | github-url | ./folder>") }
+            var dir: ObjCBool = false
+            if what.contains("/"), FileManager.default.fileExists(atPath: what, isDirectory: &dir), dir.boolValue {
+                let src = URL(fileURLWithPath: what).standardizedFileURL
+                installed(try IDE.installExtension(src, as: src.lastPathComponent))
+            } else if what.contains("/") {
+                installed(try await fetch(what, as: nil, c))
+            } else {
+                guard let e = try await c.call(ExtensionLibrary()).first(where: { $0.id == what }) else { fail("no \(what) in the library (kelp ext search)") }
+                installed(try await fetch(e.source, as: nil, c))
+            }
+        case "update":
+            let library = try await c.call(ExtensionLibrary())
+            var found = false
+            for f in (try? FileManager.default.contentsOfDirectory(at: Paths.extensions, includingPropertiesForKeys: nil)) ?? [] {
+                guard let source = IDE.extensionSource(f), let id = manifest(f)["id"]?.string, args.first.map({ $0 == id }) ?? true else { continue }
+                found = true
+                // One from elsewhere on GitHub may have moved on its branch: it's fetched again.
+                let latest = library.first { $0.id == id }?.source
+                if latest == source { print("\(id) is up to date"); continue }
+                installed(try await fetch(latest ?? source, as: f.lastPathComponent, c))
+            }
+            if !found { print(args.first.map { "\($0) wasn't installed from GitHub" } ?? "nothing here was installed from GitHub") }
         default: print(usage)
         }
+    }
+
+    /// Downloads it through the daemon and moves it in, as `name` (else its id).
+    static func fetch(_ source: String, as name: String?, _ c: RPCClient) async throws -> URL {
+        let folder = URL(fileURLWithPath: try await c.call(ExtensionFetch(source: source)).folder)
+        return try IDE.installExtension(folder, as: name ?? folder.lastPathComponent, move: true)
+    }
+
+    static func manifest(_ folder: URL) -> JSONValue {
+        (try? JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: folder.appendingPathComponent("extension.json")))) ?? .null
+    }
+
+    /// What was installed and what it can run: the CLI's version of the app's look before installing.
+    static func installed(_ dest: URL) {
+        let m = manifest(dest), (commands, pages) = IDE.commandsIn(m)
+        print("installed \(m["id"]?.string ?? dest.lastPathComponent) \(m["version"]?.string ?? "") → \(dest.path)")
+        if !commands.isEmpty || !pages.isEmpty { print("it can run:") }
+        for x in commands { print("  \(x)") }
+        for p in pages { print("  \(p) (a web page, which can run any command)") }
     }
 
     /// Looks at the session twice a second until `done` says so, or it ended or was paused (it can't change then);

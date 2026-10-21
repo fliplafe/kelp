@@ -266,67 +266,79 @@ private struct ThemeGallery: View {
     }
 }
 
-/// Installed extensions: turn them on or off, remove, create (by hand or with an agent).
+/// Installed extensions: turn them on or off, remove, create (by hand or with an agent); or the library's, to install.
 private struct ExtensionsSettings: View {
     private var registry = ExtensionRegistry.shared
     @State private var picking = false
+    @State private var library = false
     var body: some View {
-        Form {
-            Section {
-                ForEach(registry.extensions) { e in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: e.icon).font(.title3).foregroundStyle(e.error == nil ? Color.accentColor : .orange).frame(width: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(loc(e.name)).fontWeight(.medium)
-                                Text(e.builtin ? String(localized: "Built-in") : e.version).font(.caption).foregroundStyle(.secondary)
-                            }
-                            if !e.description.isEmpty { Text(loc(e.description)).font(.caption).foregroundStyle(.secondary) }
-                            if let err = e.error { Text(err).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                            if let u = e.unavailable { Text(u).font(.caption).foregroundStyle(.tertiary) }
-                        }
-                        Spacer()
-                        if let p = e.path, !e.builtin {
-                            Menu {
-                                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
-                                let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path) ? "extension.json" : "package.json"
-                                Button("Edit \(manifest)") { Workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
-                                Divider()
-                                Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }
-                            } label: { Image(systemName: "ellipsis.circle") }
-                            .menuStyle(.borderlessButton).fixedSize()
-                        }
-                        if e.essential { Text("Required").font(.caption).foregroundStyle(.secondary) } else {
-                            Toggle("", isOn: Binding(get: { e.enabled }, set: { registry.setEnabled(e.id, $0) }))
-                                .toggleStyle(.switch).labelsHidden()
-                        }
-                    }
-                    .padding(.vertical, 2)
+        Form { if library { LibrarySection() } else { installed } }
+        .formStyle(.grouped)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("", selection: $library) {
+                    Text("Installed").tag(false)
+                    Text("Library").tag(true)
                 }
-            } header: {
-                Text("The browser, git and issues are extensions too. Turn off what you don't use.")
-            }
-            Section {
-                Text("To add one, ask Claude Code in an agent tab, e.g. “make a Kelp panel that lists my Docker containers”. "
-                     + String(localized: "It knows how through the extensions skill (Settings › Agents)."))
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("How Extensions Work") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
-                        .buttonStyle(.link)
-                    Spacer()
-                    Button("Install…") { picking = true }
-                        .help("A VS Code extension (.vsix or its folder) — for its file icon themes — or a Kelp extension folder")
-                    Button("Show in Finder") { NSWorkspace.shared.open(ExtensionRegistry.userDir) }
-                    Button("Reload") { registry.reload() }
-                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
             }
         }
-        .formStyle(.grouped)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "vsix") ?? .zip]) { result in
             guard case .success(let url) = result else { return }
             Task {
                 do { try await registry.install(url) }
-                catch { Banner.show(String(localized: "Couldn't install \(url.lastPathComponent): \(error.localizedDescription)"), style: .error) }
+                catch { Banner.show(String(localized: "Couldn't install \(url.lastPathComponent): \(AppModel.message(error))"), style: .error) }
+            }
+        }
+    }
+
+    @ViewBuilder private var installed: some View {
+        Section {
+            ForEach(registry.extensions) { e in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: e.icon).font(.title3).foregroundStyle(e.error == nil ? Color.accentColor : .orange).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(loc(e.name)).fontWeight(.medium)
+                            Text(e.builtin ? String(localized: "Built-in") : e.version).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !e.description.isEmpty { Text(loc(e.description)).font(.caption).foregroundStyle(.secondary) }
+                        if let err = e.error { Text(err).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                        if let u = e.unavailable { Text(u).font(.caption).foregroundStyle(.tertiary) }
+                    }
+                    Spacer()
+                    if let p = e.path, !e.builtin {
+                        Menu {
+                            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
+                            let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path) ? "extension.json" : "package.json"
+                            Button("Edit \(manifest)") { Workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
+                            Divider()
+                            Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
+                    }
+                    if e.essential { Text("Required").font(.caption).foregroundStyle(.secondary) } else {
+                        Toggle("", isOn: Binding(get: { e.enabled }, set: { registry.setEnabled(e.id, $0) }))
+                            .toggleStyle(.switch).labelsHidden()
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            Text("The browser, git and issues are extensions too. Turn off what you don't use.")
+        }
+        Section {
+            Text(String(localized: "To add one, install it from the Library, or ask Claude Code in an agent tab, e.g. “make a Kelp panel that lists my Docker containers”. ")
+                 + String(localized: "It knows how through the extensions skill (Settings › Agents)."))
+                .foregroundStyle(.secondary)
+            HStack {
+                Button("How Extensions Work") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
+                    .buttonStyle(.link)
+                Spacer()
+                Button("Install…") { picking = true }
+                    .help("A VS Code extension (.vsix or its folder) — for its file icon themes — or a Kelp extension folder")
+                Button("Show in Finder") { NSWorkspace.shared.open(ExtensionRegistry.userDir) }
+                Button("Reload") { registry.reload() }
             }
         }
     }

@@ -40,10 +40,12 @@ extension AppDelegate {
             }
             if let u = env["KELP_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
             // KELP_SNAPSHOT_SHEET=clone|remote[=text]: the clone and SSH sheets (the open panel itself is another process),
-            // with text: filled in and started.
+            // with text: filled in and started. extension=<GitHub folder>: downloaded, and what it runs asked about.
             if env["KELP_SNAPSHOT_SHEET"] == "onboarding" { OnboardingSheet.show() } else if let s = env["KELP_SNAPSHOT_SHEET"] {
                 let p = s.split(separator: "=", maxSplits: 1).map(String.init)
-                if p[0] == "remote" { RemoteSheet.show(start: p.count > 1 ? p[1] : nil) } else { CloneSheet.show(start: p.count > 1 ? p[1] : nil) }
+                if p[0] == "remote" { RemoteSheet.show(start: p.count > 1 ? p[1] : nil) }
+                else if p[0] == "extension", p.count > 1 { Task { await ExtensionRegistry.shared.install(source: p[1]) } }   // the look before installing
+                else { CloneSheet.show(start: p.count > 1 ? p[1] : nil) }
             }
             driveInput(env)
             switch env["KELP_SNAPSHOT_WINDOW"] {

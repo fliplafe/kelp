@@ -156,6 +156,21 @@ in the file's folder (Format Document, ⌃⇧I; Settings › Editor › Format o
 around the cursor, from the language server, else the word under it) and `${workspace}` are filled in, shell-quoted;
 any other `${…}` is left to the shell.
 
+## The library
+[github.com/nikiomori/kelp-extensions](https://github.com/nikiomori/kelp-extensions) holds extensions people shared,
+each reviewed before it's merged. Kelp downloads exactly the commit that was reviewed and, before installing, shows
+which commands the extension can run.
+- Install: Settings › Extensions › Library, or `kelp ext search [text]` then `kelp ext install <id>`.
+  `kelp ext update [id]` brings what came from GitHub up to date (the old copy goes to the Trash).
+- Any other GitHub folder installs the same way, without the review:
+  `kelp ext install https://github.com/me/repo` (the repo is the extension) or `…/tree/<branch>/<folder>`.
+  A folder on disk: `kelp ext install ./my-ext`.
+- Share yours: a pull request adding `extensions/<id>/` to that repo — `extension.json` (its `id` is the folder's name;
+  `name`, `version` like `1.0.0` and `description` required) and a `README.md`; no binaries, symlinks or files over
+  1 MB. Changing one later needs a new `version`. The repo's README has the `gh` commands.
+- A team's own library: the `extensions.library` setting is the URL of its `index.json` (same format, written by
+  that repo's `scripts/index.py`).
+
 ## Tips for agents writing extensions
 - Start from `kelp ext new <id>`; keep everything in that folder.
 - Test the list `command` in a terminal first: it must print JSON.

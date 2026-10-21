@@ -196,6 +196,16 @@
         }
       }
     },
+    "%@ — a web page, which can run any command": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — веб-страница, а она может запускать любые команды"
+          }
+        }
+      }
+    },
     "%@ — Full Transcript": {
       "localizations": {
         "ru": {
@@ -496,6 +506,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Агенты рядом. Нажмите, чтобы показать их вкладками (⌃⌘T)"
+          }
+        }
+      }
+    },
+    "Already installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уже установлено"
           }
         }
       }
@@ -1103,6 +1123,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось отформатировать %@: %@"
+          }
+        }
+      }
+    },
+    "Couldn't load the library: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось загрузить библиотеку: %@"
           }
         }
       }
@@ -2532,6 +2562,16 @@
         }
       }
     },
+    "Extensions people shared, each reviewed before it's added.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расширения, которыми поделились пользователи; каждое проверено перед добавлением."
+          }
+        }
+      }
+    },
     "Extensions…": {
       "localizations": {
         "ru": {
@@ -3229,6 +3269,16 @@
         }
       }
     },
+    "Install “%@”?": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установить «%@»?"
+          }
+        }
+      }
+    },
     "Install…": {
       "localizations": {
         "ru": {
@@ -3282,6 +3332,16 @@
         }
       }
     },
+    "It can run these commands on this Mac:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оно может запускать на этом Mac такие команды:"
+          }
+        }
+      }
+    },
     "It has uncommitted changes that will be lost.": {
       "localizations": {
         "ru": {
@@ -3308,6 +3368,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Он умеет это через навык расширений (Настройки › Агенты)."
+          }
+        }
+      }
+    },
+    "It runs no commands.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оно не запускает никаких команд."
           }
         }
       }
@@ -3605,6 +3675,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Слева"
+          }
+        }
+      }
+    },
+    "Library": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Библиотека"
           }
         }
       }
@@ -4657,6 +4737,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Здесь пусто"
+          }
+        }
+      }
+    },
+    "Nothing in the library yet.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В библиотеке пока ничего нет."
           }
         }
       }
@@ -6280,6 +6370,16 @@
         }
       }
     },
+    "Share Yours on GitHub": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поделиться своим на GitHub"
+          }
+        }
+      }
+    },
     "Show": {
       "localizations": {
         "ru": {
@@ -7370,6 +7470,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "У этого проекта нет команды «%@». Добавьте её в .kelp.yaml (%@: команда)."
+          }
+        }
+      }
+    },
+    "To add one, install it from the Library, or ask Claude Code in an agent tab, e.g. “make a Kelp panel that lists my Docker containers”. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы добавить расширение, установите его из библиотеки или попросите Claude Code во вкладке агента, например: «сделай панель Kelp со списком моих Docker-контейнеров». "
           }
         }
       }

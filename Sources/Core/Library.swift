@@ -1,0 +1,130 @@
+import Foundation
+
+/// The extension library: github.com/nikiomori/kelp-extensions, a public repo of extensions reviewed before they're
+/// merged. Its CI writes index.json with each one's folder at the commit that was reviewed, and installing one downloads
+/// exactly that. Any other GitHub folder installs the same way, without the review.
+extension IDE {
+    public static let libraryRepo = "nikiomori/kelp-extensions"
+    public static let libraryIndex = "https://raw.githubusercontent.com/\(libraryRepo)/main/index.json"
+    /// Where an installed extension came from, written by `fetchExtension`: `{"source": "https://github.com/…"}`.
+    public static let sourceFile = ".kelp-source.json"
+
+    /// A GitHub folder: `https://github.com/o/r`, `github.com/o/r/tree/<ref>/<folder…>` or `o/r`; nil for anything else.
+    /// Limit: the ref is one path component, so a branch with "/" in its name is given by its commit instead.
+    public static func librarySource(_ s: String) -> (repo: String, ref: String, path: String)? {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        for p in ["https://", "http://", "github.com/"] where t.hasPrefix(p) { t.removeFirst(p.count) }
+        while t.hasSuffix("/") { t.removeLast() }
+        if t.hasSuffix(".git") { t.removeLast(4) }
+        let parts = t.split(separator: "/").map(String.init)
+        guard parts.count >= 2, parts.allSatisfy({ $0.wholeMatch(of: /[A-Za-z0-9_.-]+/) != nil && $0 != "." && $0 != ".." }) else { return nil }
+        let repo = parts[0] + "/" + parts[1]
+        if parts.count == 2 { return (repo, "HEAD", "") }
+        guard parts.count >= 4, parts[2] == "tree" else { return nil }
+        return (repo, parts[3], parts.dropFirst(4).joined(separator: "/"))
+    }
+
+    /// One spelling per source, for `sourceFile` and comparing with the library's.
+    static func sourceURL(_ s: (repo: String, ref: String, path: String)) -> String {
+        "https://github.com/\(s.repo)" + (s.ref == "HEAD" && s.path.isEmpty ? "" : "/tree/\(s.ref)" + (s.path.isEmpty ? "" : "/\(s.path)"))
+    }
+
+    /// The library's index; `index` is an https URL, or a file URL for a local one.
+    public static func library(index: String = libraryIndex) throws -> [ExtensionLibrary.Entry] {
+        guard index.hasPrefix("https://") || index.hasPrefix("file://") else { throw RPCError.invalidParams("The library's index must be an https URL: \(index)") }
+        do { return try JSONDecoder().decode([ExtensionLibrary.Entry].self, from: download(index)) }
+        catch let e as RPCError { throw e }
+        catch { throw RPCError.internalError("The extension library's index isn't readable: \(error.localizedDescription)") }
+    }
+
+    /// A GitHub folder (`librarySource`) downloaded into a new temporary folder named by the extension's id, with
+    /// `sourceFile` in it. Limit: the repo's whole archive comes down for one folder; fine while repos are small.
+    public static func fetchExtension(_ source: String) throws -> URL {
+        guard let s = librarySource(source) else {
+            throw RPCError.invalidParams("Not a GitHub folder: \(source). Use https://github.com/owner/repo or https://github.com/owner/repo/tree/<branch>/<folder>.")
+        }
+        let fm = FileManager.default, work = fm.temporaryDirectory.appendingPathComponent("kelp-dl-\(UUID().uuidString.prefix(8))")
+        try Paths.ensure(work)
+        defer { try? fm.removeItem(at: work) }
+        let archive = work.appendingPathComponent("archive.tar.gz")
+        _ = try download("https://codeload.github.com/\(s.repo)/tar.gz/\(s.ref)", to: archive)
+        return try unpackExtension(archive, path: s.path, source: sourceURL(s), work: work)
+    }
+
+    /// `archive` is a GitHub tarball (one top folder); the extension at `path` in it ends up in a temporary folder of its own.
+    static func unpackExtension(_ archive: URL, path: String, source: String, work: URL) throws -> URL {
+        let fm = FileManager.default, x = work.appendingPathComponent("x")
+        try Paths.ensure(x)
+        // bsdtar leaves out absolute paths and "..".
+        let r = try Subprocess.run(["/usr/bin/tar", "-xzf", archive.path, "-C", x.path], cwd: work.path, env: [:], timeLimit: 60)
+        guard r.status == 0 else { throw RPCError.internalError("Couldn't unpack \(source): \(String(decoding: r.stderr, as: UTF8.self))") }
+        let top = try fm.contentsOfDirectory(at: x, includingPropertiesForKeys: nil).filter { !$0.lastPathComponent.hasPrefix(".") }
+        guard top.count == 1 else { throw RPCError.internalError("\(source) didn't download as a GitHub archive.") }
+        let folder = path.isEmpty ? top[0] : top[0].appendingPathComponent(path)
+        // A symlink in the archive must not lead out of it.
+        guard let real = Paths.real(folder.path), let inside = Paths.real(x.path), real.hasPrefix(inside + "/"),
+              let data = fm.contents(atPath: folder.appendingPathComponent("extension.json").path) else {
+            throw RPCError.invalidParams("\(source) has no extension.json.")
+        }
+        guard let id = (try? JSONDecoder().decode(JSONValue.self, from: data))?["id"]?.string, isValidExtensionID(id) else {
+            throw RPCError.invalidParams("\(source): extension.json needs an id of lowercase letters, digits, dots and dashes.")
+        }
+        let dest = fm.temporaryDirectory.appendingPathComponent("kelp-ext-\(UUID().uuidString.prefix(8))").appendingPathComponent(id)
+        try Paths.ensure(dest.deletingLastPathComponent())
+        try fm.moveItem(at: folder, to: dest)
+        let e = JSONEncoder(); e.outputFormatting = .withoutEscapingSlashes
+        try e.encode(["source": source]).write(to: dest.appendingPathComponent(sourceFile))
+        return dest
+    }
+
+    /// curl, which every Mac has: redirects followed, an HTTP error is an error, two minutes at most. Into `file`, else returned.
+    static func download(_ url: String, to file: URL? = nil) throws -> Data {
+        let r = try Subprocess.run(["/usr/bin/curl", "-fsSL", "--max-time", "120"] + (file.map { ["-o", $0.path] } ?? []) + [url],
+                                   cwd: NSTemporaryDirectory(), env: ProcessInfo.processInfo.environment, timeLimit: 130)
+        guard r.status == 0 else {
+            throw RPCError.internalError("Couldn't download \(url): \(String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        return r.stdout
+    }
+
+    /// Where the extension in `folder` was installed from (`sourceFile`), when it came from GitHub.
+    public static func extensionSource(_ folder: URL) -> String? {
+        (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: folder.appendingPathComponent(sourceFile))))?["source"]
+    }
+
+    /// Puts an extension folder into `dir` as `name`; one already there goes to the Trash. `move`: a folder of ours
+    /// (`fetchExtension`'s), taken rather than copied.
+    @discardableResult
+    public static func installExtension(_ folder: URL, as name: String, in dir: URL = Paths.extensions, move: Bool = false) throws -> URL {
+        // The name is a folder inside `dir`: "..", "a/b" or ".hidden" would point somewhere else (".." is ~/.kelp itself,
+        // which the line below would send to the Trash).
+        guard isPlainName(name) else { throw RPCError.invalidParams("“\(name)” can't be an extension's folder name.") }
+        let fm = FileManager.default, dest = dir.appendingPathComponent(name)
+        try Paths.ensure(dir)
+        if fm.fileExists(atPath: dest.path) { try fm.trashItem(at: dest, resultingItemURL: nil) }
+        if move { try fm.moveItem(at: folder, to: dest) } else { try fm.copyItem(at: folder, to: dest) }
+        return dest
+    }
+
+    /// One folder name and nothing more: not empty, no "/", not "." or "..", not hidden.
+    public static func isPlainName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("/") && !name.contains("\0") && !name.hasPrefix(".") && name.count <= 255
+    }
+
+    /// What an extension's manifest can run, for a look before it's installed: the shell commands (every "command",
+    /// "terminal", "run", "test", "format" and "install" text) and the web pages, which can run any.
+    public static func commandsIn(_ manifest: JSONValue) -> (commands: [String], pages: [String]) {
+        var commands: [String] = [], pages: [String] = []
+        func walk(_ v: JSONValue) {
+            if let a = v.array { a.forEach(walk) }
+            guard case .object(let o) = v else { return }
+            for (k, x) in o.sorted(by: { $0.key < $1.key }) {
+                guard let s = x.string else { walk(x); continue }
+                if ["command", "terminal", "run", "test", "format", "install"].contains(k), !commands.contains(s) { commands.append(s) }
+                if k == "web", !pages.contains(s) { pages.append(s) }
+            }
+        }
+        walk(manifest)
+        return (commands, pages)
+    }
+}

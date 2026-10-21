@@ -72,6 +72,7 @@ enum DeclarativeExtension {
                 : try JSONDecoder().decode(ExtManifest.self, from: Data(contentsOf: own))
             var info = ExtensionInfo(id: m.id, name: m.name, description: m.description ?? "", version: m.version ?? "", icon: m.icon ?? "puzzlepiece.extension",
                                      builtin: false, path: folder, enabled: true)
+            info.source = IDE.extensionSource(folder)
             if checkRequirements, let missing = (m.requires ?? []).first(where: { (try? LoginPath.resolve($0)) == nil }) {
                 info.unavailable = String(localized: "Needs `\(missing)` — not found on this Mac.")
                 return (info, Contributions())

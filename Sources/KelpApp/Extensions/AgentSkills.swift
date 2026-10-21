@@ -30,10 +30,12 @@ enum AgentSkills {
 
         This session runs inside Kelp and the `kelp` CLI is on PATH. Kelp loads extensions from `\(folder)`.
 
+        0. Look in the library first: `kelp ext search <word>`. When one fits, `kelp ext install <id>` and you're done.
         1. Write `\(folder)/<id>/extension.json` (and any script or HTML it uses next to it) following the guide below.
            Prefer a `list` view fed by a shell command that prints one JSON object per line.
         2. Run `kelp ext reload`, then `kelp ext list` — fix the manifest if it reports an error.
         3. Tell the user where it appears (right inspector icon for panels, the + menu for tabs) and how to use it.
+        4. If they want to share it, open a pull request to the library ("The library" below).
 
         Never use Claude Code plugins, mods, hooks or MCP for this: Kelp only loads its own extension folders.
 
