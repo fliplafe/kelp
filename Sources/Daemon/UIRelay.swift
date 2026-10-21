@@ -9,6 +9,8 @@ extension Daemon {
         switch method {
         case "ui.publish":
             guard let state = p["state"], case .object = state else { throw RPCError.invalidParams("state must be an object") }
+            // Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
+            guard lock.withLock({ conns[conn]?.peer }) == Self.appExecutable else { throw RPCError.invalidParams("Only Kelp's window publishes its state.") }
             lock.withLock { uiState = state; appConns.insert(conn) }
             return .null
         case "ui.state": return lock.withLock { uiState }

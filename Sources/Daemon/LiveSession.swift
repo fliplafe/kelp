@@ -55,12 +55,13 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// TUIs redraw everything after a resize; that output isn't the agent working.
     private var redrawUntil = Date.distantPast
     private var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
-    private var pendingPrompt: String?
+    /// Text waiting until the program is ready (drawn, quiet, no question open), first in first out: the launch prompt,
+    /// then whatever was sent while it waited.
+    private var pendingPrompts: [(text: String, draft: Bool)] = []
     /// Someone answered the agent's first question (the user typed, or Kelp's auto-answer pressed its key): from then on
     /// a trust dialog's words left in the scrollback no longer hold the launch prompt back.
     private var dialogSettled = false
     /// The launch prompt is typed but not sent: the user reads it (a hand-off's brief) and presses Return.
-    private var promptIsDraft = false
     /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted option.
     /// `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the user answers
     /// from a notification.
@@ -248,7 +249,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
     /// Called with every status change: a snapshot when work starts, the changes when it stops (git work off the lock).
     func noteTurn(_ s: AgentStatus) {
         lock.lock()
-        let shell = record.agent == "shell"
+        // A shell or a plain command (a dev server, a script) has no turns: its output comes and goes, and each change
+        // would copy the index and hash the tree again.
+        let shell = record.agent == "shell" || record.agent == "custom"
         let starting = s == .working && !inTurn, ending = inTurn && s != .working
         if starting { inTurn = true; turnStart = Date(); turnDir = record.currentDir }
         if ending { inTurn = false }
@@ -280,15 +283,15 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         }
         emit(sync())
         // Deliver the launch prompt once the TUI has drawn and gone quiet (or after a timeout).
-        var prompt: String?
+        var prompt: (text: String, draft: Bool)?
         // Never while a question is open: its Enter would be the prompt's, and the default option is usually "Yes". Kelp
         // leaves those to the user on purpose (trusting a project, its new MCP servers); the prompt waits.
-        if let p = pendingPrompt, steering == nil, !trustQuestionOpen(), !menuOpen() {
+        if let p = pendingPrompts.first, steering == nil, !trustQuestionOpen(), !menuOpen() {
             let quiet = lastOutputAt.map { Date().timeIntervalSince($0) > 1.5 } ?? false
-            if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompt = nil }
+            if (quiet && Date().timeIntervalSince(started) > 2) || Date().timeIntervalSince(started) > 25 { prompt = p; pendingPrompts.removeFirst() }
         }
         lock.unlock()
-        if let prompt { send(prompt, enter: !lock.withLock { promptIsDraft }, paste: true) }   // a task's text: never keys
+        if let prompt { send(prompt.text, enter: !prompt.draft, paste: true) }   // a task's text: never keys
     }
 
     /// Caller holds the lock.
@@ -349,7 +352,9 @@ final class LiveSession: @unchecked Sendable {   // ring, detector, log, discard
         pty.resize(cols: cols, rows: rows)
     }
 
-    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompt = p; promptIsDraft = draft; sawFirstPrompt = true; lock.unlock() }
+    func queuePrompt(_ p: String, draft: Bool = false) { lock.lock(); pendingPrompts.append((p, draft)); sawFirstPrompt = true; lock.unlock() }
+    /// Text still waiting for the program: anything sent now goes behind it.
+    var hasPendingInput: Bool { lock.withLock { !pendingPrompts.isEmpty } }
 
     /// Type text into the agent. Multi-line text goes as a bracketed paste so TUIs don't submit each line.
     /// `paste`: as a paste even on one line (when the program takes pastes), so a leading "!" or "/" (an issue title) is

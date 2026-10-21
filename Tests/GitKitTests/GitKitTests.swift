@@ -477,3 +477,21 @@ private let sample = FileDiff(path: "f.swift", header: "", hunks: [
     let d = try #require(try Git.diff(repo, source: .unstaged, file: "run.sh").first)
     #expect(d.header.contains("new file mode 100755"))   // a hunk staged from it keeps the script runnable
 }
+
+/// A remote branch name is checked after its "origin/" is taken off: "origin/-Cmain" must not become `git switch -Cmain`.
+@Test func switchingRefusesANameThatReadsAsAnOption() throws {
+    let repo = try tempRepo()
+    let before = try Git.run(["rev-parse", "main"], cwd: repo)
+    try Git.run(["switch", "-q", "-c", "other"], cwd: repo)
+    try "x\n".write(toFile: repo + "/x.txt", atomically: true, encoding: .utf8); try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "x"], cwd: repo)
+    #expect(throws: (any Error).self) { try Git.switchBranch(repo, to: "origin/-Cmain", remote: true) }
+    #expect(throws: (any Error).self) { try Git.switchBranch(repo, to: "-Cmain") }
+    #expect(try Git.run(["rev-parse", "main"], cwd: repo) == before)   // main wasn't reset onto this branch
+}
+
+/// A run past its time limit ends even if it ignores SIGTERM: the thread waiting on it is given back.
+@Test func aRunThatIgnoresSIGTERMStillEndsAtItsTimeLimit() throws {
+    let start = Date()
+    #expect(throws: (any Error).self) { try Git.runData(["-c", "trap '' TERM; sleep 30"], cwd: "/tmp", executable: "/bin/sh", timeLimit: 0.5) }
+    #expect(Date().timeIntervalSince(start) < 10)   // SIGKILL 2 s after the SIGTERM it ignored
+}

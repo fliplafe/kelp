@@ -136,8 +136,13 @@ extension Git {
 
     /// Switch to a local branch, a remote one (creates the tracking branch), or a new one.
     public static func switchBranch(_ path: String, to name: String, create: Bool = false, remote: Bool = false) throws {
+        let local = remote ? String(name.drop { $0 != "/" }.dropFirst()) : name
+        // Checked as git will read it, after "origin/" is taken off: "origin/-Cmain" would be `git switch -Cmain`.
+        guard !local.hasPrefix("-"), !name.hasPrefix("-") else {
+            throw GitError(args: ["switch", name], status: 1, stderr: "“\(name)” isn't a branch name.")
+        }
         if create { try run(["switch", "-c", name], cwd: path); return }
-        try run(["switch", remote ? String(name.drop { $0 != "/" }.dropFirst()) : name], cwd: path)
+        try run(["switch", local], cwd: path)
     }
 
     /// Undo working-tree changes: tracked files go back to the index, untracked files are deleted.

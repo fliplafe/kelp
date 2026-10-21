@@ -25,11 +25,16 @@ extension Workbench {
 
     /// ⌃⌘← / ⌃⌘→: the workspace shown before / after this one (closed ones are skipped).
     static func goBack(_ step: Int) {
-        var i = shared.visitAt + step
-        while shared.visits.indices.contains(i), AppModel.shared.worktree(shared.visits[i]) == nil || shared.visits[i] == shared.workspaceId { i += step }
-        guard shared.visits.indices.contains(i) else { NSSound.beep(); return }
+        guard let i = visit(step) else { NSSound.beep(); return }
         shared.visitAt = i
         show(workspace: shared.visits[i], remember: false)
+    }
+
+    /// Where Back (-1) / Forward (1) would go: nil when there's nothing that way (the title bar's arrows grey out).
+    static func visit(_ step: Int) -> Int? {
+        var i = shared.visitAt + step
+        while shared.visits.indices.contains(i), AppModel.shared.worktree(shared.visits[i]) == nil || shared.visits[i] == shared.workspaceId { i += step }
+        return shared.visits.indices.contains(i) ? i : nil
     }
 
     static func open(_ uri: String, split: SplitDirection? = nil, workspace: String? = nil, focus: Bool = true) {

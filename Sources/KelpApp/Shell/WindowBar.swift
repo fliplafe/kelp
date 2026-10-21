@@ -3,7 +3,7 @@ import Core
 import GitKit
 
 /// The window's first row, the title bar: where you are — the workspace, its folder (Open In, Finder, Copy Path), its
-/// branch and pull request — and Open Quickly (⌘P) in the middle. The window controller puts the panel toggles in the
+/// branch and pull request — and Open Quickly (⌘P) in the middle, Back / Forward beside it. The window controller puts the panel toggles in the
 /// corners and lines the workspace up with the editor area; the panes' tab strips are the second row.
 @MainActor
 final class WindowBar: NSView {
@@ -15,6 +15,8 @@ final class WindowBar: NSView {
     private let icon = NSImageView(), name = NSTextField(labelWithString: "")
     private let folder = WindowBar.chip(nil), branch = WindowBar.chip("arrow.triangle.branch"), pr = WindowBar.chip("arrow.triangle.pull")
     private let search = SearchPill()
+    private let back = NSButton.titlebar("chevron.left", String(localized: "Back"), tip: "")
+    private let forward = NSButton.titlebar("chevron.right", String(localized: "Forward"), tip: "")
     private let awake = NSButton.titlebar("cup.and.saucer", String(localized: "Keep Mac Awake"), tip: "")
     private var info: BranchInfo?
 
@@ -33,7 +35,9 @@ final class WindowBar: NSView {
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
         awake.target = self; awake.action = #selector(toggleAwake)
-        for v in [context, search, awake] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
+        let nav = NSStackView(views: [back, forward]); nav.spacing = 0
+        for v in [context, nav, search, awake] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         // Short of room, the search leaves the centre first, then narrows; only then does the path shorten.
         let wide = search.widthAnchor.constraint(equalToConstant: 280); wide.priority = .init(250)
         let center = search.centerXAnchor.constraint(equalTo: centerXAnchor); center.priority = .init(200)
@@ -42,11 +46,16 @@ final class WindowBar: NSView {
             context.centerYAnchor.constraint(equalTo: centerYAnchor), search.centerYAnchor.constraint(equalTo: centerYAnchor),
             search.heightAnchor.constraint(equalToConstant: 22), wide, center,
             search.widthAnchor.constraint(greaterThanOrEqualToConstant: 120), search.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
-            search.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
+            back.widthAnchor.constraint(equalToConstant: 24), forward.widthAnchor.constraint(equalToConstant: 24),
+            nav.trailingAnchor.constraint(equalTo: search.leadingAnchor, constant: -6), nav.centerYAnchor.constraint(equalTo: centerYAnchor),
+            nav.leadingAnchor.constraint(greaterThanOrEqualTo: context.trailingAnchor, constant: 12),
             awake.leadingAnchor.constraint(equalTo: search.trailingAnchor, constant: 6), awake.centerYAnchor.constraint(equalTo: centerYAnchor),
             awake.widthAnchor.constraint(equalToConstant: 28),   // the three cups differ in width; the search mustn't shift
             awake.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
+        track(owner: self) { [-1, 1].map { Workbench.visit($0).flatMap { AppModel.shared.worktree(Workbench.shared.visits[$0])?.displayName } } } changed: { [weak self] in
+            self?.showNav(back: $0[0], forward: $0[1])
+        }
         track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in
             guard let self else { return }
@@ -157,6 +166,16 @@ final class WindowBar: NSView {
         }
         awake.menu = m
     }
+
+    /// The arrows say where they go; with nothing that way they grey out.
+    private func showNav(back to: String?, forward ahead: String?) {
+        for (b, name, title, key) in [(back, to, String(localized: "Back"), "⌃⌘←"), (forward, ahead, String(localized: "Forward"), "⌃⌘→")] {
+            b.isEnabled = name != nil
+            b.toolTip = name.map { "\(title): \($0) (\(key))" } ?? "\(title) (\(key))"
+        }
+    }
+    @objc private func goBack() { Workbench.goBack(-1) }
+    @objc private func goForward() { Workbench.goBack(1) }
 
     @objc private func toggleAwake() { ExtensionRegistry.shared.command("power.keepAwake")?.run([:]) }
 

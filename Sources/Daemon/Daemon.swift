@@ -159,9 +159,13 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
                     }
                     // Quick, and only right in the order they were sent: a saved layout or a terminal size that finished second
                     // must not win over the newer one. Applied here, one after another, like keystrokes.
-                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" {
+                    if req.isNotification, req.method == StateSet.name || req.method == "session.resize" || req.method == "ui.publish" {
                         let p = req.params ?? .null
-                        if req.method == StateSet.name { _ = try? StateSet.run(p, self) } else { _ = try? handleSync(req.method, p, conn: c.id) }
+                        switch req.method {
+                        case StateSet.name: _ = try? StateSet.run(p, self)
+                        case "ui.publish": _ = try? handleUI(req.method, p, conn: c.id)
+                        default: _ = try? handleSync(req.method, p, conn: c.id)
+                        }
                         continue
                     }
                     if req.method == "session.stream" {   // this connection becomes a raw byte pipe (kelp attach)

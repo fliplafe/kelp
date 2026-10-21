@@ -212,11 +212,13 @@ extension Daemon {
             let ls = try liveSession(id)
             // Woken just now: typed once it is ready (drawn, quiet, no question open), as a launch prompt is; typed at once,
             // it would land in a program still starting.
-            if wasRunning { ls.send(text, enter: enter) } else { ls.queuePrompt(text, draft: !enter) }
+            // Or behind text still waiting (a launch prompt, an earlier send): in the order sent, none replacing another.
+            if wasRunning, !ls.hasPendingInput { ls.send(text, enter: enter) } else { ls.queuePrompt(text, draft: !enter) }
             return .null
         case "session.resize":
             let (cols, rows) = Launch.size(p)
-            try liveSession(p.req("id")).resize(cols: cols, rows: rows); return .null
+            // A running one only: a size never wakes a paused agent (a wake gets the size it's shown at anyway).
+            existing(try p.req("id"))?.resize(cols: cols, rows: rows); return .null
         case "session.kill":
             // Under wakeLock, as waking is: a paused session marked ended here can't be woken halfway through, nor this kill
             // land on the old copy while a wake starts a new one.

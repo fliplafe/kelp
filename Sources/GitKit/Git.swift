@@ -73,12 +73,20 @@ public enum Git {
         return outData
     }
 
-    /// SIGTERM to `pid` and everything it started, children first (found before the parent goes, while they're still its).
+    /// SIGTERM to `pid` and everything it started, children first (found before the parent goes, while they're still its),
+    /// then SIGKILL to whatever is left after 2 s: one that ignores SIGTERM would hold the pipes, and this thread, for good.
+    /// Limit: a pid could be reused within those 2 s; start times would rule that out.
     static func stopTree(_ pid: pid_t) {
+        let all = tree(pid)
+        for p in all.reversed() { kill(p, SIGTERM) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { for p in all where kill(p, 0) == 0 { kill(p, SIGKILL) } }
+    }
+
+    /// `pid` and its descendants, parents before children.
+    static func tree(_ pid: pid_t) -> [pid_t] {
         var kids = [pid_t](repeating: 0, count: 256)
         let n = Int(proc_listchildpids(pid, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
-        for k in kids.prefix(max(0, n)) where k > 0 { stopTree(k) }
-        kill(pid, SIGTERM)
+        return [pid] + kids.prefix(max(0, n)).filter { $0 > 0 }.flatMap(tree)
     }
 
     /// File names as pathspecs that mean just those files: "[id].tsx" isn't a pattern for "i.tsx" or "d.tsx".

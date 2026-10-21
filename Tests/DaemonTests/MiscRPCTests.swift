@@ -201,9 +201,10 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
 }
 
 @Test func aShortTurnIsNotCreditedWithThePreviousTurnsChanges() async throws {
-    let w = try await world(); defer { w.d.stop() }
+    // An agent (a plain command has no turns): `cat` standing in for one.
+    let w = try await world(agents: [AgentManifest(id: "claude-like", name: "Agent", command: "/bin/cat")]); defer { w.d.stop() }
     let wt = try await desk(w, "turns")
-    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "cat", "agent": "claude-like"]), as: Session.self)
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "claude-like"]), as: Session.self)
     let live = try #require(w.d.existing(s.id))
     live.noteTurn(.working)                                              // turn 1: changes a file
     #expect(try await waitFor(5) { live.turnBase != nil })
@@ -457,8 +458,9 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     try "setup: touch x\n".write(toFile: w.repo.path + "/.kelp.yaml", atomically: true, encoding: .utf8)
     let wt = try await desk(w, "agent-trust")
     let shown = try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))
+    _ = try await w.c.call("ui.publish", .obj(["state": .obj(["tab": "real"])]))   // what the window shows
     // An agent is another program on the same socket: it read the digest, says it's the window, and tries to trust.
-    let lines = [RPCRequest(id: nil, method: "ui.publish", params: .obj(["state": .obj([:])])),
+    let lines = [RPCRequest(id: nil, method: "ui.publish", params: .obj(["state": .obj(["tab": "fake"])])),
                  RPCRequest(id: 1, method: "scripts.trust", params: .obj(["worktreeId": .string(wt.id), "digest": shown["digest"] ?? .null]))]
     let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/nc"); p.arguments = ["-U", w.root.appendingPathComponent("kelp.sock").path]
     let input = Pipe(), out = Pipe(); p.standardInput = input; p.standardOutput = out; p.standardError = FileHandle.nullDevice
@@ -467,6 +469,7 @@ private func desk(_ w: World, _ branch: String) async throws -> Worktree {
     let reply = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self)   // the answer to id 1
     p.terminate()
     #expect(reply.contains("Only Kelp's window"), "\(reply)")
+    #expect(try await w.c.call("ui.state")["tab"]?.string == "real")   // nor did its claim replace what the window shows
     #expect(try await w.c.call("scripts.list", .obj(["worktreeId": .string(wt.id)]))["trusted"]?.bool == false)
     // The same call from the program the daemon takes for its app (here: this test process) is accepted.
     _ = try await trustAsShown(w.c, .string(wt.id))
@@ -724,4 +727,46 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))
     #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
     _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
+}
+
+/// Two sends to a paused agent both arrive, in order: the second waits behind the first, it doesn't replace it.
+@Test func sendsToAPausedAgentArriveInOrder() async throws {
+    let script = "echo ready; read -r a; echo GOT1:$a; read -r b; echo GOT2:$b; sleep 30"
+    let slow = AgentManifest(id: "slow2", name: "Slow", command: "/bin/bash", args: ["-c", script, "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [slow]); defer { w.d.stop() }
+    let wt = try await desk(w, "two-sends")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "slow2"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    // One after the other (two at once have no order): the first wakes it and waits for it, the second comes meanwhile.
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "first"]))
+    _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "second"]))
+    let arrived = try await waitFor(20) {
+        let t = (try await w.c.call("session.read", .obj(["id": .string(s.id), "bytes": 4000]))).string ?? ""
+        return t.contains("GOT1:first") && t.contains("GOT2:second")
+    }
+    let screen = (try await w.c.call("session.read", .obj(["id": .string(s.id), "bytes": 4000]))).string ?? ""
+    #expect(arrived, "\(screen.debugDescription)")
+    _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
+}
+
+/// A terminal's size reaching a paused agent (a `kelp attach` still open) doesn't wake it.
+@Test func aResizeNeverWakesAPausedAgent() async throws {
+    let sleepy = AgentManifest(id: "sleepy2", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo up; sleep 30", "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [sleepy]); defer { w.d.stop() }
+    let wt = try await desk(w, "resize")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy2"]), as: Session.self)
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    _ = try await w.c.call("session.resize", .obj(["id": .string(s.id), "cols": 100, "rows": 30]))   // as a request: answered after it ran
+    #expect(w.d.existing(s.id) == nil)
+    #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
+}
+
+/// A session id names its log file: one that isn't a session's can't read another .log.
+@Test func readingHistoryNeedsARealSession() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    try "private\n".write(to: w.root.appendingPathComponent("other.log"), atomically: true, encoding: .utf8)
+    try FileManager.default.createDirectory(at: w.root.appendingPathComponent("history"), withIntermediateDirectories: true)
+    await #expect(throws: (any Error).self) { _ = try await w.c.call("session.read", .obj(["id": "../other"])) }
 }

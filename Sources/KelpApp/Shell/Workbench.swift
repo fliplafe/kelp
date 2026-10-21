@@ -15,6 +15,7 @@ final class Workbench {
         didSet { UserDefaults.standard.set(inspectorPanel, forKey: "inspectorPanel") }
     }
     /// Workspaces in the order they were shown, for Back / Forward (⌃⌘← / ⌃⌘→), like a browser's history.
-    @ObservationIgnored var visits: [String] = []
-    @ObservationIgnored var visitAt = -1
+    /// Observed: the title bar's arrows follow it.
+    var visits: [String] = []
+    var visitAt = -1
 }
