@@ -29,7 +29,7 @@ extension Daemon {
     /// Checked before the hand-written methods; the old way stays for what isn't declared yet.
     static let typed = Dictionary(uniqueKeysWithValues: ([DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                                           WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self,
-                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] as [any Handled.Type]).map { ($0.name, $0) })
+                                                          GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
         if Self.debugWake { lock.withLock { lastMethod = method } }
@@ -67,7 +67,6 @@ extension Daemon {
     }
 
     func handleSync(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue {
-        if method.hasPrefix("git."), let r = try handleGit(method, p) { return r }
         if let r = try handleSettings(method, p) ?? handleUI(method, p, conn: conn) { return r }
         switch method {
         case "ping": return "pong"
@@ -265,87 +264,6 @@ extension Daemon {
         case "session.lastReply":   // the agent's last message, from its transcript (Claude Code), for summaries
             guard let t = existing(try p.req("id")).flatMap(transcript(of:)) else { return .null }
             return Self.lastReply(transcript: t).map { .string($0) } ?? .null
-
-        // MARK: git
-        case "git.status": return try .from(Git.status(cwd(forWorktree: p.req("id")).path))
-        case "git.diff":
-            let w = try cwd(forWorktree: p.req("id"))
-            let src: DiffSource
-            var dir = w.path
-            switch p["source"]?.string ?? "all" {
-            case "turn":   // since the agent's last turn started, where it worked then (its own worktree, maybe)
-                guard let ls = existing(try p.req("session")), let base = ls.turnBase else { throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.") }
-                src = .since(tree: base); dir = ls.turnDir ?? dir
-            case "unstaged": src = .unstaged
-            case "staged": src = .staged
-            case "branch":
-                let base = try store.repo(w.repoId)?.baseBranch ?? "main"
-                src = .branch(base: try ref(p["base"]?.string) ?? base)
-            case "commit": src = .commit(try ref(p.req("commit")) ?? "")
-            default: src = .allUncommitted
-            }
-            return try .from(Git.diff(dir, source: src, file: p["file"]?.string))
-        case "git.log":
-            let w = try cwd(forWorktree: p.req("id"))
-            let base = try store.repo(w.repoId)?.baseBranch
-            return .array(try Git.log(w.path, base: p["all"]?.bool == true ? nil : base).map { .obj(["hash": .string($0.hash), "subject": .string($0.subject)]) })
-        case "git.stage", "git.unstage":
-            let w = try cwd(forWorktree: p.req("id"))
-            let files = (p["files"]?.array ?? []).compactMap(\.string)
-            if method == "git.stage" { try Git.stage(w.path, files: files) } else { try Git.unstage(w.path, files: files) }
-            return .null
-        case "git.hunk":   // stage/unstage one hunk: {id, file, hunk, reverse, header?}; with its "@@" header, that hunk or none
-            let w = try cwd(forWorktree: p.req("id")); let file = try p.req("file")
-            let rev = p["reverse"]?.bool == true, header = p["header"]?.string, print = p["fingerprint"]?.string
-            let d = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first
-            // With its fingerprint, the hunk as shown line for line; with its header, that one; else by number.
-            let i = print.map { f in d?.hunks.firstIndex { $0.fingerprint == f } ?? -1 }
-                ?? header.map { h in d?.hunks.firstIndex { $0.header == h } ?? -1 } ?? p["hunk"]?.int ?? -1
-            guard let d, d.hunks.indices.contains(i) else {
-                throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
-            }
-            try Git.applyHunk(w.path, diff: d, hunk: i, reverse: rev); return .null
-        case "git.commit":
-            return .string(try Git.commit(cwd(forWorktree: p.req("id")).path, message: p.req("message"), all: p["all"]?.bool == true,
-                                          amend: p["amend"]?.bool == true))
-        case "git.push":   // the branch checked out now (a workspace's record can be stale after a switch)
-            try Git.remote(cwd(forWorktree: p.req("id")).path, .push); return .null
-        case "git.merge":   // merge worktree branch into the repo's base branch (main checkout)
-            let w = try cwd(forWorktree: p.req("id"))
-            guard let r = try store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
-            if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
-            // The main checkout too: a merge (and the abort a conflict brings) must never touch the user's own work there.
-            if Git.isMerging(r.path) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
-            if try Git.isDirty(r.path) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
-            // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
-            let branch = (try? Git.currentBranch(w.path)) ?? w.branch
-            // Detached: "HEAD" would merge the main checkout into itself ("Already up to date") and report success.
-            guard branch != "HEAD" else { throw RPCError.invalidParams("This workspace isn't on a branch (detached HEAD). Create a branch for its commits, then merge.") }
-            let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: p["keepConflicts"]?.bool == true)
-            return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
-
-        // MARK: files
-        case "files.list": return try .from(ProjectFiles.list(cwd(forWorktree: p.req("id")).path))
-        case "files.search":
-            return try .from(ProjectFiles.search(cwd(forWorktree: p.req("id")).path, query: p.req("query"),
-                                                 regex: p["regex"]?.bool == true, caseSensitive: p["case"]?.bool == true))
-
-        // MARK: review comments
-        case "comment.add":
-            let c = DiffComment(worktreeId: try p.req("id"), file: try p.req("file"), startLine: p["start"]?.int ?? 1,
-                                endLine: p["end"]?.int ?? p["start"]?.int ?? 1, quote: p["quote"]?.string ?? "", text: try p.req("text"))
-            try store.save(c); return try .from(c)
-        case "comment.list": return try .from(store.comments(worktree: p.req("id")))
-        case "comment.setState":
-            guard var c = try store.db.read({ try DiffComment.fetchOne($0, key: p.req("id")) }) else { throw RPCError.invalidParams("no comment") }
-            c.state = DiffComment.State(rawValue: try p.req("state")) ?? .open; try store.save(c); return .null
-        case "comment.send":   // all open comments -> one message into the agent's terminal
-            let w = try cwd(forWorktree: p.req("id"))
-            let open = try store.comments(worktree: w.id).filter { $0.state == .open }
-            guard !open.isEmpty else { return .int(0) }
-            try handleSync("session.send", .obj(["id": .string(try p.req("session")), "text": .string(ReviewMessage.compose(branch: w.branch, comments: open))]), conn: conn)
-            for var c in open { c.state = .sent; try store.save(c) }
-            return .int(open.count)
 
         default: throw RPCError.methodNotFound
         }
