@@ -28,5 +28,7 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
+      - name: Daemon under Thread Sanitizer
+        run: swift test --sanitize=thread --scratch-path .build/tsan --filter DaemonTests
       - name: Lint
         run: brew install swiftlint && swiftlint --quiet

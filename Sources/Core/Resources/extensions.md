@@ -4,7 +4,7 @@ An extension is a folder in `~/.kelp/extensions/<id>/` with an `extension.json`.
 Kelp reloads it when the files change. Commands run with `/bin/zsh -lc` in the current workspace
 directory, so anything you can do in a terminal you can surface in the IDE.
 
-Quick start: `kelp ext new my-thing` (or "New Extension with AI…" in the command palette).
+Quick start: `kelp ext new my-thing`.
 Useful while developing: `kelp ext list`, `kelp ext reload`, `kelp ext disable <id>`.
 
 ## extension.json

@@ -56,6 +56,7 @@ let package = Package(
         .testTarget(name: "MarkdownTests", dependencies: ["Markdown"]),
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core", "TestSupport"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
+        .testTarget(name: "ArchitectureTests"),   // reads the sources: the rules in AGENTS.md
         .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework"),
     ]

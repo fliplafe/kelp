@@ -83,6 +83,25 @@ run-loop turn; `owner:` ends it with a tab). Events that carry data and have no 
 line, a dev server's URL, an agent's status change as it happens) are direct calls when their one receiver is reachable,
 else a `NotificationCenter` name (`kelpGitChanged`: after a git action the window bar, diff tabs and sidebar badges re-read git).
 
+## Concurrency and ordering (the daemon)
+- **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
+  files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool. Accepting
+  connections and the 2 Hz ticker (session ticks, keep-awake, pausing idle agents, settings.json polling) have their own
+  queues.
+- **Ordering.** Replies to one connection can come back in any order, as in JSON-RPC and LSP; clients match them by id.
+  What is only right in the order it was sent runs on the reader thread, one after another: keystrokes
+  (`session.write`), `session.resize`, `state.set` and `ui.publish`. A session's status changes run in order on its
+  own queue (`LiveSession.inOrder`). `session.stream` turns its connection into a raw byte pipe; the history goes out
+  under the session's lock, so no live output gets ahead of it.
+- **Writes to a client** leave in order from that connection's own queue. A client whose writes make no progress for
+  30 s is hung up on, and so is one more than 256 MiB behind.
+- **Locks**, outermost first: a session's wake lock (`WakeLocks`; several are taken in id order) → `SessionTable` →
+  `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another is taken.
+  `deskLock` makes listing desks and adding a missing one a single step, and `trustLock` guards trusted-configs.json.
+- **Deadlines.** Every git, gh and ssh run has a time limit (300 s by default) and is stopped with its children
+  (`Subprocess`). Language-server requests time out. Calls from the app wait for their reply.
+- **Checked by** DaemonTests, which run against a real daemon with real PTYs and git, also under Thread Sanitizer in CI.
+
 ## What Kelp trusts (threat model)
 **Trusted: the user and every process running as the user.** The daemon's socket is the user's own (0600 in a 0700
 folder, the peer's uid checked); anything that reaches it — the app, the `kelp` CLI, an agent with `KELP_SOCKET`, a
