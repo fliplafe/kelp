@@ -154,22 +154,19 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         setColumns(); rebuildRows()
     }
 
-    private func srcParams() -> JSONValue {
-        var p: [String: JSONValue] = ["id": .string(worktreeId ?? "")]
+    private func diffRequest() -> GitDiff {
+        let id = worktreeId ?? ""
         if let s = single {
-            p["file"] = .string(s.file)
-            if let c = s.commit { p["source"] = "commit"; p["commit"] = .string(c) } else { p["source"] = .string(s.source) }
-            return .object(p)
+            return s.commit.map { GitDiff(id: id, source: "commit", file: s.file, commit: $0) } ?? GitDiff(id: id, source: s.source, file: s.file)
         }
         switch source.indexOfSelectedItem {
-        case 1: p["source"] = "unstaged"
-        case 2: p["source"] = "staged"
-        case 3: p["source"] = "branch"
-        case 4: p["source"] = "commit"; p["commit"] = .string(commitHash ?? "HEAD")
-        case 5: p["source"] = "turn"; p["session"] = .string(FileActions.targetAgent?.id ?? "")
-        default: p["source"] = "all"
+        case 1: return GitDiff(id: id, source: "unstaged")
+        case 2: return GitDiff(id: id, source: "staged")
+        case 3: return GitDiff(id: id, source: "branch")
+        case 4: return GitDiff(id: id, source: "commit", commit: commitHash ?? "HEAD")
+        case 5: return GitDiff(id: id, source: "turn", session: FileActions.targetAgent?.id ?? "")
+        default: return GitDiff(id: id, source: "all")
         }
-        return .object(p)
     }
 
     /// Counts loads: an older one that finishes after a newer one (or after the tab moved on) drops its answers.
@@ -179,11 +176,11 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         guard let wid = worktreeId else { diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         loads += 1; let load = loads
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
-            let log = (try? await AppModel.shared.client?.call("git.log", .obj(["id": .string(wid), "all": true])))?.array ?? []
+            let log = (try? await AppModel.shared.client?.call(GitLog(id: wid, all: true))) ?? []
             let menu = NSMenu()
             for c in log.prefix(30) {
-                let m = menu.addItem(withTitle: "\(c["hash"]?.string ?? "")  \(c["subject"]?.string ?? "")", action: nil, keyEquivalent: "")
-                m.representedObject = c["hash"]?.string
+                let m = menu.addItem(withTitle: "\(c.hash)  \(c.subject)", action: nil, keyEquivalent: "")
+                m.representedObject = c.hash
             }
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
             let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop
@@ -194,12 +191,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         if single == nil, source.indexOfSelectedItem == 5, FileActions.targetAgent == nil {
             diffs = []; files.reloadData(); rebuildRows(); status.stringValue = String(localized: "No agent in this workspace"); return
         }
-        let r = await AppModel.shared.tryCall("git.diff", srcParams())
-        let d = (try? r.value?.decode([FileDiff].self)) ?? []
+        let r = await AppModel.shared.tryCall(diffRequest())
+        let d = r.value ?? []
         var ch: [FileChange] = [], cm: [DiffComment] = []
         if single == nil, r.error == nil {
-            ch = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(wid)]), as: [FileChange].self)) ?? []
-            cm = (try? await AppModel.shared.client?.call("comment.list", .obj(["id": .string(wid)]), as: [DiffComment].self)) ?? []
+            ch = (try? await AppModel.shared.client?.call(GitStatus(id: wid))) ?? []
+            cm = (try? await AppModel.shared.client?.call(CommentList(id: wid))) ?? []
         }
         // Rows, cell tags and the hunk buttons index `diffs`: they change together, once every answer is in.
         guard load == loads, wid == worktreeId else { return }

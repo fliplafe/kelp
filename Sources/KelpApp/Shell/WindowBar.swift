@@ -96,7 +96,7 @@ final class WindowBar: NSView {
     private func reload() {
         guard let w = worktree, let c = AppModel.shared.client else { update(); return }
         Task {
-            let i = try? await c.call("git.branches", .obj(["id": .string(w.id)]), as: BranchInfo.self)
+            let i = try? await c.call(GitBranches(id: w.id))
             guard w.id == worktree?.id else { return }
             info = i; update()
         }
@@ -132,21 +132,20 @@ final class WindowBar: NSView {
     @objc private func branchMenu() {
         guard let info, let wid = worktree?.id else { return }
         let m = NSMenu()
-        for b in info.local { m.add(b) { [weak self] in self?.switchBranch(["branch": .string(b)], wid) }.state = b == info.current ? .on : .off }
+        for b in info.local { m.add(b) { [weak self] in self?.switchBranch(GitSwitch(id: wid, branch: b)) }.state = b == info.current ? .on : .off }
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
             guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
                 !name.isEmpty else { return }
-            self?.switchBranch(["branch": .string(name), "create": true], wid)
+            self?.switchBranch(GitSwitch(id: wid, branch: name, create: true))
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branch.bounds.height + 4), in: branch)
     }
 
-    private func switchBranch(_ params: [String: JSONValue], _ wid: String) {
-        var p = params; p["id"] = .string(wid)
+    private func switchBranch(_ m: GitSwitch) {
         Task {
-            if let e = await AppModel.shared.tryCall("git.switch", .object(p)).error { Banner.show(e, style: .error) }
-            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
+            if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
+            NotificationCenter.default.post(name: .kelpGitChanged, object: m.id)
         }
     }
 

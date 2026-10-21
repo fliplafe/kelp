@@ -77,11 +77,10 @@ final class CardModel {
 
     func load() {
         guard let c = AppModel.shared.client else { return }
-        let wid = JSONValue.obj(["id": .string(workspaceId)])
         Task {
             if let repo { worktrees = (try? await c.call(RepoWorktreeSizes(id: repo.id))) ?? []; return }
             if !agentOnly {
-                changes = try? await c.call("git.lineStats", wid, as: LineStats.self)
+                changes = try? await c.call(GitLineStats(id: workspaceId))
                 let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(workspaceId)]))
                 if p?["number"] != nil { pr = p }
                 ports = ((try? await c.call("ports.list", .obj(["worktreeId": .string(workspaceId)])).array) ?? []).compactMap { $0["port"]?.int }

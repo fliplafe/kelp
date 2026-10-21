@@ -405,9 +405,7 @@ enum FileActions {
 
     static func copyWebLink(_ path: String, lines: ClosedRange<Int>? = nil) {
         Task {
-            var p: [String: JSONValue] = ["path": .string(path)]
-            if let lines { p["start"] = .int(lines.lowerBound); p["end"] = .int(lines.upperBound) }
-            guard let url = await AppModel.shared.call("git.webURL", .object(p))?.string else { return }
+            guard let url = await AppModel.shared.call(GitWebURL(path: path, start: lines?.lowerBound, end: lines?.upperBound)) else { return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string)
             Banner.show(String(localized: "Link copied"))
         }

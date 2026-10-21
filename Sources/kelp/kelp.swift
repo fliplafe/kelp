@@ -70,6 +70,8 @@ func show(_ v: JSONValue) {
     let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     if case .string(let s) = v { print(s) } else if v != .null, let d = try? e.encode(v), let s = String(bytes: d, encoding: .utf8) { print(s) }
 }
+/// A typed result, printed as the JSON it came as.
+func show<T: Encodable>(_ v: T) { show((try? JSONValue.from(v)) ?? .null) }
 
 /// A CLI value: JSON when it parses (3, true, [1], "x"), else the text itself.
 func jsonOrText(_ s: String) -> JSONValue { (try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))) ?? .string(s) }
@@ -81,6 +83,7 @@ func currentWorktree(_ c: RPCClient) async throws -> JSONValue {
     }
     return w
 }
+func currentWorktreeID(_ c: RPCClient) async throws -> String { try await currentWorktree(c)["id"]?.string ?? "" }
 func currentRepoID(_ c: RPCClient) async throws -> String {
     if let r = flag("--repo") { return r }
     let cwd = FileManager.default.currentDirectoryPath
@@ -263,26 +266,20 @@ func plist() -> String {
     static func git(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
         switch (cmd, sub) {
         case ("diff", _):
-            let w = try await currentWorktree(c)
-            let d = try await c.call("git.diff", .obj(["id": w["id"] ?? .null, "source": .string(flag("--source") ?? "all")]))
-            for f in d.array ?? [] {
-                let lines = (f["hunks"]?.array ?? []).flatMap { $0["lines"]?.array ?? [] }
-                func count(_ kind: String) -> Int { lines.filter { $0["kind"]?.string == kind }.count }
-                print("\(f["path"]?.string ?? "")  +\(count("add")) -\(count("del"))")
+            for f in try await c.call(GitDiff(id: try await currentWorktreeID(c), source: flag("--source") ?? "all")) {
+                print("\(f.path)  +\(f.additions) -\(f.deletions)")
             }
         case ("commit", _):
-            show(try await c.call("git.commit", .obj(["id": try await currentWorktree(c)["id"] ?? .null,
-                "message": .string(([sub].compactMap { $0 } + args).joined(separator: " ")), "all": true])))
-        case ("merge", _): show(try await c.call("git.merge", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
-        case ("push", _): show(try await c.call("git.push", .obj(["id": try await currentWorktree(c)["id"] ?? .null])))
+            show(try await c.call(GitCommit(id: try await currentWorktreeID(c), message: ([sub].compactMap { $0 } + args).joined(separator: " "), all: true)))
+        case ("merge", _): show(try await c.call(GitMerge(id: try await currentWorktreeID(c))))
+        case ("push", _): show(try await c.call(GitPush(id: try await currentWorktreeID(c))))
         case ("comment", "add"):
             guard args.count >= 3 else { fail("comment add <file> <line[-line]> <text>") }
             let range = args[1].split(separator: "-").compactMap { Int($0) }
-            let id = try await currentWorktree(c)["id"] ?? .null, text = args.dropFirst(2).joined(separator: " ")
-            show(try await c.call("comment.add", .obj(["id": id, "file": .string(args[0]), "start": .int(range.first ?? 1), "end": .int(range.last ?? 1), "text": .string(text)])))
+            let id = try await currentWorktreeID(c), text = args.dropFirst(2).joined(separator: " ")
+            show(try await c.call(CommentAdd(id: id, file: args[0], start: range.first ?? 1, end: range.last ?? 1, text: text)))
         case ("comment", "send"):
-            show(try await c.call("comment.send", .obj(["id": try await currentWorktree(c)["id"] ?? .null,
-                "session": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            show(try await c.call(CommentSend(id: try await currentWorktreeID(c), session: try await resolve(c, args.first ?? "", "session.list"))))
         default: print(usage)
         }
     }

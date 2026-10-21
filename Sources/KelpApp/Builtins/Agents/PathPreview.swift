@@ -76,7 +76,7 @@ final class PreviewModel {
         guard let worktree, let c = AppModel.shared.client else { return }
         Task {
             // Uncommitted changes in it: show those (the hunk with the line asked about, else the first).
-            let d = try? await c.call("git.diff", .obj(["id": .string(worktree), "source": "all", "file": .string(path)]), as: [FileDiff].self)
+            let d = try? await c.call(GitDiff(id: worktree, source: "all", file: path))
             guard let hunks = d?.first?.hunks, !hunks.isEmpty else { return }
             let h = hunks.first { h in line.map { l in h.lines.contains { $0.newLine == l } } ?? false } ?? hunks[0]
             changed = true

@@ -174,7 +174,7 @@ enum Builtins {
             },
             CommandSpec(id: "git.push", title: "Git: Push") { _ in
                 if let w = Workbench.shared.workspaceId {
-                    Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show(String(localized: "Pushed")) } }
+                    Task { if await AppModel.shared.call(GitPush(id: w)) != nil { Banner.show(String(localized: "Pushed")) } }
                 }
             }
         ]

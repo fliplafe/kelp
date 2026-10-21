@@ -157,8 +157,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         stale = false
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
-            let paths = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(w.id)]), as: [String].self)) ?? []
-            let st = (try? await AppModel.shared.client?.call("git.status", .obj(["id": .string(w.id)]), as: [FileChange].self)) ?? []
+            let paths = (try? await AppModel.shared.client?.call(FilesList(id: w.id))) ?? []
+            let st = (try? await AppModel.shared.client?.call(GitStatus(id: w.id))) ?? []
             guard worktree?.id == w.id else { return }   // switched meanwhile: these paths are another folder's
             status = Dictionary(st.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
             changedFolders = Set(status.keys.flatMap { p in p.indices.filter { p[$0] == "/" }.map { String(p[..<$0]) } })
@@ -399,7 +399,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         showResults(!q.isEmpty)
         guard !q.isEmpty else { return }
         Task {
-            let found = (try? await AppModel.shared.client?.call("files.search", .obj(["id": .string(w.id), "query": .string(q)]), as: [SearchMatch].self)) ?? []
+            let found = (try? await AppModel.shared.client?.call(FilesSearch(id: w.id, query: q))) ?? []
             guard worktree?.id == w.id, search.stringValue.trimmingCharacters(in: .whitespaces) == q else { return }   // a newer search or workspace
             matches = found
             results.reloadData()

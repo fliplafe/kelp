@@ -196,7 +196,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             filesLoad?.cancel()
             if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
                 filesLoad = Task {
-                    let files = (try? await AppModel.shared.client?.call("files.list", .obj(["id": .string(wid)]), as: [String].self)) ?? []
+                    let files = (try? await AppModel.shared.client?.call(FilesList(id: wid))) ?? []
                     let fuzzy = await Task.detached { files.map(ProjectFiles.FuzzyPath.init) }.value
                     // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
                     guard !Task.isCancelled, choosing == nil else { return }

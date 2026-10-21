@@ -16,8 +16,7 @@ extension DiffViewController {
         guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
         let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
         Task {
-            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header),
-                                                         "fingerprint": .string(h.fingerprint), "reverse": .bool(staged)]))
+            await AppModel.shared.call(GitHunk(id: wid, file: path, hunk: i, reverse: staged, header: h.header, fingerprint: h.fingerprint))
             await load()
             NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
         }
@@ -36,8 +35,8 @@ extension DiffViewController {
             guard r == .alertFirstButtonReturn, let self else { return }
             Task {
                 // The lines shown, not only the header: a line an agent rewrote in place since is never thrown away unseen.
-                let p: JSONValue = .obj(["id": .string(wid), "file": .string(path), "hunk": .int(h), "header": .string(header), "fingerprint": .string(print)])
-                if let e = await AppModel.shared.tryCall(GitDiscardHunk.name, p).error { Banner.show(e, style: .error) }
+                let m = GitDiscardHunk(id: wid, file: path, hunk: h, header: header, fingerprint: print)
+                if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
                 await self.load()
                 NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
             }
@@ -47,11 +46,13 @@ extension DiffViewController {
         let r = files.clickedRow >= 0 ? files.clickedRow : files.selectedRow
         return diffs.indices.contains(r) ? diffs[r].path : nil
     }
-    @objc func stageFile() { fileOp("git.stage") }
-    @objc func unstageFile() { fileOp("git.unstage") }
-    private func fileOp(_ m: String) {
+    @objc func stageFile() { fileOp { GitStage(id: $0, files: [$1]) } }
+    @objc func unstageFile() { fileOp { GitUnstage(id: $0, files: [$1]) } }
+    /// `make`: the method for the workspace's id and the selected file.
+    private func fileOp<M: RPCMethod>(_ make: (String, String) -> M) {
         guard let wid = worktreeId, let p = selectedFilePath() else { return }
-        Task { await AppModel.shared.call(m, .obj(["id": .string(wid), "files": .array([.string(p)])])); await load() }
+        let m = make(wid, p)
+        Task { await AppModel.shared.call(m); await load() }
     }
 
     @objc func addComment() {
@@ -69,15 +70,15 @@ extension DiffViewController {
         guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"),
                                 String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
         Task {
-            await AppModel.shared.call("comment.add", .obj(["id": .string(wid), "file": .string(file), "start": .int(first.0), "end": .int(last.0),
-                                                           "quote": .string(lines.map(\.1).joined(separator: "\n")), "text": .string(text)]))
+            await AppModel.shared.call(CommentAdd(id: wid, file: file, start: first.0, end: last.0, quote: lines.map(\.1).joined(separator: "\n"), text: text))
             await load()
         }
     }
 
     @objc func setCommentState(_ m: NSMenuItem) {
         guard table.clickedRow >= 0, case .comment(let c) = rows[table.clickedRow] else { NSSound.beep(); return }
-        Task { await AppModel.shared.call("comment.setState", .obj(["id": .string(c.id), "state": .string(m.representedObject as? String ?? "")])); await load() }
+        let set = CommentSetState(id: c.id, state: m.representedObject as? String ?? "")
+        Task { await AppModel.shared.call(set); await load() }
     }
 
     @objc func sendComments() {
@@ -85,7 +86,7 @@ extension DiffViewController {
         guard comments.contains(where: { $0.state == .open }) else { status.stringValue = String(localized: "No open comments"); return }
         guard let sid = pickAgentSession(wid) else { return }
         Task {
-            let n = await AppModel.shared.call("comment.send", .obj(["id": .string(wid), "session": .string(sid)]))?.int ?? 0
+            let n = await AppModel.shared.call(CommentSend(id: wid, session: sid)) ?? 0
             status.stringValue = String(localized: "Sent \(n) comments to agent"); await load()
         }
     }

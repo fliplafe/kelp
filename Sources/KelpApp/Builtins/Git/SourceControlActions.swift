@@ -5,20 +5,21 @@ import Core
 extension SourceControlController {
     // MARK: actions
 
-    func run(_ method: String, _ extra: [String: JSONValue] = [:], done: String? = nil) {
+    /// `make`: the method, given the workspace's id.
+    func run<M: RPCMethod>(done: String? = nil, _ make: (String) -> M) {
         guard let wid = worktreeId else { return }
-        var p = extra; p["id"] = .string(wid)
+        let m = make(wid), op = (m as? GitRemoteOp)?.op
         busy = true
-        if method == "git.remote", let op = extra["op"]?.string {
+        if let op {
             syncing = (op == "push" ? String(localized: "Pushing…") : op == "pull" ? String(localized: "Pulling…") : String(localized: "Fetching…"), op == "push")
         }
         Task {
-            let r = await AppModel.shared.tryCall(method, .object(p))
+            let r = await AppModel.shared.tryCall(m)
             busy = false; syncing = nil
             if let e = r.error {
                 // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
-                if method == "git.remote", extra["op"]?.string == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
-                else if method == "git.remote", extra["op"]?.string == "pull", e.lowercased().contains("conflict") {
+                if op == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
+                else if op == "pull", e.lowercased().contains("conflict") {
                     GitFix.offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
                 } else { Banner.show(e, style: .error) }
             } else if let done { Banner.show(done) }
@@ -27,7 +28,8 @@ extension SourceControlController {
     }
 
     private func stage(_ files: [FileChange], _ on: Bool) {
-        run(on ? "git.stage" : "git.unstage", ["files": .array(files.map { .string($0.path) })])
+        let paths = files.map(\.path)
+        if on { run { GitStage(id: $0, files: paths) } } else { run { GitUnstage(id: $0, files: paths) } }
     }
 
     private func discard(_ files: [FileChange]) {
@@ -44,7 +46,7 @@ extension SourceControlController {
         }
         a.addButton(withTitle: String(localized: "Cancel"))
         guard runAsSheet(a) == .alertFirstButtonReturn else { return }
-        run("git.discard", ["files": .array(files.map { .string($0.path) })])
+        run { GitDiscard(id: $0, files: files.map(\.path)) }
     }
 
     func sectionActions(_ s: Section, _ n: Node) -> [RowAction] {
@@ -92,12 +94,12 @@ extension SourceControlController {
 
     @objc func sync() {
         guard let info else { return }
-        if info.upstream == nil { run("git.remote", ["op": "push"], done: String(localized: "Published \(info.current ?? "HEAD")")); return }
+        if info.upstream == nil { run(done: String(localized: "Published \(info.current ?? "HEAD")")) { GitRemoteOp(id: $0, op: "push") }; return }
         guard let wid = worktreeId else { return }
         busy = true; syncing = (String(localized: "Syncing…"), (info.ahead ?? 0) > 0)
         Task {
-            if await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "pull"])) != nil {
-                if (info.ahead ?? 0) > 0 { _ = await AppModel.shared.call("git.remote", .obj(["id": .string(wid), "op": "push"])) }
+            if await AppModel.shared.call(GitRemoteOp(id: wid, op: "pull")) != nil {
+                if (info.ahead ?? 0) > 0 { _ = await AppModel.shared.call(GitRemoteOp(id: wid, op: "push")) }
             }
             busy = false; syncing = nil; reloadAll()
         }
@@ -107,12 +109,12 @@ extension SourceControlController {
         guard let info else { return }
         let m = NSMenu()
         for b in info.local {
-            let i = m.add(b) { [weak self] in self?.run("git.switch", ["branch": .string(b)]) }
+            let i = m.add(b) { [weak self] in self?.run { GitSwitch(id: $0, branch: b) } }
             i.state = b == info.current ? .on : .off
         }
         if !info.remote.isEmpty {
             let sub = NSMenu()
-            for b in info.remote { sub.add(b) { [weak self] in self?.run("git.switch", ["branch": .string(b), "remote": true]) } }
+            for b in info.remote { sub.add(b) { [weak self] in self?.run { GitSwitch(id: $0, branch: b, remote: true) } } }
             m.addItem(.separator())
             let r = m.addItem(withTitle: String(localized: "Remote Branches"), action: nil, keyEquivalent: ""); r.submenu = sub
         }
@@ -120,7 +122,7 @@ extension SourceControlController {
         m.add(String(localized: "Create Branch…")) { [weak self] in
             guard let name = prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
                 !name.isEmpty else { return }
-            self?.run("git.switch", ["branch": .string(name), "create": true])
+            self?.run { GitSwitch(id: $0, branch: name, create: true) }
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: branchButton.bounds.height + 4), in: branchButton)
     }
@@ -128,12 +130,12 @@ extension SourceControlController {
     func showMoreMenu() {
         guard let wid = worktreeId else { return }
         let m = NSMenu()
-        m.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
-        m.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
-        m.add(String(localized: "Fetch")) { [weak self] in self?.run("git.remote", ["op": "fetch"]) }
+        m.add(String(localized: "Pull")) { [weak self] in self?.run(done: String(localized: "Pulled")) { GitRemoteOp(id: $0, op: "pull") } }
+        m.add(String(localized: "Push")) { [weak self] in self?.run(done: String(localized: "Pushed")) { GitRemoteOp(id: $0, op: "push") } }
+        m.add(String(localized: "Fetch")) { [weak self] in self?.run { GitRemoteOp(id: $0, op: "fetch") } }
         m.addItem(.separator())
-        m.add(String(localized: "Stash Changes")) { [weak self] in self?.run("git.stash", done: String(localized: "Changes stashed")) }
-        m.add(String(localized: "Pop Stash")) { [weak self] in self?.run("git.stash", ["pop": true]) }
+        m.add(String(localized: "Stash Changes")) { [weak self] in self?.run(done: String(localized: "Changes stashed")) { GitStash(id: $0) } }
+        m.add(String(localized: "Pop Stash")) { [weak self] in self?.run { GitStash(id: $0, pop: true) } }
         m.addItem(.separator())
         m.add(String(localized: "Open All Changes")) { Workbench.open(DiffTab.uri(wid)) }
         m.add(String(localized: "Create Pull Request…")) { PRActions.create(worktree: wid) }
@@ -148,9 +150,9 @@ extension SourceControlController {
     private func mergeIntoBase() {
         guard let wid = worktreeId else { return }
         Task {
-            guard let r = await AppModel.shared.call("git.merge", .obj(["id": .string(wid)])) else { return }
-            if r["merged"]?.bool == true { Banner.show(String(localized: "Merged")); await AppModel.shared.refresh(); return }
-            let files = (r["conflicts"]?.array ?? []).compactMap(\.string)
+            guard let r = await AppModel.shared.call(GitMerge(id: wid)) else { return }
+            if r.merged { Banner.show(String(localized: "Merged")); await AppModel.shared.refresh(); return }
+            let files = r.conflicts
             let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
             a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
             a.addButton(withTitle: String(localized: "OK"))

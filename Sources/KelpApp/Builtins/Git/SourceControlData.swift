@@ -24,11 +24,10 @@ extension SourceControlController {
         guard view.window != nil else { stale = true; return }
         stale = false
         guard let wid = worktreeId, let c = AppModel.shared.client else { return }
-        let id = JSONValue.obj(["id": .string(wid)])
         Task {
             do {
-                let ch = try await c.call("git.status", id, as: [FileChange].self)
-                let br = try await c.call("git.branches", id, as: BranchInfo.self)
+                let ch = try await c.call(GitStatus(id: wid))
+                let br = try await c.call(GitBranches(id: wid))
                 guard wid == worktreeId else { return }   // another workspace is shown now: its own reload is on its way
                 let graphStale = br.head != info?.head || br.local != info?.local || br.remote != info?.remote || br.current != info?.current
                     || br.ahead != info?.ahead || br.behind != info?.behind   // a push or fetch moved origin/…
@@ -40,7 +39,7 @@ extension SourceControlController {
                 changes = ch; info = br; showError(nil)
                 ChangedFiles.shared.report(wid, ch.count)
                 updateHeader(); updateCommitButton()
-                let stats = ch.isEmpty ? nil : try? await c.call("git.lineStats", id, as: LineStats.self)
+                let stats = ch.isEmpty ? nil : try? await c.call(GitLineStats(id: wid))
                 guard wid == worktreeId else { return }
                 showStats(stats)
                 if graphStale || commits.isEmpty { loadCI(); await loadGraph() } else if changed { rebuildChanges() }
@@ -122,10 +121,11 @@ extension SourceControlController {
 
     func loadGraph() async {
         guard let wid = worktreeId, let c = AppModel.shared.client else { return }
-        let r = try? await c.call("git.graph", .obj(["id": .string(wid), "limit": .int(limit)]))
+        let r = try? await c.call(GitGraph(id: wid, limit: limit))
         guard wid == worktreeId else { return }
-        if let r, let list = try? r["commits"]?.decode([GraphCommit].self) {
-            commits = list; more = r["more"]?.bool == true
+        if let r {
+            let list = r.commits
+            commits = list; more = r.more
             let before = unpushed
             unpushed = Git.unpushed(list, remotes: Set(info?.remote ?? []))
             let landed = list.filter { before.contains($0.hash) && !unpushed.contains($0.hash) }.reversed()

@@ -4,14 +4,14 @@ import GitKit
 
 // Source control, files and review comments: everything runs here, off the UI.
 
-extension GitStatus: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(Git.status(d.cwd(forWorktree: id).path)) } }
-extension GitBranches: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(Git.branches(d.cwd(forWorktree: id).path)) } }
-extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(Git.lineStats(d.cwd(forWorktree: id).path)) } }
+extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path) } }
+extension GitBranches: Handled { func handle(_ d: Daemon) throws -> Result { try Git.branches(d.cwd(forWorktree: id).path) } }
+extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> Result { try Git.lineStats(d.cwd(forWorktree: id).path) } }
 /// The branch checked out now (a workspace's record can be stale after a switch).
-extension GitPush: Handled { func handle(_ d: Daemon) throws -> JSONValue { try Git.remote(d.cwd(forWorktree: id).path, .push); return .null } }
+extension GitPush: Handled { func handle(_ d: Daemon) throws -> Done { try Git.remote(d.cwd(forWorktree: id).path, .push); return Done() } }
 
 extension GitDiff: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         let w = try d.cwd(forWorktree: id)
         var dir = w.path
         let src: DiffSource
@@ -29,23 +29,23 @@ extension GitDiff: Handled {
             src = .commit(try d.ref(commit) ?? "")
         default: src = .allUncommitted
         }
-        return try .from(Git.diff(dir, source: src, file: file))
+        return try Git.diff(dir, source: src, file: file)
     }
 }
 
 extension GitLog: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         let w = try d.cwd(forWorktree: id)
         let base = all == true ? nil : try d.store.repo(w.repoId)?.baseBranch
-        return .array(try Git.log(w.path, base: base).map { .obj(["hash": .string($0.hash), "subject": .string($0.subject)]) })
+        return try Git.log(w.path, base: base).map { Entry(hash: $0.hash, subject: $0.subject) }
     }
 }
 
-extension GitStage: Handled { func handle(_ d: Daemon) throws -> JSONValue { try Git.stage(d.cwd(forWorktree: id).path, files: files ?? []); return .null } }
-extension GitUnstage: Handled { func handle(_ d: Daemon) throws -> JSONValue { try Git.unstage(d.cwd(forWorktree: id).path, files: files ?? []); return .null } }
+extension GitStage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stage(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
+extension GitUnstage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.unstage(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
 
 extension GitHunk: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         let w = try d.cwd(forWorktree: id), rev = reverse == true
         let diff = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first
         // With its fingerprint, the hunk as shown line for line; with its header, that one; else by number.
@@ -55,18 +55,18 @@ extension GitHunk: Handled {
             throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
         }
         try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev)
-        return .null
+        return Done()
     }
 }
 
 extension GitCommit: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
-        .string(try Git.commit(d.cwd(forWorktree: id).path, message: message, all: all == true, amend: amend == true))
+    func handle(_ d: Daemon) throws -> String {
+        try Git.commit(d.cwd(forWorktree: id).path, message: message, all: all == true, amend: amend == true)
     }
 }
 
 extension GitMerge: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         let w = try d.cwd(forWorktree: id)
         guard let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
         if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
@@ -80,77 +80,77 @@ extension GitMerge: Handled {
             throw RPCError.invalidParams("This workspace isn't on a branch (detached HEAD). Create a branch for its commits, then merge.")
         }
         let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: keepConflicts == true)
-        return .obj(["merged": .bool(res.merged), "conflicts": .array(res.conflicts.map { .string($0) })])
+        return Result(merged: res.merged, conflicts: res.conflicts)
     }
 }
 
 extension GitSwitch: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         try Git.switchBranch(d.cwd(forWorktree: id).path, to: d.ref(branch) ?? "", create: create == true, remote: remote == true)
-        return .null
+        return Done()
     }
 }
 
 extension GitGraph: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         let g = try Git.graph(d.cwd(forWorktree: id).path, limit: max(1, limit ?? 200))
-        return .obj(["commits": try .from(g.commits), "more": .bool(g.more)])
+        return Result(commits: g.commits, more: g.more)
     }
 }
 
 extension GitCommitFiles: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue { try .from(Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "")) }
+    func handle(_ d: Daemon) throws -> Result { try Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "") }
 }
-extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> JSONValue { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? []); return .null } }
+extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> Done { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
 
 extension GitRemoteOp: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard let o = Git.Remote(rawValue: op) else { throw RPCError.invalidParams("op: pull, push or fetch") }
         try Git.remote(d.cwd(forWorktree: id).path, o)
-        return .null
+        return Done()
     }
 }
-extension GitStash: Handled { func handle(_ d: Daemon) throws -> JSONValue { try Git.stash(d.cwd(forWorktree: id).path, pop: pop == true); return .null } }
+extension GitStash: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stash(d.cwd(forWorktree: id).path, pop: pop == true); return Done() } }
 
 extension GitWebURL: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> String {
         let last = end ?? start
-        return .string(try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } }))
+        return try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } })
     }
 }
 
-extension FilesList: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(ProjectFiles.list(d.cwd(forWorktree: id).path)) } }
+extension FilesList: Handled { func handle(_ d: Daemon) throws -> Result { try ProjectFiles.list(d.cwd(forWorktree: id).path) } }
 extension FilesSearch: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
-        try .from(ProjectFiles.search(d.cwd(forWorktree: id).path, query: query, regex: regex == true, caseSensitive: `case` == true))
+    func handle(_ d: Daemon) throws -> Result {
+        try ProjectFiles.search(d.cwd(forWorktree: id).path, query: query, regex: regex == true, caseSensitive: `case` == true)
     }
 }
 
 extension CommentAdd: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> DiffComment {
         let c = DiffComment(worktreeId: id, file: file, startLine: start ?? 1, endLine: end ?? start ?? 1, quote: quote ?? "", text: text)
         try d.store.save(c)
-        return try .from(c)
+        return c
     }
 }
-extension CommentList: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(d.store.comments(worktree: id)) } }
+extension CommentList: Handled { func handle(_ d: Daemon) throws -> Result { try d.store.comments(worktree: id) } }
 extension CommentSetState: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard var c = try d.store.db.read({ try DiffComment.fetchOne($0, key: id) }) else { throw RPCError.invalidParams("no comment") }
         c.state = DiffComment.State(rawValue: state) ?? .open
         try d.store.save(c)
-        return .null
+        return Done()
     }
 }
 /// All open comments → one message into the agent's terminal.
 extension CommentSend: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Int {
         let w = try d.cwd(forWorktree: id)
         let open = try d.store.comments(worktree: w.id).filter { $0.state == .open }
-        guard !open.isEmpty else { return .int(0) }
+        guard !open.isEmpty else { return 0 }
         _ = try SessionSend(id: session, text: Self.message(branch: w.branch, comments: open)).handle(d)
         for var c in open { c.state = .sent; try d.store.save(c) }
-        return .int(open.count)
+        return open.count
     }
 
     /// File, lines, code quote, remark for each.

@@ -152,8 +152,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let field = FieldBox(); field.wantsLayer = true
         commitMenu.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
         commitMenu.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
-        syncMenu.add(String(localized: "Push")) { [weak self] in self?.run("git.remote", ["op": "push"], done: String(localized: "Pushed")) }
-        pullItem = syncMenu.add(String(localized: "Pull")) { [weak self] in self?.run("git.remote", ["op": "pull"], done: String(localized: "Pulled")) }
+        syncMenu.add(String(localized: "Push")) { [weak self] in self?.run(done: String(localized: "Pushed")) { GitRemoteOp(id: $0, op: "push") } }
+        pullItem = syncMenu.add(String(localized: "Pull")) { [weak self] in self?.run(done: String(localized: "Pulled")) { GitRemoteOp(id: $0, op: "pull") } }
         // The panel's main action: the accent colour while there's something to commit (macOS 26's primary tint).
         let cb = NSButton(title: String(localized: "Commit"), target: self, action: #selector(commitPressed))
         cb.image = .symbol("checkmark", String(localized: "Commit")); cb.imagePosition = .imageLeading; cb.imageHugsTitle = true; cb.bezelStyle = .push
@@ -360,7 +360,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         openCommits.insert(hash)
         guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
-            let files = (try? await AppModel.shared.client?.call("git.commitFiles", .obj(["id": .string(wid), "commit": .string(hash)]), as: [FileChange].self)) ?? []
+            let files = (try? await AppModel.shared.client?.call(GitCommitFiles(id: wid, commit: hash))) ?? []
             guard wid == worktreeId else { return }
             commitFiles[hash] = files
             rebuildGraph()

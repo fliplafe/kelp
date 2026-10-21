@@ -34,7 +34,7 @@ final class RowBadges {
         guard force || Date().timeIntervalSince(asked[wid] ?? .distantPast) > 60, let c = AppModel.shared.client else { return }
         asked[wid] = Date()
         Task {
-            let s = try? await c.call("git.lineStats", .obj(["id": .string(wid)]), as: LineStats.self)
+            let s = try? await c.call(GitLineStats(id: wid))
             if s != stats[wid] { stats[wid] = s }
             let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(wid)]))
             let pr = p?["number"] != nil ? p : nil

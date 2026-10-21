@@ -31,8 +31,8 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 @Test func theAppAndTheCLICallTheDaemonThroughItsTypes() throws {
     let app = try matches(#"\b(call|tryCall|notify)\(\s*""#, in: ["Sources/KelpApp"])
     let cli = try matches(#"\b(call|tryCall|notify)\(\s*""#, in: ["Sources/kelp"])
-    #expect(app.count <= 135, "string-named calls in KelpApp: \(app)")
-    #expect(cli.count <= 41, "string-named calls in the kelp CLI: \(cli)")
+    #expect(app.count <= 102, "string-named calls in KelpApp: \(app)")
+    #expect(cli.count <= 35, "string-named calls in the kelp CLI: \(cli)")
 }
 
 /// A failed call says why (a banner, the panel's error state): `try?` turns it into an empty list or nothing at all.
