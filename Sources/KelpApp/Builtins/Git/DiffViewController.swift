@@ -11,23 +11,23 @@ final class DiffTable: NSTableView {
 /// hatching where one side has no line. One file (from Source Control) or every change with review comments for the agent.
 @MainActor
 final class DiffViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
-    private let source = NSPopUpButton()
+    let source = NSPopUpButton()
     private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", String(localized: "Side by Side")), .symbol("rectangle", String(localized: "Inline"))],
                                                   trackingMode: .selectOne, target: nil, action: nil)
-    private let files = NSTableView()
-    private let table = DiffTable()
-    private let status = NSTextField(labelWithString: "")
+    let files = NSTableView()
+    let table = DiffTable()
+    let status = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
-    private var diffs: [FileDiff] = []
-    private var rows: [ReviewRow] = []
-    private var comments: [DiffComment] = []
+    var diffs: [FileDiff] = []
+    var rows: [ReviewRow] = []
+    var comments: [DiffComment] = []
     private var changes: [FileChange] = []
     /// Changed character range of a line that has a counterpart on the other side, by "file:kind:line".
     private var words: [String: NSRange] = [:]
-    private var worktreeId: String?
+    var worktreeId: String?
     private var commitHash: String?
     /// One-file mode: (path, "unstaged" | "staged", commit).
-    private var single: (file: String, source: String, commit: String?)?
+    var single: (file: String, source: String, commit: String?)?
     private let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     /// Side by side when chosen and there's room for two columns; a narrow pane shows it inline (like VS Code).
     private var sideBySide: Bool { layoutToggle.selectedSegment == 0 && !narrow }
@@ -357,103 +357,6 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         let cur = max(table.selectedRow, dir > 0 ? -1 : rows.count)
         guard let t = dir > 0 ? idx.first(where: { $0 > cur }) : idx.last(where: { $0 < cur }) else { NSSound.beep(); return }
         table.selectRowIndexes([t], byExtendingSelection: false); table.scrollRowToVisible(min(t + 8, rows.count - 1)); table.scrollRowToVisible(t)
-    }
-
-    // MARK: actions
-    /// The hunk a button stands for, by what identifies it (file and "@@" header), read when it's clicked: indices go
-    /// stale as soon as the diff reloads.
-    private func hunk(_ b: NSButton) -> (path: String, index: Int, hunk: Hunk)? {
-        let f = b.tag / 10000, h = b.tag % 10000
-        guard diffs.indices.contains(f), diffs[f].hunks.indices.contains(h) else { return nil }
-        return (diffs[f].path, h, diffs[f].hunks[h])
-    }
-
-    @objc private func hunkAction(_ b: NSButton) {
-        guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
-        let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
-        Task {
-            await AppModel.shared.call("git.hunk", .obj(["id": .string(wid), "file": .string(path), "hunk": .int(i), "header": .string(h.header), "fingerprint": .string(h.fingerprint), "reverse": .bool(staged)]))
-            await load()
-            NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
-        }
-    }
-    /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
-    @objc private func discardHunk(_ b: NSButton) {
-        guard let wid = worktreeId, let window = view.window, let (path, h, shown) = hunk(b) else { return }
-        let lines = shown.lines, file = (path as NSString).lastPathComponent, header = shown.header, print = shown.fingerprint
-        let added = lines.filter { $0.kind == .add }.count, removed = lines.filter { $0.kind == .del }.count
-        let a = NSAlert()
-        a.messageText = String(localized: "Discard this change?")
-        a.informativeText = String(localized: "\(file) goes back to the committed lines here: \(added) added lines go, \(removed) removed lines come back. This can't be undone.")
-        a.addButton(withTitle: String(localized: "Discard")).hasDestructiveAction = true
-        a.addButton(withTitle: String(localized: "Cancel"))
-        a.beginSheetModal(for: window) { [weak self] r in
-            guard r == .alertFirstButtonReturn, let self else { return }
-            Task {
-                // The lines shown, not only the header: a line an agent rewrote in place since is never thrown away unseen.
-                let p: JSONValue = .obj(["id": .string(wid), "file": .string(path), "hunk": .int(h), "header": .string(header), "fingerprint": .string(print)])
-                if let e = await AppModel.shared.tryCall(GitDiscardHunk.name, p).error { Banner.show(e, style: .error) }
-                await self.load()
-                NotificationCenter.default.post(name: .kelpGitChanged, object: wid)
-            }
-        }
-    }
-    private func selectedFilePath() -> String? {
-        let r = files.clickedRow >= 0 ? files.clickedRow : files.selectedRow
-        return diffs.indices.contains(r) ? diffs[r].path : nil
-    }
-    @objc private func stageFile() { fileOp("git.stage") }
-    @objc private func unstageFile() { fileOp("git.unstage") }
-    private func fileOp(_ m: String) {
-        guard let wid = worktreeId, let p = selectedFilePath() else { return }
-        Task { await AppModel.shared.call(m, .obj(["id": .string(wid), "files": .array([.string(p)])])); await load() }
-    }
-
-    @objc private func addComment() {
-        guard let wid = worktreeId else { return }
-        var lines: [(Int, String)] = []; var file: String?
-        for r in table.selectedRowIndexes {
-            guard case .diff(let d) = rows[r] else { continue }
-            switch d {
-            case .line(let f, let l): file = diffs[f].path; if let n = l.newLine ?? l.oldLine { lines.append((n, l.text)) }
-            case .pair(let f, let l, let rr): file = diffs[f].path; if let x = rr ?? l, let n = x.newLine ?? x.oldLine { lines.append((n, x.text)) }
-            default: break
-            }
-        }
-        guard let file, let first = lines.first, let last = lines.last else { NSSound.beep(); return }
-        guard let text = prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"), String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
-        Task {
-            await AppModel.shared.call("comment.add", .obj(["id": .string(wid), "file": .string(file), "start": .int(first.0), "end": .int(last.0),
-                                                           "quote": .string(lines.map(\.1).joined(separator: "\n")), "text": .string(text)]))
-            await load()
-        }
-    }
-
-    @objc private func setCommentState(_ m: NSMenuItem) {
-        guard table.clickedRow >= 0, case .comment(let c) = rows[table.clickedRow] else { NSSound.beep(); return }
-        Task { await AppModel.shared.call("comment.setState", .obj(["id": .string(c.id), "state": .string(m.representedObject as? String ?? "")])); await load() }
-    }
-
-    @objc private func sendComments() {
-        guard let wid = worktreeId else { return }
-        guard comments.contains(where: { $0.state == .open }) else { status.stringValue = String(localized: "No open comments"); return }
-        guard let sid = pickAgentSession(wid) else { return }
-        Task {
-            let n = await AppModel.shared.call("comment.send", .obj(["id": .string(wid), "session": .string(sid)]))?.int ?? 0
-            status.stringValue = String(localized: "Sent \(n) comments to agent"); await load()
-        }
-    }
-
-    /// The focused session if it is in this worktree, else ask.
-    private func pickAgentSession(_ wid: String) -> String? {
-        let live = AppModel.shared.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
-        if let cur = currentSession(), live.contains(where: { $0.id == cur }) { return cur }
-        if live.count == 1 { return live[0].id }
-        guard !live.isEmpty else { status.stringValue = String(localized: "No running agent in this worktree"); return nil }
-        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
-        for s in live { pop.addItem(withTitle: "\(s.agent ?? "shell") [\(s.id.prefix(6))]"); pop.lastItem?.representedObject = s.id }
-        let a = NSAlert(); a.messageText = String(localized: "Send to which agent?"); a.accessoryView = pop; a.addButton(withTitle: String(localized: "Send")); a.addButton(withTitle: String(localized: "Cancel"))
-        return runAsSheet(a) == .alertFirstButtonReturn ? pop.selectedItem?.representedObject as? String : nil
     }
 }
 

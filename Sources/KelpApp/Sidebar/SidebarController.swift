@@ -32,19 +32,19 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         }
     }
 
-    private let outline = NSOutlineView()
-    private var roots: [Node] = []
+    let outline = NSOutlineView()
+    var roots: [Node] = []
     private var shape: [String] = []
     private var collapsed: Set<String> {
         get { Set(UIState.strings("sidebar.collapsed")) }
         set { UIState["sidebar.collapsed"] = try? .from(newValue.sorted()) }
     }
     private var syncing = false
-    private var renaming: String?
+    var renaming: String?
     private let empty = NSStackView()
     private let search = NSSearchField()
-    private var query = ""
-    private let card = HoverCard()
+    var query = ""
+    let card = HoverCard()
     /// The search field's menu (its magnifier): which workspaces to show. The one on screen always stays.
     enum Filter: String, CaseIterable {
         case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request"
@@ -57,7 +57,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             }
         }
     }
-    private var filter = Filter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
+    var filter = Filter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
     static var pinned: [String] {
         get { UIState.strings("sidebar.pinned") }
         set { UIState["sidebar.pinned"] = try? .from(newValue) }
@@ -118,6 +118,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track(owner: self) { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
         track(owner: self) { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection(); self?.updateCard() }
+        track(owner: self) { Workbench.shared.focusedTab } changed: { [weak self] _ in self?.syncSelection() }
         track(owner: self) { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
@@ -221,7 +222,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     @objc private func searchChanged() { query = search.stringValue.trimmingCharacters(in: .whitespaces); refresh() }
 
     /// Same shape → refresh the visible cells; new shape → reload, keeping expansion and selection.
-    private func refresh() {
+    func refresh() {
         let next = build()
         func flat(_ ns: [Node]) -> [String] { ns.flatMap { [$0.key] + flat($0.children) } }
         let nextShape = flat(next)
@@ -239,18 +240,19 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         syncSelection()
     }
 
-    private func node(_ key: String) -> Node? {
+    func node(_ key: String) -> Node? {
         func find(_ ns: [Node]) -> Node? { for n in ns { if n.key == key { return n }; if let f = find(n.children) { return f } }; return nil }
         return find(roots)
     }
 
+    /// The row of what's on screen: the agent whose tab has focus, else its workspace. Several rows picked stay picked.
     private func syncSelection() {
-        guard let id = Workbench.shared.workspaceId, let n = node("w:" + id) else { return }
-        let row = outline.row(forItem: n)
+        guard let id = Workbench.shared.workspaceId, let w = node("w:" + id), outline.selectedRowIndexes.count <= 1 else { return }
+        let tab = Workbench.shared.focusedTab ?? ""
+        let agent = TabURI.scheme(tab) == "session" ? w.children.first { $0.key == "a:" + TabURI.body(tab) } : nil
+        let row = agent.map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil } ?? outline.row(forItem: w)
         guard row >= 0 else { return }
-        if outline.selectedRow != row, !isAgent(outline.item(atRow: outline.selectedRow), in: id) {
-            syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false
-        }
+        if outline.selectedRow != row { syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false }
         keepOpenInView()
     }
 
@@ -263,10 +265,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         outline.scrollRowToVisible(row)
     }
     func isCollapsed(_ n: Node) -> Bool { !n.children.isEmpty && !outline.isItemExpanded(n) }
-    private func isAgent(_ item: Any?, in workspace: String) -> Bool {
-        guard let n = item as? Node, case .agent(let sid) = n.kind else { return false }
-        return AppModel.shared.session(sid)?.worktreeId == workspace
-    }
 
     // MARK: data source / delegate
 
@@ -291,16 +289,16 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { SidebarRowView() }
     func outlineView(_ o: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) { (rowView as? SidebarRowView)?.card = cardPlace(row) }
 
-    /// The top-level row (project or section) whose rows hold the workspace on screen: they're drawn as one card.
+    /// The workspace on screen and its agents are drawn as one card, like a tab group in Safari.
     private func cardPlace(_ row: Int) -> (first: Bool, last: Bool)? {
-        func root(_ r: Int) -> Node? {
-            var n = outline.item(atRow: r) as? Node
-            while let p = n.flatMap({ outline.parent(forItem: $0) as? Node }) { n = p }
-            return n
+        // A workspace without agents showing is just its pill.
+        guard let id = Workbench.shared.workspaceId, let w = node("w:" + id), outline.isItemExpanded(w) else { return nil }
+        func inCard(_ r: Int) -> Bool {
+            guard let n = outline.item(atRow: r) as? Node else { return false }
+            return n === w || outline.parent(forItem: n) as? Node === w
         }
-        guard let id = Workbench.shared.workspaceId, let top = root(row),
-              top.children.contains(where: { $0.key == "w:" + id }) else { return nil }
-        return ((outline.item(atRow: row) as? Node) === top, root(row + 1) !== top)
+        guard inCard(row) else { return nil }
+        return (outline.item(atRow: row) as? Node === w, !inCard(row + 1))
     }
     private func updateCard() { outline.enumerateAvailableRowViews { v, row in (v as? SidebarRowView)?.card = self.cardPlace(row) } }
 
@@ -330,164 +328,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         case .project, .section: break
         }
     }
-
-    // MARK: dragging: rows among their own, folders from Finder
-
-    static let rowType = NSPasteboard.PasteboardType("dev.kelp.sidebar-row")
-
-    /// Projects and pinned or project workspaces move; not while the list is narrowed (the hidden ones would jump).
-    func outlineView(_ o: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-        guard query.isEmpty, filter == .all, let n = item as? Node, n.id != nil else { return nil }
-        let p = NSPasteboardItem(); p.setString(n.key, forType: Self.rowType)
-        return p
-    }
-    func outlineView(_ o: NSOutlineView, draggingSession s: NSDraggingSession, willBeginAt p: NSPoint, forItems items: [Any]) { card.close() }
-
-    /// The dragged row and where it lands among its siblings: before the block (the row and what's under it) the
-    /// pointer is over, or after it past its middle. Projects stay under the sections; a workspace stays in its project.
-    private func move(_ info: NSDraggingInfo) -> (node: Node, parent: Node?, index: Int)? {
-        let pb = info.draggingPasteboard
-        guard info.draggingSource as? NSOutlineView === outline, pb.pasteboardItems?.count == 1,
-              let key = pb.string(forType: Self.rowType), let n = node(key) else { return nil }
-        let parent = outline.parent(forItem: n) as? Node
-        let siblings = parent?.children ?? roots
-        let firstProject = parent == nil ? roots.firstIndex { if case .project = $0.kind { true } else { false } } ?? 0 : 0
-        let p = outline.convert(info.draggingLocation, from: nil)
-        var over = outline.item(atRow: outline.row(at: p)) as? Node
-        while let o = over, outline.parent(forItem: o) as? Node !== parent { over = outline.parent(forItem: o) as? Node }
-        guard let o = over, let i = siblings.firstIndex(of: o) else { return parent == nil ? (n, nil, siblings.count) : nil }
-        var last = o
-        while outline.isItemExpanded(last), let c = last.children.last { last = c }
-        let block = outline.rect(ofRow: outline.row(forItem: o)).union(outline.rect(ofRow: outline.row(forItem: last)))
-        return (n, parent, max(firstProject, p.y < block.midY ? i : i + 1))
-    }
-
-    private static func folders(_ info: NSDraggingInfo) -> [String] {
-        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        return urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }.map(\.path)
-    }
-    func outlineView(_ o: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
-        if info.draggingPasteboard.types?.contains(Self.rowType) == true {
-            guard let m = move(info) else { return [] }
-            o.setDropItem(m.parent, dropChildIndex: m.index)
-            return .move
-        }
-        guard !Self.folders(info).isEmpty else { return [] }
-        o.setDropItem(nil, dropChildIndex: NSOutlineViewDropOnItemIndex)   // the whole list, not a row
-        return .copy
-    }
-    func outlineView(_ o: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
-        if let m = move(info) {
-            var rows = m.parent?.children ?? roots
-            guard let from = rows.firstIndex(of: m.node) else { return false }
-            rows.insert(m.node, at: m.index); rows.remove(at: from < m.index ? from : from + 1)
-            let ids = rows.compactMap(\.id)
-            if case .section = m.parent?.kind { Self.pinned = ids + Self.pinned.filter { !ids.contains($0) }; refresh() } else { AppModel.shared.reorder(ids) }
-            return true
-        }
-        let folders = Self.folders(info)
-        folders.forEach(Workbench.addProject(path:))
-        return !folders.isEmpty
-    }
-
-    @objc private func doubleClicked() {
-        guard let node = outline.item(atRow: outline.clickedRow) as? Node, case .workspace(let id) = node.kind else { return }
-        startRename(id)
-    }
-
-    // MARK: actions
-
-    func newWorkspace(_ repo: String) { Workbench.newWorkspace(repo: repo) }
-    private func refreshCell(_ key: String) {
-        guard let n = node(key) else { return }
-        let row = outline.row(forItem: n)
-        if row >= 0 { (outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCell)?.update() }
-    }
-
-    /// Inline rename, like Finder.
-    func startRename(_ workspace: String) {
-        guard let n = node("w:" + workspace) else { return }
-        let row = outline.row(forItem: n)
-        guard row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCell else { return }
-        renaming = workspace
-        cell.beginEditing(delegate: self)
-    }
-    func controlTextDidEndEditing(_ n: Notification) {
-        guard let id = renaming, let field = n.object as? NSTextField else { return }
-        renaming = nil
-        field.isEditable = false; field.drawsBackground = false
-        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
-        if !name.isEmpty, name != AppModel.shared.worktree(id)?.displayName {
-            Task { await AppModel.shared.call(WorktreeNote(id: id, note: name)) }
-        } else { refreshCell("w:" + id) }
-    }
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        card.close()
-        guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
-        let m = AppModel.shared
-        let picked = outline.selectedRowIndexes
-        if picked.count > 1, picked.contains(outline.clickedRow) {
-            bulkMenu(menu, picked.compactMap { outline.item(atRow: $0) as? Node }); return
-        }
-        switch n.kind {
-        case .project(let id):
-            guard let r = m.repo(id) else { return }
-            if !FileManager.default.fileExists(atPath: r.path) {
-                menu.add(String(localized: "Locate…")) { WorkspaceActions.relocate(r) }
-                menu.add(String(localized: "Remove from Kelp…")) { WorkspaceActions.removeProject(r) }
-                return
-            }
-            menu.add(String(localized: "New Workspace")) { [weak self] in self?.newWorkspace(id) }
-            menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: r.path)]) }
-            menu.addItem(.separator())
-            if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions.removeCleanWorktrees(r) } }
-            menu.add(String(localized: "Remove Project…")) { WorkspaceActions.removeProject(r) }
-        case .section: return
-        case .needs(let sid):
-            menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
-            if m.session(sid)?.unread == true { menu.add(String(localized: "Mark as Read")) { Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(sid)])) } } }
-        case .workspace(let id):
-            guard let w = m.worktree(id) else { return }
-            let pinned = Self.pinned.contains(id)
-            menu.add(pinned ? String(localized: "Unpin") : String(localized: "Pin to Top")) { [weak self] in
-                Self.pinned = pinned ? Self.pinned.filter { $0 != id } : Self.pinned + [id]; self?.refresh()
-            }
-            menu.add(String(localized: "Rename")) { [weak self] in self?.startRename(id) }
-            menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
-            menu.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
-            WorkspaceActions.addOpenIn(to: menu, path: w.path)
-            menu.addItem(.separator())
-            if w.path == m.repo(w.repoId)?.path {
-                // A desk: archiving pauses its agents and keeps its tabs (Window › Archived Workspaces brings it back);
-                // with ⌥ the item closes it instead, ending its agents. The project's folder is untouched either way.
-                let more = m.worktrees.filter { $0.repoId == w.repoId && $0.path == w.path && !$0.archived }.count > 1
-                let archive = menu.add(String(localized: "Archive")) { WorkspaceActions.archive(w) }
-                archive.isEnabled = more
-                let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions.close(w) }
-                close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
-            } else {
-                menu.add(String(localized: "Archive")) { Task { await AppModel.shared.call("worktree.archive", .obj(["id": .string(id)])) } }
-                menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions.delete(w) }
-            }
-        case .agent(let sid):
-            menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
-            menu.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
-            menu.add(String(localized: "Restart")) { AgentActions.restart(sid) }
-            menu.addItem(.separator())
-            menu.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
-            menu.setSubmenu(AgentActions.handoffMenu(sid), for: menu.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
-            if m.session(sid)?.unread == false { menu.add(String(localized: "Mark as Unread")) { Task { await AppModel.shared.call("session.markUnread", .obj(["id": .string(sid)])) } } }
-            menu.addItem(.separator())
-            menu.add(String(localized: "Stop")) { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) } }
-        }
-    }
 }
 
 extension SidebarController {
     /// The menu for several selected rows: what applies to all of them.
-    private func bulkMenu(_ menu: NSMenu, _ nodes: [Node]) {
+    func bulkMenu(_ menu: NSMenu, _ nodes: [Node]) {
         let m = AppModel.shared
         let ws = nodes.compactMap { n -> Worktree? in if case .workspace(let id) = n.kind { m.worktree(id) } else { nil } }
         let picked = nodes.compactMap { n -> String? in
