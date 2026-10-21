@@ -17,34 +17,17 @@ import Daemon
 @MainActor private func outlines(in v: NSView) -> [NSOutlineView] {
     (v as? NSOutlineView).map { [$0] } ?? v.subviews.flatMap(outlines)
 }
-private func git(_ args: [String], _ cwd: String) throws { _ = try Git.run(args, cwd: cwd) }
 
 extension SharedAppModel {
 @Test func sourceControlListsStagedAndChangedFilesFromTheDaemon() async throws {
-    _ = testHome
-    let root = URL(fileURLWithPath: "/tmp/ks-\(UUID().uuidString.prefix(6))")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let d = try Daemon(root: root); try d.start(); defer { d.stop() }
-    let c = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-    let repo = root.appendingPathComponent("repo").path
-    try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
-    try git(["init", "-q", "-b", "main"], repo); try git(["config", "user.email", "t@t"], repo); try git(["config", "user.name", "t"], repo)
-    try "a\n".write(toFile: repo + "/kept.txt", atomically: true, encoding: .utf8); try git(["add", "."], repo); try git(["commit", "-qm", "init"], repo)
-    let r = try await c.call("repo.add", .obj(["path": .string(repo)]), as: Repo.self)
-    let wt = try #require(try await c.call("worktree.list", .obj(["repoId": .string(r.id)]), as: [Worktree].self).first)
-    try "b\n".write(toFile: repo + "/kept.txt", atomically: true, encoding: .utf8)          // changed, not staged
-    try "new\n".write(toFile: repo + "/staged.txt", atomically: true, encoding: .utf8); try git(["add", "staged.txt"], repo)
-
-    let m = AppModel.shared
-    let saved = (m.client, m.repos, m.worktrees)
-    defer { (m.client, m.repos, m.worktrees) = saved }
-    m.client = c; m.repos = [r]; m.worktrees = [wt]
+    let rig = try await AppRig(files: ["kept.txt": "a\n"]); defer { rig.done() }
+    try rig.write("kept.txt", "b\n")                                                          // changed, not staged
+    try rig.write("staged.txt", "new\n"); try rig.git("add", "staged.txt")
     let vc = SourceControlController()
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 700), styleMask: [.titled], backing: .buffered, defer: true)   // never shown
-    window.contentViewController = vc
+    rig.show(vc, 320, 700)
     vc.view.layoutSubtreeIfNeeded()
-    vc.bind(wt.id)
+    #expect(vc.worktreeId == rig.workspace.id)   // it follows the workspace on screen by itself
+    vc.reloadAll()                               // now that it's in a window
     let outline = try #require(outlines(in: vc.view).first)
     func rows() -> [String] { (0..<outline.numberOfRows).flatMap { (outline.view(atColumn: 0, row: $0, makeIfNecessary: true)).map(texts) ?? [] } }
     for _ in 0..<100 where !rows().contains("staged.txt") { try await Task.sleep(for: .milliseconds(50)) }

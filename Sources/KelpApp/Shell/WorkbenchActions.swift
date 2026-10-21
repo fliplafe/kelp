@@ -320,28 +320,22 @@ enum WorkspaceActions {
     /// Desks close; workspaces on their own branch are archived (nothing is deleted).
     static func close(_ ws: [Worktree]) {
         let m = AppModel.shared
-        var closing: [Worktree] = []
-        for (repo, picked) in Dictionary(grouping: ws, by: \.repoId) {
-            let all = m.worktrees.filter { $0.repoId == repo && !$0.archived }
-            closing += picked.count >= all.count ? Array(picked.sorted { $0.createdAt < $1.createdAt }.dropFirst()) : picked
-        }
+        let plan = WorkspaceClosing(picked: ws, open: m.worktrees.filter { !$0.archived }, repos: m.repos), closing = plan.ids
         guard !closing.isEmpty else { NSSound.beep(); return }
-        let running = m.sessions.filter { s in closing.contains { $0.id == s.worktreeId } && s.status != .exited && s.status != .hibernated }
+        let running = m.sessions.filter { s in s.worktreeId.map(closing.contains) == true && s.status != .exited && s.status != .hibernated }
         let a = NSAlert(); a.messageText = closing.count == 1 ? String(localized: "Close 1 workspace?") : String(localized: "Close \(closing.count) workspaces?")
         a.informativeText = (running.isEmpty ? "" : running.count == 1 ? String(localized: "1 running session stops. ")
             : String(localized: "\(running.count) running sessions stop. "))
-            + String(localized: "Files in the projects are not touched.") + (closing.count < ws.count ? " " + String(localized: "Each project keeps one workspace.") : "")
+            + String(localized: "Files in the projects are not touched.") + (plan.keptSome ? " " + String(localized: "Each project keeps one workspace.") : "")
         let close = a.addButton(withTitle: running.isEmpty ? String(localized: "Close")
             : running.count == 1 ? String(localized: "Stop 1 Session and Close") : String(localized: "Stop \(running.count) Sessions and Close"))
         close.hasDestructiveAction = !running.isEmpty; a.addButton(withTitle: String(localized: "Cancel"))
         Task {
-            guard await runSheet(a) == .alertFirstButtonReturn, await UnsavedChanges.confirm(closing: closing.map(\.id)) else { return }
-            if closing.contains(where: { $0.id == Workbench.shared.workspaceId }),
-               let other = m.worktrees.first(where: { w in !w.archived && !closing.contains { $0.id == w.id } }) { Workbench.show(workspace: other.id) }
-            for w in closing {
-                let desk = w.path == m.repo(w.repoId)?.path
-                if desk { await m.call(WorktreeRemove(id: w.id)) } else { await m.call(WorktreeArchive(id: w.id)) }
-            }
+            guard await runSheet(a) == .alertFirstButtonReturn, await UnsavedChanges.confirm(closing: closing) else { return }
+            if let id = Workbench.shared.workspaceId, closing.contains(id),
+               let other = m.worktrees.first(where: { !$0.archived && !closing.contains($0.id) }) { Workbench.show(workspace: other.id) }
+            for id in plan.remove { await m.call(WorktreeRemove(id: id)) }
+            for id in plan.archive { await m.call(WorktreeArchive(id: id)) }
             await m.refresh()
         }
     }

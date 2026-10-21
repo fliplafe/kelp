@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import Core
 
 extension WorkspaceLayout {
     /// The tab `offset` steps from the selected one in the focused group, wrapping around (⌃Tab).
@@ -57,4 +58,25 @@ public struct WorkspaceHistory: Equatable, Sendable {
 
     /// Goes there (from `target`) and says which workspace that is.
     public mutating func go(to i: Int) -> String { at = i; return visits[i] }
+}
+
+/// Several workspaces closed at once (the sidebar's multi-selection): each project keeps one (the oldest picked, when
+/// every open one was), a desk in the project's folder is removed, a workspace on its own branch is archived.
+public struct WorkspaceClosing: Equatable, Sendable {
+    public private(set) var remove: [String] = [], archive: [String] = []
+    /// Some picked workspaces stay, so their project keeps one.
+    public private(set) var keptSome = false
+    public var ids: [String] { remove + archive }
+
+    /// `open`: every workspace not archived; `repos` say where each project's folder is.
+    public init(picked: [Worktree], open: [Worktree], repos: [Repo]) {
+        var kept = Set<String>()
+        for (repo, mine) in Dictionary(grouping: picked, by: \.repoId) where mine.count >= open.filter({ $0.repoId == repo }).count {
+            if let oldest = mine.min(by: { $0.createdAt < $1.createdAt }) { kept.insert(oldest.id) }
+        }
+        keptSome = !kept.isEmpty
+        for w in picked where !kept.contains(w.id) {
+            if w.path == repos.first(where: { $0.id == w.repoId })?.path { remove.append(w.id) } else { archive.append(w.id) }
+        }
+    }
 }

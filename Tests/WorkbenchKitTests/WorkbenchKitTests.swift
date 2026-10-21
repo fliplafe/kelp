@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import WorkbenchKit
+import Core
 
 @Test func addPutsTabsInTheFocusedGroup() throws {
     var l = WorkspaceLayout()
@@ -255,4 +256,22 @@ private func sh(_ shell: String, _ cmd: String) throws -> String {
     #expect(h.target(1, current: "e", exists: { _ in true }) == nil)
     for i in 0..<60 { h.visit("w\(i)") }
     #expect(h.visits.count == 50 && h.visits.last == "w59")
+}
+
+/// Closing several workspaces: a project whose every open workspace was picked keeps its oldest; desks (in the project's
+/// folder) are removed, workspaces on a branch of their own archived; a project with others open loses only the picked.
+@Test func closingSeveralWorkspacesKeepsOnePerProject() {
+    let a = Repo(name: "a", path: "/a"), b = Repo(name: "b", path: "/b")
+    let t = Date(timeIntervalSince1970: 0)
+    let a1 = Worktree(repoId: a.id, branch: "main", path: "/a", createdAt: t)
+    let a2 = Worktree(repoId: a.id, branch: "main", path: "/a", createdAt: t + 1)
+    let a3 = Worktree(repoId: a.id, branch: "feat", path: "/wt/a3", createdAt: t + 2)
+    let b1 = Worktree(repoId: b.id, branch: "main", path: "/b", createdAt: t), b2 = Worktree(repoId: b.id, branch: "x", path: "/wt/b2", createdAt: t + 1)
+    let plan = WorkspaceClosing(picked: [a3, a2, a1, b2], open: [a1, a2, a3, b1, b2], repos: [a, b])
+    #expect(plan.remove == [a2.id])          // a desk
+    #expect(plan.archive == [a3.id, b2.id])  // their own branches
+    #expect(plan.keptSome)                   // a1, the oldest of a, stays
+    let one = WorkspaceClosing(picked: [b2], open: [a1, b1, b2], repos: [a, b])
+    #expect(one.ids == [b2.id] && !one.keptSome)
+    #expect(WorkspaceClosing(picked: [b1], open: [b1], repos: [b]).ids.isEmpty)   // a project's last workspace stays
 }
