@@ -207,21 +207,31 @@ extension Daemon {
         let title = Naming.title(prompt)
         let s = ls.update { if !$0.titleManual { $0.title = title } }
         publish(ls)
-        // A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do.
-        let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
-            if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
-        }
-        if renamed?.note == title { notify(ChangedEvent.worktree) }
-        if let w = try? store.worktree(s.worktreeId ?? ""), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
-           let r = try? store.repo(w.repoId), w.path != r.path {
-            let base = Naming.slug(prompt)
-            var b = base, n = 2
-            while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
-            if !base.isEmpty, (try? Git.renameBranch(w.path, from: w.branch, to: b)) != nil {
-                _ = try? store.update(Worktree.self, w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } }
-                notify(ChangedEvent.worktree)
+        guard let wid = s.worktreeId else { return }
+        do {
+            let renamed = try store.update(Worktree.self, wid) { w in
+                if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
             }
+            if renamed?.note == title { notify(ChangedEvent.worktree) }
+            try nameBranch(wid, prompt: prompt, title: title)
+        } catch { Log.session.error("couldn't name the workspace of \(id, privacy: .public) from its first prompt: \(error)") }
+    }
+
+    /// A placeholder branch (task-123, wip, new-worktree…) gets a real name from what the agent was asked to do. Folder
+    /// and record agree after it either way: a record that couldn't be saved puts the folder's old name back.
+    private func nameBranch(_ wid: String, prompt: String, title: String) throws {
+        guard let w = try store.worktree(wid), w.branch.range(of: #"^(task|wip|tmp|new|new-worktree|untitled|ws)(-\d+)?$"#, options: .regularExpression) != nil,
+              let r = try store.repo(w.repoId), w.path != r.path else { return }
+        let base = Naming.slug(prompt)
+        guard !base.isEmpty else { return }
+        var b = base, n = 2
+        while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
+        try Git.renameBranch(w.path, from: w.branch, to: b)
+        do { try store.update(Worktree.self, w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } } } catch {
+            do { try Git.renameBranch(w.path, from: b, to: w.branch) } catch { Log.session.error("branch \(b, privacy: .public) kept, its record says \(w.branch, privacy: .public): \(error)") }
+            throw error
         }
+        notify(ChangedEvent.worktree)
     }
 
     /// The agent's own short topic (Claude Code's terminal title) names the session instead of its prompt, and its

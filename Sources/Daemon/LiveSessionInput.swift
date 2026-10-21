@@ -12,8 +12,11 @@ extension LiveSession.State {
     func menuOpen() -> Bool { StartupQuestion.menuOpen(screen(1500)) }
 
     /// Nothing on screen that typed text with its Enter would answer: no question or numbered menu open (their default
-    /// is usually "Yes": trusting a project, its new MCP servers), no menu being answered, no unread draft in the input box.
-    func readyForText() -> Bool { steering == nil && !draftWaiting && !trustQuestionOpen() && !menuOpen() }
+    /// is usually "Yes": trusting a project, its new MCP servers), no menu being answered, no unread draft in the input box,
+    /// and for text that's sent (`submits`) nothing the user typed and hasn't sent: its Enter would send their half line.
+    func readyForText(submits: Bool) -> Bool {
+        steering == nil && !draftWaiting && !(submits && !typing.isEmpty) && !trustQuestionOpen() && !menuOpen()
+    }
 }
 
 extension LiveSession {
@@ -64,10 +67,15 @@ extension LiveSession {
     }
 
     /// Text sent from outside (`session.send`: `kelp send`, review comments): one gate for all of it. Typed now when the
-    /// program is ready for it, else queued and typed once it is — in the order sent, none overtaking another.
-    func submit(_ text: String, enter: Bool) {
-        state.withLock { s in
-            if s.startedUp, s.pendingPrompts.isEmpty, s.readyForText() { type(text, enter: enter, paste: false, &s) }
+    /// program is ready for it, else queued and typed once it is — in the order sent, none overtaking another. Text to
+    /// send while the user has typed part of a line is refused: its Enter would send their line too, and queued it would
+    /// wait on a line they may never finish. Text that isn't sent (a reference, a draft) goes in beside theirs.
+    func submit(_ text: String, enter: Bool) throws {
+        try state.withLock { s in
+            if enter, !s.typing.isEmpty {
+                throw RPCError.invalidParams("Not sent: the prompt has text you typed and haven't sent. Send it or clear it (⌃U), then try again.")
+            }
+            if s.startedUp, s.pendingPrompts.isEmpty, s.readyForText(submits: enter) { type(text, enter: enter, paste: false, &s) }
             else { s.pendingPrompts.append((text, !enter, false)); s.sawFirstPrompt = true }
         }
     }

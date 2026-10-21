@@ -105,8 +105,8 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
 }
 
 /// A send to a paused agent wakes it (git, files, a spawn) off the connection's reader thread: what that connection sends
-/// next is answered meanwhile, and the text still reaches the agent once it's up. It used to wake on the reader thread,
-/// so the app's next calls — and its main thread, once the socket filled — waited out the wake.
+/// next is answered meanwhile, and the send's own reply comes once the woken agent has the text. It used to wake on the
+/// reader thread, so the app's next calls — and its main thread, once the socket filled — waited out the wake.
 @Test func aSendToAPausedAgentDoesntHoldUpItsConnection() async throws {
     let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "stty -echo; echo ready; exec cat"],
                                                    resumeArgs: ["--resume"])]); defer { w.d.stop() }
@@ -120,10 +120,10 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     let held = OSAllocatedUnfairLock(initialState: false)
     Thread.detachNewThread { w.d.wakeLocks.withLock(s.id) { held.withLock { $0 = true }; Thread.sleep(forTimeInterval: 2) } }
     #expect(try await waitFor(5) { held.withLock { $0 } })
-    let start = Date()
     let lines = try sendAtOnce(w.root, [(SessionSend.name, .obj(["id": .string(s.id), "text": "hello-lane"])), (Ping.name, .null)])
     #expect(lines.contains { $0["id"]?.int == 2 && $0["result"] == "pong" })
-    #expect(Date().timeIntervalSince(start) < 1.8, "the ping waited for the wake")
+    #expect(lines.compactMap { $0["id"]?.int } == [2, 1], "the ping waited for the wake")
+    #expect(lines.contains { $0["id"]?.int == 1 && $0["result"] != nil })
     #expect(try await waitFor(15) { try await w.c.call(SessionRead(id: s.id)).contains("hello-lane") })
 }
 

@@ -15,24 +15,57 @@ final class SessionLanes: Sendable {
     /// `work` on `id`'s lane, after what's already there. Limit: a lane stays for the daemon's life (one idle queue
     /// per session that was ever woken by input); drop it when its session ends if that ever adds up.
     func run(_ id: String, _ work: @escaping @Sendable () -> Void) {
-        let q = lanes.withLock { l -> DispatchQueue in
+        let q = enter(id)
+        q.async { [self] in work(); leave(id) }
+    }
+
+    /// `work` on `id`'s lane after what's already there, this thread waiting for it (one that may block: not a reader).
+    func runHere<T>(_ id: String, _ work: () throws -> T) rethrows -> T {
+        let q = enter(id)
+        defer { leave(id) }
+        return try q.sync(execute: work)
+    }
+
+    private func enter(_ id: String) -> DispatchQueue {
+        lanes.withLock { l in
             var lane = l[id] ?? Lane(queue: DispatchQueue(label: "kelp.session-lane"))
             lane.waiting += 1; l[id] = lane
             return lane.queue
         }
-        q.async { [self] in work(); lanes.withLock { $0[id]?.waiting -= 1 } }
+    }
+    private func leave(_ id: String) { lanes.withLock { $0[id]?.waiting -= 1 } }
+}
+
+/// Input for a session (keys, text), in the order sent: to the running session right away when nothing for it waits on
+/// its lane, else on the lane after what's there, a paused session woken first. Either way the reply goes out once the
+/// session has it, or with why it couldn't (a wake that failed): the reader thread reads on meanwhile.
+protocol SessionInput: Handled {
+    var id: String { get }
+    func apply(to s: LiveSession) throws -> Result
+}
+
+extension SessionInput {
+    /// Off the reader thread (another handler, a test): here, in order with the session's other input.
+    func handle(_ d: Daemon) throws -> Result {
+        if d.lanes.isClear(id), let ls = d.existing(id) { return try apply(to: ls) }
+        try d.mustWake(id)
+        return try d.lanes.runHere(id) { try apply(to: d.liveSession(id)) }
+    }
+
+    /// On the connection's reader thread: `done` with the reply's result, now or from the lane.
+    static func answerInOrder(_ p: JSONValue, _ d: Daemon, done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
+        do {
+            let m = try decoded(p)
+            if d.lanes.isClear(m.id), let ls = d.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
+            try d.mustWake(m.id)
+            d.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: d.liveSession(m.id))) }) }
+        } catch { done(.failure(error)) }
     }
 }
 
 extension Daemon {
-    /// `use` with the running session `id`: right away when it runs and nothing for it waits, else on its lane once it's
-    /// woken (a wake that fails then is logged: the caller already has its answer).
-    func whenRunning(_ id: String, _ use: @escaping @Sendable (LiveSession) throws -> Void) throws {
-        if lanes.isClear(id), let ls = existing(id) { try use(ls); return }
+    /// Not running: it has to be paused, to be woken for input.
+    func mustWake(_ id: String) throws {
         guard try existing(id) != nil || store.session(id)?.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
-        lanes.run(id) { [self] in
-            do { try use(try liveSession(id)) }
-            catch { Log.session.error("input for \(id, privacy: .public) after waking it failed: \(error)") }
-        }
     }
 }

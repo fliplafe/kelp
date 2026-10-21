@@ -52,6 +52,14 @@ final class LiveSession: Sendable {
         d == Data([0x1B]) || d.contains(0x03) || String(decoding: d, as: UTF8.self).wholeMatch(of: /\x1B\[(27|([0-9]*:)*99;5)u/) != nil
     }
 
+    /// A key pressed as the kitty keyboard protocol sends it (ESC[key:shifted:base;mods:event u): its key on the Latin
+    /// layout (`base`, when a non-Latin one is on) and its modifiers (⇧ 1, ⌥ 2, ⌃ 4, lock keys left out). nil for a release.
+    static func kittyKey(_ s: String) -> (key: Int, mods: Int)? {
+        guard let m = s.wholeMatch(of: /\x1B\[([0-9]+)(?::[0-9]*)?(?::([0-9]+))?(?:;([0-9]+)(?::([0-9]+))?)?(?:;[0-9:]*)?u/),
+              m.4.map({ $0 != "3" }) ?? true, let key = Int(m.2 ?? m.1) else { return nil }
+        return (key, ((m.3.flatMap { Int($0) } ?? 1) - 1) & 0b111111)
+    }
+
     init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16,
          callbacks: Callbacks) throws {
         var rec = record
@@ -225,7 +233,7 @@ final class LiveSession: Sendable {
             let quiet = Date().timeIntervalSince(s.lastOutputAt ?? s.started) > 1.5   // a program that prints nothing (cat) is quiet too
             let settled = (quiet && Date().timeIntervalSince(s.started) > 2) || Date().timeIntervalSince(s.started) > 25
             if settled { s.startedUp = true }
-            if let p = s.pendingPrompts.first, settled, s.readyForText() {
+            if let p = s.pendingPrompts.first, settled, s.readyForText(submits: !p.draft) {
                 s.pendingPrompts.removeFirst()
                 type(p.text, enter: !p.draft, paste: p.paste, &s)   // queued here, under the lock: nothing sent meanwhile gets ahead
             }
@@ -237,6 +245,8 @@ final class LiveSession: Sendable {
         pty.write(d)
         guard !TerminalReplies.isReply(d) else { return }   // the terminal answering the agent, not the user typing
         let firstPrompt = state.withLock { s -> String? in
+            // Keys that answer a question or menu on screen ("1", Return on an option) aren't a line being written.
+            let answering = s.trustQuestionOpen() || s.menuOpen() || (s.record.status == .waiting && d.count == 1 && (0x31...0x39).contains(d[0]))
             s.typedYet = true; s.dialogSettled = true; s.draftWaiting = false
             s.detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
             var read: Session?
@@ -249,7 +259,8 @@ final class LiveSession: Sendable {
                 }
             }
             emit(s.sync() ?? read)
-            return s.firstPromptLine(d)
+            if answering { s.typing = ""; return nil }
+            return s.noteTyping(d)
         }
         if let line = firstPrompt { let cb = callbacks.firstPrompt; DispatchQueue.global().async { cb(line) } }
     }
@@ -373,7 +384,9 @@ extension LiveSession {
         /// option. `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the
         /// user answers from a notification.
         var steering: (choose: NSRegularExpression, since: Date, lastKey: Date, screen: NSRegularExpression?)?
-        var inputLine = "", sawFirstPrompt = false
+        /// What the user typed and hasn't sent, as far as their keys tell (arrows and history recall aren't followed).
+        var typing = ""
+        var sawFirstPrompt = false
 
         // Turns: written by turnWork, read by requests.
         var turnTree: String?, turnFolder: String?, turnResult: Turn?, turnStart: Date?, inTurn = false
@@ -476,22 +489,49 @@ extension LiveSession {
             return record
         }
 
-        /// Keys typed until the first line of 8 characters or more is submitted: that line (once), which names the session.
-        mutating func firstPromptLine(_ d: Data) -> String? {
-            guard !sawFirstPrompt else { return nil }
-            var s = String(decoding: d, as: UTF8.self)
-            if s.hasPrefix("\u{1B}[200~") { s = s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "") }
-            else if s.hasPrefix("\u{1B}") { return nil }   // arrows, function keys
+        /// The user's keys into `typing`; the first line of 8 characters or more they send (once), which names the session.
+        mutating func noteTyping(_ d: Data) -> String? {
+            let s = String(decoding: d, as: UTF8.self)
+            if s.hasPrefix("\u{1B}[200~") {   // a paste: its newlines are text, not Return
+                typing += s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "")
+                    .replacingOccurrences(of: "\r", with: "\n")
+                return nil
+            }
+            if let k = LiveSession.kittyKey(s) {
+                switch (k.key, k.mods) {
+                case (13, 0): return sendLine()   // Return (⇧Return is a new line in the box)
+                case (99, 4), (117, 4): typing = ""   // ⌃C, ⌃U
+                case (119, 4), (127, 2): dropWord()   // ⌃W, ⌥⌫
+                default: break
+                }
+                return nil
+            }
+            if s == "\u{1B}\u{7F}" { dropWord(); return nil }   // ⌥⌫
+            if s.hasPrefix("\u{1B}") { return nil }   // arrows, function keys
+            var sent: String?
             for ch in s {
                 switch ch {
-                case "\r", "\n":
-                    let line = inputLine.trimmingCharacters(in: .whitespaces); inputLine = ""
-                    if line.count >= 8 { sawFirstPrompt = true; return line }
-                case "\u{7F}", "\u{08}": if !inputLine.isEmpty { inputLine.removeLast() }
-                default: if !ch.isASCII || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " " { inputLine.append(ch) }
+                case "\r", "\n", "\r\n": sent = sendLine() ?? sent
+                case "\u{03}", "\u{15}": typing = ""   // ⌃C, ⌃U: the line is dropped
+                case "\u{7F}", "\u{08}": if !typing.isEmpty { typing.removeLast() }
+                case "\u{17}": dropWord()   // ⌃W
+                default: if !ch.isASCII || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " " { typing.append(ch) }
                 }
             }
-            return nil
+            return sent
+        }
+
+        /// Return: the line is sent. The first one of 8 characters or more, once.
+        private mutating func sendLine() -> String? {
+            let line = typing.trimmingCharacters(in: .whitespacesAndNewlines); typing = ""
+            guard !sawFirstPrompt, line.count >= 8 else { return nil }
+            sawFirstPrompt = true
+            return line
+        }
+
+        private mutating func dropWord() {
+            while typing.last == " " { typing.removeLast() }
+            while let c = typing.last, c != " " { typing.removeLast() }
         }
     }
 }

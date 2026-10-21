@@ -16,7 +16,7 @@ public final class Daemon: Sendable {
     /// What start() opens and stop() closes: the socket, the flock on kelpd.lock (one daemon per KELP_HOME), the sources.
     private struct Running: @unchecked Sendable {   // the sources are only set up and cancelled, under `running`'s lock
         var listenFD: Int32 = -1, instanceLock: Int32 = -1
-        var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?
+        var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?, prune: DispatchSourceTimer?
     }
     private let running = OSAllocatedUnfairLock(initialState: Running())
     let settings: SettingsStore
@@ -129,8 +129,11 @@ public final class Daemon: Sendable {
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
         t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
-        running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t }
-        src.resume(); t.resume()
+        let prune = DispatchSource.makeTimerSource(queue: .global(qos: .background))
+        prune.schedule(deadline: .now() + 60, repeating: 86400)   // ended sessions past `keepEnded`
+        prune.setEventHandler { [self] in pruneEnded() }
+        running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t; $0.prune = prune }
+        src.resume(); t.resume(); prune.resume()
         Self.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.followHeads() } }   // not once stopped
         try? FileManager.default.removeItem(at: Paths.daemonError(in: root))   // an earlier failure is over
         Log.start.info("kelpd \(getpid()) serves \(self.socketPath, privacy: .public)")
@@ -138,7 +141,7 @@ public final class Daemon: Sendable {
 
     public func stop() {
         let r = running.withLock { r in defer { r = Running() }; return r }
-        r.accept?.cancel(); r.ticker?.cancel()   // the accept source's cancel closes the socket
+        r.accept?.cancel(); r.ticker?.cancel(); r.prune?.cancel()   // the accept source's cancel closes the socket
         if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
         // Every program ends with the daemon, whole trees (a job in a process group of its own, an agent that ignores the
         // hangup), each recorded as pausing records it: a resumable agent comes back paused, not as a second copy.
@@ -192,13 +195,17 @@ public final class Daemon: Sendable {
                     // layout or a terminal size that finished second must not win over the newer one): applied here, one
                     // after another, calls and notifications alike (`Answered.inOrder`); a call's reply goes out in that order.
                     if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder {
-                        let id = req.id ?? .null
-                        do {
-                            let r = try answerNow(t, req.params ?? .null, conn: c.id)
-                            if !req.isNotification { c.send(Self.replyLine(id: id, result: r)) }
-                        } catch {
-                            if !req.isNotification, let d = Self.errorLine(id: id, error) { c.send(d) }
+                        let id = req.id ?? .null, notification = req.isNotification
+                        let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { r in
+                            guard !notification else { return }
+                            switch r {
+                            case .success(let d): c.send(Self.replyLine(id: id, result: d))
+                            case .failure(let e): if let d = Self.errorLine(id: id, e) { c.send(d) }
+                            }
                         }
+                        // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
+                        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, self, done: reply) }
+                        else { reply(Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }) }
                         continue
                     }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
