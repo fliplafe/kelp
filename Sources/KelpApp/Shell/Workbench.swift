@@ -9,6 +9,8 @@ final class Workbench {
     static let shared = Workbench()
     var workspaceId: String? { didSet { UIState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
     var focusedSession: String?
+    /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.
+    var focusedTab: String?
     var focusedFile: String?
     var inspectorPanel: String = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_INSPECTOR"]
         ?? UserDefaults.standard.string(forKey: "inspectorPanel") ?? "git.changes" {

@@ -209,7 +209,7 @@ struct SidebarFooterView: View {
     var body: some View { UsageView() }
 }
 
-/// Like Safari's tab groups: the project with the workspace on screen sits on a rounded card, and the row you're on is
+/// Like Safari's tab groups: the workspace on screen and its agents sit on a rounded card, and the row you're on is
 /// a raised pill inside it (no accent colour, so the text keeps its colours).
 @MainActor
 final class SidebarRowView: NSTableRowView {
@@ -220,20 +220,24 @@ final class SidebarRowView: NSTableRowView {
     static let pillFill = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.black.withAlphaComponent(0.32) : .white }
 
     override func drawBackground(in r: NSRect) {
+        // The card's edge is 6 pt in from the sides, the pill 4 pt inside it all round (corners concentric: 10 and 6).
+        // Rows in the middle extend past their bounds, so only the card's ends are rounded.
         if let card {
-            // Rows in the middle extend past their bounds, so only the card's ends are rounded.
             var rect = bounds.insetBy(dx: 6, dy: 0)
-            if card.first { rect.origin.y += 3; rect.size.height -= 3 } else { rect.origin.y -= 12; rect.size.height += 12 }
-            if card.last { rect.size.height -= 3 } else { rect.size.height += 12 }
+            if !card.first { rect.origin.y -= 12; rect.size.height += 12 }
+            if !card.last { rect.size.height += 12 }
             Self.cardFill.setFill()
             NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
         }
         guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
+        var pill = bounds.insetBy(dx: 10, dy: 3)
+        if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }   // flipped: y grows down
+        if card?.last == true { pill.size.height -= 1 }
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow(); shadow.shadowColor = .black.withAlphaComponent(0.12); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .init(width: 0, height: -0.5)
         shadow.set()
         Self.pillFill.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 10, dy: 2), xRadius: 7, yRadius: 7).fill()
+        NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
         NSGraphicsContext.restoreGraphicsState()
     }
     override var isSelected: Bool { didSet { if isSelected != oldValue { needsDisplay = true } } }

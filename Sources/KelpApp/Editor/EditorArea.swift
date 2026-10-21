@@ -288,6 +288,7 @@ final class EditorArea: NSViewController {
         guard Workbench.window?.editors.current === self else { return }
         let uri = layout.focusedGroup?.selectedTab?.uri ?? ""
         let wb = Workbench.shared
+        if wb.focusedTab != uri { wb.focusedTab = uri }
         switch TabURI.scheme(uri) {
         case "session": wb.focusedSession = TabURI.body(uri)
         case "file": wb.focusedFile = TabURI.filePath(uri).path
