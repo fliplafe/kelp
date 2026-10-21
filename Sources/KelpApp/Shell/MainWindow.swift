@@ -45,7 +45,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let root = NSViewController(); root.view = NSView(); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
-        for v in [split.view, bar, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        root.view.pin(split.view)
+        for v in [bar, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
@@ -53,8 +54,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // The bar lies over the editor area only: the sidebar and the inspector both run the window's full height. With
         // the sidebar away it runs under the traffic lights; with the inspector away, under its toggle.
         NSLayoutConstraint.activate([
-            split.view.topAnchor.constraint(equalTo: root.view.topAnchor), split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
-            split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor), split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
             bar.topAnchor.constraint(equalTo: root.view.topAnchor), bar.heightAnchor.constraint(equalToConstant: WindowBar.height),
             bar.leadingAnchor.constraint(equalTo: editors.view.leadingAnchor), bar.trailingAnchor.constraint(equalTo: editors.view.trailingAnchor),
             // The bar is as tall as the title bar, so the traffic lights and the toggles share a centre line. The sidebar's
@@ -322,9 +321,7 @@ final class EditorHost: NSViewController {
         if let w = welcome as? WelcomeView, w.hasRepos == hasRepos { return }
         welcome?.removeFromSuperview()
         let w = WelcomeView(hasRepos: hasRepos)
-        w.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(w)
-        NSLayoutConstraint.activate([w.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height), w.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                                     w.leadingAnchor.constraint(equalTo: view.leadingAnchor), w.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
+        view.pin(w, inset: NSEdgeInsets(top: WindowBar.height, left: 0, bottom: 0, right: 0))   // under the window bar
         welcome = w
     }
 }

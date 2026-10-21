@@ -28,7 +28,7 @@ final class NotebookTab: NSViewController {
                                       b(String(localized: "Ask Agent"), "text.bubble", #selector(askAgent)), NSView(), status])
         bar.spacing = 6; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         web.navigationDelegate = links
-        view = pinned(bar: bar, body: web)
+        view = stacked(bar, web)
         reload()
     }
 

@@ -37,10 +37,7 @@ final class WorkspaceSwitcher {
         rows = items.map { row($0) }
         rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -16).isActive = true }
         let fx = NSVisualEffectView(); fx.material = .hudWindow; fx.state = .active; fx.wantsLayer = true; fx.layer?.cornerRadius = 12
-        list.translatesAutoresizingMaskIntoConstraints = false; fx.addSubview(list)
-        NSLayoutConstraint.activate([list.topAnchor.constraint(equalTo: fx.topAnchor), list.bottomAnchor.constraint(equalTo: fx.bottomAnchor),
-                                     list.leadingAnchor.constraint(equalTo: fx.leadingAnchor), list.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
-                                     list.widthAnchor.constraint(equalToConstant: 460)])
+        fx.pin(list); list.widthAnchor.constraint(equalToConstant: 460).isActive = true
         let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .popUpMenu
         p.contentView = fx

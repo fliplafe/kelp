@@ -28,12 +28,12 @@ struct PanelSpec: Identifiable {
 
 /// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).
 struct EditorSpec: Identifiable {
-    let id: String, title: String, icon: String, extensionId: String
+    let id: String, title: String, icon: String
     let open: @MainActor (IDEContext) -> Void
 
     /// The common case: the entry opens a tab for a URI.
-    init(id: String, title: String, icon: String, extensionId: String, uri: @escaping @MainActor (IDEContext) -> String?) {
-        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId
+    init(id: String, title: String, icon: String, uri: @escaping @MainActor (IDEContext) -> String?) {
+        self.id = id; self.title = title; self.icon = icon
         open = { ctx in if let u = uri(ctx) { Workbench.open(u) } }
     }
 }
@@ -41,7 +41,7 @@ struct EditorSpec: Identifiable {
 /// An action with a stable id, the one thing the menu bar, key bindings (settings.json `keys`), the command palette
 /// and agents (`kelp run <id>`) call.
 struct CommandSpec: Identifiable {
-    let id: String, title: String, extensionId: String
+    let id: String, title: String
     var key: String?
     /// The menu bar menu it goes in when Kelp's own layout (`AppDelegate.buildMenu`) doesn't place it; nil: Tools.
     var menu: String?
@@ -60,7 +60,7 @@ struct SettingSpec: Codable, Identifiable {
 }
 
 struct SettingsSection: Identifiable {
-    let id: String, title: String, icon: String, extensionId: String
+    let id: String, title: String, icon: String
     var specs: [SettingSpec]
     /// Optional custom UI under the generated rows (accounts, integrations…).
     var custom: (@MainActor () -> AnyView)?
@@ -73,7 +73,7 @@ struct IconThemeSpec {
 
 /// Opens tabs for URIs of a scheme ("session", "file", "https"…).
 struct TabProvider {
-    let schemes: [String], extensionId: String
+    let schemes: [String]
     let make: @MainActor (String) -> TabContent?
 }
 

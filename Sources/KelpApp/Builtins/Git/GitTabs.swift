@@ -98,15 +98,8 @@ final class CommitMessageTab: TabContent {
         let bar = NSStackView(views: [hint, NSView(), cancel, commitButton]); bar.spacing = 8
         bar.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         let sep = NSBox(); sep.boxType = .separator
-        for v in [bar, sep, scroll] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.topAnchor), bar.heightAnchor.constraint(equalToConstant: 40),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor), bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            sep.topAnchor.constraint(equalTo: bar.bottomAnchor), sep.heightAnchor.constraint(equalToConstant: 1),
-            sep.leadingAnchor.constraint(equalTo: root.leadingAnchor), sep.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor)
-        ])
+        root.pin(stacked(bar, sep, scroll))
+        NSLayoutConstraint.activate([bar.heightAnchor.constraint(equalToConstant: 40), sep.heightAnchor.constraint(equalToConstant: 1)])
     }
 
     /// The message (the last commit's, when amending), then what goes into the commit as "#" lines, as git's own template does.

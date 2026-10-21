@@ -49,7 +49,7 @@ final class MarkdownTab: NSViewController {
         web.navigationDelegate = links
         split.addArrangedSubview(editor.view); split.addArrangedSubview(web)
         editor.view.clipsToBounds = true
-        view = pinned(bar: bar, body: split)
+        view = stacked(bar, split)
         applyMode()
         rerender()
     }

@@ -42,16 +42,16 @@ final class FileTab: SavableTab {
         // A remote project's file: read on its host and shown read-only (edits happen there, by its agents and terminals).
         if !FileManager.default.fileExists(atPath: p), let r = RemoteHost.containing(p) {
             let box = NSView(); view = box
-            let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); Self.pin(wait, in: box)
+            let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); box.pin(wait)
             Task { [weak self] in
                 let res = await AppModel.shared.tryCall("files.readRemote", .obj(["path": .string(p)]))
                 guard let self else { return }
                 wait.removeFromSuperview()
-                guard let text = res.value?.string else { Self.pin(Self.message(res.error ?? String(localized: "Couldn't read it.")), in: box); return }
+                guard let text = res.value?.string else { box.pin(Self.message(res.error ?? String(localized: "Couldn't read it."))); return }
                 let e = CodeEditor(text: text, url: url, editable: false)
                 e.view.clipsToBounds = true
                 editor = e; lastSaved = text
-                Self.pin(e.view, in: box)
+                box.pin(e.view)
             }
             return
         }
@@ -77,7 +77,7 @@ final class FileTab: SavableTab {
             let bar = EditorStatusBar(url: url, text: text)
             bar.show(cursor: e.cursor)
             e.onSelection = { [weak bar, weak e] in bar?.show(cursor: e?.cursor) }
-            view = EditorStatusBar.wrap(e.view, bar: bar)
+            view = stacked(e.view, bar)
         }
         e.onChange = { [weak self] t in self?.edited(t) }
         startLSP()
@@ -277,12 +277,6 @@ final class FileTab: SavableTab {
         guard e.text == text, r.stdout != text, !r.stdout.isEmpty || text.isEmpty else { return }   // typed meanwhile, or nothing to do
         e.apply(text: r.stdout, selection: NSRange(location: 0, length: 0))
         e.goTo(line: line)
-    }
-
-    private static func pin(_ v: NSView, in box: NSView) {
-        v.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(v)
-        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: box.topAnchor), v.bottomAnchor.constraint(equalTo: box.bottomAnchor),
-                                     v.leadingAnchor.constraint(equalTo: box.leadingAnchor), v.trailingAnchor.constraint(equalTo: box.trailingAnchor)])
     }
 
     private static func message(_ s: String) -> NSView {

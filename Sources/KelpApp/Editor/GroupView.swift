@@ -67,10 +67,7 @@ final class GroupView: NSView {
         shown = v
         guard let v else { return }
         v.removeFromSuperview()
-        v.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(v)
-        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: container.topAnchor), v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                                     v.leadingAnchor.constraint(equalTo: container.leadingAnchor), v.trailingAnchor.constraint(equalTo: container.trailingAnchor)])
+        container.pin(v)
     }
 
     // MARK: tab dropped on the content: an edge splits, the middle moves the tab here

@@ -201,10 +201,8 @@ final class SearchPill: NSControl {
         label.setContentCompressionResistancePriority(.init(200), for: .horizontal)
         key.font = .ui(11); key.textColor = .tertiaryLabelColor
         let row = NSStackView(views: [glass, label, NSView(), key]); row.spacing = 6
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 10); row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
-                                     row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor)])
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
+        pin(row)
         toolTip = String(localized: "Open Quickly (⌘P)")
         setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(String(localized: "Open Quickly"))
     }

@@ -150,13 +150,7 @@ private final class StartCard: NSView {
         }
         let list = NSStackView(views: views); list.orientation = .vertical; list.spacing = 0
         list.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
-        for v in [box, list] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        NSLayoutConstraint.activate([
-            box.leadingAnchor.constraint(equalTo: leadingAnchor), box.trailingAnchor.constraint(equalTo: trailingAnchor),
-            box.topAnchor.constraint(equalTo: topAnchor), box.bottomAnchor.constraint(equalTo: bottomAnchor),
-            list.leadingAnchor.constraint(equalTo: leadingAnchor), list.trailingAnchor.constraint(equalTo: trailingAnchor),
-            list.topAnchor.constraint(equalTo: topAnchor), list.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
+        pin(box); pin(list)
         for v in views {
             if v is NSBox { v.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -40).isActive = true }   // inset like grouped lists
             else if !(v is NSGridView) { v.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -8).isActive = true }
@@ -185,12 +179,8 @@ private final class StartRow: NSView {
         let row = NSStackView(views: [icon, label, NSView(), more, key]); row.spacing = 10; row.detachesHiddenViews = true
         more.isHidden = detail == nil; key.isHidden = shortcut == nil
         row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
-        row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 36), icon.widthAnchor.constraint(equalToConstant: 22),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
-            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
+        pin(row)
+        NSLayoutConstraint.activate([heightAnchor.constraint(equalToConstant: 36), icon.widthAnchor.constraint(equalToConstant: 22)])
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
         setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(title)
     }

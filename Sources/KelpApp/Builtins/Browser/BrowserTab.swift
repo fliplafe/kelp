@@ -44,12 +44,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         bar.edgeInsets = NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
         address.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let body = NSView()
-        for x in [web, ports] as [NSView] {
-            x.translatesAutoresizingMaskIntoConstraints = false; body.addSubview(x)
-            NSLayoutConstraint.activate([x.topAnchor.constraint(equalTo: body.topAnchor), x.bottomAnchor.constraint(equalTo: body.bottomAnchor),
-                                         x.leadingAnchor.constraint(equalTo: body.leadingAnchor), x.trailingAnchor.constraint(equalTo: body.trailingAnchor)])
-        }
-        view = pinned(bar: bar, body: body)
+        for x in [web, ports] as [NSView] { body.pin(x) }
+        view = stacked(bar, body)
         super.init()
         ports.onOpen = { [weak self] u in self?.load(u) }
         web.navigationDelegate = self

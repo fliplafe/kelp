@@ -41,14 +41,11 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         detail.orientation = .vertical; detail.alignment = .leading; detail.spacing = 10; detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
         let ds = NSScrollView(); ds.hasVerticalScroller = true; ds.drawsBackground = false
         let flip = FlippedView(); flip.translatesAutoresizingMaskIntoConstraints = false; ds.documentView = flip
-        detail.translatesAutoresizingMaskIntoConstraints = false; flip.addSubview(detail)
-        NSLayoutConstraint.activate([detail.topAnchor.constraint(equalTo: flip.topAnchor), detail.leadingAnchor.constraint(equalTo: flip.leadingAnchor),
-                                     detail.trailingAnchor.constraint(equalTo: flip.trailingAnchor), detail.bottomAnchor.constraint(equalTo: flip.bottomAnchor),
-                                     flip.widthAnchor.constraint(equalTo: ds.contentView.widthAnchor)])
+        flip.pin(detail); flip.widthAnchor.constraint(equalTo: ds.contentView.widthAnchor).isActive = true
         split.isVertical = false; split.dividerStyle = .thin
         split.addArrangedSubview(ts); split.addArrangedSubview(ds)
         split.setHoldingPriority(.defaultLow + 1, forSubviewAt: 1)
-        view = pinned(bar: bar, body: split)
+        view = stacked(bar, split)
         sourceChanged()
     }
 

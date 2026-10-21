@@ -81,7 +81,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         self.split = split; fileList = fs
         bar.orientation = .horizontal; bar.spacing = 8; bar.edgeInsets = NSEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
         buildBar()
-        view = pinned(bar: bar, body: split)
+        view = stacked(bar, split)
     }
 
     private let bar = NSStackView()
@@ -381,19 +381,6 @@ private final class FitLabel: NSTextField {
         let s = full.size().width + 6 <= size.width ? full : short
         if !attributedStringValue.isEqual(to: s) { attributedStringValue = s }
     }
-}
-
-/// A toolbar row over a body that fills the rest. Used by every mode view.
-@MainActor
-func pinned(bar: NSView, body: NSView) -> NSView {
-    let v = NSView()
-    for x in [bar, body] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-    NSLayoutConstraint.activate([
-        bar.topAnchor.constraint(equalTo: v.topAnchor), bar.leadingAnchor.constraint(equalTo: v.leadingAnchor), bar.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-        body.topAnchor.constraint(equalTo: bar.bottomAnchor), body.leadingAnchor.constraint(equalTo: v.leadingAnchor),
-        body.trailingAnchor.constraint(equalTo: v.trailingAnchor), body.bottomAnchor.constraint(equalTo: v.bottomAnchor)
-    ])
-    return v
 }
 
 extension FileChange {

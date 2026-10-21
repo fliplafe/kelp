@@ -19,12 +19,8 @@ final class CIStatusRow: NSView {
         for t in [text, place] { t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         top.spacing = 6; top.alignment = .centerY
         let col = NSStackView(views: [top, place]); col.orientation = .vertical; col.alignment = .leading; col.spacing = 2
-        col.translatesAutoresizingMaskIntoConstraints = false; addSubview(col)
-        NSLayoutConstraint.activate([
-            col.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8), col.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            col.topAnchor.constraint(equalTo: topAnchor, constant: 5), col.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
-            top.widthAnchor.constraint(equalTo: col.widthAnchor), place.trailingAnchor.constraint(lessThanOrEqualTo: col.trailingAnchor)
-        ])
+        pin(col, inset: NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8))
+        NSLayoutConstraint.activate([top.widthAnchor.constraint(equalTo: col.widthAnchor), place.trailingAnchor.constraint(lessThanOrEqualTo: col.trailingAnchor)])
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
         setAccessibilityElement(true); setAccessibilityRole(.button)
         isHidden = true

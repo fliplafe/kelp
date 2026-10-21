@@ -95,16 +95,16 @@ enum DeclarativeExtension {
         }
         for v in x?.editors ?? [] {
             views["\(m.id)/\(v.id)"] = (m, v, folder)
-            c.editors.append(EditorSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id,
+            c.editors.append(EditorSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension",
                                         uri: { _ in "ext:\(m.id)/\(v.id)" }))
         }
         for a in x?.commands ?? [] {
-            c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, extensionId: m.id, key: a.key, menu: a.menu) { _ in
+            c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, key: a.key, menu: a.menu) { _ in
                 ExtActions.perform(a, item: nil, folder: folder)
             })
         }
         if let s = x?.settings, !s.isEmpty {
-            c.settings.append(SettingsSection(id: m.id, title: m.name, icon: m.icon ?? "puzzlepiece.extension", extensionId: m.id, specs: s))
+            c.settings.append(SettingsSection(id: m.id, title: m.name, icon: m.icon ?? "puzzlepiece.extension", specs: s))
         }
         c.themes = x?.themes ?? []
         c.iconThemes = (x?.iconThemes ?? []).map {
@@ -120,7 +120,7 @@ enum DeclarativeExtension {
     }
 
     /// Opens `ext:<extension>/<view>` tabs.
-    static let tabProvider = TabProvider(schemes: ["ext"], extensionId: "kelp.agents") { uri in
+    static let tabProvider = TabProvider(schemes: ["ext"]) { uri in
         guard let (m, v, folder) = views[TabURI.body(uri)] else { return nil }
         return ExtViewTab(uri: uri, title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", controller: viewController(m, v, folder))
     }

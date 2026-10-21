@@ -21,8 +21,8 @@ enum Builtins {
     static let all: [Builtin] = [workbench, agents, appearance, files, git, browser, issues, activity]
 
     /// A command that takes no arguments.
-    static func cmd(_ ext: String, _ id: String, _ title: String, _ key: String? = nil, _ run: @escaping @MainActor () -> Void) -> CommandSpec {
-        CommandSpec(id: id, title: title, extensionId: ext, key: key) { _ in run() }
+    static func cmd(_ id: String, _ title: String, _ key: String? = nil, _ run: @escaping @MainActor () -> Void) -> CommandSpec {
+        CommandSpec(id: id, title: title, key: key) { _ in run() }
     }
     /// The editor area on screen; a beep when there is none.
     static var editor: EditorArea? {
@@ -42,10 +42,10 @@ enum Builtins {
 
     static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["session"], extensionId: "kelp.agents") { SessionTab(uri: $0) }]
-        c.tabs.append(TabProvider(schemes: ["usage"], extensionId: "kelp.agents") { _ in UsageTab() })
+        c.tabs = [TabProvider(schemes: ["session"]) { SessionTab(uri: $0) }]
+        c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab() })
         c.settings = [
-            SettingsSection(id: "agents", title: "Agents", icon: "sparkles", extensionId: "kelp.agents", specs: [
+            SettingsSection(id: "agents", title: "Agents", icon: "sparkles", specs: [
                 s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: AgentCatalog.all.map(\.id)),
                 s("agents.skills.extensions", "Skill: write Kelp extensions", "boolean", true,
                   "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
@@ -60,7 +60,7 @@ enum Builtins {
                   "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background "
                     + "and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
-            SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", extensionId: "kelp.agents", specs: [
+            SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),
                 s("terminal.fontSize", "Font size", "number", 13),
                 s("terminal.cursorStyle", "Cursor", "enum", "block", options: ["block", "bar", "underline"]),
@@ -71,17 +71,17 @@ enum Builtins {
             ])
         ]
         c.commands = [
-            CommandSpec(id: "agents.new", title: "New Agent", extensionId: "kelp.agents", key: "opt+cmd+t") { args in
+            CommandSpec(id: "agents.new", title: "New Agent", key: "opt+cmd+t") { args in
                 editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string)
             },
-            cmd("kelp.agents", "terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
-            cmd("kelp.agents", "terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
-            cmd("kelp.agents", "terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
-            cmd("kelp.agents", "agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
-            cmd("kelp.agents", "agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
-            cmd("kelp.agents", "agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() },
+            cmd("terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
+            cmd("terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
+            cmd("terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
+            cmd("agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
+            cmd("agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
+            cmd("agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() },
             // Like Caffeine: ticked keeps the Mac awake until unticked, which goes back to the setting's default.
-            cmd("kelp.agents", "power.keepAwake", "Keep Mac Awake") {
+            cmd("power.keepAwake", "Keep Mac Awake") {
                 SettingsStore.shared.set("power.keepAwake", SettingsStore.shared.string("power.keepAwake") == "always" ? nil : .string("always"))
             }
         ]
@@ -90,11 +90,11 @@ enum Builtins {
 
     static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["file"], extensionId: "kelp.files") { FileTab(uri: $0) },
-                  TabProvider(schemes: ["untitled"], extensionId: "kelp.files") { UntitledTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["file"]) { FileTab(uri: $0) },
+                  TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0) }]
         c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel() }]
-        c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus", extensionId: "kelp.files") { _ in UntitledTab.next() }]
-        c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", extensionId: "kelp.files", specs: [
+        c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus") { _ in UntitledTab.next() }]
+        c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", specs: [
             s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
@@ -117,62 +117,61 @@ enum Builtins {
             LanguageSpec(id: "rust", extensions: ["rs"], server: .init(command: "rust-analyzer", install: "rustup component add rust-analyzer"),
                          test: "cargo test ${symbol}", format: "rustfmt --edition 2021")
         ]
-        let f = "kelp.files"
-        c.commands = [cmd(f, "files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
-                      cmd(f, "files.new", "New File", "opt+cmd+n") { Workbench.open(UntitledTab.next()) },
-                      cmd(f, "markdown.cycleView", "Markdown: Source, Split, Preview", "shift+cmd+v") {
+        c.commands = [cmd("files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
+                      cmd("files.new", "New File", "opt+cmd+n") { Workbench.open(UntitledTab.next()) },
+                      cmd("markdown.cycleView", "Markdown: Source, Split, Preview", "shift+cmd+v") {
                           guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
                           md.cycleMode()
                       },
-                      cmd(f, "editor.save", "Save", "cmd+s") {
+                      cmd("editor.save", "Save", "cmd+s") {
                           guard let t = Workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
                           if let file = t as? FileTab, SettingsStore.shared.bool("editor.formatOnSave") == true, file.language?.format != nil {
                               Task { await file.format(); file.save() }
                           } else { t.save() }
                       },
-                      cmd(f, "editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
-                      cmd(f, "files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
+                      cmd("editor.saveAll", "Save All", "opt+cmd+s") { Workbench.window?.editors.editedFiles.forEach { $0.save() } },
+                      cmd("files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
                           Workbench.window?.showInspector(panel: "files")
                           DispatchQueue.main.async { (Workbench.window?.inspector.built("files") as? FilesPanel)?.findInFiles() }   // after the panel is built
                       },
-                      cmd(f, "editor.goToLine", "Go to Line…", "cmd+l") {
+                      cmd("editor.goToLine", "Go to Line…", "cmd+l") {
                           if let t = fileTab, let s = prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) }
                       },
-                      cmd(f, "editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab?.jumpToDefinition() },
+                      cmd("editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab?.jumpToDefinition() },
                       // ⌥⌘↩: "path:12-30" into the agent's prompt (it reads the file itself), without pressing Return.
-                      cmd(f, "editor.sendToAgent", "Send to Agent", "opt+cmd+return") {
+                      cmd("editor.sendToAgent", "Send to Agent", "opt+cmd+return") {
                           if let t = fileTab { FileActions.sendToAgent(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
                       },
-                      cmd(f, "editor.copyReference", "Copy Path and Line", "opt+shift+cmd+c") {
+                      cmd("editor.copyReference", "Copy Path and Line", "opt+shift+cmd+c") {
                           if let t = fileTab { FileActions.copyReference(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
                       },
-                      cmd(f, "editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } },
+                      cmd("editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } },
                       // The language's commands (`contributes.languages`): run, test and format the file.
-                      cmd(f, "editor.runFile", "Run File") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "run") } },
-                      cmd(f, "editor.testAtCursor", "Test at Cursor") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "test") } },
+                      cmd("editor.runFile", "Run File") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "run") } },
+                      cmd("editor.testAtCursor", "Test at Cursor") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "test") } },
                       // ⌃⇧I as in Xcode: an Option-only key like VS Code's ⇧⌥F never reaches the menu from a text view (it types Ï).
-                      cmd(f, "editor.format", "Format Document", "ctrl+shift+i") { if let t = fileTab { Task { await t.format() } } }]
+                      cmd("editor.format", "Format Document", "ctrl+shift+i") { if let t = fileTab { Task { await t.format() } } }]
         return c
     }
 
     static let git = Builtin("kelp.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["diff"], extensionId: "kelp.git") { DiffTab(uri: $0) },
-                  TabProvider(schemes: ["commit"], extensionId: "kelp.git") { CommitMessageTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["diff"]) { DiffTab(uri: $0) },
+                  TabProvider(schemes: ["commit"]) { CommitMessageTab(uri: $0) }]
         c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "kelp.git",
                               badge: { ChangedFiles.shared.count }) { SourceControlController() }]
-        c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", extensionId: "kelp.git", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
-        c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", extensionId: "kelp.git", specs: [
+        c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
+        c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Kelp names, e.g. “niko/”.")
         ])]
         c.commands = [
-            CommandSpec(id: "git.review", title: "Git: Review Changes", extensionId: "kelp.git", key: "shift+cmd+r") { _ in
+            CommandSpec(id: "git.review", title: "Git: Review Changes", key: "shift+cmd+r") { _ in
                 if let w = Workbench.shared.workspaceId { Workbench.open(DiffTab.uri(w)) }
             },
-            CommandSpec(id: "git.pullRequest", title: "Git: Create Pull Request", extensionId: "kelp.git") { _ in
+            CommandSpec(id: "git.pullRequest", title: "Git: Create Pull Request") { _ in
                 if let w = Workbench.shared.workspaceId { PRActions.create(worktree: w) }
             },
-            CommandSpec(id: "git.push", title: "Git: Push", extensionId: "kelp.git") { _ in
+            CommandSpec(id: "git.push", title: "Git: Push") { _ in
                 if let w = Workbench.shared.workspaceId {
                     Task { if await AppModel.shared.call("git.push", .obj(["id": .string(w)])) != nil { Banner.show(String(localized: "Pushed")) } }
                 }
@@ -190,9 +189,9 @@ enum Builtins {
 
     static let browser = Builtin("kelp.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"], extensionId: "kelp.browser") { BrowserTab(uri: $0) }]
-        c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", extensionId: "kelp.browser", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
-        c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", extensionId: "kelp.browser", key: "shift+cmd+b") { args in
+        c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"]) { BrowserTab(uri: $0) }]
+        c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
+        c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", key: "shift+cmd+b") { args in
             Workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
         }]
         return c
@@ -205,14 +204,14 @@ enum Builtins {
             track(owner: t) { Workbench.shared.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
             return t
         }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController() }]
-        c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", extensionId: "kelp.issues", specs: [],
+        c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", specs: [],
                                       custom: { AnyView(IntegrationsSettings()) })]
         return c
     }
 
     static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) {
         var c = Contributions()
-        c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", extensionId: "kelp.appearance", specs: [
+        c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", specs: [
             s("workbench.theme", "Color Theme", "theme", "auto",
               "The window, terminal and editor together. Match System switches Kelp Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors."),
             s("workbench.iconTheme", "File Icon Theme", "enum", .string(FileIcon.system),
@@ -226,7 +225,7 @@ enum Builtins {
               options: ["top", "bottom"]),
             s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock."),
             s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge.")
-        ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", extensionId: "kelp.appearance", specs: [],
+        ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", specs: [],
                             custom: { AnyView(KeyboardSettings()) })]
         return c
     }

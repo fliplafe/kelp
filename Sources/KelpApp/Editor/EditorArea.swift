@@ -70,10 +70,7 @@ final class EditorArea: NSViewController {
         if let z = zoomed, layout.groups[z] != nil, root.sessions.count > 1 { root = .pane(z) } else { zoomed = nil }
         if zoomed == nil, let sizes = layout.sizes { layout.sizes = sizes.filter { root.splitKeys.contains($0.key) } }
         let v = build(root)
-        v.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(v)
-        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: view.topAnchor), v.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                                     v.leadingAnchor.constraint(equalTo: view.leadingAnchor), v.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
+        view.pin(v)
         // The focused group now, the others one per run-loop turn: restoring a browser, files and terminals together
         // would otherwise hold the main thread for 100–200 ms. A newer render takes over the rest.
         renders += 1
@@ -259,9 +256,7 @@ final class EditorArea: NSViewController {
         s.onPrompt = { [weak self] agent, text in self?.newAgent(agent, prompt: text) }
         s.onOpen = { [weak self] uri in self?.open(uri) }
         start = s
-        s.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(s)
-        NSLayoutConstraint.activate([s.topAnchor.constraint(equalTo: view.topAnchor), s.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                                     s.leadingAnchor.constraint(equalTo: view.leadingAnchor), s.trailingAnchor.constraint(equalTo: view.trailingAnchor)])
+        view.pin(s)
         DispatchQueue.main.async { s.focus() }
     }
 

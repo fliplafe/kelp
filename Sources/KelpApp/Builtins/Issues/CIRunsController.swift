@@ -67,14 +67,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let split = NSSplitView(); split.isVertical = false; split.dividerStyle = .thin
         split.addArrangedSubview(scroll); split.addArrangedSubview(bottom)
         split.setHoldingPriority(.init(260), forSubviewAt: 0)   // the runs keep their room; the log takes what's left
-        let v = NSView()
-        for x in [header, split, note] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        let v = stacked(header, split)
+        note.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(note)
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: v.topAnchor), header.leadingAnchor.constraint(equalTo: v.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 32),   // else it and the split share the height
-            split.topAnchor.constraint(equalTo: header.bottomAnchor), split.bottomAnchor.constraint(equalTo: v.bottomAnchor),
-            split.leadingAnchor.constraint(equalTo: v.leadingAnchor), split.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             note.centerXAnchor.constraint(equalTo: v.centerXAnchor), note.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
             note.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40),
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)

@@ -30,12 +30,10 @@ enum Banner {
             b.bezelStyle = .push; b.controlSize = .small; row.alignment = .centerY; row.addArrangedSubview(b)
         }
         row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 14)
-        for v in [row] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; fx.addSubview(v) }
+        fx.pin(row)
         fx.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(fx)
         NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: fx.topAnchor), row.bottomAnchor.constraint(equalTo: fx.bottomAnchor),
-            row.leadingAnchor.constraint(equalTo: fx.leadingAnchor), row.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
             fx.centerXAnchor.constraint(equalTo: content.centerXAnchor), fx.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
             fx.widthAnchor.constraint(lessThanOrEqualToConstant: 520)
         ])
