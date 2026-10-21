@@ -5355,6 +5355,16 @@
         }
       }
     },
+    "Read just now": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прочитано только что"
+          }
+        }
+      }
+    },
     "Read from ~/.claude transcripts on this Mac (every account profile). Prices are Anthropic's list prices; a subscription bills differently.": {
       "localizations": {
         "ru": {
@@ -8227,12 +8237,12 @@
         }
       }
     },
-    "· resets %@": {
+    "Resets %@": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "· сброс %@"
+            "value": "Сброс %@"
           }
         }
       }
@@ -9523,16 +9533,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "закончил"
-          }
-        }
-      }
-    },
-    "in %@": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "через %@"
           }
         }
       }
