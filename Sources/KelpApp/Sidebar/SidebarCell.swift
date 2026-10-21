@@ -212,47 +212,66 @@ struct SidebarFooterView: View {
 /// The source list puts a project's workspaces level with its name; set in, they read as the project's.
 final class SidebarOutline: NSOutlineView {
     static let inset: CGFloat = 12
+    /// Room over and under a row's content, where its project's card opens and closes (SidebarRowView.group).
+    var pads: (Int) -> (top: CGFloat, bottom: CGFloat) = { _ in (0, 0) }
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
-        let r = super.frameOfOutlineCell(atRow: row)
-        return level(forRow: row) > 0 ? r.offsetBy(dx: Self.inset, dy: 0) : r
+        var r = padded(super.frameOfOutlineCell(atRow: row), row)
+        if level(forRow: row) > 0 { r.origin.x += Self.inset }
+        return r
     }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
-        var r = super.frameOfCell(atColumn: column, row: row)
+        var r = padded(super.frameOfCell(atColumn: column, row: row), row)
         if level(forRow: row) > 0 { r.origin.x += Self.inset; r.size.width -= Self.inset }
         return r
     }
+    private func padded(_ r: NSRect, _ row: Int) -> NSRect {
+        let p = pads(row)
+        return NSRect(x: r.minX, y: r.minY + p.top, width: r.width, height: r.height - p.top - p.bottom)
+    }
 }
 
-/// Like Safari's tab groups: the workspace on screen and its agents sit on a rounded card, and the row you're on is
-/// a raised pill inside it (no accent colour, so the text keeps its colours).
+/// Like Safari's tab groups: each project sits on a quiet card, the workspace on screen and its agents on a stronger
+/// one inside it, and the row you're on is a raised pill (no accent colour, so the text keeps its colours).
 @MainActor
 final class SidebarRowView: NSTableRowView {
-    /// Where this row is in the card: nil outside it.
+    /// Where this row is in the workspace's card: nil outside it.
     var card: (first: Bool, last: Bool)? { didSet { if card?.first != oldValue?.first || card?.last != oldValue?.last { needsDisplay = true } } }
+    /// Where this row is in its project's card; the outline leaves 4 pt over a first row and 8 under a last (SidebarOutline.pads).
+    var group: (first: Bool, last: Bool)? { didSet { if group?.first != oldValue?.first || group?.last != oldValue?.last { needsDisplay = true } } }
 
-    static let cardFill = NSColor.labelColor.withAlphaComponent(0.06)
+    static let groupFill = NSColor.labelColor.withAlphaComponent(0.045)
+    static let cardFill = NSColor.labelColor.withAlphaComponent(0.075)
     static let pillFill = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.black.withAlphaComponent(0.32) : .white }
 
     override func drawBackground(in r: NSRect) {
-        // The card's edge is 6 pt in from the sides, the pill 4 pt inside it all round (corners concentric: 10 and 6).
-        // Rows in the middle extend past their bounds, so only the card's ends are rounded.
+        // Each card is 6 pt in from the one around it, the pill 4 pt inside its card (corners 12, 10, 6).
+        // Rows in the middle extend past their bounds, so only a card's ends are rounded. Flipped: y grows down.
+        if let group {
+            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 4, last: group.last, bottom: 4, radius: 12, Self.groupFill)
+        }
+        let side: CGFloat = group == nil ? 6 : 12
         if let card {
-            var rect = bounds.insetBy(dx: 6, dy: 0)
-            if !card.first { rect.origin.y -= 12; rect.size.height += 12 }
-            if !card.last { rect.size.height += 12 }
-            Self.cardFill.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
+            fill(bounds.insetBy(dx: side, dy: 0), first: card.first, top: 0, last: card.last, bottom: group?.last == true ? 8 : 0, radius: 10, Self.cardFill)
         }
         guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
-        var pill = bounds.insetBy(dx: 10, dy: 3)
-        if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }   // flipped: y grows down
+        var pill = bounds.insetBy(dx: (card == nil ? 6 : side) + 4, dy: 3)
+        if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }
         if card?.last == true { pill.size.height -= 1 }
+        if group?.last == true { pill.size.height -= 8 }
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow(); shadow.shadowColor = .black.withAlphaComponent(0.12); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .init(width: 0, height: -0.5)
         shadow.set()
         Self.pillFill.setFill()
         NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+    // swiftlint:disable:next function_parameter_count
+    private func fill(_ r: NSRect, first: Bool, top: CGFloat, last: Bool, bottom: CGFloat, radius: CGFloat, _ color: NSColor) {
+        var r = r
+        if first { r.origin.y += top; r.size.height -= top } else { r.origin.y -= 12; r.size.height += 12 }
+        r.size.height += last ? -bottom : 12
+        color.setFill()
+        NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
     }
     override var isSelected: Bool { didSet { if isSelected != oldValue { needsDisplay = true } } }
     /// In the sidebar's vibrant material a dark fill would come out lighter; the card and pill are drawn as they are.

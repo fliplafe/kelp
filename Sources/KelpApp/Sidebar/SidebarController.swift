@@ -71,6 +71,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         outline.headerView = nil; outline.style = .sourceList; outline.rowSizeStyle = .custom
         outline.selectionHighlightStyle = .none   // SidebarRowView draws the selection as a pill
         outline.floatsGroupRows = false; outline.indentationPerLevel = 14
+        outline.pads = { [weak self] row in (self?.outline.item(atRow: row) as? Node).flatMap { self?.pads($0) } ?? (0, 0) }
         outline.allowsMultipleSelection = true   // ⌘/⇧-click: the menu then acts on all of them
         outline.dataSource = self; outline.delegate = self
         outline.target = self; outline.doubleAction = #selector(doubleClicked)
@@ -283,11 +284,27 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     // One line per row, like Mail's mailbox list; section headers a little taller for air above them, and an agent
     // with news two lines (what it asks or did under its name).
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        return TextSize.of(Self.isHeader(item) ? 32 : 28)
+        guard let n = item as? Node else { return TextSize.of(28) }
+        let pad = pads(n)
+        return TextSize.of(Self.isHeader(item) ? 32 : 28) + pad.top + pad.bottom
+    }
+    /// Room in a row for its project's card to open (over the project's name) and close (under its last row).
+    private func pads(_ n: Node) -> (top: CGFloat, bottom: CGFloat) {
+        guard let p = group(n) else { return (0, 0) }
+        return (p.first ? 4 : 0, p.last ? 8 : 0)
+    }
+    /// Where this row is in its project's card: nil outside a project (the sections over them).
+    private func group(_ n: Node) -> (first: Bool, last: Bool)? {
+        var top = n
+        while let up = outline.parent(forItem: top) as? Node { top = up }
+        guard case .project = top.kind else { return nil }
+        var last = top
+        while outline.isItemExpanded(last), let c = last.children.last { last = c }
+        return (n === top, n === last)
     }
 
     func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { SidebarRowView() }
-    func outlineView(_ o: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) { (rowView as? SidebarRowView)?.card = cardPlace(row) }
+    func outlineView(_ o: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) { place(rowView, row) }
 
     /// The workspace on screen and its agents are drawn as one card, like a tab group in Safari.
     private func cardPlace(_ row: Int) -> (first: Bool, last: Bool)? {
@@ -300,7 +317,16 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard inCard(row) else { return nil }
         return (outline.item(atRow: row) as? Node === w, !inCard(row + 1))
     }
-    private func updateCard() { outline.enumerateAvailableRowViews { v, row in (v as? SidebarRowView)?.card = self.cardPlace(row) } }
+    private func place(_ v: NSTableRowView, _ row: Int) {
+        guard let v = v as? SidebarRowView else { return }
+        v.card = cardPlace(row)
+        v.group = (outline.item(atRow: row) as? Node).flatMap(group)
+    }
+    /// The cards follow rows that open, close or move; a project's last row changes height with them.
+    private func updateCard() {
+        outline.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outline.numberOfRows))
+        outline.enumerateAvailableRowViews { v, row in self.place(v, row) }
+    }
 
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? Node else { return nil }
