@@ -148,7 +148,7 @@ extension CommentSend: Handled {
         let w = try d.cwd(forWorktree: id)
         let open = try d.store.comments(worktree: w.id).filter { $0.state == .open }
         guard !open.isEmpty else { return .int(0) }
-        _ = try d.handleSync("session.send", .obj(["id": .string(session), "text": .string(ReviewMessage.compose(branch: w.branch, comments: open))]), conn: -1)
+        _ = try SessionSend(id: session, text: ReviewMessage.compose(branch: w.branch, comments: open)).handle(d)
         for var c in open { c.state = .sent; try d.store.save(c) }
         return .int(open.count)
     }

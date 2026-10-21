@@ -32,8 +32,11 @@ extension SharedAppModel {
     }
     var got = Data()
     await m.attach(session: s.id) { got.append($0) }
-    for _ in 0..<20 { try await Task.sleep(for: .milliseconds(50)) }   // live output keeps coming meanwhile
-    let numbers = String(decoding: got, as: UTF8.self).split(whereSeparator: \.isNewline).dropFirst().dropLast().compactMap { Int($0.drop { !$0.isNumber }) }
+    func numbers() -> [Int] {
+        String(decoding: got, as: UTF8.self).split(whereSeparator: \.isNewline).dropFirst().dropLast().compactMap { Int($0.drop { !$0.isNumber }) }
+    }
+    for _ in 0..<200 where numbers().count <= 100 { try await Task.sleep(for: .milliseconds(50)) }   // live output keeps coming
+    let numbers = numbers()
     #expect(numbers.count > 100)
     #expect(zip(numbers, numbers.dropFirst()).allSatisfy { $0 < $1 }, "out of order")
 }

@@ -38,7 +38,10 @@ public struct SessionDetach: RPCMethod { public static let name = "session.detac
 /// The user's keys (`base64`), or `text` as it is.
 public struct SessionWrite: RPCMethod { public static let name = "session.write"; public typealias Result = JSONValue; public var id: String, base64: String?, text: String? }
 /// `text`, then Enter (unless `enter` is false) a beat later so a TUI takes it as a submit.
-public struct SessionSend: RPCMethod { public static let name = "session.send"; public typealias Result = JSONValue; public var id: String, text: String, enter: Bool? }
+public struct SessionSend: RPCMethod {
+    public static let name = "session.send"; public typealias Result = JSONValue; public var id: String, text: String, enter: Bool?
+    public init(id: String, text: String, enter: Bool? = nil) { self.id = id; self.text = text; self.enter = enter }
+}
 public struct SessionResize: RPCMethod { public static let name = "session.resize"; public typealias Result = JSONValue; public var id: String, cols: Int?, rows: Int? }
 public struct SessionKill: RPCMethod { public static let name = "session.kill"; public typealias Result = JSONValue; public var id: String }
 /// `answer`: allow | deny, to the menu on screen → false when there is none.

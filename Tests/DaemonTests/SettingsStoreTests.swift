@@ -47,7 +47,6 @@ private func home() throws -> URL {
     let s = SettingsStore(root: d)
     _ = try s.set("a", .int(1))
     #expect(!s.reloadIfChanged())   // we wrote that ourselves
-    Thread.sleep(forTimeInterval: 0.05)
     try #"{"a": 2}"#.write(to: d.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: d.appendingPathComponent("settings.json").path)
     #expect(s.reloadIfChanged() && s["a"] == .int(2))
