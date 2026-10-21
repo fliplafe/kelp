@@ -520,3 +520,21 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let shown = try await screen()
     #expect(shown.contains("KEY-x") && !shown.contains("KEY-ENTER"), "\(shown)")
 }
+
+/// Which projects language servers and formatters may run in is the user's say in Kelp's window: another program on the
+/// socket (an agent, a repository's script) can't record it; the window can.
+@Test func onlyKelpsWindowTrustsAProjectForLanguageServers() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let set = RPCRequest(id: 1, method: "state.set", params: .obj(["key": "lsp.trusted", "value": .array([.string(w.repo.path)])]))
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/nc"); p.arguments = ["-U", w.root.appendingPathComponent("kelp.sock").path]
+    let input = Pipe(), out = Pipe(); p.standardInput = input; p.standardOutput = out; p.standardError = FileHandle.nullDevice
+    try p.run()
+    try input.fileHandleForWriting.write(contentsOf: Wire.line(set))
+    let reply = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self)
+    p.terminate()
+    #expect(reply.contains("Only Kelp's window"), "\(reply)")
+    #expect(try await w.c.call("state.get", .obj(["prefix": "lsp."]))["lsp.trusted"] == nil)
+    // The window (this process) sends it as UIState does: a notification, applied in order.
+    w.c.notify("state.set", .obj(["key": "lsp.trusted", "value": .array([.string(w.repo.path)])]))
+    #expect(try await waitFor(5) { try await w.c.call("state.get", .obj(["prefix": "lsp."]))["lsp.trusted"]?.array?.count == 1 })
+}

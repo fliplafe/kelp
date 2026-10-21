@@ -27,8 +27,9 @@ final class LSPManager {
     func language(_ path: String) -> LanguageSpec? { LanguageSpec.find(path, in: ExtensionRegistry.shared.all.languages) }
 
     // Language servers run the project's own code — build scripts and proc macros (rust-analyzer), Package.swift
-    // (sourcekit-lsp), the TypeScript in its node_modules — so they start only in a project the user trusted for them, as
-    // VS Code's Workspace Trust does: a cloned repository's files don't act as the user just by being opened.
+    // (sourcekit-lsp), the TypeScript in its node_modules — and formatters can (rustup takes the toolchain a repo's
+    // rust-toolchain.toml names), so both run only in a project the user trusted for them, as VS Code's Workspace Trust
+    // does: a cloned repository's files don't act as the user just by being opened or formatted.
 
     /// Projects whose language servers may run (the daemon's UI state: one list per KELP_HOME).
     static let trustKey = "lsp.trusted"
@@ -37,16 +38,22 @@ final class LSPManager {
     /// Roots asked about this run, and what starts once the user trusts them (the tabs that wanted a server).
     private var waiting: [String: [@MainActor () -> Void]] = [:]
 
-    /// True when `root` is trusted; else `start` runs once the user trusts it, asked once per project per run.
+    /// Language servers on, and `root` trusted; else `start` runs once the user trusts it (`askTrust`).
     func whenTrusted(_ root: String, _ start: @escaping @MainActor () -> Void) -> Bool {
-        guard enabled else { return false }
+        enabled && askTrust(root, start)
+    }
+
+    /// True when `root` is trusted to run its own code; else `then` runs once the user trusts it, asked once per project
+    /// per run (a banner with Trust).
+    func askTrust(_ root: String, _ then: @escaping @MainActor () -> Void) -> Bool {
         if trusted(root) { return true }
+        let start = then
         let first = waiting[root] == nil
         waiting[root, default: []].append(start)
         if first {
             let name = (root as NSString).lastPathComponent
-            Banner.show(String(localized: "Language servers can run code from “\(name)” (its build scripts and plugins). Start them for this project?"),
-                        action: (String(localized: "Trust and Start"), { LSPManager.shared.trust(root) }))
+            Banner.show(String(localized: "Language servers and formatters can run code from “\(name)” (its build scripts, plugins, toolchain). Trust this project?"),
+                        action: (String(localized: "Trust"), { LSPManager.shared.trust(root) }))
         }
         return false
     }

@@ -274,6 +274,7 @@ final class FileTab: SavableTab {
     func format() async {
         guard FileManager.default.isWritableFile(atPath: path) else { NSSound.beep(); return }   // a remote or read-only file
         guard let cmd = await command("format"), let e = editor else { return }
+        guard LSPManager.shared.askTrust(root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
         let text = e.text, line = e.cursor?.line ?? 1
         let r = await Shell.run(cmd, cwd: url.deletingLastPathComponent().path, input: text, timeout: 20)
         guard r.code == 0 else {

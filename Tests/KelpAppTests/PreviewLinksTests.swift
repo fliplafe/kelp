@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import Core
+import PDFKit
 @testable import KelpApp
 
 /// A preview's links open web pages, the repo's files and mail; an app shipped in a cloned repo, a folder or another
@@ -34,4 +35,24 @@ import Core
     #expect(ExtActions.openURI("${agent}", item: item) == nil)
     #expect(ExtActions.openURI("${url}", item: item) == "https://example.com/i/1")
     #expect(ExtActions.openURI("terminal://run?cmd=make", item: item) != nil)   // the extension's own words
+}
+
+/// A PDF's links go by the same rules: its view has Kelp's delegate (without one, PDFKit opens any link with its app).
+@MainActor
+@Test func aPDFsLinksGoThroughKelp() throws {
+    let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("doc-\(UUID().uuidString).pdf")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let doc = PDFDocument(); doc.insert(PDFPage(), at: 0)
+    #expect(doc.write(to: url))
+    let view = try #require(Preview.view(for: url) as? PDFView)
+    #expect(view.delegate === PDFLinks.shared)
+}
+
+/// What an extension's page opens may be data it shows: kelp.open opens pages and files, not commands or agents.
+@MainActor
+@Test func anExtensionPageOpensPagesNotCommands() {
+    #expect(ExtActions.openableURI("terminal://x?cmd=curl%20example.com%7Csh") == nil)
+    #expect(ExtActions.openableURI("agent://claude?prompt=go") == nil)
+    #expect(ExtActions.openableURI("https://example.com/i/1") == "https://example.com/i/1")
+    #expect(ExtActions.openableURI("file:///tmp/a.txt") == "file:///tmp/a.txt")
 }

@@ -185,10 +185,12 @@ enum ExtActions {
     /// link field set to terminal://…?cmd=…). nil then.
     static func openURI(_ template: String, item: JSONValue?) -> String? {
         let uri = TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.current.workspace?.path)
-        let runs = ["terminal", "agent"]
-        guard runs.contains(TabURI.scheme(uri)) else { return uri }
-        return runs.contains { template.hasPrefix($0 + ":") } ? uri : nil
+        return Self.runs.contains { template.hasPrefix($0 + ":") } ? uri : openableURI(uri)
     }
+    private static let runs = ["terminal", "agent"]
+
+    /// A URI that opens something (a page, a file, a diff, a tab) rather than running a command or an agent; nil else.
+    static func openableURI(_ uri: String) -> String? { runs.contains(TabURI.scheme(uri)) ? nil : uri }
 
     static func text(_ v: JSONValue) -> String {
         switch v {

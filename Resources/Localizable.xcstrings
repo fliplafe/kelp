@@ -3497,12 +3497,12 @@
         }
       }
     },
-    "Language servers can run code from “%@” (its build scripts and plugins). Start them for this project?": {
+    "Language servers and formatters can run code from “%@” (its build scripts, plugins, toolchain). Trust this project?": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Языковые серверы могут запускать код из «%@» (его скрипты сборки и плагины). Запустить их для этого проекта?"
+            "value": "Языковые серверы и форматтеры могут запускать код из «%@» (его скрипты сборки, плагины, тулчейн). Доверять этому проекту?"
           }
         }
       }
@@ -7324,12 +7324,12 @@
         }
       }
     },
-    "Trust and Start": {
+    "Trust": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Доверять и запустить"
+            "value": "Доверять"
           }
         }
       }

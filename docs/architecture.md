@@ -106,14 +106,15 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
   options are refused; paths go to git as literal pathspecs after `--`.
 - The background usage probe only opens folders whose agent config matches the base branch (or has none), and never
   presses anything while its copy of the agent asks a question.
-- Language servers run a project's own code (build scripts, `Package.swift`, its `node_modules`' TypeScript): none
-  starts in a project until the user trusts it for them (a banner on its first file, like VS Code's Workspace Trust),
-  the scratch desk included.
-- Links clicked in a Markdown or notebook preview, or ⌘-clicked in a terminal, open web pages, plain files (as tabs) and
+- Language servers run a project's own code (build scripts, `Package.swift`, its `node_modules`' TypeScript), and
+  formatters can (rustup takes the toolchain a repo names): neither runs in a project until the user trusts it in
+  Kelp's window (a banner on its first file, like VS Code's Workspace Trust), the scratch desk included. Only the window
+  can record that trust (`state.set` of `lsp.*` checks the connecting program, as `scripts.trust` does).
+- Links clicked in a Markdown, notebook or PDF preview, or ⌘-clicked in a terminal, open web pages, plain files (as tabs) and
   mail only: a link to an app the repo ships (files from `git clone` carry no quarantine), a `.command` file or another
   app's scheme is refused. ⌥⌘ on a path a program printed shows it in the Finder rather than opening it with its app.
-- An extension's `open` action can't turn its data (an issue's fields) into a `terminal:` or `agent:` URI; only the
-  extension's own template can name those.
+- An extension's `open` action (and `kelp.open` in its page) can't turn data (an issue's fields) into a `terminal:` or
+  `agent:` URI; only the extension's own template can name those. Its agent prompts are typed, for the user to send.
 - A remote project's marker counts only under `~/.kelp/remote`; gh/glab don't run for remote projects.
 
 Tests run with their own `KELP_HOME`, agent config dirs, keychain service and git config, set as the test bundle

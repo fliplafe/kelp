@@ -15,11 +15,21 @@ enum Preview {
 
     static func view(for url: URL) -> NSView {
         if pdf.contains(url.pathExtension.lowercased()), let doc = PDFDocument(url: url) {
-            let v = PDFView(); v.document = doc; v.autoScales = true; v.displayMode = .singlePageContinuous; return v
+            let v = PDFView(); v.document = doc; v.autoScales = true; v.displayMode = .singlePageContinuous
+            v.delegate = PDFLinks.shared   // without a delegate PDFKit opens any link with its app
+            return v
         }
         let q = QLPreviewView(frame: .zero, style: .normal) ?? QLPreviewView()
         q.previewItem = url as NSURL
         q.shouldCloseWithWindow = false
         return q
     }
+}
+
+/// Links clicked in a PDF go by the preview's rules (`PreviewLinks.target`): a repo's PDF can link to an app it ships
+/// or to another app's scheme, and PDFKit on its own would open either.
+@MainActor
+final class PDFLinks: NSObject, PDFViewDelegate {
+    static let shared = PDFLinks()
+    func pdfViewWillClick(onLink sender: PDFView, with url: URL) { PreviewLinks.open(url) }
 }

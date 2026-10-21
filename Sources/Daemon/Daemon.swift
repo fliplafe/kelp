@@ -168,7 +168,7 @@ public final class Daemon: Sendable {
                     if req.isNotification, req.method == StateSet.name || req.method == "session.resize" || req.method == "ui.publish" {
                         let p = req.params ?? .null
                         switch req.method {
-                        case StateSet.name: _ = try? StateSet.run(p, self)
+                        case StateSet.name: _ = try? StateSet.run(p, self, conn: c.id)
                         case "ui.publish": _ = try? handleUI(req.method, p, conn: c.id)
                         default: _ = try? handleSync(req.method, p, conn: c.id)
                         }

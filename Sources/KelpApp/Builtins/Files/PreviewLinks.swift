@@ -14,11 +14,16 @@ final class PreviewLinks: NSObject, WKNavigationDelegate {
         guard a.navigationType == .linkActivated, let u = a.request.url else { decisionHandler(.allow); return }
         if u.fragment != nil, Self.sansFragment(u) == w.url.map(Self.sansFragment) { decisionHandler(.allow); return }
         decisionHandler(.cancel)
-        switch Self.target(u) {
+        Self.open(u)
+    }
+
+    /// A clicked link, by `target`: a web page as a browser tab, a file as a tab, mail in Mail, anything else refused.
+    static func open(_ u: URL) {
+        switch target(u) {
         case .web(let s): Workbench.open(s)
         case .file(let p): Workbench.open(TabURI.file(p))
         case .mail(let m): NSWorkspace.shared.open(m)
-        case .refused: Self.refuse(u)
+        case .refused: refuse(u)
         }
     }
 

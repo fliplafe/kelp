@@ -78,8 +78,8 @@ public enum ExtensionGuide {
     ```js
     await kelp.exec("adb devices")            // {code, stdout, stderr}, runs in the workspace
     kelp.terminal("emulator -avd Pixel_8")    // opens a terminal tab
-    kelp.open("https://localhost:3000")       // URL → browser tab, path → file tab
-    kelp.agent("Write a test for the parser") // new agent tab with this prompt
+    kelp.open("https://localhost:3000")       // URL → browser tab, path → file tab (never a terminal: or agent: URI)
+    kelp.agent("Write a test for the parser") // new agent tab with this prompt typed, for the user to send
     await kelp.settings.get("my.key"); await kelp.settings.set("my.key", 3)
     kelp.workspace                            // {name, path, branch, project}
     kelp.on("settings", s => …); kelp.on("workspace", w => …)

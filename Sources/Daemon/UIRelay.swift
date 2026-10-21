@@ -44,5 +44,13 @@ extension StateGet: Handled {
 }
 
 extension StateSet: Handled {
-    func handle(_ d: Daemon) throws -> Done { try d.store.setUIState(key, value); return Done() }
+    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
+    func handle(_ d: Daemon, conn: Int) throws -> Done {
+        // Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window
+        // (as `scripts.trust`); an agent's call or a repository's script can't record it.
+        if key.hasPrefix("lsp."), d.clients.peer(conn) != Daemon.appExecutable {
+            throw RPCError.invalidParams("Only Kelp's window can trust a project for language servers.")
+        }
+        try d.store.setUIState(key, value); return Done()
+    }
 }

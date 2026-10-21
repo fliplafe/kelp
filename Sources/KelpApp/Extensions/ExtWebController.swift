@@ -50,8 +50,12 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
                 reply(id, .obj(["code": .int(Int(r.code)), "stdout": .string(r.stdout), "stderr": .string(r.stderr)]))
             }
         case "terminal": Workbench.editor?.run(command: arg, title: d["title"] as? String); reply(id, .null)
-        case "open": Workbench.open(TabURI.normalize(arg, cwd: ctx.workspace?.path)); reply(id, .null)
-        case "agent": Workbench.editor?.newAgent(nil, prompt: arg); reply(id, .null)
+        // What a page opens or hands an agent is often data it shows (an issue's link, its body): `open` doesn't run
+        // commands or agents (kelp.terminal / kelp.agent do, by name), and an agent's prompt is typed for the user to send.
+        case "open":
+            if let u = ExtActions.openableURI(TabURI.normalize(arg, cwd: ctx.workspace?.path)) { Workbench.open(u) }
+            reply(id, .null)
+        case "agent": Workbench.editor?.newAgent(nil, prompt: arg, extra: ["draft": true]); reply(id, .null)
         case "settings.get": reply(id, SettingsStore.shared.value(arg) ?? .null)
         case "settings.set":
             let v = (d["value"] as? String).flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
