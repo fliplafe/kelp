@@ -215,7 +215,14 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     catch { _ = Daemon.startFailed(error, root: root) }   // what kelpd does with it
     #expect((try? String(contentsOf: err, encoding: .utf8))?.contains("another kelpd is already running") == true)
     first.stop()
-    let third = try Daemon(root: root); try third.start()
+    // Up to 2 s for the lock: in a heavily loaded full run it was once still held for a moment after stop() returned
+    // (cause not found; stop() closes it last, and it's O_CLOEXEC). What's tested here is the reason file, not that timing.
+    var third: Daemon?
+    for _ in 0..<20 where third == nil {
+        let d = try Daemon(root: root)
+        do { try d.start(); third = d } catch { Thread.sleep(forTimeInterval: 0.1) }
+    }
+    let started = try #require(third)
     #expect(!FileManager.default.fileExists(atPath: err.path))
-    third.stop()
+    started.stop()
 }
