@@ -1,0 +1,28 @@
+import Foundation
+import Testing
+import Core
+@testable import Daemon
+
+/// The daemon runs the app's programs: output and exit code, stdin, the home and `kelp` on PATH, a time limit that stops
+/// it, a program that can't start; an extension's command only while that extension is installed and on.
+@Test func processRunRunsAndRefuses() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let echo = try await c.call(ProcessRun(argv: ["/bin/cat"], stdin: "hi"))
+    #expect(echo == .init(code: 0, stdout: "hi", stderr: "", timedOut: false))
+    let failed = try await c.call(ProcessRun(argv: ["/bin/sh", "-c", "echo e >&2; exit 3"]))
+    #expect(failed.code == 3 && failed.stderr == "e\n")
+    let env = try await c.call(ProcessRun(argv: ["/bin/sh", "-c", #"echo "$KELP_HOME"; command -v kelp >/dev/null && echo kelp"#]))
+    #expect(env.stdout.hasPrefix(root.path + "\n"))
+    let t = Date(), slow = try await c.call(ProcessRun(argv: ["/bin/sleep", "5"], timeLimit: 0.2))
+    #expect(slow.timedOut && Date().timeIntervalSince(t) < 2)
+    await #expect(throws: RPCError.self) { try await c.call(ProcessRun(argv: ["/nonexistent/tool"])) }
+
+    let ext = root.appendingPathComponent("extensions/demo")
+    try FileManager.default.createDirectory(at: ext, withIntermediateDirectories: true)
+    try #"{"id": "me.demo", "name": "Demo"}"#.write(to: ext.appendingPathComponent("extension.json"), atomically: true, encoding: .utf8)
+    #expect(try await c.call(ProcessRun(argv: ["/bin/echo", "ok"], extensionId: "demo")).stdout == "ok\n")
+    _ = try await c.call(SettingsSet(key: "extensions.disabled", value: .array(["me.demo"])))   // turned off
+    for id in ["demo", "nope", "..", "demo/../demo"] {
+        await #expect(throws: RPCError.self, "\(id)") { try await c.call(ProcessRun(argv: ["/bin/echo", "ran"], extensionId: id)) }
+    }
+}

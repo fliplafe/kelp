@@ -95,7 +95,7 @@ struct ExtListView: View {
         let slow = whileSlow { loading = true }   // a spinner only for a wait you'd notice
         running = true
         Task {
-            let r = await Shell.run(cmd, cwd: cwd)
+            let r = await Shell.run(cmd, cwd: cwd, extension: folder.lastPathComponent)
             slow.cancel(); loading = false; running = false
             if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? String(localized: "Exit code \(r.code)") : String(r.stderr.suffix(600)); return }
             error = nil

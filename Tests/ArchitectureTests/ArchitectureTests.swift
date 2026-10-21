@@ -87,3 +87,13 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     // question asked from there never shows (quitting with an unsaved file closed nothing and asked nothing).
     #expect(try matches(#"\.terminateLater"#, in: ["Sources/KelpApp"]) == [])
 }
+
+/// The daemon starts every program (an extension's command, a formatter, a notebook run, an agent's --version:
+/// `process.run`), with its time limits, its process-tree kill and its trust checks; the app starts none. Two exceptions:
+/// the app launching kelpd itself, and DevAids' `sample` of a stuck main thread (a developer's tool).
+@Test func theAppStartsNoPrograms() throws {
+    let allowed = ["Sources/KelpApp/AppModel.swift", "Sources/KelpApp/DevAids.swift"]
+    let found = try matches(#"\bProcess\(\)|\bSubprocess\.|posix_spawn|\bNSTask\b"#, in: ["Sources/KelpApp"])
+        .filter { f in !allowed.contains { f.hasPrefix($0 + ":") } }
+    #expect(found == [])
+}

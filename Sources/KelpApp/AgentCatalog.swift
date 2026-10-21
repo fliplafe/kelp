@@ -76,6 +76,11 @@ final class AgentAvailability {
         let commands = AgentCatalog.all.filter { $0.id != "custom" }.map { ($0.id, $0.command) }
         let ran = UserDefaults.standard.dictionary(forKey: "agents.ran") as? [String: Double] ?? [:]
         Task.detached(priority: .utility) {
+            // The daemon runs the `--version`s: without it every agent would look missing. Asked again next time.
+            await AppModel.shared.waitForConnection()
+            guard await MainActor.run(body: { AppModel.shared.connected }) else {
+                await MainActor.run { AgentAvailability.shared.checking = false }; return
+            }
             let found = await withTaskGroup(of: (id: String, binary: String)?.self) { g in
                 for (id, command) in commands { g.addTask { await Self.runs(command, ran: ran).map { (id, $0) } } }
                 var all: [(id: String, binary: String)] = []

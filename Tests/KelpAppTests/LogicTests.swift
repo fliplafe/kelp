@@ -82,8 +82,11 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(!seen.contains { $0.contains("/node_modules/") })
 }
 
-/// One way to run a program: its code and output, stdin, a timeout that kills it, a launch that fails.
+/// One way to run a program, through the daemon: its code and output, stdin, a timeout that kills it, a launch that
+/// fails; and none at all without a daemon.
+extension SharedAppModel {
 @Test func shellExecRunsAndKills() async throws {
+    let rig = try await AppRig(files: [:]); defer { rig.done() }
     let echo = await Shell.exec(["/bin/cat"], input: "hi")
     #expect(echo.code == 0 && echo.stdout == "hi")
     #expect(await Shell.exec(["/bin/sh", "-c", "echo e >&2; exit 3"]).code == 3)
@@ -92,10 +95,13 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(await Shell.exec(["/nonexistent/tool"]).code == -1)
     #expect(await AgentAvailability.runs("git") != nil)
     #expect(await AgentAvailability.runs("kelp-no-such-agent") == nil)
+    AppModel.shared.client = nil
+    #expect(await Shell.exec(["/bin/echo", "hi"]).code == -1)   // the app runs nothing itself
 }
 
 /// An agent CLI that answered `--version` in the last day isn't started again until it changes.
 @Test func agentThatRanIsNotStartedAgain() async throws {
+    let rig = try await AppRig(files: [:]); defer { rig.done() }
     let dir = tmp(), log = dir.appendingPathComponent("log"), cli = dir.appendingPathComponent("agent").path
     func write(_ body: String) throws {
         try "#!/bin/sh\necho >> '\(log.path)'\n\(body)\n".write(toFile: cli, atomically: true, encoding: .utf8)
@@ -110,6 +116,7 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     try write("exit 1")   // updated, and broken now
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: cli)
     #expect(await AgentAvailability.runs(cli, ran: [binary: now]) == nil && starts() == 3)
+}
 }
 
 /// A burst of calls runs once, the last one, after the pause; cancel drops it.

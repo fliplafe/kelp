@@ -46,7 +46,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
         switch op {
         case "exec":
             Task {
-                let r = await Shell.run(arg, cwd: ctx.workspace?.path ?? folder.path)
+                let r = await Shell.run(arg, cwd: ctx.workspace?.path ?? folder.path, extension: folder.lastPathComponent)
                 reply(id, .obj(["code": .int(Int(r.code)), "stdout": .string(r.stdout), "stderr": .string(r.stderr)]))
             }
         case "terminal": Workbench.editor?.run(command: arg, title: d["title"] as? String); reply(id, .null)

@@ -130,6 +130,26 @@ public struct AgentsVersions: RPCMethod {
     }
     public init() {}
 }
+/// A program run for the app, answered with what it printed: an extension's command (`/bin/zsh -lc …`, values already
+/// in as variables by `ShellTemplate`), a formatter, a notebook run, an agent's `--version`. The daemon starts every
+/// process; the app starts none. Login-shell PATH, `cwd` (the home folder when it's gone), `stdin`, and `timeLimit`
+/// after which it's stopped with everything it started. `extensionId`: an extension's folder in ~/.kelp/extensions —
+/// refused once that extension is off or gone.
+public struct ProcessRun: RPCMethod {
+    public static let name = "process.run"
+    /// The run's own limit ends it, and the daemon answers then: a notebook may compute for hours.
+    public static var timeout: TimeInterval? { nil }
+    public struct Result: Codable, Sendable, Equatable {
+        public var code: Int32, stdout: String, stderr: String, timedOut: Bool
+        public init(code: Int32, stdout: String, stderr: String, timedOut: Bool) {
+            self.code = code; self.stdout = stdout; self.stderr = stderr; self.timedOut = timedOut
+        }
+    }
+    public var argv: [String], cwd: String?, stdin: String?, timeLimit: Double?, extensionId: String?
+    public init(argv: [String], cwd: String? = nil, stdin: String? = nil, timeLimit: Double? = nil, extensionId: String? = nil) {
+        self.argv = argv; self.cwd = cwd; self.stdin = stdin; self.timeLimit = timeLimit; self.extensionId = extensionId
+    }
+}
 /// "pong".
 public struct Ping: RPCMethod { public static let name = "ping"; public typealias Result = String; public init() {} }
 public struct DaemonShutdown: RPCMethod { public static let name = "daemon.shutdown"; public typealias Result = Done; public init() {} }

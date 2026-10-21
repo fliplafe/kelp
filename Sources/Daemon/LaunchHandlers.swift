@@ -196,5 +196,35 @@ extension TaskFromIssue: AsyncHandled {
 
 extension Daemon {
     static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
-        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self]
+        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, ProcessRun.self]
+}
+
+extension ProcessRun: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        guard argv.first?.isEmpty == false else { throw RPCError.invalidParams("Nothing to run.") }
+        if let extensionId { try d.requireEnabledExtension(extensionId) }
+        // What sessions get (PATH with `kelp` on it, this home), minus the markers of whatever started the daemon.
+        var env = ProcessInfo.processInfo.environment.filter { k, _ in !PTY.scrubbed.contains { k.hasPrefix($0) } }
+        env["PATH"] = d.childPath; env["KELP_HOME"] = d.root.path; env["KELP_SOCKET"] = d.socketPath
+        let dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? NSHomeDirectory()
+        let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)))
+        // Lossy on purpose: a tool's output with a stray byte should still show.
+        return Result(code: r.status, stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self),
+                      timedOut: r.timedOut)
+    }
+}
+
+extension Daemon {
+    /// An extension's command runs only while that extension is installed and on (Settings › Extensions): a page or a
+    /// list left open after turning it off can't run it any more. `id` is its folder's name; the manifest has its id.
+    func requireEnabledExtension(_ id: String) throws {
+        struct Manifest: Decodable { var id: String; var name: String? }
+        let file = root.appendingPathComponent("extensions").appendingPathComponent(id).appendingPathComponent("extension.json")   // Paths.extensions of this home
+        guard !id.isEmpty, (id as NSString).lastPathComponent == id, id != "..", id != ".",
+              let data = FileManager.default.contents(atPath: file.path),
+              let m = try? JSONDecoder().decode(Manifest.self, from: data) else { throw RPCError.invalidParams("No extension \"\(id)\".") }
+        // Limit: unset means none of the user's extensions is off (the app's default-off list names built-ins only).
+        let off = Set(settings["extensions.disabled"]?.array?.compactMap(\.string) ?? [])
+        guard !off.contains(m.id) else { throw RPCError.invalidParams("The extension “\(m.name ?? m.id)” is turned off.") }
+    }
 }

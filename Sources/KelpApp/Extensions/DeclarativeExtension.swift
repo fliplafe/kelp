@@ -221,7 +221,7 @@ enum ExtActions {
         else if let r = a.run {
             let cmd = expand(r, item: item, quote: true)
             Task {
-                let res = await Shell.run(cmd, cwd: IDEContext.current.workspace?.path ?? folder.path)
+                let res = await Shell.run(cmd, cwd: IDEContext.current.workspace?.path ?? folder.path, extension: folder.lastPathComponent)
                 if res.code != 0 { Banner.show(String(localized: "\(a.title) failed: ") + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error) }
                 after?()
             }
@@ -231,24 +231,23 @@ enum ExtActions {
     }
 }
 
-/// Runs a command the way the user's terminal would (login-shell PATH); `input` goes to its stdin. Nothing blocks a
-/// thread of the cooperative pool: the pipes are read as data arrives and the exit comes from `terminationHandler`.
+/// Runs a command the way the user's terminal would (login-shell PATH); `input` goes to its stdin. The daemon runs it
+/// (`process.run`): the app starts no programs. `extension`: whose command it is (its folder's name) — refused once
+/// that extension is off. A failure to reach the daemon or to start the program is code -1 with the reason as stderr.
 enum Shell {
     struct Result: Sendable { var code: Int32; var stdout: String; var stderr: String }
-    static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60) async -> Result {
-        await exec(["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout)
+    static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60, extension id: String? = nil) async -> Result {
+        await exec(["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout, extension: id)
     }
 
     /// A program by path (`argv[0]`), with the same PATH and a time limit (stopped then, with what it started).
-    static func exec(_ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60) async -> Result {
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = LoginPath.value
-        let dir = FileManager.default.fileExists(atPath: cwd) ? cwd : NSHomeDirectory()
+    static func exec(_ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60,
+                     extension id: String? = nil) async -> Result {
         do {
-            let r = try await Subprocess.run(argv, cwd: dir, env: env, stdin: input.map { Data($0.utf8) }, timeLimit: timeout)
-            // Lossy on purpose: a tool's output with a stray byte should still show.
-            return Result(code: r.status, stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self))
+            let r = try await AppModel.shared.get(ProcessRun(argv: argv, cwd: cwd, stdin: input, timeLimit: timeout, extensionId: id))
+            return Result(code: r.code, stdout: r.stdout, stderr: r.stderr)
         } catch {
-            return Result(code: -1, stdout: "", stderr: error.localizedDescription)
+            return Result(code: -1, stdout: "", stderr: (error as? RPCError)?.message ?? error.localizedDescription)
         }
     }
 }

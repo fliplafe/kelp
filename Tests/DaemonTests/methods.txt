@@ -65,6 +65,7 @@ linear.teams
 ping
 ports.list
 ports.stop
+process.run
 recipe.render
 remote.listFolders
 repo.add

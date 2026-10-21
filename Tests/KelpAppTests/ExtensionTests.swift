@@ -76,10 +76,13 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 /// An action's command takes item fields as variables: a title with $(…) or a newline never runs (all the quoting
 /// cases are in WorkbenchKitTests.aValueInAShellTemplateNeverRuns).
-@MainActor @Test func aFieldNeverRunsInAnActionsCommand() async throws {
+extension SharedAppModel {
+@Test func aFieldNeverRunsInAnActionsCommand() async throws {
+    let rig = try await AppRig(files: [:]); defer { rig.done() }   // the daemon runs it
     let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
     let evil = "a\ntouch \(marker)\n$(touch \(marker)) end"
     let cmd = ExtActions.expand(#"printf %s "${title}""#, item: .object(["title": .string(evil)]), quote: true)
     let r = await Shell.run(cmd, cwd: NSTemporaryDirectory())
-    #expect(!FileManager.default.fileExists(atPath: marker) && r.stdout == evil)
+    #expect(r.code == 0 && !FileManager.default.fileExists(atPath: marker) && r.stdout == evil)
+}
 }
