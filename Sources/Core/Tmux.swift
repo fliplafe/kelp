@@ -34,15 +34,18 @@ public enum Tmux {
     /// What a pane runs when nothing runs in it.
     public static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "login"]
 
-    /// `tmux list-sessions -F` with this, one session a line.
-    public static let format = "#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_activity}"
+    /// `tmux list-sessions -F` with this, one session a line. Colons, not tabs: tmux 3.8 prints a tab in -F output as
+    /// "_", and a session name can't hold a colon (tmux turns ":" and "." into "_").
+    public static let format = "#{session_name}:#{session_windows}:#{session_attached}:#{session_activity}"
 
     /// What that prints, the last used first. Lines that aren't sessions (a host's shell greeting) are skipped.
     public static func parse(_ out: String) -> [Session] {
         out.split(whereSeparator: \.isNewline).compactMap { line -> Session? in
-            let f = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard f.count == 4, !f[0].isEmpty, let w = Int(f[1]), let a = Int(f[2]), let t = Double(f[3]) else { return nil }
-            return Session(name: String(f[0]), windows: w, attached: a, activity: Date(timeIntervalSince1970: t))
+            let f = line.split(separator: ":", omittingEmptySubsequences: false)
+            guard f.count >= 4, let w = Int(f[f.count - 3]), let a = Int(f[f.count - 2]), let t = Double(f[f.count - 1]) else { return nil }
+            let name = f.dropLast(3).joined(separator: ":")   // the numbers are the last three, whatever a host's tmux allows in a name
+            guard !name.isEmpty else { return nil }
+            return Session(name: name, windows: w, attached: a, activity: Date(timeIntervalSince1970: t))
         }.sorted { $0.activity > $1.activity }
     }
 

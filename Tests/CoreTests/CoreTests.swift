@@ -222,7 +222,7 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     #expect(Tmux.session(Tmux.argv("work")) == "work")
     #expect(Tmux.session(["tmux", "attach", "-t", "work"]) == nil && Tmux.session(["/bin/zsh", "-l"]) == nil)
     #expect(Tmux.name("  my.app:1 ") == "my_app_1")
-    let out = "Welcome to the host\nold\t1\t0\t100\nnew\t3\t1\t200\nbad\tx\t0\t1\n"
+    let out = "Welcome to the host\nold:1:0:100\nnew:3:1:200\nbad:x:0:1\n"
     #expect(Tmux.parse(out) == [Tmux.Session(name: "new", windows: 3, attached: 1, activity: Date(timeIntervalSince1970: 200)),
                                 Tmux.Session(name: "old", windows: 1, attached: 0, activity: Date(timeIntervalSince1970: 100))])
     #expect(Tmux.noServer("no server running on /tmp/tmux-501/default") && !Tmux.noServer("tmux: command not found"))
