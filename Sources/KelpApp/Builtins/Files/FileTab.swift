@@ -115,7 +115,11 @@ final class FileTab: SavableTab {
     }
 
     func focus() {
-        guard let editor else { focusWhenLoaded = true; return }
+        guard let editor else {
+            // A preview (an image, a PDF) takes the keys itself, so ⌘C copies from it.
+            if view.acceptsFirstResponder { view.window?.makeFirstResponder(view) } else { focusWhenLoaded = true }
+            return
+        }
         editor.focus()
         if let l = pendingLine { pendingLine = nil; DispatchQueue.main.async { [weak self] in self?.editor?.goTo(line: l) } }
     }

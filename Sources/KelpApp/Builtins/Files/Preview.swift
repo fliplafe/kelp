@@ -1,8 +1,10 @@
 import AppKit
 import PDFKit
 import Quartz
+import UniformTypeIdentifiers
 
-/// Read-only previews for files the editor shouldn't open: PDFs via PDFKit, everything else Quick Look can show.
+/// Read-only previews for files the editor shouldn't open: PDFs via PDFKit, images an `ImagePreview` (copyable),
+/// everything else Quick Look can show.
 @MainActor
 enum Preview {
     static let pdf: Set<String> = ["pdf"]
@@ -19,10 +21,46 @@ enum Preview {
             v.delegate = PDFLinks.shared   // without a delegate PDFKit opens any link with its app
             return v
         }
+        if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true, let image = NSImage(contentsOf: url) {
+            return ImagePreview(image: image, url: url)
+        }
         let q = QLPreviewView(frame: .zero, style: .normal) ?? QLPreviewView()
         q.previewItem = url as NSURL
         q.shouldCloseWithWindow = false
         return q
+    }
+}
+
+/// An image as a tab, like Xcode's: at most its own size, centered. ⌘C or Copy Image in its menu puts it on the
+/// pasteboard as the file's own bytes (a GIF keeps its frames) and as PNG for apps (and agents) that only read that.
+@MainActor
+final class ImagePreview: NSImageView {
+    private let url: URL
+
+    init(image: NSImage, url: URL) {
+        self.url = url
+        super.init(frame: .zero)
+        // A pixel is a point, as in a browser: NSImage would size it by the file's DPI (a 72-dpi-less PNG comes out huge).
+        if let rep = image.representations.first, rep.pixelsWide > 0 { image.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh) }
+        self.image = image
+        imageScaling = .scaleProportionallyDown; animates = true; focusRingType = .none
+        menu = NSMenu()
+        menu?.add(String(localized: "Copy Image")) { [weak self] in self?.copy(nil) }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var acceptsFirstResponder: Bool { true }
+    override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self) }
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool { item.action == #selector(copy(_:)) || super.validateMenuItem(item) }
+
+    @objc func copy(_ sender: Any?) {
+        let item = NSPasteboardItem()
+        if let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
+        if let type = UTType(filenameExtension: url.pathExtension), let data = FileManager.default.contents(atPath: url.path) {
+            item.setData(data, forType: NSPasteboard.PasteboardType(type.identifier))
+        }
+        NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([item])
     }
 }
 

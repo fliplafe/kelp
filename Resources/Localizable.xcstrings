@@ -10274,6 +10274,16 @@
           }
         }
       }
+    },
+    "Copy Image": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать изображение"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
