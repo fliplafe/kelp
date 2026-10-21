@@ -19,7 +19,7 @@ final class WorkspaceSwitcher {
         guard !items.isEmpty else { return }
         index = (index + by + items.count) % items.count
         highlight()
-        if false { commit() }   // already let go: a quick flip
+        if !NSEvent.modifierFlags.contains(.control) { commit() }   // already let go: a quick flip
     }
 
     private func open() {
@@ -48,12 +48,12 @@ final class WorkspaceSwitcher {
         let size = fx.fittingSize, f = window.frame
         p.setFrame(NSRect(x: f.midX - size.width / 2, y: f.midY - size.height / 2 + f.height * 0.1, width: size.width, height: size.height), display: true)
         window.addChildWindow(p, ordered: .above)
-        panel = p; DispatchQueue.main.asyncAfter(deadline: .now() + 1) { DevAids.snap(p, to: "/tmp/knv/s3.png") }
+        panel = p
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] e in self?.handle(e) ?? e }
     }
 
     private func handle(_ e: NSEvent) -> NSEvent? {
-        if e.type == .flagsChanged { return e }
+        if e.type == .flagsChanged { if !e.modifierFlags.contains(.control) { commit() }; return e }
         switch e.keyCode {
         case 48: step(e.modifierFlags.contains(.shift) ? -1 : 1)   // Tab
         case 125: step(1)    // ↓
