@@ -16,7 +16,8 @@ enum UnsavedChanges {
         return a
     }
 
-    /// True to go on: every file saved, or the user chose to lose them.
+    /// True to go on: every file saved, or the user chose to lose them. A save still on its way counts as saved here:
+    /// await `written` before what would end it.
     static func settle(_ edited: [SavableTab], _ answer: NSApplication.ModalResponse, canCancel: Bool = true) -> Bool {
         if answer == .alertFirstButtonReturn { return edited.allSatisfy { $0.save() } }
         guard answer == (canCancel ? .alertThirdButtonReturn : .alertSecondButtonReturn) else { return false }
@@ -28,6 +29,13 @@ enum UnsavedChanges {
     static func confirm(closing ids: [String]) async -> Bool {
         let edited = Workbench.window?.editors.editedFiles(in: ids) ?? []
         guard !edited.isEmpty else { return true }
-        return settle(edited, await runSheet(alert(edited, quitting: false)))
+        guard settle(edited, await runSheet(alert(edited, quitting: false))) else { return false }
+        return await written(edited)
+    }
+
+    /// Saves still on their way (remote files) are answered; true when nothing is left unsaved.
+    static func written(_ tabs: [SavableTab]) async -> Bool {
+        for t in tabs { await t.pendingSave?.value }
+        return tabs.allSatisfy { !$0.isEdited }
     }
 }

@@ -56,6 +56,19 @@ extension SharedAppModel {
         #expect(UnsavedChanges.settle([untitled], .alertSecondButtonReturn, canCancel: false))   // Don't Save, no Cancel
         #expect(!untitled.isEdited)
     }
+
+    /// A 60 MB log or a pipe isn't read whole on the main thread: the tab says why instead (a pipe used to block forever,
+    /// /dev/zero to eat memory). A terminal path that's a pipe isn't a file to preview either.
+    @Test func hugeFilesAndPipesAreNotReadIntoTheEditor() throws {
+        let p = try file("")
+        #expect(truncate(p, 60 << 20) == 0)   // sparse: no 60 MB written
+        #expect(FileTab(uri: TabURI.file(p)).editor == nil)
+        let fifo = (p as NSString).deletingLastPathComponent + "/out.log"
+        #expect(mkfifo(fifo, 0o600) == 0)
+        #expect(FileTab(uri: TabURI.file(fifo)).editor == nil)
+        #expect(TerminalPaths.resolve("out.log", cwd: (fifo as NSString).deletingLastPathComponent) == nil)
+        #expect(TerminalPaths.resolve("notes.txt", cwd: (fifo as NSString).deletingLastPathComponent) != nil)
+    }
 }
 
 /// Files moved in the Files panel come back with ⌘Z (and go again with ⇧⌘Z): an agent's folder isn't left half-moved.

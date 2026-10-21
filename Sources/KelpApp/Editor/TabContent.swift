@@ -33,6 +33,12 @@ protocol SavableTab: TabContent {
     @discardableResult func save() -> Bool
     /// The user chose Don't Save for a tab that's going away: it isn't edited any more, and nothing writes it later.
     func discard()
+    /// A save still on its way (a remote file's, to its host): what closing or quitting waits for.
+    var pendingSave: Task<Void, Never>? { get }
+}
+
+extension SavableTab {
+    var pendingSave: Task<Void, Never>? { nil }
 }
 
 extension TabContent {

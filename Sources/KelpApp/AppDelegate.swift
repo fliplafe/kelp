@@ -61,7 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let edited = main?.editors.editedFiles ?? []
         guard !edited.isEmpty else { return .terminateNow }
-        return UnsavedChanges.settle(edited, runAsSheet(UnsavedChanges.alert(edited, quitting: true))) ? .terminateNow : .terminateCancel
+        guard UnsavedChanges.settle(edited, runAsSheet(UnsavedChanges.alert(edited, quitting: true))) else { return .terminateCancel }
+        guard edited.contains(where: { $0.pendingSave != nil }) else { return .terminateNow }
+        // A remote file's save is a request to its host: quit once it's answered, and not if it failed.
+        Task { NSApp.reply(toApplicationShouldTerminate: await UnsavedChanges.written(edited)) }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive

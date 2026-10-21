@@ -3366,6 +3366,16 @@
         }
       }
     },
+    "Kelp opens files, not devices or pipes.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kelp открывает файлы, а не устройства или каналы."
+          }
+        }
+      }
+    },
     "Keybindings and other Ghostty options; the theme's colors still apply.": {
       "extractionState": "manual",
       "localizations": {
@@ -7310,6 +7320,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "У этого проекта нет команды «%@». Добавьте её в .kelp.yaml (%@: команда)."
+          }
+        }
+      }
+    },
+    "Too big to open here (%@). Open it with another app.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файл слишком большой, чтобы открыть его здесь (%@). Откройте его в другой программе."
           }
         }
       }

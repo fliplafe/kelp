@@ -21,8 +21,8 @@ enum TerminalPaths {
         guard raw.contains("/") || raw.contains(".") else { return nil }   // a word, not a path
         for p in [raw, raw.hasPrefix("a/") || raw.hasPrefix("b/") ? String(raw.dropFirst(2)) : nil].compactMap({ $0 }) {
             let abs = p.hasPrefix("/") ? p : (cwd as NSString).appendingPathComponent(p)
-            var dir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: abs, isDirectory: &dir), !dir.boolValue { return ((abs as NSString).standardizingPath, line) }
+            var st = stat()   // a file: not a folder, nor a pipe or device (reading one to preview it would block)
+            if stat(abs, &st) == 0, st.st_mode & S_IFMT == S_IFREG { return ((abs as NSString).standardizingPath, line) }
         }
         return nil
     }

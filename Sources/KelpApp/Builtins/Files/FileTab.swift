@@ -64,6 +64,16 @@ final class FileTab: SavableTab {
             }
             return
         }
+        // Read whole and on the main thread: only a regular file (a pipe or /dev/zero would block or never end), and only
+        // up to `openLimit` (a 300 MB log would hang the window). Limit: synchronous read; move it off the main thread
+        // if files near the limit feel slow.
+        switch Self.unopenable(p) {
+        case .special?: view = Self.message(String(localized: "Kelp opens files, not devices or pipes.")); return
+        case .tooBig(let n)?:
+            let size = ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
+            view = Self.message(String(localized: "Too big to open here (\(size)). Open it with another app.")); return
+        case nil: break
+        }
         if Preview.canPreview(url) { view = Preview.view(for: url); return }
         if ext == "ipynb" {
             let nb = NotebookTab(url: url, path: p, worktreeId: AppModel.shared.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
@@ -200,12 +210,15 @@ final class FileTab: SavableTab {
         return false
     }
 
+    var pendingSave: Task<Void, Never>? { saving }
+
     /// Each save waits for the one before, so it's checked against what that one wrote, not what's in flight.
+    /// It holds the tab: one closed (or its workspace) right after Save still gets written.
     private func writeRemote(then done: (() -> Void)? = nil) {
         let previous = saving
-        saving = Task { [weak self] in
+        saving = Task { [self] in
             await previous?.value
-            guard let self, let e = editor, e.text != lastSaved else { done?(); return }
+            guard let e = editor, e.text != lastSaved else { done?(); return }
             let text = e.text
             let res = await AppModel.shared.tryCall("files.writeRemote", .obj(["path": .string(path), "text": .string(text), "base": .string(lastSaved)]))
             if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return }
@@ -221,7 +234,8 @@ final class FileTab: SavableTab {
     }
 
     private func diskChanged() {
-        guard let e = editor else { return }
+        // Grown past the limit (a log) or replaced by a pipe: keep what's shown rather than read it all again.
+        guard let e = editor, Self.unopenable(path) == nil else { return }
         let d = disk
         let wasGone = gone
         gone = d == .missing
@@ -312,6 +326,17 @@ final class FileTab: SavableTab {
         guard e.text == text, r.stdout != text, !r.stdout.isEmpty || text.isEmpty else { return }   // typed meanwhile, or nothing to do
         e.apply(text: r.stdout, selection: NSRange(location: 0, length: 0))
         e.goTo(line: line)
+    }
+
+    /// Bigger than this isn't opened (read only from 5 MB, `CodeEditor.readOnlyLimit`).
+    static let openLimit = 50 << 20
+    enum Unopenable: Equatable { case special, tooBig(Int) }
+    /// Why `p` (followed through symlinks) isn't opened; nil when it is, or when it's missing (said elsewhere).
+    static func unopenable(_ p: String) -> Unopenable? {
+        var st = stat()
+        guard stat(p, &st) == 0 else { return nil }
+        if st.st_mode & S_IFMT != S_IFREG { return .special }
+        return st.st_size > openLimit ? .tooBig(Int(st.st_size)) : nil
     }
 
     private static func message(_ s: String) -> NSView {
