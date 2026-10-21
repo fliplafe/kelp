@@ -18,12 +18,16 @@ final class PreviewLinks: NSObject, WKNavigationDelegate {
         case .web(let s): Workbench.open(s)
         case .file(let p): Workbench.open(TabURI.file(p))
         case .mail(let m): NSWorkspace.shared.open(m)
-        case .refused:
-            Banner.show(String(localized: "Links from a preview open web pages and files only, not “\(u.absoluteString)”."),
-                        action: (String(localized: "Copy Link"), {
-                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(u.absoluteString, forType: .string)
-                        }))
+        case .refused: Self.refuse(u)
         }
+    }
+
+    /// Says why nothing opened, with the link to copy (a terminal's links go by the same rules: `target`).
+    static func refuse(_ u: URL) {
+        Banner.show(String(localized: "Links from a preview open web pages and files only, not “\(u.absoluteString)”."),
+                    action: (String(localized: "Copy Link"), {
+                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(u.absoluteString, forType: .string)
+                    }))
     }
 
     static func target(_ u: URL) -> Target {

@@ -79,10 +79,18 @@ final class PaneView: NSView, NSDraggingSource, NSMenuItemValidation {
             g.onExit = { [weak self] in self?.sessionEnded() }
             g.onSearch = { [weak self] in self?.searchEvent($0) }
             g.onOpenURL = { url in
-                // ⌘-click: local pages open as a browser tab, the rest in the default browser; ⌥ swaps the two.
-                let local = url.host == "localhost" || url.host == "127.0.0.1" || url.isFileURL
-                if local != NSEvent.modifierFlags.contains(.option) { Workbench.open(url.isFileURL ? TabURI.file(url.path) : url.absoluteString, split: .right) }
-                else { NSWorkspace.shared.open(url) }
+                // ⌘-click: local pages open as a browser tab, the rest in the default browser; ⌥ swaps the two. Files open
+                // as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target behind any
+                // text), and an app, a .command file or another app's scheme would run.
+                let option = NSEvent.modifierFlags.contains(.option)
+                switch PreviewLinks.target(url) {
+                case .web(let s):
+                    let local = url.host == "localhost" || url.host == "127.0.0.1"
+                    if local != option { Workbench.open(s, split: .right) } else { NSWorkspace.shared.open(url) }
+                case .file(let p): Workbench.open(TabURI.file(p), split: .right)
+                case .mail(let m): NSWorkspace.shared.open(m)
+                case .refused: PreviewLinks.refuse(url)
+                }
             }
             // Paths the agent prints are its folder's: its own worktree once it went into one.
             let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
