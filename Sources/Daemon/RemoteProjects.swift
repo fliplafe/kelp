@@ -4,56 +4,6 @@ import GitKit
 
 /// Remote projects (SSH): added by host and folder, their files read from the host. See `RemoteHost`.
 extension Daemon {
-    func handleRemote(_ method: String, _ p: JSONValue, conn: Int) throws -> JSONValue? {
-        switch method {
-        case "repo.addRemote":   // {host, path, init?} → the project (its local folder stands for the one on the host)
-            let host = try p.req("host").trimmingCharacters(in: .whitespaces), path = try p.req("path").trimmingCharacters(in: .whitespaces)
-            guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
-            guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
-            // Already added (the folder's marker names this host and path): that project, whatever its folder is called.
-            // The marker keeps git's answer for the top folder (symlinks resolved, ~ expanded): match the path as typed, the
-            // same path resolved where that's possible here (the "host" can be this Mac), and ~/… by its tail.
-            let real = realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) }
-            func same(_ m: RemoteHost) -> Bool {
-                m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
-            }
-            if let r = try store.repos().first(where: { RemoteHost.of($0.path).map(same) ?? false }) {
-                return try .from(r)
-            }
-            let name = Self.remoteFolderName(path)
-            let hostDir = root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
-            try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
-            // A folder of its own, made here: /a/app and /b/app on one host don't share one, and a failure below removes
-            // only this folder, never another project's.
-            var folder = hostDir.appendingPathComponent(name), n = 2
-            while !Self.claim(folder.path) {
-                guard n < 100 else { throw RPCError.internalError("No free folder for \(name) in \(hostDir.path)") }
-                folder = hostDir.appendingPathComponent("\(name)-\(n)"); n += 1
-            }
-            func mark(_ r: RemoteHost) throws { try JSONEncoder().encode(r).write(to: folder.appendingPathComponent(RemoteHost.marker)) }
-            // ~ as the host's shell spells it: ask git there where the repository's top is.
-            try mark(RemoteHost(host: host, path: path))
-            // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
-            if p["init"]?.bool == true {
-                do { _ = try Git.run(["init", "-q"], cwd: folder.path) }
-                catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
-            }
-            let top: String
-            do { top = try Git.root(of: folder.path) }
-            catch let e as GitError {
-                try? FileManager.default.removeItem(at: folder)
-                throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
-            }
-            try mark(RemoteHost(host: host, path: top))
-            let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Self.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
-            try store.save(r); try syncMainWorkspaces(); notify("event.changed", "repo")
-            return try .from(r)
-        case "files.readRemote":   // {path} in a remote project's folder → the file's text, read on the host
-            guard let (_, remote, remotePath) = RemoteHost.containing(try p.req("path")) else { throw RPCError.invalidParams("Not in a remote project.") }
-            return .string(try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh))
-        default: return nil
-        }
-    }
 
     /// The local folder's name for a path on a host: its last component, or "project" when that isn't a usable name
     /// ("/", "~", "..", "."), so the folder always lands inside the host's folder.
@@ -84,5 +34,59 @@ extension RemoteListFolders: Handled {
         guard lines.count >= 2 else { throw RPCError.invalidParams("Couldn't list \(path) on \(host).") }
         return Result(path: lines[0], repo: lines[1] == "repo",
                       folders: lines.dropFirst(2).filter { $0.count > 2 }.map { Folder(name: String($0.dropFirst(2)), git: $0.hasPrefix("g ")) })
+    }
+}
+
+/// {host, path, init?} → the project (its local folder stands for the one on the host).
+extension RepoAddRemote: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
+        guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
+        guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
+        // Already added (the folder's marker names this host and path): that project, whatever its folder is called.
+        // The marker keeps git's answer for the top folder (symlinks resolved, ~ expanded): match the path as typed, the
+        // same path resolved where that's possible here (the "host" can be this Mac), and ~/… by its tail.
+        let real = realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) }
+        func same(_ m: RemoteHost) -> Bool {
+            m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
+        }
+        if let r = try d.store.repos().first(where: { RemoteHost.of($0.path).map(same) ?? false }) {
+            return try .from(r)
+        }
+        let name = Daemon.remoteFolderName(path)
+        let hostDir = d.root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
+        try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
+        // A folder of its own, made here: /a/app and /b/app on one host don't share one, and a failure below removes
+        // only this folder, never another project's.
+        var folder = hostDir.appendingPathComponent(name), n = 2
+        while !Daemon.claim(folder.path) {
+            guard n < 100 else { throw RPCError.internalError("No free folder for \(name) in \(hostDir.path)") }
+            folder = hostDir.appendingPathComponent("\(name)-\(n)"); n += 1
+        }
+        func mark(_ r: RemoteHost) throws { try JSONEncoder().encode(r).write(to: folder.appendingPathComponent(RemoteHost.marker)) }
+        // ~ as the host's shell spells it: ask git there where the repository's top is.
+        try mark(RemoteHost(host: host, path: path))
+        // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
+        if `init` == true {
+            do { _ = try Git.run(["init", "-q"], cwd: folder.path) }
+            catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
+        }
+        let top: String
+        do { top = try Git.root(of: folder.path) }
+        catch let e as GitError {
+            try? FileManager.default.removeItem(at: folder)
+            throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
+        }
+        try mark(RemoteHost(host: host, path: top))
+        let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
+        try d.store.save(r); try d.syncMainWorkspaces(); d.notify("event.changed", "repo")
+        return try .from(r)
+    }
+}
+
+extension FilesReadRemote: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        guard let (_, remote, remotePath) = RemoteHost.containing(path) else { throw RPCError.invalidParams("Not in a remote project.") }
+        return .string(try Git.run(remote.sshArgs(tty: false) + ["cat -- " + RemoteHost.quote(remotePath)], cwd: NSHomeDirectory(), executable: RemoteHost.ssh))
     }
 }

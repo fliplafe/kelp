@@ -61,68 +61,6 @@ extension Daemon {
     /// Reads transcripts on disk (GBs the first time): runs through `offload`.
     func handleHistory(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
-        case "usage.get":   // per account: Claude 5h block / today / week, Codex limits
-            // Limit: one cached answer for 60 s (a scan reads GBs of transcripts); per-file incremental parsing if it gets slow
-            let cached = lock.withLock { usageCache }
-            if let c = cached, Date().timeIntervalSince(c.at) < 60, p["force"]?.bool != true { return withLimits(c.value) }
-            let roots = agentRoots()
-            var claude: [JSONValue] = [], codex: [JSONValue] = []
-            let names = ["Default"] + (settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
-            for (i, r) in roots.claude.enumerated() where FileManager.default.fileExists(atPath: r.path) {
-                // Today, the week and the 5-hour block from the index (read incrementally).
-                let cal = Calendar.current, today = cal.startOfDay(for: Date()), now = Date()
-                let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
-                let rows = usageIndex.rows(roots: [r], since: weekStart)
-                var o: [String: JSONValue] = ["account": .string(i == 0 ? "Default" : names[min(i, names.count - 1)]),
-                                              "today": Self.json(UsageIndex.block(rows, from: today, to: now)),
-                                              "week": Self.json(UsageIndex.block(rows, from: weekStart, to: now))]
-                if let b = usageIndex.currentBlock(roots: [r], now: now) { o["block"] = Self.json(b) }
-                claude.append(.object(o))
-            }
-            for r in roots.codex where FileManager.default.fileExists(atPath: r.path) {
-                guard let l = CodexUsage.latest(root: r) else { continue }
-                var o: [String: JSONValue] = ["observedAt": .double(l.observedAt.timeIntervalSince1970)]
-                if let v = l.primaryUsedPercent { o["primaryUsedPercent"] = .double(v) }
-                if let v = l.primaryResetsAt { o["primaryResetsAt"] = .double(v.timeIntervalSince1970) }
-                if let v = l.secondaryUsedPercent { o["secondaryUsedPercent"] = .double(v) }
-                if let v = l.secondaryResetsAt { o["secondaryResetsAt"] = .double(v.timeIntervalSince1970) }
-                codex.append(.object(o))
-            }
-            let v = JSONValue.obj(["claude": .array(claude), "codex": .array(codex)])
-            lock.withLock { usageCache = (Date(), v) }
-            return withLimits(v)
-
-        case "usage.report":   // {days} → what Claude Code used, by day / model / project, priced as the API would
-            let days = max(1, min(90, p["days"]?.int ?? 30))
-            let cal = Calendar.current, since = cal.date(byAdding: .day, value: 1 - days, to: cal.startOfDay(for: Date())) ?? Date()
-            let rows = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
-            let repos = (try? store.repos()) ?? []
-            func project(_ cwd: String) -> String {
-                repos.first { cwd == $0.path || cwd.hasPrefix($0.path + "/") }?.name ?? (cwd.isEmpty ? "Other" : (cwd as NSString).lastPathComponent)
-            }
-            func group(_ key: (UsageIndex.Row) -> String) -> [JSONValue] {
-                Dictionary(grouping: rows, by: key).map { k, rs in (k, rs.reduce(0) { $0 + $1.tally.cost }, rs.reduce(0) { $0 + $1.tally.tokens.total }) }
-                    .sorted { $0.1 > $1.1 }.map { .obj(["name": .string($0.0), "cost": .double($0.1), "tokens": .int($0.2)]) }
-            }
-            return .obj(["days": .array(group(\.day)), "models": .array(group(\.model)), "projects": .array(group { project($0.cwd) }),
-                         "since": .double(since.timeIntervalSince1970)])
-
-        case "history.list":
-            let roots = agentRoots(), key = roots.claude + roots.codex
-            var all: [AgentSessionInfo]
-            if p["query"]?.string?.isEmpty == false, let r = historyRead.withLock({ $0[key] }), Date().timeIntervalSince(r.at) < 60 {
-                all = r.list
-            } else {
-                all = roots.claude.flatMap { ClaudeHistory.sessions(root: $0) } + roots.codex.flatMap { CodexHistory.sessions(root: $0) }
-                all.sort { $0.updated > $1.updated }
-                historyRead.withLock { [all] in $0[key] = (Date(), all) }
-            }
-            if let q = p["query"]?.string, !q.isEmpty {
-                all = p["fullText"]?.bool == true ? History.fullTextSearch(query: q, in: all, limit: 100) : History.search(all, query: q)
-            }
-            if let cwd = p["cwd"]?.string { all = all.filter { $0.cwd == cwd } }
-            return try .from(Array(all.prefix(max(0, p["limit"]?.int ?? 400))))
-
         case "history.resume":   // reopen a past conversation as a live session
             guard let s = try p["session"]?.decode(AgentSessionInfo.self) else { throw RPCError.invalidParams("session required") }
             var cwd = s.cwd, wid: String? = p["worktreeId"]?.string
@@ -140,7 +78,7 @@ extension Daemon {
     }
 
     /// Claude's own percentages from the last 12 hours (they reset; older readings mislead).
-    private func withLimits(_ v: JSONValue) -> JSONValue {
+    func withLimits(_ v: JSONValue) -> JSONValue {
         guard case .object(var o) = v else { return v }
         refreshPlansIfStale()
         let plans = lock.withLock { self.plans }
@@ -155,5 +93,78 @@ extension Daemon {
                   "observedAt": .double(x.at.timeIntervalSince1970)])
         })
         return .object(o)
+    }
+}
+
+/// Per account: Claude 5h block / today / week, Codex limits.
+extension UsageGet: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        // Limit: one cached answer for 60 s (a scan reads GBs of transcripts); per-file incremental parsing if it gets slow
+        let cached = d.lock.withLock { d.usageCache }
+        if let c = cached, Date().timeIntervalSince(c.at) < 60, force != true { return d.withLimits(c.value) }
+        let roots = d.agentRoots()
+        var claude: [JSONValue] = [], codex: [JSONValue] = []
+        let names = ["Default"] + (d.settings["accounts.profiles"]?.array ?? []).compactMap { $0["name"]?.string }
+        for (i, r) in roots.claude.enumerated() where FileManager.default.fileExists(atPath: r.path) {
+            // Today, the week and the 5-hour block from the index (read incrementally).
+            let cal = Calendar.current, today = cal.startOfDay(for: Date()), now = Date()
+            let weekStart = cal.date(byAdding: .day, value: -6, to: today) ?? today
+            let rows = d.usageIndex.rows(roots: [r], since: weekStart)
+            var o: [String: JSONValue] = ["account": .string(i == 0 ? "Default" : names[min(i, names.count - 1)]),
+                                          "today": Daemon.json(UsageIndex.block(rows, from: today, to: now)),
+                                          "week": Daemon.json(UsageIndex.block(rows, from: weekStart, to: now))]
+            if let b = d.usageIndex.currentBlock(roots: [r], now: now) { o["block"] = Daemon.json(b) }
+            claude.append(.object(o))
+        }
+        for r in roots.codex where FileManager.default.fileExists(atPath: r.path) {
+            guard let l = CodexUsage.latest(root: r) else { continue }
+            var o: [String: JSONValue] = ["observedAt": .double(l.observedAt.timeIntervalSince1970)]
+            if let v = l.primaryUsedPercent { o["primaryUsedPercent"] = .double(v) }
+            if let v = l.primaryResetsAt { o["primaryResetsAt"] = .double(v.timeIntervalSince1970) }
+            if let v = l.secondaryUsedPercent { o["secondaryUsedPercent"] = .double(v) }
+            if let v = l.secondaryResetsAt { o["secondaryResetsAt"] = .double(v.timeIntervalSince1970) }
+            codex.append(.object(o))
+        }
+        let v = JSONValue.obj(["claude": .array(claude), "codex": .array(codex)])
+        d.lock.withLock { d.usageCache = (Date(), v) }
+        return d.withLimits(v)
+    }
+}
+
+/// What Claude Code used, by day / model / project, priced as the API would.
+extension UsageReport: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        let days = max(1, min(90, days ?? 30))
+        let cal = Calendar.current, since = cal.date(byAdding: .day, value: 1 - days, to: cal.startOfDay(for: Date())) ?? Date()
+        let rows = d.usageIndex.rows(roots: d.agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
+        let repos = (try? d.store.repos()) ?? []
+        func project(_ cwd: String) -> String {
+            repos.first { cwd == $0.path || cwd.hasPrefix($0.path + "/") }?.name ?? (cwd.isEmpty ? "Other" : (cwd as NSString).lastPathComponent)
+        }
+        func group(_ key: (UsageIndex.Row) -> String) -> [JSONValue] {
+            Dictionary(grouping: rows, by: key).map { k, rs in (k, rs.reduce(0) { $0 + $1.tally.cost }, rs.reduce(0) { $0 + $1.tally.tokens.total }) }
+                .sorted { $0.1 > $1.1 }.map { .obj(["name": .string($0.0), "cost": .double($0.1), "tokens": .int($0.2)]) }
+        }
+        return .obj(["days": .array(group(\.day)), "models": .array(group(\.model)), "projects": .array(group { project($0.cwd) }),
+                     "since": .double(since.timeIntervalSince1970)])
+    }
+}
+
+extension HistoryList: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        let roots = d.agentRoots(), key = roots.claude + roots.codex
+        var all: [AgentSessionInfo]
+        if query?.isEmpty == false, let r = historyRead.withLock({ $0[key] }), Date().timeIntervalSince(r.at) < 60 {
+            all = r.list
+        } else {
+            all = roots.claude.flatMap { ClaudeHistory.sessions(root: $0) } + roots.codex.flatMap { CodexHistory.sessions(root: $0) }
+            all.sort { $0.updated > $1.updated }
+            historyRead.withLock { [all] in $0[key] = (Date(), all) }
+        }
+        if let q = query, !q.isEmpty {
+            all = fullText == true ? History.fullTextSearch(query: q, in: all, limit: 100) : History.search(all, query: q)
+        }
+        if let cwd = cwd { all = all.filter { $0.cwd == cwd } }
+        return try .from(Array(all.prefix(max(0, limit ?? 400))))
     }
 }

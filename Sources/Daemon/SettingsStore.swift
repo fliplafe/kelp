@@ -71,11 +71,6 @@ final class SettingsStore: Sendable {
 extension Daemon {
     func handleSettings(_ method: String, _ p: JSONValue) throws -> JSONValue? {
         switch method {
-        case "settings.get": return settings.all
-        case "settings.set":
-            let all = try settings.set(try p.req("key"), p["value"])
-            settingsChanged(all)
-            return all
         // The current app still speaks these with the old config.json keys; drop once it uses settings.*.
         case "config.get":
             var o: [String: JSONValue] = [:]
@@ -98,5 +93,14 @@ extension Daemon {
     /// From the ticker: hand edits of settings.json.
     func pollSettings() {
         if settings.reloadIfChanged() { settingsChanged(settings.all) }
+    }
+}
+
+extension SettingsGet: Handled { func handle(_ d: Daemon) throws -> JSONValue { d.settings.all } }
+extension SettingsSet: Handled {
+    func handle(_ d: Daemon) throws -> JSONValue {
+        let all = try d.settings.set(key, value)
+        d.settingsChanged(all)
+        return all
     }
 }
