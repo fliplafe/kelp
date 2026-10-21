@@ -105,10 +105,10 @@ final class CloneLog: Sendable {
 }
 
 extension RepoClone: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> JSONValue { try await handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) async throws -> JSONValue {
+    func handle(_ d: Daemon) async throws -> Repo { try await handle(d, conn: -1) }
+    func handle(_ d: Daemon, conn: Int) async throws -> Repo {
         let dest = try await d.clone(url, into: parent, id: id ?? UUID().uuidString, conn: conn)
-        return try await d.handle("repo.add", .obj(["path": .string(dest)]), conn: conn)
+        return try await d.offload { try RepoAdd(path: dest).handle(d) }   // runs git: off the cooperative pool
     }
 }
-extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> JSONValue { Daemon.clones.cancel(id); return .null } }
+extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> Done { Daemon.clones.cancel(id); return Done() } }

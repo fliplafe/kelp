@@ -65,7 +65,7 @@ final class SessionTab: TabContent {
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
             guard runAsSheet(a) == .alertFirstButtonReturn else { return false }
         }
-        Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
+        Task { await AppModel.shared.call(SessionKill(id: sid)) }
         return true
     }
 
@@ -74,7 +74,7 @@ final class SessionTab: TabContent {
     private static func busy(_ sid: String) -> String? {
         guard let c = AppModel.shared.client else { return nil }   // the client answers on its own thread, not the main one
         let done = DispatchSemaphore(value: 0), answer = OSAllocatedUnfairLock<String?>(initialState: nil)
-        Task.detached { let name = try? await c.call("session.busy", .obj(["id": .string(sid)])).string; answer.withLock { $0 = name }; done.signal() }
+        Task.detached { let name = (try? await c.call(SessionBusy(id: sid))) ?? nil; answer.withLock { $0 = name }; done.signal() }
         _ = done.wait(timeout: .now() + 0.3)
         return answer.withLock { $0 }   // under its lock: a late answer can't be written while this reads
     }

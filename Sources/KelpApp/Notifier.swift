@@ -90,7 +90,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         // Claude Code: its own last reply (the terminal around it — spinners, mode lines — reads as nonsense when summarized).
         // The Stop hook can come a moment before the transcript has the final message.
         try? await Task.sleep(for: .milliseconds(1200))
-        if let c = AppModel.shared.client, let reply = (try? await c.call("session.lastReply", .obj(["id": .string(s.id)])))?.string {
+        if let c = AppModel.shared.client, let reply = (try? await c.call(SessionLastReply(id: s.id))) ?? nil {
             let line = Self.firstSentence(reply)
             s.summary = line
             _ = try? await c.call("session.annotate", .obj(["id": .string(s.id), "summary": .string(line)]))
@@ -147,7 +147,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             guard action == "allow" || action == "deny" else { NSApp.activate(); Workbench.focus(session: id); return }
             Task {
                 // Answered without Kelp coming forward; if the menu is gone (answered in the terminal), show the agent.
-                let ok = await AppModel.shared.call("session.choose", .obj(["id": .string(id), "answer": .string(action)]))?.bool ?? false
+                let ok = await AppModel.shared.call(SessionChoose(id: id, answer: action)) ?? false
                 if !ok { NSApp.activate(); Workbench.focus(session: id) }
             }
         }

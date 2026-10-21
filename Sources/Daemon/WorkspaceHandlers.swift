@@ -6,25 +6,25 @@ import Agents
 // Projects and their workspaces.
 
 extension RepoAdd: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Repo {
         // A remote project's own folder: it is the project (git there would answer with the host's path).
-        if let r = try d.store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return try .from(r) }
+        if let r = try d.store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return r }
         // An empty folder outside any repository (New Folder in Add Project's panel) is a new project: `git init` there.
         if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true, (try? Git.root(of: path)) == nil {
             try Git.run(["init", "-q"], cwd: path)
         }
         let root = try Git.root(of: path)
-        if let r = try d.store.repos().first(where: { $0.path == root }) { return try .from(r) }
+        if let r = try d.store.repos().first(where: { $0.path == root }) { return r }
         let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
         try d.store.save(r); try d.syncMainWorkspaces(); d.notify("event.changed", "repo")
-        return try .from(r)
+        return r
     }
 }
 
-extension RepoList: Handled { func handle(_ d: Daemon) throws -> JSONValue { try .from(d.store.repos()) } }
+extension RepoList: Handled { func handle(_ d: Daemon) throws -> [Repo] { try d.store.repos() } }
 
 extension ScratchEnsure: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Worktree {
         let dir = d.root.appendingPathComponent("scratch")
         if !FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
             try Paths.ensure(dir); try Git.run(["init", "-q"], cwd: dir.path)
@@ -39,41 +39,41 @@ extension ScratchEnsure: Handled {
             throw RPCError.internalError("no scratch workspace")
         }
         d.notify("event.changed", "repo")
-        return try .from(w)
+        return w
     }
 }
 
 extension RepoRelocate: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Repo {
         guard var r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let root = try Git.root(of: path), old = r.path
         r.path = root; try d.store.save(r)
         for w in try d.store.worktrees(repo: r.id) where w.path == old { try d.store.update(Worktree.self, w.id) { $0.path = root } }
         d.notify("event.changed", "repo")
-        return try .from(r)
+        return r
     }
 }
 
 /// Its workspaces go with it, and so do their agents: none keeps working out of sight.
 extension RepoRemove: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let desks = Set(try d.store.worktrees(repo: r.id).map(\.id))
         for s in try d.store.sessions() where desks.contains(s.worktreeId ?? "") { d.discard(s) }
         try d.store.delete(r); d.notify("event.changed", "repo")
-        return .null
+        return Done()
     }
 }
 
 extension WorkspaceCreate: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Worktree {
         guard let r = try d.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
-        return try .from(d.createDesk(in: r))
+        return try d.createDesk(in: r)
     }
 }
 
 extension WorktreeCreate: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Result {
         guard let r = try d.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
         let auto = try d.nextWorkspace(in: r)
         let branch = try d.ref(branch.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
@@ -81,7 +81,7 @@ extension WorktreeCreate: Handled {
         let path = try Git.addWorktree(repo: r.path, branch: branch, base: base, into: Daemon.worktreesDir(d.root, r), copyFiles: r.copyFiles)
         let w = Worktree(repoId: r.id, branch: branch, path: path, note: note ?? (self.branch == nil ? auto.name : ""), base: base)
         try d.store.save(w)
-        var result = try JSONValue.from(w)
+        var result = Result(worktree: w)
         // Everything .kelp.yaml does waits for the user's trust in this version of the file, not only `setup`: `tabs`
         // starts agents and `shared` links folders, and a freshly cloned repository wrote that file, not the user.
         // Checked and used from one read.
@@ -91,12 +91,12 @@ extension WorktreeCreate: Handled {
             if tabs != false { for t in cfg.tabs { _ = try? d.spawn(cwd: path, manifest: d.manifest(t, command: nil), worktreeId: w.id) } }
         }
         let asks = cfg.setup != nil || !cfg.tabs.isEmpty || !cfg.shared.isEmpty
-        if asks, setup != false, !read.trusted, case .object(var o) = result {
-            o["setupNeedsTrust"] = true; result = .object(o)   // the app asks, then scripts.trust + scripts.run "setup"
+        if asks, setup != false, !read.trusted {
+            result.setupNeedsTrust = true   // the app asks, then scripts.trust + scripts.run "setup"
         } else if let cmd = cfg.setup, setup != false {
             var o = Daemon.Launch(); o.title = "setup"
             let s = try d.spawn(cwd: path, manifest: .custom(cmd), worktreeId: w.id, o)
-            if case .object(var o) = result { o["setupSession"] = .string(s.id); result = .object(o) }
+            result.setupSession = s.id
         }
         d.notify("event.changed", "worktree")
         return result
@@ -104,23 +104,23 @@ extension WorktreeCreate: Handled {
 }
 
 extension WorktreeList: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> [Worktree] {
         try d.syncMainWorkspaces()
-        return try .from(d.store.worktrees(repo: repoId).filter { archived == true || !$0.archived })
+        return try d.store.worktrees(repo: repoId).filter { archived == true || !$0.archived }
     }
 }
 
 extension WorktreeArchive: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard let w = try d.store.worktree(id), let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-        try d.archive(w, r); return .null
+        try d.archive(w, r); return Done()
     }
 }
 
 extension WorktreeRemove: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard let w = try d.store.worktree(id), let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
-        if d.isMain(w, r) { try d.removeDesk(w, r); return .null }
+        if d.isMain(w, r) { try d.removeDesk(w, r); return Done() }
         let force = force == true, drop = dropCommits == true
         if FileManager.default.fileExists(atPath: w.path) {
             // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
@@ -134,27 +134,27 @@ extension WorktreeRemove: Handled {
         for s in try d.store.sessions() where s.worktreeId == w.id { d.discard(s) }
         try d.store.delete(w)
         d.notify("event.changed", "worktree")
-        return .null
+        return Done()
     }
 }
 
 extension WorktreeUnarchive: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Done {
         guard try d.store.update(Worktree.self, id, { $0.archived = false }) != nil else { throw RPCError.invalidParams("no worktree") }
         d.notify("event.changed", "worktree")
-        return .null
+        return Done()
     }
 }
 
 extension WorktreeUnmerged: Handled {
-    func handle(_ d: Daemon) throws -> JSONValue {
+    func handle(_ d: Daemon) throws -> Int {
         let w = try d.cwd(forWorktree: id)
-        guard let r = try d.store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return .int(0) }
-        return .int(try Git.onlyOnBranch(repo: r.path, w.branch))
+        guard let r = try d.store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return 0 }
+        return try Git.onlyOnBranch(repo: r.path, w.branch)
     }
 }
 
-extension WorktreeDirty: Handled { func handle(_ d: Daemon) throws -> JSONValue { .bool(try Git.isDirty(d.cwd(forWorktree: id).path)) } }
+extension WorktreeDirty: Handled { func handle(_ d: Daemon) throws -> Bool { try Git.isDirty(d.cwd(forWorktree: id).path) } }
 
 extension Daemon {
     static let workspaceMethods: [any Handled.Type] = [RepoAdd.self, RepoList.self, ScratchEnsure.self, RepoRelocate.self, RepoRemove.self,

@@ -195,10 +195,10 @@ final class AppModel {
     private func refreshOnce() async {
         guard let c = client else { return }
         // Assign only what changed: every assignment re-renders the views that read it.
-        if let r = try? await c.call("repo.list", as: [Repo].self), r != repos { repos = r }
-        if let w = try? await c.call("worktree.list", as: [Worktree].self), w != worktrees { worktrees = w }
+        if let r = try? await c.call(RepoList()), r != repos { repos = r }
+        if let w = try? await c.call(WorktreeList()), w != worktrees { worktrees = w }
         let before = sessionEvents
-        if let s = try? await c.call("session.list", as: [Session].self) {
+        if let s = try? await c.call(SessionList()) {
             let merged = Self.merge(list: s, local: sessions, newer: Set(sessionEvents.keys.filter { sessionEvents[$0] != before[$0] }))
             if merged != sessions { sessions = merged }
         }

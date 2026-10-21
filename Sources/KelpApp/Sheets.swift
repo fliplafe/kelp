@@ -62,7 +62,7 @@ enum AgentActions {
         a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            for id in ids { await AppModel.shared.call("session.kill", .obj(["id": .string(id)])) }
+            for id in ids { await AppModel.shared.call(SessionKill(id: id)) }
         }
     }
 
@@ -90,7 +90,7 @@ enum AgentActions {
 
     static func copyContext(_ sid: String) {
         Task {
-            guard let t = await AppModel.shared.call("session.context", .obj(["id": .string(sid)]))?.string else { return }
+            guard let t = await AppModel.shared.call(SessionContext(id: sid)) else { return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(t, forType: .string)
             Banner.show(String(localized: "Context copied"))
         }

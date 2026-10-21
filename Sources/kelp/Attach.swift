@@ -24,7 +24,7 @@ enum Attach {
             var ws = winsize()
             guard ioctl(1, TIOCGWINSZ, &ws) == 0, ws.ws_col > 0 else { return }
             // In order: a notification is written now, and the daemon applies them as they come.
-            control?.notify("session.resize", .obj(["id": .string(sessionId), "cols": .int(Int(ws.ws_col)), "rows": .int(Int(ws.ws_row))]))
+            control?.notify(SessionResize(id: sessionId, cols: Int(ws.ws_col), rows: Int(ws.ws_row)))
         }
         // Clear whatever the login shell printed ("Last login…"); the session's own screen follows.
         _ = "\u{1B}[H\u{1B}[2J\u{1B}[3J".withCString { Darwin.write(1, $0, strlen($0)) }

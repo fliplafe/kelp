@@ -165,11 +165,11 @@ struct AgentsSettings: View {
         }, uniquingKeysWith: { $1 })
         // Secrets: the daemon puts them in the keychain; the file only says where they are.
         for (k, v) in pairs where AgentManifest.isSecret(k) && v != AgentManifest.keychainValue && !v.isEmpty {
-            guard await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(m.id), "key": .string(k), "value": .string(v)])) != nil else { return }
+            guard await AppModel.shared.call(AgentSetSecret(agent: m.id, key: k, value: v)) != nil else { return }
             pairs[k] = AgentManifest.keychainValue
         }
         for k in m.env.keys where pairs[k] == nil && m.env[k] == AgentManifest.keychainValue {
-            await AppModel.shared.call("agent.setSecret", .obj(["agent": .string(m.id), "key": .string(k)]))   // removed: forget it
+            await AppModel.shared.call(AgentSetSecret(agent: m.id, key: k))   // removed: forget it
         }
         m.env = pairs.filter { !$0.value.isEmpty }   // a preset's blank line until it's filled in
         do { try AgentManifest.saveOverride(m) } catch {

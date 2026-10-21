@@ -25,7 +25,7 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
         guard !opening else { return }   // ⌃⌥⌘K twice while the first is still setting up: one panel
         opening = true; defer { opening = false }
         if panel == nil {
-            guard let w = try? await AppModel.shared.client?.call("scratch.ensure", as: Worktree.self) else {
+            guard let w = try? await AppModel.shared.client?.call(ScratchEnsure()) else {
                 Banner.show(String(localized: "Kelp's background service isn't running."), style: .error); return
             }
             await AppModel.shared.refresh()

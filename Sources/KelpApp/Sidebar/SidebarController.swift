@@ -350,7 +350,7 @@ extension SidebarController {
         let agents = Array(Set(picked + inside))
         if agents.contains(where: { m.session($0)?.unread == true }) {
             menu.add(String(localized: "Mark as Read")) {
-                for id in agents where m.session(id)?.unread == true { Task { await m.call("session.markRead", .obj(["id": .string(id)])) } }
+                for id in agents where m.session(id)?.unread == true { Task { await m.call(SessionMarkRead(id: id)) } }
             }
         }
         if !ws.isEmpty { menu.add(String(localized: "Close \(ws.count) Workspaces…")) { WorkspaceActions.close(ws) } }

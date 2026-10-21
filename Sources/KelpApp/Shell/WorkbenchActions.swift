@@ -45,7 +45,7 @@ extension Workbench {
             window?.editors.current?.focus(session: id)
         }
         // Opening a finished agent is reading it; a question stays marked until it's answered (typing clears it).
-        if s.unread, s.status == .done { Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(id)])) } }
+        if s.unread, s.status == .done { Task { await AppModel.shared.call(SessionMarkRead(id: id)) } }
     }
 
     /// Workspaces in sidebar order (⌃1–9, ⌃⌘↑ / ↓).
@@ -95,7 +95,7 @@ extension Workbench {
         Task {
             let m = AppModel.shared
             await m.waitForConnection()   // opened at launch
-            guard let r = await m.call("repo.add", .obj(["path": .string(path)])), let rid = r["id"]?.string else { return }
+            guard let rid = await m.call(RepoAdd(path: path))?.id else { return }
             await m.refresh()
             let ws = m.repo(rid).map(m.workspaces(of:)) ?? []
             if let w = ws.first(where: { $0.id == shared.workspaceId }) ?? ws.first { show(workspace: w.id) }
@@ -124,7 +124,7 @@ extension Workbench {
             let m = AppModel.shared
             await m.waitForConnection()
             guard let rid = repo ?? m.worktree(shared.workspaceId)?.repoId ?? m.repos.first?.id else { addProject(); return }
-            guard let w = await AppModel.shared.call("workspace.create", .obj(["repoId": .string(rid)])), let id = w["id"]?.string else { return }
+            guard let id = await AppModel.shared.call(WorkspaceCreate(repoId: rid))?.id else { return }
             await AppModel.shared.refresh()
             show(workspace: id)
         }
@@ -231,8 +231,8 @@ enum WorkspaceActions {
 
     static func delete(_ w: Worktree) {
         Task {
-            let dirty = await AppModel.shared.call("worktree.dirty", .obj(["id": .string(w.id)]))?.bool ?? false
-            let commits = await AppModel.shared.call("worktree.unmerged", .obj(["id": .string(w.id)]))?.int ?? 0
+            let dirty = await AppModel.shared.call(WorktreeDirty(id: w.id)) ?? false
+            let commits = await AppModel.shared.call(WorktreeUnmerged(id: w.id)) ?? 0
             let a = NSAlert(); a.messageText = String(localized: "Delete “\(w.displayName)” and its branch?")
             var lost: [String] = []
             if dirty { lost.append(String(localized: "It has uncommitted changes that will be lost.")) }
@@ -244,7 +244,7 @@ enum WorkspaceActions {
             if Workbench.shared.workspaceId == w.id, let main = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
                 Workbench.show(workspace: main.id)
             }
-            await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id), "force": .bool(dirty), "dropCommits": .bool(commits > 0)]))
+            await AppModel.shared.call(WorktreeRemove(id: w.id, force: dirty, dropCommits: commits > 0))
         }
     }
 
@@ -299,7 +299,7 @@ enum WorkspaceActions {
             if Workbench.shared.workspaceId == w.id, let other = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
                 Workbench.show(workspace: other.id)
             }
-            await AppModel.shared.call("worktree.remove", .obj(["id": .string(w.id)]))
+            await AppModel.shared.call(WorktreeRemove(id: w.id))
             await AppModel.shared.refresh()
         }
     }
@@ -311,7 +311,7 @@ enum WorkspaceActions {
         p.directoryURL = URL(fileURLWithPath: (r.path as NSString).deletingLastPathComponent)
         let chosen = { (resp: NSApplication.ModalResponse) in
             guard resp == .OK, let u = p.url else { return }
-            Task { if await AppModel.shared.call("repo.relocate", .obj(["id": .string(r.id), "path": .string(u.path)])) != nil { await AppModel.shared.refresh() } }
+            Task { if await AppModel.shared.call(RepoRelocate(id: r.id, path: u.path)) != nil { await AppModel.shared.refresh() } }
         }
         if let w = NSApp.mainWindow { p.beginSheetModal(for: w, completionHandler: chosen) } else { p.begin(completionHandler: chosen) }
     }
@@ -340,7 +340,7 @@ enum WorkspaceActions {
                let other = m.worktrees.first(where: { w in !w.archived && !closing.contains { $0.id == w.id } }) { Workbench.show(workspace: other.id) }
             for w in closing {
                 let desk = w.path == m.repo(w.repoId)?.path
-                await m.call(desk ? "worktree.remove" : "worktree.archive", .obj(["id": .string(w.id)]))
+                if desk { await m.call(WorktreeRemove(id: w.id)) } else { await m.call(WorktreeArchive(id: w.id)) }
             }
             await m.refresh()
         }
@@ -352,7 +352,7 @@ enum WorkspaceActions {
             guard await UnsavedChanges.confirm(closing: [w.id]) else { return }
             if Workbench.shared.workspaceId == w.id,
                let other = AppModel.shared.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id && !$0.archived }) { Workbench.show(workspace: other.id) }
-            if await AppModel.shared.call("worktree.archive", .obj(["id": .string(w.id)])) != nil {
+            if await AppModel.shared.call(WorktreeArchive(id: w.id)) != nil {
                 await AppModel.shared.refresh()
                 Banner.show(String(localized: "“\(w.displayName)” archived. Window › Archived Workspaces brings it back."))
             }
@@ -361,7 +361,7 @@ enum WorkspaceActions {
 
     static func unarchive(_ id: String) {
         Task {
-            await AppModel.shared.call("worktree.unarchive", .obj(["id": .string(id)]))
+            await AppModel.shared.call(WorktreeUnarchive(id: id))
             await AppModel.shared.refresh()
             Workbench.show(workspace: id)
         }
@@ -373,7 +373,7 @@ enum WorkspaceActions {
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn,
                   await UnsavedChanges.confirm(closing: AppModel.shared.worktrees.filter { $0.repoId == r.id }.map(\.id)) else { return }
-            await AppModel.shared.call("repo.remove", .obj(["id": .string(r.id)]))
+            await AppModel.shared.call(RepoRemove(id: r.id))
         }
     }
 }
@@ -399,7 +399,7 @@ enum FileActions {
     /// Types the reference into the agent's prompt without pressing Return, and shows the agent.
     static func sendToAgent(_ path: String, lines: ClosedRange<Int>? = nil) {
         guard let s = targetAgent else { Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then send again."), style: .error); return }
-        Task { await AppModel.shared.call("session.send", .obj(["id": .string(s.id), "text": .string(reference(path, lines: lines) + " "), "enter": false])) }
+        Task { await AppModel.shared.call(SessionSend(id: s.id, text: reference(path, lines: lines) + " ", enter: false)) }
         Workbench.focus(session: s.id)
     }
 
@@ -434,7 +434,7 @@ enum GitFix {
     static func type(_ recipe: String, worktree wid: String, vars: [String: String], into sid: String) async -> Bool {
         let v = JSONValue.object(vars.mapValues { .string($0) })
         guard let text = await AppModel.shared.call("recipe.render", .obj(["id": .string(wid), "name": .string(recipe), "vars": v]))?.string else { return false }
-        await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(text), "enter": false]))
+        await AppModel.shared.call(SessionSend(id: sid, text: text, enter: false))
         return true
     }
 }

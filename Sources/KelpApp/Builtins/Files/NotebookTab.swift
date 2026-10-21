@@ -75,6 +75,6 @@ final class NotebookTab: NSViewController {
 
     @objc private func askAgent() {
         guard let sid = Workbench.shared.focusedSession else { NSSound.beep(); return }
-        Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string("Look at the notebook \(path) (cells and outputs). "), "enter": false])) }
+        Task { await AppModel.shared.call(SessionSend(id: sid, text: "Look at the notebook \(path) (cells and outputs). ", enter: false)) }
     }
 }

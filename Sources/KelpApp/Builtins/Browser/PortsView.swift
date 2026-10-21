@@ -37,8 +37,8 @@ final class PortsView: NSView {
     private func reload() {
         guard !isHidden, let wid = Workbench.shared.workspaceId else { return }
         Task {
-            let ports = (try? await AppModel.shared.client?.call("ports.list", .obj(["worktreeId": .string(wid)])).array) ?? []
-            let numbers = ports.compactMap { $0["port"]?.int }
+            let ports = (try? await AppModel.shared.client?.call(PortsList(worktreeId: wid))) ?? []
+            let numbers = ports.map(\.port)
             guard numbers != shown else { return }
             shown = numbers
             list.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -47,19 +47,19 @@ final class PortsView: NSView {
         }
     }
 
-    private func row(_ p: JSONValue, workspace wid: String) -> NSView {
-        let port = p["port"]?.int ?? 0, address = "http://localhost:\(port)"
+    private func row(_ p: PortsList.Port, workspace wid: String) -> NSView {
+        let port = p.port, address = "http://localhost:\(port)"
         let link = ClosureButton(title: "localhost:\(port)") { [weak self] in self?.onOpen?(address) }
         link.isBordered = false; link.contentTintColor = .linkColor; link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        let what = NSTextField(labelWithString: p["command"]?.string ?? ""); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
+        let what = NSTextField(labelWithString: p.command); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
         let copy = ClosureButton(title: String(localized: "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(address, forType: .string) }
         let stop = ClosureButton(title: String(localized: "Stop")) { [weak self] in
             Task {
-                if await AppModel.shared.call("ports.stop", .obj(["worktreeId": .string(wid), "pid": p["pid"] ?? .null])) != nil { self?.shown = []; self?.reload() }
+                if await AppModel.shared.call(PortsStop(worktreeId: wid, pid: Int(p.pid))) != nil { self?.shown = []; self?.reload() }
             }
         }
         for b in [copy, stop] { b.bezelStyle = .push; b.controlSize = .small }
-        stop.toolTip = String(localized: "Stops \(p["command"]?.string ?? String(localized: "the process")) (PID \(p["pid"]?.int ?? 0))")
+        stop.toolTip = String(localized: "Stops \(p.command.isEmpty ? String(localized: "the process") : p.command) (PID \(Int(p.pid)))")
         let r = NSStackView(views: [link, what, NSView(), copy, stop]); r.spacing = 8
         r.widthAnchor.constraint(equalToConstant: 460).isActive = true
         return r

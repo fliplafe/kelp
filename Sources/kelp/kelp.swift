@@ -87,8 +87,7 @@ func currentWorktreeID(_ c: RPCClient) async throws -> String { try await curren
 func currentRepoID(_ c: RPCClient) async throws -> String {
     if let r = flag("--repo") { return r }
     let cwd = FileManager.default.currentDirectoryPath
-    let repos = try await c.call("repo.list").array ?? []
-    if let id = repos.first(where: { r in r["path"]?.string.map { IDE.inside(cwd, $0) } ?? false })?["id"]?.string { return id }
+    if let id = try await c.call(RepoList()).first(where: { IDE.inside(cwd, $0.path) })?.id { return id }
     if let id = (try? await currentWorktree(c))?["repoId"]?.string { return id }
     fail("no repo here; pass --repo <id> or run `kelp repo add`")
 }
@@ -176,36 +175,32 @@ func plist() -> String {
     static func projects(_ cmd: String, _ sub: String?, _ c: RPCClient) async throws {
         switch (cmd, sub) {
         case ("status", _):
-            let repos = try await c.call("repo.list").array ?? []
-            let wts = try await c.call("worktree.list").array ?? []
-            let ss = try await c.call("session.list").array ?? []
+            let repos = try await c.call(RepoList()), wts = try await c.call(WorktreeList()), ss = try await c.call(SessionList())
             for r in repos {
-                print("\(r["name"]?.string ?? "?")  \(r["path"]?.string ?? "")")
-                for w in wts where w["repoId"] == r["id"] {
-                    let note = (w["note"]?.string).flatMap { $0.isEmpty ? nil : " — \($0)" } ?? ""
-                    print("  \(w["branch"]?.string ?? "?")  [\(w["id"]?.string?.prefix(8) ?? "")]\(note)")
-                    for s in ss where s["worktreeId"] == w["id"] {
-                        print("    \(s["agent"]?.string ?? "cmd") \(s["status"]?.string ?? "")\(s["unread"]?.bool == true ? " •" : "")  [\(s["id"]?.string?.prefix(8) ?? "")]")
+                print("\(r.name)  \(r.path)")
+                for w in wts where w.repoId == r.id {
+                    let note = w.note.isEmpty ? "" : " — \(w.note)"
+                    print("  \(w.branch)  [\(w.id.prefix(8))]\(note)")
+                    for s in ss where s.worktreeId == w.id {
+                        print("    \(s.agent ?? "cmd") \(s.status.rawValue)\(s.unread ? " •" : "")  [\(s.id.prefix(8))]")
                     }
                 }
             }
-        case ("repo", "add"): show(try await c.call("repo.add", .obj(["path": .string(args.first ?? FileManager.default.currentDirectoryPath)])))
-        case ("repo", "list"): show(try await c.call("repo.list"))
+        case ("repo", "add"): show(try await c.call(RepoAdd(path: args.first ?? FileManager.default.currentDirectoryPath)))
+        case ("repo", "list"): show(try await c.call(RepoList()))
         case ("worktree", "create"):
             guard let b = args.first, !b.hasPrefix("-") else { fail("worktree create <branch>") }
             args.removeFirst()
-            var p: [String: JSONValue] = ["branch": .string(b), "repoId": .string(try await currentRepoID(c))]
-            if let base = flag("--base") { p["base"] = .string(base) }
-            if has("--no-setup") { p["setup"] = false }
-            show(try await c.call("worktree.create", .object(p)))
-        case ("worktree", "list"): show(try await c.call("worktree.list", has("--all") ? .obj(["archived": true]) : nil))
+            let base = flag("--base"), setup: Bool? = has("--no-setup") ? false : nil
+            show(try await c.call(WorktreeCreate(repoId: try await currentRepoID(c), branch: b, base: base, setup: setup)))
+        case ("worktree", "list"): show(try await c.call(WorktreeList(archived: has("--all") ? true : nil)))
         case ("worktree", "current"): show(try await currentWorktree(c))
         case ("worktree", "note"):
             _ = try await c.call(WorktreeNote(id: try await currentWorktree(c)["id"]?.string ?? "", note: args.joined(separator: " ")))
         case ("worktree", "remove"), ("worktree", "archive"):
             let force = has("--force"), drop = has("--drop-commits")   // two separate losses, each asked for by name
-            show(try await c.call("worktree.\(sub ?? "")", .obj(["id": .string(try await resolve(c, args.first ?? "", "worktree.list")),
-                                                                   "force": .bool(force), "dropCommits": .bool(drop)])))
+            let id = try await resolve(c, args.first ?? "", "worktree.list")
+            if sub == "remove" { show(try await c.call(WorktreeRemove(id: id, force: force, dropCommits: drop))) } else { show(try await c.call(WorktreeArchive(id: id))) }
         default: print(usage)
         }
     }
@@ -229,7 +224,7 @@ func plist() -> String {
             guard wait else { show(s); return }
             print(id)   // for `kelp terminal read`, once it ends
             exit(Int32(try await waitFor(c, id, timeout: nil) { $0.status == .exited }?.exitCode ?? 1))
-        case ("session", "list"), ("terminal", "list"): show(try await c.call("session.list"))
+        case ("session", "list"), ("terminal", "list"): show(try await c.call(SessionList()))
         case ("wait", let target?):   // until the session stops working, or reaches one of --for; prints the state it reached
             let want = flag("--for").map { Set($0.split(separator: ",").map(String.init)) }, timeout = flag("--timeout").map(duration)
             let id = try await resolve(c, target, "session.list")
@@ -241,13 +236,12 @@ func plist() -> String {
             let progress = flag("--progress").flatMap { Int($0) }, kind = flag("--kind"), msg = args.joined(separator: " ")
             _ = try await c.call(SessionReport(id: id, state: state, message: msg.isEmpty ? nil : msg, progress: progress, kind: kind))
         case ("terminal", "read"):
-            show(try await c.call("session.read", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list")),
-                "bytes": .int(args.dropFirst().first.flatMap(Int.init) ?? 8192)])))
+            show(try await c.call(SessionRead(id: try await resolve(c, args.first ?? "", "session.list"), bytes: args.dropFirst().first.flatMap(Int.init) ?? 8192)))
         case ("terminal", "send"):
             let enter = !has("--no-enter")
             guard args.count >= 2 else { fail("terminal send <session> <text>") }
             let id = try await resolve(c, args[0], "session.list")
-            show(try await c.call("session.send", .obj(["id": .string(id), "text": .string(args.dropFirst().joined(separator: " ")), "enter": .bool(enter)])))
+            show(try await c.call(SessionSend(id: id, text: args.dropFirst().joined(separator: " "), enter: enter)))
         case ("session", "restart"):
             show(try await c.call("session.restart", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
         case ("session", "rename"):
@@ -257,7 +251,7 @@ func plist() -> String {
             if let a = flag("--agent") { p["agent"] = .string(a) }
             show(try await c.call("session.handoff", .object(p)))
         case ("terminal", "context"):
-            show(try await c.call("session.context", .obj(["id": .string(try await resolve(c, args.first ?? "", "session.list"))])))
+            show(try await c.call(SessionContext(id: try await resolve(c, args.first ?? "", "session.list"))))
         default: print(usage)
         }
     }
@@ -380,13 +374,12 @@ func plist() -> String {
         }
     }
 
-    /// Accept a full id or a unique prefix (what `kelp status` prints).
     /// Looks at the session twice a second until `done` says so, or it ended or was paused (it can't change then);
     /// nil when `timeout` ran out first.
     static func waitFor(_ c: RPCClient, _ id: String, timeout: TimeInterval?, until done: (Session) -> Bool) async throws -> Session? {
         let end = timeout.map { Date().addingTimeInterval($0) }
         while true {
-            guard let s = try await c.call("session.list", as: [Session].self).first(where: { $0.id == id }) else { fail("no session \(id)") }
+            guard let s = try await c.call(SessionList()).first(where: { $0.id == id }) else { fail("no session \(id)") }
             if done(s) || s.status == .exited || s.status == .hibernated { return s }
             if let end, Date() > end { return nil }
             try await Task.sleep(for: .milliseconds(500))
@@ -400,9 +393,11 @@ func plist() -> String {
         return n * (unit ?? 1)
     }
 
+    /// Accept a full id or a unique prefix (what `kelp status` prints) of a session (`session.list`) or else a workspace.
     static func resolve(_ c: RPCClient, _ prefix: String, _ listMethod: String) async throws -> String {
         guard !prefix.isEmpty else { fail("id required") }
-        let found = ((try await c.call(listMethod).array) ?? []).compactMap { $0["id"]?.string }.filter { $0.hasPrefix(prefix) }
+        let ids = listMethod == SessionList.name ? try await c.call(SessionList()).map(\.id) : try await c.call(WorktreeList()).map(\.id)
+        let found = ids.filter { $0.hasPrefix(prefix) }
         guard found.count == 1 else { fail(found.isEmpty ? "no match for \(prefix)" : "ambiguous: \(prefix)") }
         return found[0]
     }

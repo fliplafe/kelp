@@ -159,7 +159,7 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     let r = try await rig(); defer { r.d.stop() }
     let s = try await session(r, "cat")
     let t = try await r.c.call("session.turn", .obj(["id": .string(s.id)]))
-    #expect(t["turn"] == .null && t["hasBase"]?.bool == false)
+    #expect((t["turn"] ?? .null) == .null && t["hasBase"]?.bool == false)   // no turn: the key is left out (was null)
     #expect(try await r.c.call("session.lastReply", .obj(["id": .string(s.id)])) == .null)   // a plain command has no transcript
     #expect(try await r.c.call("session.turn", .obj(["id": "gone"])) == .null)
 }

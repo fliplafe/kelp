@@ -40,11 +40,11 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
 
     private func reload() {
         Task {
-            let usage = (try? await AppModel.shared.client?.call("session.usage")).flatMap(\.array) ?? []
+            let usage = (try? await AppModel.shared.client?.call(SessionUsage())) ?? []
             let m = AppModel.shared
             rows = usage.compactMap { u in
-                guard let id = u["session"]?.string, let s = m.session(id) else { return nil }
-                return Row(session: s, cpu: u["cpu"]?.number ?? 0, memory: u["memory"]?.int ?? 0, processes: u["processes"]?.int ?? 0)
+                guard let s = m.session(u.session) else { return nil }
+                return Row(session: s, cpu: u.cpu, memory: u.memory, processes: u.processes)
             }
             let cpu = rows.reduce(0) { $0 + $1.cpu }, mem = rows.reduce(0) { $0 + $1.memory }
             total.stringValue = rows.isEmpty ? "" : String(localized: "\(rows.count) sessions · CPU \(Self.percent(cpu)) · \(Self.bytes(mem))")

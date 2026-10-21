@@ -177,7 +177,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(msg, forType: .string)
             Banner.show(String(localized: "No agent in this workspace — the element details were copied to the clipboard.")); return
         }
-        Task { await AppModel.shared.call("session.send", .obj(["id": .string(sid), "text": .string(msg), "enter": false])) }
+        Task { await AppModel.shared.call(SessionSend(id: sid, text: msg, enter: false)) }
         Workbench.focus(session: sid)
     }
 

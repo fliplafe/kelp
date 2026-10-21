@@ -86,7 +86,7 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
         status.isHidden = false; status.textColor = .secondaryLabelColor
         status.stringValue = String(localized: "Connecting…")
         Task {
-            let r = await AppModel.shared.tryCall("repo.clone", .obj(["url": .string(text), "parent": .string(parent), "id": .string(id)]))
+            let r = await AppModel.shared.tryCall(RepoClone(url: text, parent: parent, id: id))
             running = nil; busy(false)
             if let e = r.error {
                 if e == "Clone cancelled." { close(); return }
@@ -94,12 +94,12 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
             }
             UserDefaults.standard.set(parent, forKey: "newProject.parent")
             close()
-            if let path = r.value?["path"]?.string { Workbench.addProject(path: path) }   // on screen
+            if let path = r.value?.path { Workbench.addProject(path: path) }   // on screen
         }
     }
 
     @objc private func stop() {
-        if let id = running { status.stringValue = String(localized: "Cancelling…"); Task { await AppModel.shared.call("repo.cloneCancel", .obj(["id": .string(id)])) }; return }
+        if let id = running { status.stringValue = String(localized: "Cancelling…"); Task { await AppModel.shared.call(RepoCloneCancel(id: id)) }; return }
         close()
     }
 }

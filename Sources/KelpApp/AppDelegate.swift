@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             glanced[sid] = since
             guard Date().timeIntervalSince(since) >= 1 else { continue }
             glanced[sid] = nil
-            Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(sid)])) }
+            Task { await AppModel.shared.call(SessionMarkRead(id: sid)) }
         }
     }
 
@@ -162,7 +162,7 @@ final class ArchivedMenu: NSObject, NSMenuDelegate {
         track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in Task { await self?.reload() } }
     }
     private func reload() async {
-        archived = ((try? await AppModel.shared.client?.call("worktree.list", .obj(["archived": true]), as: [Worktree].self)) ?? []).filter(\.archived)
+        archived = ((try? await AppModel.shared.client?.call(WorktreeList(archived: true))) ?? []).filter(\.archived)
     }
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()

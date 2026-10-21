@@ -92,7 +92,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     private func start(_ wid: String, _ name: String, _ method: String, _ params: [String: JSONValue]) async {
         for (sid, r) in runs where r.workspace == wid && r.name == name {
             runs[sid] = nil
-            if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
+            if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call(SessionKill(id: sid)) }
             Workbench.closeTab(uri: TabURI.session(sid))
         }
         guard let s = await AppModel.shared.call(method, .object(params)), let sid = s["id"]?.string else { return }
@@ -106,7 +106,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     func stop() {
         guard let wid = Workbench.shared.workspaceId else { return }
         for (sid, r) in runs where r.workspace == wid && AppModel.shared.session(sid)?.status != .exited {
-            Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) }
+            Task { await AppModel.shared.call(SessionKill(id: sid)) }
         }
     }
 

@@ -83,14 +83,13 @@ final class CardModel {
                 changes = try? await c.call(GitLineStats(id: workspaceId))
                 let p = try? await c.call("github.branchPR", .obj(["worktreeId": .string(workspaceId)]))
                 if p?["number"] != nil { pr = p }
-                ports = ((try? await c.call("ports.list", .obj(["worktreeId": .string(workspaceId)])).array) ?? []).compactMap { $0["port"]?.int }
+                ports = ((try? await c.call(PortsList(worktreeId: workspaceId))) ?? []).map(\.port)
             }
             guard agentOnly, let a = agents.first else { return }
-            let id = JSONValue.obj(["id": .string(a.id)])
-            if let t = (try? await c.call("session.turn", id))?["turn"], case .object = t {
-                let files = t["files"]?.array ?? []
-                let add = files.reduce(0) { $0 + ($1["added"]?.int ?? 0) }, del = files.reduce(0) { $0 + ($1["removed"]?.int ?? 0) }
-                let took = shortSpan(t["seconds"]?.number ?? 0, smallest: .second)
+            if let t = ((try? await c.call(SessionTurn(id: a.id))) ?? nil)?.turn {
+                let files = t.files
+                let add = files.reduce(0) { $0 + $1.added }, del = files.reduce(0) { $0 + $1.removed }
+                let took = shortSpan(t.seconds, smallest: .second)
                 turn = files.isEmpty ? String(localized: "Last turn changed no files · \(took)")
                     : files.count == 1 ? String(localized: "Last turn: 1 file +\(add) −\(del) · \(took)")
                     : String(localized: "Last turn: \(files.count) files +\(add) −\(del) · \(took)")

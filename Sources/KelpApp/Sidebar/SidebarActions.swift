@@ -58,7 +58,7 @@ extension SidebarController {
         case .needs(let sid):
             menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
             if m.session(sid)?.unread == true {
-                menu.add(String(localized: "Mark as Read")) { Task { await AppModel.shared.call("session.markRead", .obj(["id": .string(sid)])) } }
+                menu.add(String(localized: "Mark as Read")) { Task { await AppModel.shared.call(SessionMarkRead(id: sid)) } }
             }
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
@@ -91,10 +91,10 @@ extension SidebarController {
             menu.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
             menu.setSubmenu(AgentActions.handoffMenu(sid), for: menu.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
             if m.session(sid)?.unread == false {
-                menu.add(String(localized: "Mark as Unread")) { Task { await AppModel.shared.call("session.markUnread", .obj(["id": .string(sid)])) } }
+                menu.add(String(localized: "Mark as Unread")) { Task { await AppModel.shared.call(SessionMarkUnread(id: sid)) } }
             }
             menu.addItem(.separator())
-            menu.add(String(localized: "Stop")) { Task { await AppModel.shared.call("session.kill", .obj(["id": .string(sid)])) } }
+            menu.add(String(localized: "Stop")) { Task { await AppModel.shared.call(SessionKill(id: sid)) } }
         }
     }
 }
