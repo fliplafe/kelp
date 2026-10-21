@@ -36,7 +36,7 @@ extension Daemon {
                                                           GitDiscardHunk.self, RemoteListFolders.self, SessionReport.self] + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods as [any Handled.Type]).map { ($0.name, $0) })
 
     func handle(_ method: String, _ p: JSONValue, conn: Int) async throws -> JSONValue {
-        if Self.debugWake { lock.withLock { lastMethod = method } }
+        if Self.debugWake { lastMethod.withLock { $0 = method } }
         if let e = extra[method] { return try await e(self, p) }
         if let r = try refuseRemoteForge(method, p) { return r }
         return try await integrationErrors { try await dispatch(method, p, conn: conn) }

@@ -20,23 +20,24 @@ public final class Daemon: @unchecked Sendable {   // mutable state (live, appCo
     let settings: SettingsStore
     var appConns = Set<Int>()               // connections that called ui.publish: they get event.ui
     var uiState: JSONValue = .object([:])   // what the app last published; cleared when no app is connected
-    var sleepAssertion: UInt32 = 0
-    let keepAwakeLock = NSLock()            // guards sleepAssertion: the ticker and settings changes both apply it
-    var usageCache: (at: Date, value: JSONValue)?
-    var prCache: [String: (at: Date, value: JSONValue)] = [:]   // "path@branch" → its PR (github.branchPR)
+    // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
+    /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
+    let sleepAssertion = Locked<UInt32>(0)
+    let usageCache = Locked<(at: Date, value: JSONValue)?>(nil)
+    let prCache = Locked<[String: (at: Date, value: JSONValue)]>([:])   // "path@branch" → its PR (github.branchPR)
     /// Claude models with the 1M context window (contextWindow); nil until first asked.
-    var longContextModels: Set<String>?
+    let longContextModels = Locked<Set<String>?>(nil)
     /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
     let usageIndex: UsageIndex
     /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
     var agentHomes = (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot)
     var rawConns = Set<Int>()
-    var lastMethod = ""
+    let lastMethod = Locked("")
     /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
-    var claudeLimits: [String: (reading: ClaudeLimits.Reading, at: Date)] = [:]
+    let claudeLimits = Locked<[String: (reading: ClaudeLimits.Reading, at: Date)]>([:])
     /// From the agents' own /usage screens, by agent id (UsageProbe).
-    var plans: [String: PlanState] = [:]
-    func recordLimits(_ r: [ClaudeLimits.Reading]) { lock.withLock { for x in r { claudeLimits[x.kind] = (x, Date()) } } }
+    let plans = Locked<[String: PlanState]>([:])
+    func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
     let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
     let wakeLock = NSLock()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()  // trusted-configs.json: read-modify-write under it

@@ -40,10 +40,10 @@ extension Daemon {
 extension GitHubBranchPR: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         let w = try d.cwd(forWorktree: worktreeId), branch = d.checkedOut(w), key = w.path + "@" + branch
-        if let hit = d.lock.withLock({ d.prCache[key] }), Date().timeIntervalSince(hit.at) < 120 { return hit.value }
+        if let hit = d.prCache.withLock({ $0[key] }), Date().timeIntervalSince(hit.at) < 120 { return hit.value }
         let found = GitLab.isGitLab(cwd: w.path) ? try? GitLab.mergeRequest(cwd: w.path, branch: branch) : try? GitHub.pullRequest(cwd: w.path, branch: branch)
         let v: JSONValue = found.flatMap { try? JSONValue.from($0) } ?? .null   // try? flattens: one optional
-        d.lock.withLock { d.prCache[key] = (Date(), v) }
+        d.prCache.withLock { $0[key] = (Date(), v) }
         return v
     }
 }

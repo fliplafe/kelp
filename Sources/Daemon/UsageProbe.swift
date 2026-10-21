@@ -26,7 +26,7 @@ extension Daemon {
     func refreshPlansIfStale() {
         guard (settings["usage.readPlans"] ?? settings["usage.readClaudePlan"])?.bool != false else { return }
         for probe in Self.planProbes {
-            let start: Bool = lock.withLock {
+            let start: Bool = plans.withLock { plans in
                 let s = plans[probe.agent] ?? PlanState()
                 guard !s.running, Date().timeIntervalSince(s.at ?? .distantPast) > probe.every else { return false }
                 plans[probe.agent, default: PlanState()].running = true; return true
@@ -44,7 +44,7 @@ extension Daemon {
                     // What a failed probe saw, for whoever fixes the parser when an agent changes its screen.
                     if readings.isEmpty, (try? Paths.ensure(root.appendingPathComponent("probe"))) != nil { try? screen.write(to: root.appendingPathComponent("probe/\(probe.agent).txt"), atomically: true, encoding: .utf8) }
                 }
-                lock.withLock {
+                plans.withLock { plans in
                     if !readings.isEmpty { plans[probe.agent]?.readings = readings; plans[probe.agent]?.readAt = Date() }
                     // A failed probe retries in 2 minutes rather than waiting a whole round.
                     plans[probe.agent]?.at = readings.isEmpty ? Date().addingTimeInterval(120 - probe.every) : Date()
@@ -58,7 +58,7 @@ extension Daemon {
     /// (up to 10 minutes late for Claude). The UI's next `usage.get` starts the read.
     func planUsed(_ agent: String) {
         guard let p = Self.planProbes.first(where: { $0.agent == agent }) else { return }
-        lock.withLock {
+        plans.withLock { plans in
             guard let at = plans[agent]?.at else { return }
             plans[agent]?.at = min(at, Date().addingTimeInterval(30 - p.every))
         }

@@ -36,9 +36,9 @@ extension Daemon {
     /// transcripts, then in any reading) has 1M and the rest 200k.
     /// Limit: a 1M model that never went past 200k on this Mac reads as 200k until it does.
     func contextWindow(model: String, peak: Int) -> Int {
-        var long = lock.withLock { longContextModels } ?? Self.longContextModels(in: agentRoots().claude)
+        var long = longContextModels.current ?? Self.longContextModels(in: agentRoots().claude)
         if peak > 200_000 { long.insert(model) }
-        lock.withLock { longContextModels = long }
+        longContextModels.withLock { $0 = long }
         return long.contains(model) ? 1_000_000 : 200_000
     }
 
@@ -62,13 +62,13 @@ extension Daemon {
     func withLimits(_ v: JSONValue) -> JSONValue {
         guard case .object(var o) = v else { return v }
         refreshPlansIfStale()
-        let plans = lock.withLock { self.plans }
+        let plans = self.plans.current
         o["plans"] = .object(plans.filter { !$0.value.readings.isEmpty }.mapValues { s in
             .array(s.readings.map { .obj(["kind": .string($0.kind), "percent": .double($0.percent), "resets": $0.resets.map { .string($0) } ?? .null]) })
         })
         // When each plan was last read: an old reading is shown as old, not as today's.
         o["plansReadAt"] = .object(plans.compactMapValues { s in s.readAt.map { .double($0.timeIntervalSince1970) } })
-        let fresh = lock.withLock { claudeLimits.values.filter { Date().timeIntervalSince($0.at) < 12 * 3600 } }
+        let fresh = claudeLimits.current.values.filter { Date().timeIntervalSince($0.at) < 12 * 3600 }
         o["claudeLimits"] = .array(fresh.sorted { $0.reading.kind < $1.reading.kind }.map { x in
             .obj(["kind": .string(x.reading.kind), "percent": .double(x.reading.percent), "resets": x.reading.resets.map { .string($0) } ?? .null,
                   "observedAt": .double(x.at.timeIntervalSince1970)])
@@ -81,7 +81,7 @@ extension Daemon {
 extension UsageGet: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         // Limit: one cached answer for 60 s (a scan reads GBs of transcripts); per-file incremental parsing if it gets slow
-        let cached = d.lock.withLock { d.usageCache }
+        let cached = d.usageCache.current
         if let c = cached, Date().timeIntervalSince(c.at) < 60, force != true { return d.withLimits(c.value) }
         let roots = d.agentRoots()
         var claude: [JSONValue] = [], codex: [JSONValue] = []
@@ -107,7 +107,7 @@ extension UsageGet: Handled {
             codex.append(.object(o))
         }
         let v = JSONValue.obj(["claude": .array(claude), "codex": .array(codex)])
-        d.lock.withLock { d.usageCache = (Date(), v) }
+        d.usageCache.withLock { $0 = (Date(), v) }
         return d.withLimits(v)
     }
 }

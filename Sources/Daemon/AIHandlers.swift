@@ -84,12 +84,13 @@ extension Daemon {
         let mode = settings["power.keepAwake"]?.string ?? "agents"
         lock.lock(); let working = live.values.contains { $0.snapshot.status == .working && $0.snapshot.agent != "shell" }; lock.unlock()
         let want = mode == "always" || (mode == "agents" && working)
-        keepAwakeLock.lock(); defer { keepAwakeLock.unlock() }   // the ticker and a settings change at once: one assertion
-        if want, sleepAssertion == 0 {
-            var id: IOPMAssertionID = 0
-            if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { sleepAssertion = id }
-        } else if !want, sleepAssertion != 0 {
-            IOPMAssertionRelease(sleepAssertion); sleepAssertion = 0
+        sleepAssertion.withLock { held in   // the ticker and a settings change at once: one assertion
+            if want, held == 0 {
+                var id: IOPMAssertionID = 0
+                if IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Kelp agents are working" as CFString, &id) == kIOReturnSuccess { held = id }
+            } else if !want, held != 0 {
+                IOPMAssertionRelease(held); held = 0
+            }
         }
     }
 }

@@ -502,13 +502,13 @@ final class NoteBox: @unchecked Sendable {
 @Test func turnEndBringsPlanReadForward() throws {
     let d = try Daemon(root: tmp())
     let every = try #require(Daemon.planProbes.first { $0.agent == "claude" }).every
-    d.plans["claude"] = .init(at: Date())
+    d.plans.withLock { $0["claude"] = .init(at: Date()) }
     d.planUsed("claude")
-    let due = try #require(d.plans["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
+    let due = try #require(d.plans.current["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
     #expect(due > 25 && due <= 30)
-    d.plans["claude"]?.at = .distantPast
+    d.plans.withLock { $0["claude"]?.at = .distantPast }
     d.planUsed("claude")
-    #expect(d.plans["claude"]?.at == .distantPast)
+    #expect(d.plans.current["claude"]?.at == .distantPast)
 }
 
 /// Twice as many stuck git / gh calls as there are cores still leave the daemon answering (they don't hold the cooperative pool).

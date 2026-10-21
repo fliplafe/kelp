@@ -122,7 +122,7 @@ extension Daemon {
     }
 
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
-        if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lock.withLock { lastMethod })\n".utf8)) }
+        if Self.debugWake { FileHandle.standardError.write(Data("WAKE \(id) by \(lastMethod.current)\n".utf8)) }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         let argv = resumeArgv(rec, m)
