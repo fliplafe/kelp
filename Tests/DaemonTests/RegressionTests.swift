@@ -359,3 +359,25 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "", "enter": false]))   // a barrier: queued after it
     #expect(!(try await screen()).contains("SUBMITTED"))
 }
+
+/// Opening a paused session doesn't wait for another session that takes its time to stop (an agent ignoring the
+/// hangup gets 2 s before SIGKILL): each session has its own wake lock.
+@Test func openingASessionDoesntWaitForAnotherToStop() async throws {
+    let stubborn = AgentManifest(id: "stubborn2", name: "Stubborn", command: "/bin/bash",
+                                 args: ["-c", "trap '' HUP TERM; echo up; while :; do sleep 0.1; done", "x"], resumeArgs: ["--resume"])
+    let sleepy = AgentManifest(id: "sleepy3", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo up; sleep 30", "x"], resumeArgs: ["--resume"])
+    let w = try await world(agents: [stubborn, sleepy]); defer { w.d.stop() }
+    let slow = try await desk(w, "slow"), other = try await desk(w, "other")
+    let a: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(slow.id), "agent": "stubborn2"]), as: Session.self)
+    let b: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(other.id), "agent": "sleepy3"]), as: Session.self)
+    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(a.id)]))).string?.contains("up") == true })
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(other.id)]))   // b paused
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(other.id)]))
+    let archiving = Task { try await w.c.call("worktree.archive", .obj(["id": .string(slow.id)])) }   // ~2 s: a ignores SIGTERM
+    try await Task.sleep(for: .milliseconds(300))
+    let start = Date()
+    _ = try await w.c.call("session.attach", .obj(["id": .string(b.id)]))   // wakes b
+    #expect(Date().timeIntervalSince(start) < 1.2, "\(Date().timeIntervalSince(start)) s")
+    _ = try await archiving.value
+    #expect(kill(a.pid, 0) != 0)
+}

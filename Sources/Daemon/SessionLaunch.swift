@@ -69,10 +69,10 @@ extension Daemon {
         }
     }
 
-    /// Under wakeLock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
+    /// Under its wake lock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
     /// log. Taken out of `live` only if nobody attached since the check.
     private func pauseIdle(_ ls: LiveSession) {
-        wakeLock.withLock {
+        wakeLocks.withLock(ls.snapshot.id) {
             guard live.remove(ls, if: { !$0.isAttached }) else { return }
             let s = ls.markHibernated()
             Self.waitGone(ls.pty.terminate())   // SIGKILL after 2 s for what ignores the hangup: a wake must not start a second copy
@@ -92,7 +92,7 @@ extension Daemon {
         guard m.autoAnswers.contains(AgentManifest.trust) else { return m }
         var out = m
         out.autoAnswers.removeAll { $0 == AgentManifest.trust }
-        // A remote project's question is always the user's: decided before any git (over ssh, under wakeLock, for a host
+        // A remote project's question is always the user's: decided before any git (over ssh, under its wake lock, for a host
         // that may not answer).
         guard RemoteHost.of(cwd) == nil else { return out }
         // The project only counts for its own workspace's folder: any other cwd passed with its worktreeId is just a folder.

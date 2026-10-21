@@ -52,10 +52,11 @@ extension Daemon {
     func pauseSessions(of wid: String) throws {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         var pids: [pid_t] = []
-        // Under wakeLock, as idle pausing is: a wake that comes meanwhile waits until the programs are gone instead of
-        // starting a second one (on the same log, in a folder about to be removed).
-        try wakeLock.withLock {
-            for s in try store.sessions() where s.worktreeId == wid {
+        // Under their wake locks, as idle pausing is: a wake that comes meanwhile waits until the programs are gone instead
+        // of starting a second one (on the same log, in a folder about to be removed).
+        let sessions = try store.sessions().filter { $0.worktreeId == wid }
+        try wakeLocks.withLocks(sessions.map(\.id)) {
+            for s in sessions {
                 guard let ls = live.remove(s.id) else { continue }
                 if manifests.first(where: { $0.id == s.agent })?.resumeArgs.isEmpty == false {
                     publish(ls.markHibernated())

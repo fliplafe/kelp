@@ -59,11 +59,11 @@ extension SessionResize: Handled {
     }
 }
 
-/// Under wakeLock, as waking is: a paused session marked ended here can't be woken halfway through, nor this kill land
+/// Under its wake lock, as waking is: a paused session marked ended here can't be woken halfway through, nor this kill land
 /// on the old copy while a wake starts a new one.
 extension SessionKill: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
-        try d.wakeLock.withLock {
+        try d.wakeLocks.withLock(id) {
             if let ls = d.existing(id) { ls.pty.terminate() }
             else if var s = try d.store.session(id), s.status == .hibernated { s.status = .exited; d.publish(s) }   // don't wake just to kill
         }

@@ -28,9 +28,9 @@ extension SessionRestart: Handled {
     func handle(_ d: Daemon) throws -> JSONValue {
         guard let old = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
         // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
-        // Under wakeLock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
+        // Under its wake lock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
         // If the new one can't start, the old one still ends as Ended.
-        try d.wakeLock.withLock {
+        try d.wakeLocks.withLock(old.id) {
             if let ls = d.existing(old.id) { Daemon.waitGone(ls.pty.terminate()) }
             else if old.status == .hibernated { var s = old; s.status = .exited; try d.store.update(s) }
         }

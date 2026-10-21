@@ -38,7 +38,7 @@ public final class Daemon: Sendable {
     let plans = Locked<[String: PlanState]>([:])
     func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
     let pausingIdle = Locked(false)   // one round of idle pausing at a time, off the ticker
-    let wakeLock = NSLock()   // one wake per session even when several clients open it at once; pausing holds it too
+    let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let trustLock = NSLock()
     /// Reading the projects' desks and adding the missing first one is one step: two lists at once added two "Workspace 1".
     let deskLock = NSRecursiveLock()  // trusted-configs.json: read-modify-write under it
@@ -243,7 +243,7 @@ public final class Daemon: Sendable {
 
     func liveSession(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
         if let s = live[id] { return s }
-        return try wakeLock.withLock {   // paused sessions wake on first use
+        return try wakeLocks.withLock(id) {   // paused sessions wake on first use
             if let s = live[id] { return s }
             return try wake(id, cols: cols, rows: rows)
         }
@@ -353,10 +353,10 @@ public final class Daemon: Sendable {
     }
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.
-    /// Under wakeLock, as a wake is: a paused session being opened at this moment can't come back after its record and log
+    /// Under its wake lock, as a wake is: a paused session being opened at this moment can't come back after its record and log
     /// are gone (it would restart an agent for a deleted project and save the record again).
     func discard(_ s: Session) {
-        wakeLock.withLock {
+        wakeLocks.withLock(s.id) {
             let ls = live.remove(s.id)
             if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
             try? store.delete(s)
