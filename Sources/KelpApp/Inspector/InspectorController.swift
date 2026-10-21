@@ -266,6 +266,8 @@ private final class PanelIcon: NSButton {
         contentTintColor = on ? .labelColor : .secondaryLabelColor
     }
     override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2 }
+    /// The count badge sits over the pill's corner; a button clips to its rounded layer (and sets this back to true on display).
+    override var clipsToBounds: Bool { get { false } set {} }
     override func mouseEntered(with e: NSEvent) { hover = true }
     override func mouseExited(with e: NSEvent) { hover = false }
 
