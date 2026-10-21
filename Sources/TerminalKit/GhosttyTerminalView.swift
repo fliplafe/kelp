@@ -387,6 +387,15 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         return ghostty_input_mods_e(m)
     }
 
+    /// Under a program that takes the mouse (Claude Code, vim) Ghostty looks for links only while ⇧ is held, so ⌘
+    /// alone gets ⇧ added: ⌘-click opens a link there as it does at a shell prompt (Ghostty drops the ⇧ when it checks).
+    nonisolated static func linkMods(_ f: NSEvent.ModifierFlags, captured: Bool) -> NSEvent.ModifierFlags {
+        captured && f.intersection([.shift, .control, .option, .command]) == .command ? f.union(.shift) : f
+    }
+    private func mouseMods(_ f: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
+        Self.mods(Self.linkMods(f, captured: surface.map(ghostty_surface_mouse_captured) ?? false))
+    }
+
     public override func mouseDown(with e: NSEvent) {
         if window?.firstResponder !== self { window?.makeFirstResponder(self) }
         guard let surface else { return }
@@ -395,12 +404,12 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         if e.modifierFlags.contains(.command), let w = word(at: convert(e.locationInWindow, from: nil)), onOpenPath?(w.text, e.modifierFlags) == true {
             clickTaken = true; return
         }
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, Self.mods(e.modifierFlags))
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mouseMods(e.modifierFlags))
     }
     public override func mouseUp(with e: NSEvent) {
         if clickTaken { clickTaken = false; return }
         guard let surface else { return }
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, Self.mods(e.modifierFlags))
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mouseMods(e.modifierFlags))
         ghostty_surface_mouse_pressure(surface, 0, 0)
     }
     public override func rightMouseDown(with e: NSEvent) {
@@ -420,7 +429,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     public override func mouseMoved(with e: NSEvent) {
         guard let surface else { return }
         let p = convert(e.locationInWindow, from: nil)
-        ghostty_surface_mouse_pos(surface, p.x, bounds.height - p.y, Self.mods(e.modifierFlags))
+        ghostty_surface_mouse_pos(surface, p.x, bounds.height - p.y, mouseMods(e.modifierFlags))
         scheduleHover(p, buttons: NSEvent.pressedMouseButtons)
     }
 
@@ -575,7 +584,10 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         }
         if hasMarkedText() { return }
         let pressed = Self.mods(event.modifierFlags).rawValue & mod != 0
-        keyAction(pressed ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE, event: event)
+        guard let surface else { return }
+        var k = keyEvent(event, pressed ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE)
+        k.mods = mouseMods(event.modifierFlags)   // ⌘ lights up the link under a resting pointer too (see linkMods)
+        _ = ghostty_surface_key(surface, k)
     }
 
     // MARK: Edit menu (Copy / Paste / Select All reach the terminal from the menu bar too, not only as ⌘C / ⌘V)

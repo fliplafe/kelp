@@ -63,3 +63,40 @@ import Testing
     pb.clearContents(); pb.writeObjects([URL(fileURLWithPath: "/tmp/my shot.png") as NSURL])
     #expect(TerminalPaste.text(from: pb) == "/tmp/my\\ shot.png ")
 }
+
+/// ⌘ over a program that took the mouse gets ⇧, which is how Ghostty looks for links past the capture; nothing else changes.
+@Test func commandFindsLinksPastMouseCapture() {
+    let g = GhosttyTerminalView.self
+    #expect(g.linkMods(.command, captured: true) == [.command, .shift])
+    #expect(g.linkMods([.command, .capsLock], captured: true) == [.command, .capsLock, .shift])
+    #expect(g.linkMods(.command, captured: false) == .command)   // a shell prompt: Ghostty wants ⌘ alone
+    #expect(g.linkMods([.command, .option], captured: true) == [.command, .option])
+    #expect(g.linkMods([], captured: true) == [])
+}
+
+/// A program that takes the mouse (as Claude Code does) and prints a link: ⌘-click on it opens its whole target.
+@Test @MainActor func commandClickOpensALinkUnderMouseCapture() async throws {
+    let script = #"printf '\033[?1000h\033[?1006h\033]8;;https://example.com/a?b=c\033\\LINKTEXT\033]8;;\033\\\n'; sleep 20"#
+    let v = GhosttyTerminalView(command: script, cwd: NSTemporaryDirectory())
+    let surface = try #require(v.surface)
+    let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+    w.contentView = v; w.orderFront(nil)
+    defer { w.orderOut(nil) }
+    var opened: URL?
+    v.onOpenURL = { opened = $0 }
+    let deadline = Date() + 5
+    while !(v.visibleText.contains("LINKTEXT") && ghostty_surface_mouse_captured(surface)), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    let rows = v.visibleText.components(separatedBy: "\n")
+    let row = try #require(rows.firstIndex { $0.contains("LINKTEXT") })
+    let s = ghostty_surface_size(surface), scale = w.backingScaleFactor
+    let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
+    let p = v.convert(NSPoint(x: 12 + 3.5 * cw, y: v.bounds.height - 8 - (Double(row) + 0.5) * ch), to: nil)
+    func send(_ t: NSEvent.EventType, _ mods: NSEvent.ModifierFlags, dx: Double = 0) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(with: t, location: NSPoint(x: p.x + dx, y: p.y), modifierFlags: mods, timestamp: 0, windowNumber: w.windowNumber,
+                                        context: nil, eventNumber: 0, clickCount: t == .mouseMoved ? 0 : 1, pressure: 1))
+    }
+    v.mouseMoved(with: try send(.mouseMoved, [], dx: -3))
+    v.mouseMoved(with: try send(.mouseMoved, .command))
+    v.mouseDown(with: try send(.leftMouseDown, .command)); v.mouseUp(with: try send(.leftMouseUp, .command))
+    #expect(opened?.absoluteString == "https://example.com/a?b=c")
+}
