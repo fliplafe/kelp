@@ -11,8 +11,10 @@ final class IgnoredFolders: Sendable {
     private let prefixes: [String]   // the root as FSEvents may name it (/tmp is /private/tmp)
     private let known = OSAllocatedUnfairLock<[String: Bool]>(initialState: [:])
 
-    init(root: String) {
-        self.root = root
+    private let remotes: Remotes
+
+    init(root: String, remotes: Remotes) {
+        self.root = root; self.remotes = remotes
         prefixes = Array(Set([root, Paths.real(root) ?? root].map { $0.hasSuffix("/") ? $0 : $0 + "/" }))
     }
 
@@ -25,7 +27,7 @@ final class IgnoredFolders: Sendable {
         let unknown = Set(folders.filter { !$0.contains { k[$0] == true } }.joined()).filter { k[$0] == nil }
         if !unknown.isEmpty {
             // A git that fails here counts every change, as before.
-            let hits = (try? Git.ignored(Array(unknown), cwd: root)) ?? []
+            let hits = (try? Git.ignored(Array(unknown), cwd: root, remotes: remotes)) ?? []
             k = known.withLock { k in for f in unknown { k[f] = hits.contains(f) }; return k }
         }
         return zip(paths, folders).filter { _, fs in !fs.contains { k[$0] == true } }.map(\.0)

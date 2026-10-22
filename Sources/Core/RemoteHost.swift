@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// A project on another machine, over SSH. Kelp keeps a local folder for it that holds only `.kelp-remote`
 /// (`{"host", "path"}`); git in that folder runs on the host instead (so the git and file panels work as they are),
@@ -7,34 +6,12 @@ import os
 /// minutes after the last use; a dropped connection ends the sessions, and Restart connects again.
 public struct RemoteHost: Codable, Sendable, Equatable {
     public var host: String, path: String
+    /// Where the shared connections' sockets live, and the `ssh` that makes them: its home's (`Remotes`).
+    public var controlDir = NSTemporaryDirectory(), ssh = "/usr/bin/ssh"
     public init(host: String, path: String) { self.host = host; self.path = path }
+    private enum CodingKeys: String, CodingKey { case host, path }
 
     public static let marker = ".kelp-remote"
-    /// Where the shared connections' sockets live; the daemon points it at KELP_HOME/ssh once, at start.
-    /// Under a lock: every `Daemon` sets it when it starts, and tests start several at once (a String written from two
-    /// threads at the same time corrupts memory).
-    public static var controlDir: String {
-        get { controlPath.withLock { $0 } }
-        set { controlPath.withLock { $0 = newValue } }
-    }
-    private static let controlPath = OSAllocatedUnfairLock(initialState: NSTemporaryDirectory())
-    /// `ssh` (tests use a stand-in that runs the command locally).
-    public static let ssh = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh"
-
-    /// Where Kelp keeps remote projects' folders (`<KELP_HOME>/remote`). A `.kelp-remote` anywhere else — say, committed
-    /// to a repository someone clones — is just a file: it must not send that project's git, agents and terminals to
-    /// a host it names.
-    private static let trusted = OSAllocatedUnfairLock<Set<String>>(initialState: [])
-    public static func trust(_ dir: URL) { trusted.withLock { _ = $0.insert(dir.standardizedFileURL.path) } }
-
-    /// The remote a project folder stands for (its own folder only: a workspace is that folder).
-    public static func of(_ dir: String) -> RemoteHost? {
-        let path = URL(fileURLWithPath: dir).standardizedFileURL.path
-        let roots = trusted.withLock { $0 }.union([Paths.root.appendingPathComponent("remote").standardizedFileURL.path])
-        guard roots.contains(where: { path.hasPrefix($0 + "/") }), let d = FileManager.default.contents(atPath: path + "/" + marker),
-              let r = try? JSONDecoder().decode(RemoteHost.self, from: d), Self.isHost(r.host) else { return nil }
-        return r
-    }
 
     /// What may follow `ssh`: not an option, nothing a shell would split.
     /// Also a folder name under remote/: "." / ".." or a "/" would put it somewhere else.
@@ -42,22 +19,11 @@ public struct RemoteHost: Codable, Sendable, Equatable {
         !h.isEmpty && !h.hasPrefix("-") && !h.contains(where: \.isWhitespace) && !h.contains("/") && h != "." && h != ".."
     }
 
-    /// For a path inside a remote project's folder: the folder, its remote, and the path on the host.
-    public static func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? {
-        let path = URL(fileURLWithPath: path).standardizedFileURL.path   // "x/../../y" can't reach past the project
-        var dir = (path as NSString).deletingLastPathComponent
-        while dir.count > 1 {
-            if let r = of(dir) { return (dir, r, r.path + String(path.dropFirst(dir.count))) }
-            dir = (dir as NSString).deletingLastPathComponent
-        }
-        return nil
-    }
-
     /// ssh's options for this host: the shared connection; no password prompts where nobody can answer them.
     public func sshArgs(tty: Bool) -> [String] {
         (tty ? ["-tt"] : ["-T", "-o", "BatchMode=yes"])
             + ["-o", "ConnectTimeout=15", "-o", "ControlMaster=auto",
-                "-o", "ControlPath=\(Self.controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
+                "-o", "ControlPath=\(controlDir)/%C", "-o", "ControlPersist=600", "-o", "ServerAliveInterval=30", "--", host]
     }
 
     /// What the host's shell runs: `argv` in the project's folder, through an interactive login shell so the host's PATH
@@ -94,4 +60,51 @@ public struct RemoteHost: Codable, Sendable, Equatable {
 
     /// One shell word, single-quoted.
     public static func quote(_ s: String) -> String { IDE.shellWord(s) }
+}
+
+/// The remote projects of one Kelp home. A `.kelp-remote` counts only in its `remote` folder: one anywhere else (say,
+/// committed to a repository someone clones) is just a file, and must not send that project's git, agents and terminals
+/// to a host it names. Their shared connections' sockets go in its `ssh` folder (short: a Unix socket path has to fit
+/// in 104 bytes).
+public struct Remotes: Sendable, Equatable {
+    /// The folder remote projects' local stand-ins are in; nil: none (every folder is on this Mac).
+    public let folder: String?
+    public let controlDir: String
+    /// `ssh` (tests use a stand-in that runs the command locally).
+    public let ssh: String
+
+    public init(home: URL, ssh: String = ProcessInfo.processInfo.environment["KELP_SSH"] ?? "/usr/bin/ssh") {
+        folder = home.appendingPathComponent("remote").standardizedFileURL.path
+        controlDir = home.appendingPathComponent("ssh").path
+        self.ssh = ssh
+    }
+    private init() { folder = nil; controlDir = NSTemporaryDirectory(); ssh = "/usr/bin/ssh" }
+    /// No remote projects: git and the rest run here, whatever a folder holds.
+    public static let none = Remotes()
+
+    /// `path` on `host`, reached through this home's shared connections.
+    public func host(_ host: String, path: String) -> RemoteHost {
+        var r = RemoteHost(host: host, path: path)
+        r.controlDir = controlDir; r.ssh = ssh
+        return r
+    }
+
+    /// The remote a project folder stands for (its own folder only: a workspace is that folder).
+    public func of(_ dir: String) -> RemoteHost? {
+        let path = URL(fileURLWithPath: dir).standardizedFileURL.path
+        guard let folder, path.hasPrefix(folder + "/"), let d = FileManager.default.contents(atPath: path + "/" + RemoteHost.marker),
+              let r = try? JSONDecoder().decode(RemoteHost.self, from: d), RemoteHost.isHost(r.host) else { return nil }
+        return host(r.host, path: r.path)
+    }
+
+    /// For a path inside a remote project's folder: the folder, its remote, and the path on the host.
+    public func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path   // "x/../../y" can't reach past the project
+        var dir = (path as NSString).deletingLastPathComponent
+        while dir.count > 1 {
+            if let r = of(dir) { return (dir, r, r.path + String(path.dropFirst(dir.count))) }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
+        return nil
+    }
 }

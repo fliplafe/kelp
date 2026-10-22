@@ -174,7 +174,7 @@ extension LSPOpen: Handled {
     static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) throws -> Done {
-        guard RemoteHost.of(root) == nil else { throw RPCError.invalidParams("No language servers for a project on another machine.") }
+        guard d.remotes.of(root) == nil else { throw RPCError.invalidParams("No language servers for a project on another machine.") }
         // A project's language servers run its own code: the daemon checks, whoever asks.
         guard d.lspTrusted(root) else { throw LSPRefusal.untrusted.error }
         // Not waiting for the login shell's PATH on this thread (seconds, right after the daemon starts): until it's read,

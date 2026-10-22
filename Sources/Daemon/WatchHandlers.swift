@@ -16,7 +16,7 @@ extension Daemon {
         switch k.topic {
         case .git:
             // A remote project's folder here holds only its marker: no file events come, so it's read now and then.
-            let remote = (try? store.worktree(k.key)).flatMap { $0 }.map { RemoteHost.of($0.path) != nil } ?? false
+            let remote = (try? store.worktree(k.key)).flatMap { $0 }.map { remotes.of($0.path) != nil } ?? false
             var e: GitEvent
             do {
                 let changes = try await ask(GitStatus(id: k.key))
@@ -48,10 +48,10 @@ extension Daemon {
             return ((try? await ask(UsageGet())).flatMap { line(LimitsEvent(usage: $0)) }, 10)
         case .file:
             // A stat: what changed is the version, not the text (the app reads that only for a version it doesn't hold).
-            guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return (nil, nil) }
+            guard k.key.hasPrefix("/"), remotes.containing(k.key) == nil else { return (nil, nil) }
             return (line(FileEvent(path: k.key, stamp: FileService.stamp(k.key))), nil)
         case .files:
-            let remote = (try? store.worktree(k.key)).flatMap { $0 }.map { RemoteHost.of($0.path) != nil } ?? false
+            let remote = (try? store.worktree(k.key)).flatMap { $0 }.map { remotes.of($0.path) != nil } ?? false
             var e: FilesEvent
             do { e = FilesEvent(worktree: k.key, paths: try await ask(FilesList(id: k.key))) } catch { e = FilesEvent(worktree: k.key, error: message(error)) }
             return (line(e), remote ? 10 : nil)   // as git: a remote folder is listed every 10 s while watched

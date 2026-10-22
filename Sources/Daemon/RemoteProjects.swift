@@ -24,8 +24,8 @@ extension RemoteListFolders: Handled {
             + #"for f in *; do [ -d "$f" ] || continue; if [ -e "$f/.git" ]; then echo "g $f"; else echo "d $f"; fi; done"#
         let out: String
         do {
-            out = try Git.run(["-o", "ConnectTimeout=10"] + RemoteHost(host: host, path: "~").sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)],
-                              cwd: NSHomeDirectory(), executable: RemoteHost.ssh)
+            out = try Git.run(["-o", "ConnectTimeout=10"] + d.remotes.host(host, path: "~").sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)],
+                              cwd: NSHomeDirectory(), executable: d.remotes.ssh)
         } catch let e as GitError {
             let why = e.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             throw RPCError.invalidParams(why.isEmpty ? "Couldn't connect to \(host)." : why)
@@ -50,7 +50,7 @@ extension RepoAddRemote: Handled {
         func same(_ m: RemoteHost) -> Bool {
             m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
         }
-        if let r = try d.store.repos().first(where: { RemoteHost.of($0.path).map(same) ?? false }) {
+        if let r = try d.store.repos().first(where: { d.remotes.of($0.path).map(same) ?? false }) {
             return r
         }
         let name = Daemon.remoteFolderName(path)
@@ -68,17 +68,17 @@ extension RepoAddRemote: Handled {
         try mark(RemoteHost(host: host, path: path))
         // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
         if `init` == true {
-            do { _ = try Git.run(["init", "-q"], cwd: folder.path) }
+            do { _ = try Git.run(["init", "-q"], cwd: folder.path, remotes: d.remotes) }
             catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
         }
         let top: String
-        do { top = try Git.root(of: folder.path) }
+        do { top = try Git.root(of: folder.path, remotes: d.remotes) }
         catch let e as GitError {
             try? FileManager.default.removeItem(at: folder)
             throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
         }
         try mark(RemoteHost(host: host, path: top))
-        let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path))
+        let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path, remotes: d.remotes))
         try d.store.save(r); try d.workspaces.syncMainWorkspaces(); d.notify(ChangedEvent.repo)
         return r
     }
@@ -87,22 +87,22 @@ extension RepoAddRemote: Handled {
 /// `files.read` for a remote project's file, as the app first asked it: the text alone.
 extension FilesReadRemote: Handled {
     func handle(_ d: Daemon) throws -> String {
-        guard RemoteHost.containing(path) != nil else { throw RPCError.invalidParams("Not in a remote project.") }
-        return try FileService.read(path).text
+        guard d.remotes.containing(path) != nil else { throw RPCError.invalidParams("Not in a remote project.") }
+        return try d.files.read(path).text
     }
 }
 
 /// `files.write` with the text read as its base instead of a stamp; a file that's gone is just written again.
 extension FilesWriteRemote: Handled {
     func handle(_ d: Daemon) throws -> Changed? {
-        guard let host = RemoteHost.containing(path)?.remote.host else { throw RPCError.invalidParams("Not in a remote project.") }
-        let r = try FileService.write(path, text, base: base.map { FileService.digest(Data($0.utf8)) })
+        guard let host = d.remotes.containing(path)?.remote.host else { throw RPCError.invalidParams("Not in a remote project.") }
+        let r = try d.files.write(path, text, base: base.map { FileService.digest(Data($0.utf8)) })
         if let c = r.conflict {
             // A version there that isn't UTF-8 text can't be shown, and writing over it unasked could lose it.
             guard let now = c.text else { throw RPCError.invalidParams("It changed on \(host) and isn't UTF-8 text now: not written.") }
             return Changed(changed: now)
         }
-        if r.missing == true { _ = try FileService.write(path, text, base: nil) }
+        if r.missing == true { _ = try d.files.write(path, text, base: nil) }
         return nil
     }
 }

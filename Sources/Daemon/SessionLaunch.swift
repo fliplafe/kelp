@@ -60,7 +60,7 @@ extension Sessions {
     /// from the screen, which an agent that has hooks elsewhere would never get read.
     func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
         var out = trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env)
-        if RemoteHost.of(cwd) != nil { out.hooksSettingsFlag = nil }
+        if remotes.of(cwd) != nil { out.hooksSettingsFlag = nil }
         return out
     }
 
@@ -108,14 +108,14 @@ extension Sessions {
         out.autoAnswers.removeAll { $0 == AgentManifest.trust }
         // A remote project's question is always the user's: decided before any git (over ssh, under its wake lock, for a host
         // that may not answer).
-        guard RemoteHost.of(cwd) == nil else { return out }
+        guard remotes.of(cwd) == nil else { return out }
         // The project only counts for its own workspace's folder: any other cwd passed with its worktreeId is just a folder.
         // (A workspace on another branch of a trusted project is trusted the way Claude trusts a folder, whatever is checked
         // out in it.)
         var project: String?
         if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId),
            AgentTrust.normal(cwd) == AgentTrust.normal(w.path) || AgentTrust.normal(cwd).hasPrefix(AgentTrust.normal(w.path) + "/"),
-           !AgentConfig.changed(w.path, base: r.baseBranch) {
+           !AgentConfig.changed(w.path, base: r.baseBranch, remotes: remotes) {
             project = r.path
         }
         // The config the agent will read: the session's variables over the daemon's own (a kelpd started from a shell
@@ -147,7 +147,7 @@ extension Sessions {
     /// argv that brings back this session's own conversation. A remote one's conversations are on its host: the agent's
     /// own "latest in this folder" finds it there.
     func resumeArgv(_ rec: Session, _ m: AgentManifest) -> [String] {
-        guard rec.agent == "claude", RemoteHost.of(rec.cwd) == nil, let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
+        guard rec.agent == "claude", remotes.of(rec.cwd) == nil, let flag = m.resumeIdFlag, let pin = m.sessionIdFlag else { return m.resuming(rec.argv) }
         if rec.argv.contains(flag) { return rec.argv }
         if let i = rec.argv.firstIndex(of: pin), i + 1 < rec.argv.count {
             // Pinned but nothing typed yet: no conversation to resume, start it under the same id.
@@ -249,10 +249,12 @@ extension Sessions {
         let base = Naming.slug(prompt)
         guard !base.isEmpty else { return }
         var b = base, n = 2
-        while Git.branchExists(r.path, b) { b = "\(base)-\(n)"; n += 1 }
-        try Git.renameBranch(w.path, from: w.branch, to: b)
+        while Git.branchExists(r.path, b, remotes: remotes) { b = "\(base)-\(n)"; n += 1 }
+        try Git.renameBranch(w.path, from: w.branch, to: b, remotes: remotes)
         do { try store.update(Worktree.self, w.id) { $0.branch = b; if $0.note.isEmpty { $0.note = title } } } catch {
-            do { try Git.renameBranch(w.path, from: b, to: w.branch) } catch { Log.session.error("branch \(b, privacy: .public) kept, its record says \(w.branch, privacy: .public): \(error)") }
+            do { try Git.renameBranch(w.path, from: b, to: w.branch, remotes: remotes) } catch {
+                Log.session.error("branch \(b, privacy: .public) kept, its record says \(w.branch, privacy: .public): \(error)")
+            }
             throw error
         }
         notify(ChangedEvent.worktree)

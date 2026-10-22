@@ -63,7 +63,7 @@ import Core
     #expect(try String(contentsOfFile: dir + "/target.txt", encoding: .utf8) == "through\n")
 
     // Past the limit a tab opens: refused, nothing written (called here: 50 MB through the socket would only be slower).
-    do { _ = try FileService.write(dir + "/huge.txt", String(repeating: "x", count: Unopenable.openLimit + 1), base: nil); Issue.record("wrote past the limit") }
+    do { _ = try FileService(remotes: .none).write(dir + "/huge.txt", String(repeating: "x", count: Unopenable.openLimit + 1), base: nil); Issue.record("wrote past the limit") }
     catch { #expect(Unopenable(error) == .tooBig(Unopenable.openLimit + 1)) }
     #expect(!FileManager.default.fileExists(atPath: dir + "/huge.txt"))
 }

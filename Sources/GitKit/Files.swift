@@ -6,14 +6,14 @@ extension ProjectFiles {
     /// Tracked + untracked-but-not-ignored files, relative paths. A tracked file deleted from the folder is left out: git
     /// tags it "R" (one git process instead of a stat per file, and it works on a remote host too). Outside a sparse
     /// checkout's cone ("S", never checked by git) a file is kept only if it's there. The first `limit`.
-    public static func list(_ root: String, limit: Int = listLimit) throws -> [String] {
+    public static func list(_ root: String, limit: Int = listLimit, remotes: Remotes = .none) throws -> [String] {
         let a = ["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"]
         let r: (data: Data, truncated: Bool)
-        do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit) } catch where outsideGit(error) { return walk(root, limit: limit) }
+        do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit, remotes: remotes) } catch where outsideGit(error) { return walk(root, limit: limit) }
         let lines: [Substring] = String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self)
             .split(separator: "\0").filter { $0.count > 2 }
         let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
-        let remote = RemoteHost.of(root) != nil
+        let remote = remotes.of(root) != nil
         let files = lines.lazy.filter { l in
             guard !l.hasPrefix("R "), !gone.contains(l.dropFirst(2)) else { return false }
             return !l.hasPrefix("S ") || remote || FileManager.default.fileExists(atPath: root + "/" + l.dropFirst(2))
@@ -44,10 +44,10 @@ extension ProjectFiles {
     }
 
     /// The first `limit` matches; what rg or git grep print past `searchOutput` bytes is read and dropped.
-    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = searchLimit) throws -> [SearchMatch] {
+    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = searchLimit, remotes: Remotes = .none) throws -> [SearchMatch] {
         guard !query.isEmpty else { return [] }
         var a: [String], r: (data: Data, truncated: Bool)
-        if let rg = ripgrep, RemoteHost.of(root) == nil {   // remote: git grep runs on the host
+        if let rg = ripgrep, remotes.of(root) == nil {   // remote: git grep runs on the host
             a = ["--line-number", "--no-heading", "--null", "--color=never", "--max-columns=300", "--max-count=200"]
             if !regex { a.append("--fixed-strings") }
             if !caseSensitive { a.append("--ignore-case") }   // like git grep -i below (smart-case would honour capitals)
@@ -56,9 +56,9 @@ extension ProjectFiles {
             a = ["grep", "-n", "-z", "--untracked", "-I"]
             if !regex { a.append("-F") }
             if !caseSensitive { a.append("-i") }
-            do { r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput) } catch where outsideGit(error) {
+            do { r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput, remotes: remotes) } catch where outsideGit(error) {
                 a = a.map { $0 == "--untracked" ? "--no-index" : $0 }   // a folder without git: its files as they are
-                r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput)
+                r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput, remotes: remotes)
             }
         }
         let found = parseGrep(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0x0A) : r.data, as: UTF8.self), limit: limit)
@@ -88,8 +88,8 @@ extension ProjectFiles {
 
 extension Git {
     /// Which of `paths` (relative to `root`; a folder ends with "/") .gitignore and the other exclude files leave out.
-    public static func ignored(_ paths: [String], cwd root: String) throws -> Set<String> {
-        let out = try run(["check-ignore", "-z", "--stdin"], cwd: root, stdin: paths.joined(separator: "\0"), ok: [0, 1])
+    public static func ignored(_ paths: [String], cwd root: String, remotes: Remotes = .none) throws -> Set<String> {
+        let out = try run(["check-ignore", "-z", "--stdin"], cwd: root, stdin: paths.joined(separator: "\0"), ok: [0, 1], remotes: remotes)
         return Set(out.split(separator: "\0").map(String.init))
     }
 }

@@ -5,7 +5,7 @@ import Core
 extension Sessions {
     /// `tmux <args>`, on the host for a remote project through its login shell, as its terminals are (tmux is on that PATH).
     func tmux(_ args: [String], cwd: String, timeLimit: TimeInterval = 30) throws -> Subprocess.Output {
-        let argv = try RemoteHost.of(cwd).map { [RemoteHost.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + args)] }
+        let argv = try remotes.of(cwd).map { [$0.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + args)] }
             ?? [LoginPath.resolve("tmux")] + args
         var env = ProcessInfo.processInfo.environment; env["PATH"] = Self.childPath
         let r = try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeLimit)

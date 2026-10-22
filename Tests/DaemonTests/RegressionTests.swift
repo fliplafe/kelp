@@ -354,13 +354,13 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// start in that subfolder, and the agent reads its config there.
 @Test func agentConfigInASubfolderCounts() throws {
     let repo = try makeRepo()
-    #expect(!AgentConfig.changed(repo, base: "main"))
+    #expect(!AgentConfig.changed(repo, base: "main", remotes: .none))
     try Git.run(["checkout", "-qb", "pr"], cwd: repo)
     try FileManager.default.createDirectory(atPath: repo + "/sub/.claude", withIntermediateDirectories: true)
     try "{}".write(toFile: repo + "/sub/.claude/settings.json", atomically: true, encoding: .utf8)
-    #expect(AgentConfig.changed(repo, base: "main"))   // not committed yet
+    #expect(AgentConfig.changed(repo, base: "main", remotes: .none))   // not committed yet
     try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "sub config"], cwd: repo)
-    #expect(AgentConfig.changed(repo, base: "main"))   // committed on the branch
+    #expect(AgentConfig.changed(repo, base: "main", remotes: .none))   // committed on the branch
 }
 
 /// A draft (an issue's brief) to a program that takes no pastes isn't submitted line by line: it arrives as one line,
@@ -568,7 +568,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     try Git.run(["clone", "-q", "--", origin, clone], cwd: "/tmp")
     #expect(Git.defaultBranch(repo: clone) != "--output=" + victim && !Git.defaultBranch(repo: clone).hasPrefix("-"))
     #expect(throws: GitError.self) { try Git.currentBranch(clone) }
-    #expect(AgentConfig.changed(clone, base: evil))   // refused: asked, not compared
+    #expect(AgentConfig.changed(clone, base: evil, remotes: .none))   // refused: asked, not compared
     let w = try await world(); defer { w.d.stop() }
     let repo: Repo = try await w.c.call("repo.add", .obj(["path": .string(clone)]), as: Repo.self)
     #expect(!repo.baseBranch.hasPrefix("-"))

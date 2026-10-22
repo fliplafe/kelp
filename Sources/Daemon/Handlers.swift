@@ -168,11 +168,11 @@ extension DaemonInfo: Handled {
 extension GitDiscardHunk: Handled {
     func handle(_ d: Daemon) throws -> Done {
         let w = try d.cwd(forWorktree: id)
-        guard let diff = try Git.diff(w.path, source: .unstaged, file: file).first, diff.hunks.indices.contains(hunk),
+        guard let diff = try Git.diff(w.path, source: .unstaged, file: file, remotes: d.remotes).first, diff.hunks.indices.contains(hunk),
               diff.hunks[hunk].header == header, fingerprint.map({ $0 == diff.hunks[hunk].fingerprint }) ?? true else {
             throw RPCError.invalidParams("The file changed since it was shown; nothing was discarded.")
         }
-        try Git.discardHunk(w.path, diff: diff, hunk: hunk); return Done()
+        try Git.discardHunk(w.path, diff: diff, hunk: hunk, remotes: d.remotes); return Done()
     }
 }
 
@@ -186,11 +186,11 @@ extension WorktreeNote: Handled {
 extension RepoWorktreeSizes: Handled {
     func handle(_ d: Daemon) throws -> [Item] {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
-        guard RemoteHost.of(r.path) == nil else { return [] }   // their disk is on the host
+        guard d.remotes.of(r.path) == nil else { return [] }   // their disk is on the host
         let workspaces = try Self.workspaces(d, r)
-        return try Git.linkedWorktrees(r.path).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
+        return try Git.linkedWorktrees(r.path, remotes: d.remotes).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
             Item(path: w.path, bytes: Self.du(w.path),
-                 removable: !w.locked && !workspaces.contains(Self.real(w.path)) && (try? Git.isDirty(w.path)) == false)
+                 removable: !w.locked && !workspaces.contains(Self.real(w.path)) && (try? Git.isDirty(w.path, remotes: d.remotes)) == false)
         }.sorted { $0.bytes > $1.bytes }
     }
 
@@ -208,15 +208,15 @@ extension RepoWorktreeSizes: Handled {
 extension RepoRemoveWorktrees: Handled {
     func handle(_ d: Daemon) throws -> Result {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
-        let linked = try Git.linkedWorktrees(r.path), workspaces = try RepoWorktreeSizes.workspaces(d, r)
+        let linked = try Git.linkedWorktrees(r.path, remotes: d.remotes), workspaces = try RepoWorktreeSizes.workspaces(d, r)
         var out = Result(removed: [], kept: [:])
         for p in paths {
             guard let w = linked.first(where: { $0.path == p }), !workspaces.contains(RepoWorktreeSizes.real(p)) else {
                 out.kept[p] = "Not one of the project's other worktrees."; continue
             }
             do {
-                try Git.run(["worktree", "remove", p], cwd: r.path)   // no --force: git keeps one with changes, untracked files or a lock
-                if let b = w.branch, Git.isRevision(b) { _ = try? Git.run(["branch", "-d", b], cwd: r.path) }   // -d: only if its commits are on another branch
+                try Git.run(["worktree", "remove", p], cwd: r.path, remotes: d.remotes)   // no --force: git keeps one with changes, untracked files or a lock
+                if let b = w.branch, Git.isRevision(b) { _ = try? Git.run(["branch", "-d", b], cwd: r.path, remotes: d.remotes) }   // -d: only if its commits are on another branch
                 out.removed.append(p)
             } catch let e as GitError { out.kept[p] = e.message }
         }

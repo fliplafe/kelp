@@ -122,22 +122,22 @@ func trustQuestionStandIn() -> String {
 
 @Test func twoRemoteFoldersWithTheSameNameAreTwoProjects() async throws {
     _ = localSSH
-    try #require(RemoteHost.ssh == localSSH)
     let w = try await world(); defer { w.d.stop() }
+    try #require(w.d.remotes.ssh == localSSH)
     let a = tmp().path + "/app", b = tmp().path + "/app"
     for p in [a, b] { try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true); try Git.run(["init", "-q"], cwd: p) }
     let ra = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(a)]), as: Repo.self)
     let rb = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(b)]), as: Repo.self)
     #expect(ra.id != rb.id && ra.path != rb.path)                             // not the first project again
-    #expect(RemoteHost.of(rb.path)?.path.hasSuffix(String(b.dropFirst(4))) == true)   // its agents run in its own folder
+    #expect(w.d.remotes.of(rb.path)?.path.hasSuffix(String(b.dropFirst(4))) == true)   // its agents run in its own folder
     let again = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(a)]), as: Repo.self)
     #expect(again.id == ra.id)                                                // adding the same one twice is still one project
 }
 
 @Test func aFailedRemoteAddRemovesOnlyItsOwnFolder() async throws {
     _ = localSSH
-    try #require(RemoteHost.ssh == localSSH)
     let w = try await world(); defer { w.d.stop() }
+    try #require(w.d.remotes.ssh == localSSH)
     let good = tmp().path + "/svc"
     try FileManager.default.createDirectory(atPath: good, withIntermediateDirectories: true); try Git.run(["init", "-q"], cwd: good)
     let kept = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": .string(good)]), as: Repo.self)

@@ -24,7 +24,7 @@ extension Daemon {
 
     /// The branch checked out in the folder now (a workspace's record can be stale after a switch).
     func checkedOut(_ w: Worktree) -> String {
-        (try? Git.currentBranch(w.path)) ?? w.branch
+        (try? Git.currentBranch(w.path, remotes: remotes)) ?? w.branch
     }
 
     static let bitbucketNeedsCredentials = RPCError.invalidParams("This repo is on Bitbucket — add credentials in Settings › Integrations")
@@ -113,7 +113,7 @@ extension GitAuthorAvatar: AsyncHandled {
         let path = try d.cwd(forWorktree: id).path, email = email
         // The forge the project's origin is on; elsewhere only a GitHub noreply address tells its account.
         let url = try? await d.offload { () throws -> URL? in
-            let origin = (try? Git.run(["remote", "get-url", "origin"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let origin = (try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: d.remotes))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if GitLab.isGitLab(remote: origin) { return try GitLab.avatarURL(email: email, cwd: path) }
             if Git.webRepo(origin)?.0.lowercased().contains("github") == true { return try GitHub.avatarURL(email: email, cwd: path) }
             return GitHub.noreplyAvatar(email)
@@ -149,13 +149,13 @@ extension GitHubPRCreate: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Result {
         guard let w = try d.store.worktree(worktreeId), let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
         let path = w.path, draft = draft == true
-        try await d.offload { try Git.remote(path, .push) }   // the branch checked out now
+        try await d.offload { try Git.remote(path, .push, remotes: d.remotes) }   // the branch checked out now
         let branch = try await d.offload { d.checkedOut(w) }   // and the PR's source (the record can be stale after a switch)
         var title = title ?? "", body = body ?? ""
         let link = w.issue.isEmpty ? nil : (w.issue.hasPrefix("#") ? "Fixes \(w.issue)" : "Refs \(w.issue)")
         if title.isEmpty || body.isEmpty {
             let cmpBase = w.base.isEmpty ? r.baseBranch : w.base
-            let commits = try await d.offload { try Git.log(path, base: cmpBase).map(\.subject) }
+            let commits = try await d.offload { try Git.log(path, base: cmpBase, remotes: d.remotes).map(\.subject) }
             if title.isEmpty { title = commits.last ?? branch }
             if body.isEmpty { body = commits.map { "- \($0)" }.joined(separator: "\n") + (link.map { "\n\n\($0)" } ?? "") }
         } else if let link, !body.contains(w.issue) { body += "\n\n\(link)" }

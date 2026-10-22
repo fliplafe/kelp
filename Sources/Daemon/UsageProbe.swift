@@ -128,17 +128,17 @@ extension AgentUsage {
         let trusted = agent == "antigravity" ? Self.antigravityTrusted() : agent == "claude" ? Self.claudeTrusted() : []
         let worktrees = (try? store.worktrees()) ?? []
         return Self.probeFolder(used: used, trusted: trusted, remoteRoot: root.appendingPathComponent("remote").path) { dir in
-            guard FileManager.default.fileExists(atPath: dir), RemoteHost.of(dir) == nil else { return false }
+            guard FileManager.default.fileExists(atPath: dir), remotes.of(dir) == nil else { return false }
             let w = worktrees.first { AgentTrust.normal($0.path) == AgentTrust.normal(dir) }
-            return Self.quietFolder(dir, base: w.flatMap { try? store.repo($0.repoId)?.baseBranch })
+            return Self.quietFolder(dir, base: w.flatMap { try? store.repo($0.repoId)?.baseBranch }, remotes: remotes)
         }
     }
 
     /// Nobody watches the hidden copy, so it only opens where the project's agent config (hooks, MCP servers) can't have
     /// come in unseen: a Kelp workspace whose config matches its base branch (the check a launch makes before answering
     /// trust), or any other folder with no agent config at all.
-    static func quietFolder(_ dir: String, base: String?) -> Bool {
-        if let base { return !AgentConfig.changed(dir, base: base) }
+    static func quietFolder(_ dir: String, base: String?, remotes: Remotes = .none) -> Bool {
+        if let base { return !AgentConfig.changed(dir, base: base, remotes: remotes) }
         return !AgentConfig.files.contains { FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent($0)) }
     }
 

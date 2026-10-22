@@ -8,10 +8,10 @@ enum AgentConfig {
     static let files = [".claude", ".mcp.json", ".codex", ".gemini", ".cursor"]
     /// At any depth: a session can start in a folder inside the workspace, and the agent reads that folder's config.
     static let specs = files.flatMap { [":(glob)**/" + $0, ":(glob)**/" + $0 + "/**"] }
-    static func changed(_ path: String, base: String) -> Bool {
+    static func changed(_ path: String, base: String, remotes: Remotes) -> Bool {
         guard Git.isRevision(base) else { return true }   // a base that reads as an option can't be compared: the user is asked
-        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + specs, cwd: path)) == nil   // exit 1: differs (base: checked above)
-        let pending = (try? Git.run(["status", "--porcelain", "--"] + specs, cwd: path))?.isEmpty != true
+        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + specs, cwd: path, remotes: remotes)) == nil   // exit 1: differs (base: checked above)
+        let pending = (try? Git.run(["status", "--porcelain", "--"] + specs, cwd: path, remotes: remotes))?.isEmpty != true
         return committed || pending
     }
 }

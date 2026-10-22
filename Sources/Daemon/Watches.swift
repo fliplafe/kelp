@@ -34,7 +34,9 @@ final class Watches: Sendable {
     private let store: Store
     private let clients: Clients
 
-    init(store: Store, clients: Clients) { self.store = store; self.clients = clients }
+    private let remotes: Remotes
+
+    init(store: Store, clients: Clients, remotes: Remotes) { self.store = store; self.clients = clients; self.remotes = remotes }
 
     func start(_ k: Key, conn: Int) {
         let n = numbers.withLock { $0 += 1; return $0 }
@@ -99,11 +101,11 @@ final class Watches: Sendable {
     private func folder(_ k: Key) -> (String, @Sendable ([String]) -> Bool)? {
         switch k.topic {
         case .git, .files:
-            guard let w = try? store.worktree(k.key), RemoteHost.of(w.path) == nil else { return nil }
-            let touches = k.topic == .git ? Git.touchesStatus : Git.touchesFileList, ignored = IgnoredFolders(root: w.path)
+            guard let w = try? store.worktree(k.key), remotes.of(w.path) == nil else { return nil }
+            let touches = k.topic == .git ? Git.touchesStatus : Git.touchesFileList, ignored = IgnoredFolders(root: w.path, remotes: remotes)
             return (w.path, { touches(ignored.drop($0)) })
         case .file:
-            guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return nil }
+            guard k.key.hasPrefix("/"), remotes.containing(k.key) == nil else { return nil }
             // Its folder, as FSEvents names it (/tmp is /private/tmp): the file itself may not be there to resolve.
             // Limit: a symlink's target changing elsewhere isn't seen; watch the target's folder if that matters.
             let dir = (k.key as NSString).deletingLastPathComponent, name = (k.key as NSString).lastPathComponent

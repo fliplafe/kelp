@@ -80,17 +80,17 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 
 /// `.kelp-remote` is Kelp's own marker in its own folder; one committed to a repository is just a file.
 @Test func remoteMarkerCountsOnlyInKelpsFolder() throws {
-    let root = tmp(); _ = try Daemon(root: root)
+    let root = tmp(), remotes = Remotes(home: root)
     let marker = try JSONEncoder().encode(RemoteHost(host: "evil.example", path: "/x"))
     let cloned = try makeRepo()
     try marker.write(to: URL(fileURLWithPath: cloned + "/" + RemoteHost.marker))
-    #expect(RemoteHost.of(cloned) == nil)
+    #expect(remotes.of(cloned) == nil)
     let mine = root.appendingPathComponent("remote/box/app")
     try FileManager.default.createDirectory(at: mine, withIntermediateDirectories: true)
     try marker.write(to: mine.appendingPathComponent(RemoteHost.marker))
-    #expect(RemoteHost.of(mine.path)?.host == "evil.example")
+    #expect(remotes.of(mine.path)?.host == "evil.example")
     try JSONEncoder().encode(RemoteHost(host: "-oProxyCommand=touch /tmp/x", path: "/x")).write(to: mine.appendingPathComponent(RemoteHost.marker))
-    #expect(RemoteHost.of(mine.path) == nil)
+    #expect(remotes.of(mine.path) == nil)
     #expect(Array(RemoteHost(host: "box", path: "/x").sshArgs(tty: false).suffix(2)) == ["--", "box"])
 }
 

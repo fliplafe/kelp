@@ -10,7 +10,7 @@ import Agents
 let testRoot = TestIsolation.root
 
 /// `ssh` that runs the command here (the host is this Mac). One for the whole test process, made before anything reads
-/// `RemoteHost.ssh` (which reads KELP_SSH once): two tests making their own could overwrite each other's.
+/// a daemon (its `Remotes` reads KELP_SSH as it starts): two tests making their own could overwrite each other's.
 let localSSH: String = {
     let shim = tmp().appendingPathComponent("ssh")
     try? """
@@ -429,9 +429,8 @@ final class NoteBox: @unchecked Sendable {
 /// runs the command locally), while Kelp keeps only a placeholder folder.
 @Test func remoteProjectOverSSH() async throws {
     _ = localSSH
-    #expect(RemoteHost.ssh == localSSH)
-
     let (d, c, root) = try daemon(); defer { d.stop() }
+    #expect(d.remotes.ssh == localSSH)
     let there = try makeRepo()
     try "changed\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
     // The folder browser: the repository is listed and marked; a missing folder says so.

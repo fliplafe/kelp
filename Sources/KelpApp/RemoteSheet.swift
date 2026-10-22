@@ -1,6 +1,12 @@
 import AppKit
 import Core
 
+/// Remote projects as this app's home keeps them (KELP_HOME/remote): which folders stand for one on a host.
+extension RemoteHost {
+    static func of(_ dir: String) -> RemoteHost? { Remotes(home: Paths.root).of(dir) }
+    static func containing(_ path: String) -> (folder: String, remote: RemoteHost, remotePath: String)? { Remotes(home: Paths.root).containing(path) }
+}
+
 /// Open a project over SSH in two steps: connect to the host (ssh's own reason if Kelp can't), then pick the folder
 /// there from a list, as an open panel does (double-click goes in, repositories are marked). Open takes the selected
 /// folder, else the one listed; one that isn't in a repository yet gets `git init` first, and the button says so.

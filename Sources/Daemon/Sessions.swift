@@ -21,8 +21,11 @@ final class Sessions: Sendable {
     let clients: Clients
     let watches: Watches
 
-    init(root: URL, socketPath: String, store: Store, settings: SettingsStore, agentUsage: AgentUsage, clients: Clients, watches: Watches) {
-        self.root = root; self.socketPath = socketPath; self.store = store; self.settings = settings
+    let remotes: Remotes
+
+    init(root: URL, socketPath: String, store: Store, remotes: Remotes, settings: SettingsStore, agentUsage: AgentUsage, clients: Clients,
+         watches: Watches) {
+        self.root = root; self.socketPath = socketPath; self.store = store; self.remotes = remotes; self.settings = settings
         self.agentUsage = agentUsage; self.clients = clients; self.watches = watches
     }
 
@@ -84,7 +87,7 @@ final class Sessions: Sendable {
                           title: o.title ?? "", titleManual: o.title != nil, argv: argv)
         // A remote project's sessions run on its host (see `launchArgv`). Kelp's hooks and skills are files on this Mac,
         // so they stay out: status comes from what the screen shows.
-        let local = RemoteHost.of(cwd) == nil
+        let local = remotes.of(cwd) == nil
         if local, o.argv == nil, let flag = manifest.hooksSettingsFlag {
             let f = root.appendingPathComponent("hooks-\(manifest.id).json")
             try Hooks.writeSettings(to: f)
@@ -126,12 +129,12 @@ final class Sessions: Sendable {
     /// keep the plain argv, so a restart or a wake wraps it once (older records kept the ssh line: that runs as it is).
     func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest, tmux: String? = nil) throws -> [String] {
         var run = argv
-        if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
+        if let remote = remotes.of(cwd), argv.first != remote.ssh {
             // A command line (`.custom`: zsh -lc "…") goes to sh there: the host may have no zsh.
             let onHost = manifest.id == "custom" && argv.count == 3 && argv[1] == "-lc" ? ["sh", "-c", argv[2]] : argv
             let loginShell = manifest.id == "shell" && Tmux.session(argv) == nil
             let command = tmux.map { remote.command(onHost, inTmux: $0) } ?? remote.command(loginShell ? nil : onHost)
-            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [command]
+            run = [remote.ssh] + remote.sshArgs(tty: true) + [command]
         }
         guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
         return [try LoginPath.resolve(exe)] + run.dropFirst()
@@ -148,7 +151,7 @@ final class Sessions: Sendable {
             guard let self, !ls.isDiscarded else { return }
             // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
             // The turn bookkeeping gets each change, in order.
-            publish(ls); ls.noteTurn(s.status)
+            publish(ls); ls.noteTurn(s.status, remotes: remotes)
             if s.status == .exited { _ = live.remove(ls) }
         }
         if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }

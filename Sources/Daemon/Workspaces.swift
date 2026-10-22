@@ -18,8 +18,10 @@ final class Workspaces: Sendable {
     let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
 
-    init(root: URL, store: Store, deskAdded: @escaping @Sendable () -> Void) {
-        self.root = root; self.store = store; self.deskAdded = deskAdded
+    let remotes: Remotes
+
+    init(root: URL, store: Store, remotes: Remotes, deskAdded: @escaping @Sendable () -> Void) {
+        self.root = root; self.store = store; self.remotes = remotes; self.deskAdded = deskAdded
     }
 
     static let placeholderName = #"^Workspace \d+$"#
@@ -36,8 +38,8 @@ final class Workspaces: Sendable {
             let desks = all.filter { isMain($0, r) }
             // A remote project's branch is read over ssh: not on every sync (an unreachable host would stall each one for
             // its connect timeout). Its desks keep the branch they have; git.status and the like read it when asked.
-            if RemoteHost.of(r.path) != nil, !desks.isEmpty { continue }
-            let branch = RemoteHost.of(r.path) != nil ? r.baseBranch : (try? Git.currentBranch(r.path)) ?? r.baseBranch
+            if remotes.of(r.path) != nil, !desks.isEmpty { continue }
+            let branch = remotes.of(r.path) != nil ? r.baseBranch : (try? Git.currentBranch(r.path, remotes: remotes)) ?? r.baseBranch
             if desks.isEmpty { try store.save(Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace 1", base: branch)) }
             for w in desks where w.branch != branch || w.note.isEmpty {
                 try store.update(Worktree.self, w.id) {
@@ -62,7 +64,7 @@ final class Workspaces: Sendable {
     /// Runs at start and whenever a project is written or removed (the store's change hook).
     /// Limit: a project that is itself a linked worktree (its .git a file) follows at the next start or new desk.
     func watchHeads() {
-        let local = ((try? store.repos()) ?? []).filter { RemoteHost.of($0.path) == nil }
+        let local = ((try? store.repos()) ?? []).filter { remotes.of($0.path) == nil }
         let want = Dictionary(local.map { ($0.id, $0.path + "/.git") }, uniquingKeysWith: { a, _ in a })
         let have = heads.withLock { $0.mapValues(\.dir) }
         var made: [String: HeadWatch] = [:]
@@ -96,7 +98,7 @@ final class Workspaces: Sendable {
             let taken = Set(try store.worktrees(repo: r.id).map(\.note))
             var n = 1
             while taken.contains("Workspace \(n)") { n += 1 }
-            let branch = (try? Git.currentBranch(r.path)) ?? r.baseBranch
+            let branch = (try? Git.currentBranch(r.path, remotes: remotes)) ?? r.baseBranch
             let w = Worktree(repoId: r.id, branch: branch, path: r.path, note: "Workspace \(n)", base: branch)
             try store.save(w)
             return w
@@ -109,7 +111,7 @@ final class Workspaces: Sendable {
     func nextWorkspace(in r: Repo) throws -> (name: String, branch: String) {
         let taken = Set(try store.worktrees(repo: r.id).map(\.note))
         var n = 2
-        while taken.contains("Workspace \(n)") || Git.branchExists(r.path, "ws-\(n)") { n += 1 }
+        while taken.contains("Workspace \(n)") || Git.branchExists(r.path, "ws-\(n)", remotes: remotes) { n += 1 }
         return ("Workspace \(n)", "ws-\(n)")
     }
 

@@ -8,19 +8,19 @@ import Agents
 extension RepoAdd: Handled {
     func handle(_ d: Daemon) throws -> Repo {
         // A remote project's own folder: it is the project (git there would answer with the host's path).
-        if let r = try d.store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return r }
+        if let r = try d.store.repos().first(where: { $0.path == path && d.remotes.of($0.path) != nil }) { return r }
         var dir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &dir), dir.boolValue else { throw RPCError.invalidParams("No folder at \(path).") }
         let root: String
-        if let top = try? Git.root(of: path) { root = top } else {
+        if let top = try? Git.root(of: path, remotes: d.remotes) { root = top } else {
             switch `init` {
-            case true?: try Git.run(["init", "-q"], cwd: path); root = try Git.root(of: path)
+            case true?: try Git.run(["init", "-q"], cwd: path, remotes: d.remotes); root = try Git.root(of: path, remotes: d.remotes)
             case false?: root = Paths.real(path) ?? path   // like git's top: symlinks resolved
             case nil: throw RepoAdd.notARepository
             }
         }
         if let r = try d.store.repos().first(where: { $0.path == root }) { return r }
-        let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
+        let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root, remotes: d.remotes))
         try d.store.save(r); try d.workspaces.syncMainWorkspaces(); d.notify(ChangedEvent.repo)
         return r
     }
@@ -32,12 +32,12 @@ extension ScratchEnsure: Handled {
     func handle(_ d: Daemon) throws -> Worktree {
         let dir = d.root.appendingPathComponent("scratch")
         if !FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
-            try Paths.ensure(dir); try Git.run(["init", "-q"], cwd: dir.path)
+            try Paths.ensure(dir); try Git.run(["init", "-q"], cwd: dir.path, remotes: d.remotes)
         }
-        let path = try Git.root(of: dir.path)
+        let path = try Git.root(of: dir.path, remotes: d.remotes)
         var r = try d.store.repos().first { $0.path == path }
         if r == nil {
-            let n = Repo(name: "Scratch", path: path, baseBranch: Git.defaultBranch(repo: path))
+            let n = Repo(name: "Scratch", path: path, baseBranch: Git.defaultBranch(repo: path, remotes: d.remotes))
             try d.store.save(n); try d.workspaces.syncMainWorkspaces(); r = n
         }
         guard let repo = r, let w = try d.store.worktrees(repo: repo.id).first(where: { !$0.archived }) else {
@@ -51,7 +51,7 @@ extension ScratchEnsure: Handled {
 extension RepoRelocate: Handled {
     func handle(_ d: Daemon) throws -> Repo {
         guard var r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
-        let root = try Git.root(of: path), old = r.path
+        let root = try Git.root(of: path, remotes: d.remotes), old = r.path
         r.path = root; try d.store.save(r)
         for w in try d.store.worktrees(repo: r.id) where w.path == old { try d.store.update(Worktree.self, w.id) { $0.path = root } }
         d.notify(ChangedEvent.repo)
@@ -83,7 +83,7 @@ extension WorktreeCreate: Handled {
         let auto = try d.workspaces.nextWorkspace(in: r)
         let branch = try d.ref(branch.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
         let base = try d.ref(base.flatMap { $0.isEmpty ? nil : $0 }) ?? r.baseBranch
-        let path = try Git.addWorktree(repo: r.path, branch: branch, base: base, into: Daemon.worktreesDir(d.root, r), copyFiles: r.copyFiles)
+        let path = try Git.addWorktree(repo: r.path, branch: branch, base: base, into: Daemon.worktreesDir(d.root, r), copyFiles: r.copyFiles, remotes: d.remotes)
         let w = Worktree(repoId: r.id, branch: branch, path: path, note: note ?? (self.branch == nil ? auto.name : ""), base: base)
         try d.store.save(w)
         var result = Result(worktree: w)
@@ -133,9 +133,9 @@ extension WorktreeRemove: Handled {
         if FileManager.default.fileExists(atPath: w.path) {
             // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
             // writing can't have its work deleted under it.
-            try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
+            try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop, remotes: d.remotes)
             try d.sessions.pauseSessions(of: w.id)
-            try Git.removeWorktree(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
+            try Git.removeWorktree(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop, remotes: d.remotes)
         } else {
             try d.sessions.pauseSessions(of: w.id)
         }
@@ -157,12 +157,12 @@ extension WorktreeUnarchive: Handled {
 extension WorktreeUnmerged: Handled {
     func handle(_ d: Daemon) throws -> Int {
         let w = try d.cwd(forWorktree: id)
-        guard let r = try d.store.repo(w.repoId), Git.branchExists(r.path, w.branch) else { return 0 }
-        return try Git.onlyOnBranch(repo: r.path, w.branch)
+        guard let r = try d.store.repo(w.repoId), Git.branchExists(r.path, w.branch, remotes: d.remotes) else { return 0 }
+        return try Git.onlyOnBranch(repo: r.path, w.branch, remotes: d.remotes)
     }
 }
 
-extension WorktreeDirty: Handled { func handle(_ d: Daemon) throws -> Bool { try Git.isDirty(d.cwd(forWorktree: id).path) } }
+extension WorktreeDirty: Handled { func handle(_ d: Daemon) throws -> Bool { try Git.isDirty(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
 
 extension Daemon {
     /// Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and unarchiving

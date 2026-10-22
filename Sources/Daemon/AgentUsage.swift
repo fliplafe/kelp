@@ -29,8 +29,10 @@ final class AgentUsage: Sendable {
     /// minute ago). Keyed by folders.
     let historyRead = OSAllocatedUnfairLock<[[URL]: (at: Date, list: [AgentSessionInfo])]>(initialState: [:])
 
-    init(root: URL, settings: SettingsStore, store: Store) {
-        self.root = root; self.settings = settings; self.store = store
+    let remotes: Remotes
+
+    init(root: URL, settings: SettingsStore, store: Store, remotes: Remotes) {
+        self.root = root; self.settings = settings; self.store = store; self.remotes = remotes
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
     }
 

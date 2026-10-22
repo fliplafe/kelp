@@ -32,9 +32,9 @@ extension Git {
     }
 
     /// The first `limit` commits of every branch, tag and remote, newest first, with graph lanes.
-    public static func graph(_ path: String, limit: Int) throws -> (commits: [GraphCommit], more: Bool) {
+    public static func graph(_ path: String, limit: Int, remotes: Remotes = .none) throws -> (commits: [GraphCommit], more: Bool) {
         let fmt = "%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e"
-        let raw = try run(["log", "--topo-order", "--format=\(fmt)", "-n\(limit + 1)", "--branches", "--tags", "--remotes", "HEAD"], cwd: path)
+        let raw = try run(["log", "--topo-order", "--format=\(fmt)", "-n\(limit + 1)", "--branches", "--tags", "--remotes", "HEAD"], cwd: path, remotes: remotes)
         var rows: [(String, [String], String, Double, [String], String)] = []
         for rec in raw.split(separator: "\u{1e}") {
             let f = rec.trimmingCharacters(in: .newlines).split(separator: "\u{1f}", omittingEmptySubsequences: false).map(String.init)
@@ -52,8 +52,8 @@ extension Git {
 
     /// Files a commit changed against its first parent: `[(status letter, path)]`.
     /// `-z`: "M\0path\0" or, renamed or copied, "R100\0old\0new\0".
-    public static func commitFiles(_ path: String, commit: String) throws -> [FileChange] {
-        var f = try run(["show", "--format=", "--name-status", "-z", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path)
+    public static func commitFiles(_ path: String, commit: String, remotes: Remotes = .none) throws -> [FileChange] {
+        var f = try run(["show", "--format=", "--name-status", "-z", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path, remotes: remotes)
             .split(separator: "\0").map(String.init)[...]
         var out: [FileChange] = []
         while let s = f.popFirst()?.first {
@@ -67,8 +67,8 @@ extension Git {
 
     /// The body of a commit's message, its author's email and its size against the first parent, in one git run.
     /// A binary file counts as a file, not as lines.
-    public static func commitDetails(_ path: String, commit: String) throws -> CommitDetails {
-        let out = try run(["show", "--numstat", "--format=%ae%x1f%b%x1e", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path)
+    public static func commitDetails(_ path: String, commit: String, remotes: Remotes = .none) throws -> CommitDetails {
+        let out = try run(["show", "--numstat", "--format=%ae%x1f%b%x1e", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path, remotes: remotes)
         let parts = out.split(separator: "\u{1e}", maxSplits: 1, omittingEmptySubsequences: false)
         let head = (parts.first ?? "").split(separator: "\u{1f}", maxSplits: 1, omittingEmptySubsequences: false)
         var d = CommitDetails(body: head.count > 1 ? head[1].trimmingCharacters(in: .whitespacesAndNewlines) : "",
@@ -83,9 +83,9 @@ extension Git {
 
     /// Source Control reads this on every change in the folder: one for-each-ref answers what took five git processes
     /// (each an ssh round trip for a remote project). Detached or before the first commit, HEAD is asked for itself.
-    public static func branches(_ path: String) throws -> BranchInfo {
+    public static func branches(_ path: String, remotes: Remotes = .none) throws -> BranchInfo {
         let refs = try run(["for-each-ref", "--format=%(HEAD)%00%(refname)%00%(objectname:short)%00%(upstream:short)%00%(upstream:track,nobracket)",
-                            "refs/heads", "refs/remotes"], cwd: path)
+                            "refs/heads", "refs/remotes"], cwd: path, remotes: remotes)
         var b = BranchInfo(current: nil, head: nil, local: [], remote: [], upstream: nil, ahead: nil, behind: nil, merging: false)
         for line in refs.split(separator: "\n") {
             let f = line.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
@@ -107,49 +107,49 @@ extension Git {
             }
         }
         if b.current == nil {
-            let c = try run(["symbolic-ref", "--short", "-q", "HEAD"], cwd: path, ok: [0, 1]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let c = try run(["symbolic-ref", "--short", "-q", "HEAD"], cwd: path, ok: [0, 1], remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines)
             b.current = Git.isRevision(c) ? c : nil
-            b.head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            b.head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path, remotes: remotes))?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        b.merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path)) != nil
+        b.merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path, remotes: remotes)) != nil
         return b
     }
 
     /// Switch to a local branch, a remote one (creates the tracking branch), or a new one.
-    public static func switchBranch(_ path: String, to name: String, create: Bool = false, remote: Bool = false) throws {
+    public static func switchBranch(_ path: String, to name: String, create: Bool = false, remote: Bool = false, remotes: Remotes = .none) throws {
         let local = remote ? String(name.drop { $0 != "/" }.dropFirst()) : name
         // Checked as git will read it, after "origin/" is taken off: "origin/-Cmain" would be `git switch -Cmain`.
         guard !local.hasPrefix("-"), !name.hasPrefix("-") else {
             throw GitError(args: ["switch", name], status: 1, stderr: "“\(name)” isn't a branch name.")
         }
-        if create { try run(["switch", "-c", name], cwd: path); return }
-        try run(["switch", local], cwd: path)
+        if create { try run(["switch", "-c", name], cwd: path, remotes: remotes); return }
+        try run(["switch", local], cwd: path, remotes: remotes)
     }
 
     /// Undo working-tree changes: tracked files go back to the index, untracked files are deleted.
-    public static func discard(_ path: String, files: [String]) throws {
-        let untracked = Set(try status(path).filter(\.untracked).map(\.path))
+    public static func discard(_ path: String, files: [String], remotes: Remotes = .none) throws {
+        let untracked = Set(try status(path, remotes: remotes).filter(\.untracked).map(\.path))
         let (u, t) = (files.filter { untracked.contains($0) }, files.filter { !untracked.contains($0) })
-        if !u.isEmpty { try run(["clean", "-f", "-q", "--"] + literal(u), cwd: path) }
-        if !t.isEmpty { try run(["restore", "--worktree", "--"] + literal(t), cwd: path) }
+        if !u.isEmpty { try run(["clean", "-f", "-q", "--"] + literal(u), cwd: path, remotes: remotes) }
+        if !t.isEmpty { try run(["restore", "--worktree", "--"] + literal(t), cwd: path, remotes: remotes) }
     }
 
     public enum Remote: String, Sendable { case pull, push, fetch }
 
-    public static func remote(_ path: String, _ op: Remote) throws {
+    public static func remote(_ path: String, _ op: Remote, remotes: Remotes = .none) throws {
         switch op {
-        case .pull: try run(["pull"], cwd: path)
-        case .fetch: try run(["fetch", "--all", "--prune"], cwd: path)
+        case .pull: try run(["pull"], cwd: path, remotes: remotes)
+        case .fetch: try run(["fetch", "--all", "--prune"], cwd: path, remotes: remotes)
         case .push:
-            let b = try currentBranch(path)
-            let hasUpstream = (try? run(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd: path)) != nil
-            try run(hasUpstream ? ["push"] : ["push", "-u", "origin", b], cwd: path)
+            let b = try currentBranch(path, remotes: remotes)
+            let hasUpstream = (try? run(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd: path, remotes: remotes)) != nil
+            try run(hasUpstream ? ["push"] : ["push", "-u", "origin", b], cwd: path, remotes: remotes)
         }
     }
 
     /// Pop puts staged changes back as staged when it can (`--index`), like VS Code.
-    public static func stash(_ path: String, pop: Bool) throws {
-        guard pop else { try run(["stash", "push", "--include-untracked"], cwd: path); return }
-        if (try? run(["stash", "pop", "--index"], cwd: path)) == nil { try run(["stash", "pop"], cwd: path) }
+    public static func stash(_ path: String, pop: Bool, remotes: Remotes = .none) throws {
+        guard pop else { try run(["stash", "push", "--include-untracked"], cwd: path, remotes: remotes); return }
+        if (try? run(["stash", "pop", "--index"], cwd: path, remotes: remotes)) == nil { try run(["stash", "pop"], cwd: path, remotes: remotes) }
     }
 }

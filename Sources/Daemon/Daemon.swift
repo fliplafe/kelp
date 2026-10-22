@@ -9,7 +9,7 @@ import AgentData
 /// Running sessions and who is connected each keep their own lock; the order they're taken in is in `Clients`.
 public final class Daemon: Sendable {
     public let store: Store
-    let socketPath: String
+    var socketPath: String { root.appendingPathComponent("kelp.sock").path }
     let root: URL
     let clients = Clients()
     /// What start() opens and stop() closes: the socket, the flock on kelpd.lock (one daemon per KELP_HOME), the sources.
@@ -27,25 +27,24 @@ public final class Daemon: Sendable {
     let sessions: Sessions   // which run, starting, waking, pausing and deleting them
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
     let workspaces: Workspaces   // desks, the branches they follow, the .kelp.yaml files the user trusts
+    var files: FileService { FileService(remotes: remotes) }   // files.*: read, written, moved here or on a remote project's host
+    let remotes: Remotes   // which project folders stand for one on a host (only those in this home's remote/), and how to reach it
 
     public init(root: URL = Paths.root, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
         self.root = root
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
-        self.socketPath = root.appendingPathComponent("kelp.sock").path
         self.settings = SettingsStore(root: root)
-        self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store)
+        self.remotes = Remotes(home: root)
+        self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store, remotes: remotes)
         self.forges = Forges(offloads: offloads)
-        self.workspaces = Workspaces(root: root, store: self.store, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
-        self.watches = Watches(store: self.store, clients: clients)
-        self.sessions = Sessions(root: root, socketPath: socketPath, store: self.store, settings: settings, agentUsage: agentUsage,
-                                 clients: clients, watches: watches)
-        // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
-        let ssh = root.appendingPathComponent("ssh")
-        do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
-        RemoteHost.controlDir = ssh.path
-        RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
+        self.workspaces = Workspaces(root: root, store: self.store, remotes: remotes, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
+        self.watches = Watches(store: self.store, clients: clients, remotes: remotes)
+        self.sessions = Sessions(root: root, socketPath: root.appendingPathComponent("kelp.sock").path, store: self.store, remotes: remotes,
+                                 settings: settings, agentUsage: agentUsage, clients: clients, watches: watches)
+        // Remote projects' shared SSH connections; without it, they fail.
+        do { try Paths.ensure(URL(fileURLWithPath: remotes.controlDir)) } catch { Log.start.error("no folder for ssh connections: \(error)") }
         watches.reading.withLock { $0.read = { [weak self] k, fast in await self?.sample(k, fast: fast) ?? (nil, nil) } }
         self.store.changed.withLock {
             $0.tell = { [weak self] c in

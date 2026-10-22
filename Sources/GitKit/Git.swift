@@ -18,16 +18,16 @@ public struct GitError: Error, CustomStringConvertible, Sendable {
 extension Git {
     @discardableResult
     public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
-                           env extra: [String: String] = [:]) throws -> String {
-        String(decoding: try runData(args, cwd: cwd, stdin: stdin.map { Data($0.utf8) }, executable: executable, ok: ok, env: extra), as: UTF8.self)
+                           env extra: [String: String] = [:], remotes: Remotes = .none) throws -> String {
+        String(decoding: try runData(args, cwd: cwd, stdin: stdin.map { Data($0.utf8) }, executable: executable, ok: ok, env: extra, remotes: remotes), as: UTF8.self)
     }
 
     /// `run`, its output as the bytes git wrote (a diff of a file that isn't UTF-8 goes back to `git apply` unchanged).
     /// More than `Subprocess.outputLimit` of it is an error: nothing here works on a part as if it were the whole.
     @discardableResult
     public static func runData(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
-                               env extra: [String: String] = [:], timeLimit: TimeInterval = 300) throws -> Data {
-        let r = try runPart(args, cwd: cwd, stdin: stdin, executable: executable, ok: ok, env: extra, timeLimit: timeLimit, limit: Subprocess.outputLimit)
+                               env extra: [String: String] = [:], timeLimit: TimeInterval = 300, remotes: Remotes = .none) throws -> Data {
+        let r = try runPart(args, cwd: cwd, stdin: stdin, executable: executable, ok: ok, env: extra, timeLimit: timeLimit, limit: Subprocess.outputLimit, remotes: remotes)
         guard !r.truncated else { throw tooMuch(args) }
         return r.data
     }
@@ -39,7 +39,7 @@ extension Git {
     /// `runData` keeping the first `limit` bytes of the output: `truncated` says there was more (read and dropped), for a
     /// caller that shows a part (a long status, a huge diff) and says so.
     static func runPart(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
-                        env extra: [String: String] = [:], timeLimit: TimeInterval = 300, limit: Int) throws -> (data: Data, truncated: Bool) {
+                        env extra: [String: String] = [:], timeLimit: TimeInterval = 300, limit: Int, remotes: Remotes = .none) throws -> (data: Data, truncated: Bool) {
         // timeLimit: longest a git / gh / ssh run may take before it's stopped (it then fails like any other error). Five
         // minutes: far past any real fetch or push, short of a thread lost for good.
         var args = args, executable = executable, cwd = cwd
@@ -47,9 +47,9 @@ extension Git {
             // Paths as they are, not C-quoted ("\321\204…" for "ф"). No fsmonitor: a folder's own .git/config (one that
             // came in a download, not a clone) would otherwise have every status Kelp runs start its program.
             args = ["-c", "core.quotePath=false", "-c", "core.fsmonitor=false"] + args
-            if let r = RemoteHost.of(cwd) {   // a remote project: the same git, on its host
+            if let r = remotes.of(cwd) {   // a remote project: the same git, on its host
                 args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]
-                executable = RemoteHost.ssh; cwd = NSHomeDirectory()
+                executable = r.ssh; cwd = NSHomeDirectory()
             }
         }
         var env = ProcessInfo.processInfo.environment
@@ -71,8 +71,8 @@ extension Git {
     /// (Not `--literal-pathspecs`: `stash -u` uses pathspec magic of its own and then leaves untracked files behind.)
     static func literal(_ files: [String]) -> [String] { files.map { ":(literal)" + $0 } }
 
-    public static func root(of path: String) throws -> String {
-        try run(["rev-parse", "--show-toplevel"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines)
+    public static func root(of path: String, remotes: Remotes = .none) throws -> String {
+        try run(["rev-parse", "--show-toplevel"], cwd: path, remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A branch name Kelp may pass to git as a revision: never one that reads as an option. Git won't create such a
@@ -89,24 +89,24 @@ extension Git {
     }
 
     /// Default branch: origin/HEAD if set, else current branch of the main checkout.
-    public static func defaultBranch(repo: String) -> String {
-        if let s = try? run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd: repo) {
+    public static func defaultBranch(repo: String, remotes: Remotes = .none) -> String {
+        if let s = try? run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd: repo, remotes: remotes) {
             let b = String(s.trimmingCharacters(in: .whitespacesAndNewlines).drop(while: { $0 != "/" }).dropFirst())
             if isRevision(b) { return b }
         }
-        for b in ["main", "master"] where (try? run(["rev-parse", "--verify", b], cwd: repo)) != nil { return b }
-        return (try? currentBranch(repo)) ?? "main"
+        for b in ["main", "master"] where (try? run(["rev-parse", "--verify", b], cwd: repo, remotes: remotes)) != nil { return b }
+        return (try? currentBranch(repo, remotes: remotes)) ?? "main"
     }
 
     /// Every workspace list asks this for each project: a local checkout's HEAD file answers without a git process.
     /// Detached, a linked worktree (.git is a file), a reftable repository or a remote project: git itself.
-    public static func currentBranch(_ path: String) throws -> String {
+    public static func currentBranch(_ path: String, remotes: Remotes = .none) throws -> String {
         var name = ""
-        if RemoteHost.of(path) == nil, let head = try? String(contentsOfFile: path + "/.git/HEAD", encoding: .utf8), head.hasPrefix("ref: refs/heads/") {
+        if remotes.of(path) == nil, let head = try? String(contentsOfFile: path + "/.git/HEAD", encoding: .utf8), head.hasPrefix("ref: refs/heads/") {
             name = String(head.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             if name == ".invalid" { name = "" }   // a reftable repository's stub HEAD: the real one is in its tables
         }
-        if name.isEmpty { name = try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path).trimmingCharacters(in: .whitespacesAndNewlines) }
+        if name.isEmpty { name = try run(["rev-parse", "--abbrev-ref", "HEAD"], cwd: path, remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines) }
         guard isRevision(name) else { throw GitError(args: ["rev-parse", "HEAD"], status: 1, stderr: "the branch's name reads as an option: \(name)") }
         return name
     }
@@ -115,6 +115,6 @@ extension Git {
 extension RemoteHost {
     /// `script` in sh on the host (whatever its login shell is), its output as the bytes it wrote.
     public func run(_ script: String) throws -> Data {
-        try Git.runData(sshArgs(tty: false) + ["sh -c " + Self.quote(script)], cwd: NSHomeDirectory(), executable: Self.ssh)
+        try Git.runData(sshArgs(tty: false) + ["sh -c " + Self.quote(script)], cwd: NSHomeDirectory(), executable: ssh)
     }
 }

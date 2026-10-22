@@ -4,11 +4,11 @@ import Core
 /// Links to a file on the repository's website (GitHub, GitLab, Bitbucket) at the commit checked out now.
 extension Git {
     /// `path` absolute; `lines` 1-based. Fails when origin isn't on a website Kelp knows how to link to.
-    public static func webURL(path: String, lines: ClosedRange<Int>?) throws -> String {
+    public static func webURL(path: String, lines: ClosedRange<Int>?, remotes: Remotes = .none) throws -> String {
         let dir = (path as NSString).deletingLastPathComponent
-        let top = try run(["rev-parse", "--show-toplevel"], cwd: dir).trimmingCharacters(in: .whitespacesAndNewlines)
-        let remote = try run(["remote", "get-url", "origin"], cwd: dir).trimmingCharacters(in: .whitespacesAndNewlines)
-        let sha = try run(["rev-parse", "HEAD"], cwd: dir).trimmingCharacters(in: .whitespacesAndNewlines)
+        let top = try run(["rev-parse", "--show-toplevel"], cwd: dir, remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines)
+        let remote = try run(["remote", "get-url", "origin"], cwd: dir, remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines)
+        let sha = try run(["rev-parse", "HEAD"], cwd: dir, remotes: remotes).trimmingCharacters(in: .whitespacesAndNewlines)
         let real = URL(fileURLWithPath: path).resolvingSymlinksInPath().path, root = URL(fileURLWithPath: top).resolvingSymlinksInPath().path
         let file = real.hasPrefix(root + "/") ? String(real.dropFirst(root.count + 1)) : (path as NSString).lastPathComponent
         guard let url = webURL(remote: remote, sha: sha, file: file, lines: lines) else {

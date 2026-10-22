@@ -27,7 +27,7 @@ extension SessionCreate: Handled {
             o.argv = Tmux.argv(name)
             if o.title == nil { o.title = "tmux \(name)" }
         } else if command == nil, (agent ?? "shell") == "shell", d.settings["terminal.tmux"]?.bool == true,
-                  RemoteHost.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
+                  d.remotes.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
             o.argv = Tmux.argv(Tmux.own())   // a terminal in a tmux session of its own, which ends with it (Tmux.isOwn)
         }
         return try d.sessions.spawn(cwd: dir, manifest: d.sessions.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
@@ -66,7 +66,7 @@ extension SessionHandoff: Handled {
     func handle(_ d: Daemon) throws -> Session {
         guard let old = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
         // The brief is a file on this Mac: an agent on a remote host couldn't read it.
-        if RemoteHost.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
+        if d.remotes.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
         let transcript = try d.handoffFile(old, full: full == true)
         var o = Sessions.Launch(self)
         o.prompt = "Read \(transcript.path) — the transcript of the previous agent session in this project. "
@@ -123,7 +123,7 @@ extension RecipeRender: Handled {
         let cfg = d.workspaces.trustedConfig(try d.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
         var all: [String: String] = ["branch": w.branch, "base": try d.store.repo(w.repoId)?.baseBranch ?? "main"]
         all.merge(vars ?? [:]) { $1 }
-        if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path)) ?? "").prefix(4000)) }
+        if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path, remotes: d.remotes)) ?? "").prefix(4000)) }
         return Recipes.render(name, config: cfg, vars: all)
     }
 }
@@ -171,7 +171,7 @@ extension TaskFromIssue: AsyncHandled {
         if let branchPrefix, !branchPrefix.isEmpty, !branch.hasPrefix(branchPrefix) { branch = branchPrefix + branch }
         let unique = try await d.offload { [branch] in
             var unique = branch, n = 2
-            while Git.branchExists(r.path, unique) { unique = "\(branch)-\(n)"; n += 1 }
+            while Git.branchExists(r.path, unique, remotes: d.remotes) { unique = "\(branch)-\(n)"; n += 1 }
             return unique
         }
         let created = try await d.offload { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(d) }

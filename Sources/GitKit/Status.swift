@@ -29,9 +29,9 @@ extension Git {
     /// `only`: one file's status (a diff of one file mustn't walk every untracked folder in the repository). `limit`: the
     /// first that many entries (`FileChange.limit` for what's shown; git's output past them is read and dropped);
     /// without one, all of them or an error.
-    public static func status(_ path: String, only file: String? = nil, limit: Int = .max) throws -> [FileChange] {
+    public static func status(_ path: String, only file: String? = nil, limit: Int = .max, remotes: Remotes = .none) throws -> [FileChange] {
         let a = ["status", "--porcelain=v2", "-z", "-uall"] + (file.map { ["--"] + literal([$0]) } ?? [])
-        let r = try runPart(a, cwd: path, limit: Subprocess.outputLimit)
+        let r = try runPart(a, cwd: path, limit: Subprocess.outputLimit, remotes: remotes)
         let changes = parseStatus(String(decoding: r.truncated ? wholeEntries(r.data, 0) : r.data, as: UTF8.self), limit: limit)
         guard !r.truncated || changes.count >= limit else { throw tooMuch(a) }
         return changes

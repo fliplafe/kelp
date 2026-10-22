@@ -4,11 +4,11 @@ import GitKit
 
 // Source control, files and review comments: everything runs here, off the UI.
 
-extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path, limit: FileChange.limit) } }
-extension GitBranches: Handled { func handle(_ d: Daemon) throws -> Result { try Git.branches(d.cwd(forWorktree: id).path) } }
-extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> Result { try Git.lineStats(d.cwd(forWorktree: id).path) } }
+extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path, limit: FileChange.limit, remotes: d.remotes) } }
+extension GitBranches: Handled { func handle(_ d: Daemon) throws -> Result { try Git.branches(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
+extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> Result { try Git.lineStats(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
 /// The branch checked out now (a workspace's record can be stale after a switch).
-extension GitPush: Handled { func handle(_ d: Daemon) throws -> Done { try Git.remote(d.cwd(forWorktree: id).path, .push); return Done() } }
+extension GitPush: Handled { func handle(_ d: Daemon) throws -> Done { try Git.remote(d.cwd(forWorktree: id).path, .push, remotes: d.remotes); return Done() } }
 
 extension GitDiff: Handled {
     func handle(_ d: Daemon) throws -> Result {
@@ -29,7 +29,7 @@ extension GitDiff: Handled {
             src = .commit(try d.ref(commit) ?? "")
         default: src = .allUncommitted
         }
-        return try Git.diff(dir, source: src, file: file)
+        return try Git.diff(dir, source: src, file: file, remotes: d.remotes)
     }
 }
 
@@ -37,31 +37,31 @@ extension GitLog: Handled {
     func handle(_ d: Daemon) throws -> Result {
         let w = try d.cwd(forWorktree: id)
         let base = all == true ? nil : try d.store.repo(w.repoId)?.baseBranch
-        return try Git.log(w.path, base: base).map { Entry(hash: $0.hash, subject: $0.subject) }
+        return try Git.log(w.path, base: base, remotes: d.remotes).map { Entry(hash: $0.hash, subject: $0.subject) }
     }
 }
 
-extension GitStage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stage(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
-extension GitUnstage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.unstage(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
+extension GitStage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stage(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
+extension GitUnstage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.unstage(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
 
 extension GitHunk: Handled {
     func handle(_ d: Daemon) throws -> Done {
         let w = try d.cwd(forWorktree: id), rev = reverse == true
-        let diff = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file).first
+        let diff = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file, remotes: d.remotes).first
         // With its fingerprint, the hunk as shown line for line; with its header, that one; else by number.
         let i = fingerprint.map { f in diff?.hunks.firstIndex { $0.fingerprint == f } ?? -1 }
             ?? header.map { h in diff?.hunks.firstIndex { $0.header == h } ?? -1 } ?? hunk ?? -1
         guard let diff, diff.hunks.indices.contains(i) else {
             throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
         }
-        try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev)
+        try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev, remotes: d.remotes)
         return Done()
     }
 }
 
 extension GitCommit: Handled {
     func handle(_ d: Daemon) throws -> String {
-        try Git.commit(d.cwd(forWorktree: id).path, message: message, all: all == true, amend: amend == true)
+        try Git.commit(d.cwd(forWorktree: id).path, message: message, all: all == true, amend: amend == true, remotes: d.remotes)
     }
 }
 
@@ -69,71 +69,71 @@ extension GitMerge: Handled {
     func handle(_ d: Daemon) throws -> Result {
         let w = try d.cwd(forWorktree: id)
         guard let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
-        if try Git.isDirty(w.path) { throw RPCError.invalidParams("worktree has uncommitted changes") }
+        if try Git.isDirty(w.path, remotes: d.remotes) { throw RPCError.invalidParams("worktree has uncommitted changes") }
         // The main checkout too: a merge (and the abort a conflict brings) must never touch the user's own work there.
-        if Git.isMerging(r.path) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
-        if try Git.isDirty(r.path) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
+        if Git.isMerging(r.path, remotes: d.remotes) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
+        if try Git.isDirty(r.path, remotes: d.remotes) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
         // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
-        let branch = (try? Git.currentBranch(w.path)) ?? w.branch
+        let branch = (try? Git.currentBranch(w.path, remotes: d.remotes)) ?? w.branch
         // Detached: "HEAD" would merge the main checkout into itself ("Already up to date") and report success.
         guard branch != "HEAD" else {
             throw RPCError.invalidParams("This workspace isn't on a branch (detached HEAD). Create a branch for its commits, then merge.")
         }
-        let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: keepConflicts == true)
+        let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: keepConflicts == true, remotes: d.remotes)
         return Result(merged: res.merged, conflicts: res.conflicts)
     }
 }
 
 extension GitSwitch: Handled {
     func handle(_ d: Daemon) throws -> Done {
-        try Git.switchBranch(d.cwd(forWorktree: id).path, to: d.ref(branch) ?? "", create: create == true, remote: remote == true)
+        try Git.switchBranch(d.cwd(forWorktree: id).path, to: d.ref(branch) ?? "", create: create == true, remote: remote == true, remotes: d.remotes)
         return Done()
     }
 }
 
 extension GitGraph: Handled {
     func handle(_ d: Daemon) throws -> Result {
-        let g = try Git.graph(d.cwd(forWorktree: id).path, limit: max(1, limit ?? 200))
+        let g = try Git.graph(d.cwd(forWorktree: id).path, limit: max(1, limit ?? 200), remotes: d.remotes)
         return Result(commits: g.commits, more: g.more)
     }
 }
 
 extension GitCommitFiles: Handled {
-    func handle(_ d: Daemon) throws -> Result { try Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "") }
+    func handle(_ d: Daemon) throws -> Result { try Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "", remotes: d.remotes) }
 }
 extension GitCommitDetails: Handled {
-    func handle(_ d: Daemon) throws -> Result { try Git.commitDetails(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "") }
+    func handle(_ d: Daemon) throws -> Result { try Git.commitDetails(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "", remotes: d.remotes) }
 }
-extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> Done { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
+extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> Done { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
 
 extension GitRemoteOp: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard let o = Git.Remote(rawValue: op) else { throw RPCError.invalidParams("op: pull, push or fetch") }
-        try Git.remote(d.cwd(forWorktree: id).path, o)
+        try Git.remote(d.cwd(forWorktree: id).path, o, remotes: d.remotes)
         return Done()
     }
 }
-extension GitStash: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stash(d.cwd(forWorktree: id).path, pop: pop == true); return Done() } }
+extension GitStash: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stash(d.cwd(forWorktree: id).path, pop: pop == true, remotes: d.remotes); return Done() } }
 
 extension GitWebURL: Handled {
     func handle(_ d: Daemon) throws -> String {
         let last = end ?? start
-        return try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } })
+        return try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } }, remotes: d.remotes)
     }
 }
 
 extension GitWebPages: Handled {
     func handle(_ d: Daemon) throws -> Pages? {
         let path = try d.repoPath(worktreeId: worktreeId, repoId: repoId).1
-        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path) else { return nil }   // no origin: nothing to link to
+        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: d.remotes) else { return nil }   // no origin: nothing to link to
         return Git.webPages(remote: origin.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
-extension FilesList: Handled { func handle(_ d: Daemon) throws -> Result { try ProjectFiles.list(d.cwd(forWorktree: id).path) } }
+extension FilesList: Handled { func handle(_ d: Daemon) throws -> Result { try ProjectFiles.list(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
 extension FilesSearch: Handled {
     func handle(_ d: Daemon) throws -> Result {
-        try ProjectFiles.search(d.cwd(forWorktree: id).path, query: query, regex: regex == true, caseSensitive: `case` == true)
+        try ProjectFiles.search(d.cwd(forWorktree: id).path, query: query, regex: regex == true, caseSensitive: `case` == true, remotes: d.remotes)
     }
 }
 

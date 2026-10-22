@@ -200,7 +200,7 @@ final class LiveSession: Sendable {
     func inOrder(_ body: @escaping @Sendable () -> Void) { state.withLock { _ in statusQueue.async(execute: body) } }
 
     /// Called with every status change: a snapshot when work starts, the changes when it stops (git work off the lock).
-    func noteTurn(_ status: AgentStatus) {
+    func noteTurn(_ status: AgentStatus, remotes: Remotes = .none) {
         let (shell, starting, ending, start, cwd) = state.withLock { s in
             // A shell or a plain command (a dev server, a script) has no turns: its output comes and goes, and each change
             // would copy the index and hash the tree again.
@@ -215,10 +215,10 @@ final class LiveSession: Sendable {
         // the previous turn's (which credited it with that turn's changes), and snapshots can't land out of order.
         turnWork.async { [weak self] in
             if starting {
-                let tree = try? Git.snapshotTree(cwd)
+                let tree = try? Git.snapshotTree(cwd, remotes: remotes)
                 self?.state.withLock { $0.turnTree = tree }
             } else if let start, let base = self?.turnBase {
-                let files = ((try? Git.changesSince(tree: base, cwd: cwd)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
+                let files = ((try? Git.changesSince(tree: base, cwd: cwd, remotes: remotes)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
                 self?.state.withLock { $0.turnResult = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
             }
         }

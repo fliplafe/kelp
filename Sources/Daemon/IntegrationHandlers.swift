@@ -24,7 +24,7 @@ extension Daemon {
     /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all: a `LocalForge`
     /// method is refused for one, or answers null when the sidebar asked by itself.
     func refuseRemoteForge(_ t: any Answered.Type, _ p: JSONValue) throws -> Data? {
-        guard let forge = t as? any LocalForge.Type, (try? repoPath(p)).map({ RemoteHost.of($0.1) != nil }) == true else { return nil }
+        guard let forge = t as? any LocalForge.Type, (try? repoPath(p)).map({ remotes.of($0.1) != nil }) == true else { return nil }
         if forge.quietOnRemote { return Data("null".utf8) }
         throw RPCError.invalidParams("Pull requests and CI aren't available for remote projects yet.")
     }
