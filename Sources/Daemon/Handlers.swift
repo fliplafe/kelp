@@ -29,7 +29,6 @@ protocol DaemonService { static func of(_ d: Daemon) -> Self }
 /// For a method that needs nothing of the daemon's.
 struct NoService: DaemonService { static func of(_ d: Daemon) -> NoService { NoService() } }
 
-extension Daemon: DaemonService { static func of(_ d: Daemon) -> Daemon { d } }
 extension FileService: DaemonService { static func of(_ d: Daemon) -> FileService { d.files } }
 extension Watches: DaemonService { static func of(_ d: Daemon) -> Watches { d.watches } }
 extension AgentUsage: DaemonService { static func of(_ d: Daemon) -> AgentUsage { d.agentUsage } }
@@ -38,6 +37,8 @@ extension Remotes: DaemonService { static func of(_ d: Daemon) -> Remotes { d.re
 extension Sessions: DaemonService { static func of(_ d: Daemon) -> Sessions { d.sessions } }
 extension Workspaces: DaemonService { static func of(_ d: Daemon) -> Workspaces { d.workspaces } }
 extension Forges: DaemonService { static func of(_ d: Daemon) -> Forges { d.forges } }
+extension Clients: DaemonService { static func of(_ d: Daemon) -> Clients { d.clients } }
+extension LSPHost: DaemonService { static func of(_ d: Daemon) -> LSPHost { d.lsp } }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.

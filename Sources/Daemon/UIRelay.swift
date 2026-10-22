@@ -6,61 +6,69 @@ import Core
 /// (each workspace's layout, the sidebar's order…) in the database with `state.*`, so every KELP_HOME has its own.
 extension UIPublish: Handled {
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done {
+    func handle(_ clients: Clients) throws -> Done { try handle(clients, conn: -1) }
+    func handle(_ clients: Clients, conn: Int) throws -> Done {
         guard case .object = state else { throw RPCError.invalidParams("state must be an object") }
         // Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
-        try d.requireApp(conn, "Only Kelp's window publishes its state.")
-        d.clients.publishUI(state, from: conn)
+        try clients.requireApp(conn, "Only Kelp's window publishes its state.")
+        clients.publishUI(state, from: conn)
         return Done()
     }
 }
 
-extension UIStateGet: Handled { func handle(_ d: Daemon) throws -> JSONValue { d.clients.uiState } }
+extension UIStateGet: Handled { func handle(_ clients: Clients) throws -> JSONValue { clients.uiState } }
 
 extension UIOpen: Handled {
-    func handle(_ d: Daemon) throws -> Delivered {
+    func handle(_ clients: Clients) throws -> Delivered {
         if let split, split != "right", split != "down" { throw RPCError.invalidParams("split must be \"right\" or \"down\"") }
-        return try d.relay(UIEvent(self))
+        return try clients.relay(UIEvent(self))
     }
 }
 
-extension UICommand: Handled { func handle(_ d: Daemon) throws -> Delivered { try d.relay(UIEvent(self)) } }
+extension UICommand: Handled { func handle(_ clients: Clients) throws -> Delivered { try clients.relay(UIEvent(self)) } }
 
 extension Daemon {
     static let uiMethods: [any Handled.Type] = [UIPublish.self, UIStateGet.self, UIOpen.self, UICommand.self]
+}
 
+extension Clients {
     /// To every Kelp window as `event.ui`.
     fileprivate func relay(_ e: UIEvent) throws -> Delivered {
-        let apps = clients.apps
+        let apps = apps
         guard !apps.isEmpty else { throw RPCError.internalError("The Kelp app isn't running") }
         notify(e, to: apps)
         return Delivered(delivered: apps.count)
     }
 }
 
+/// What Kelp's window keeps in the daemon (`state.*`), and who may write it.
+struct UIStore: DaemonService {
+    let store: Store, clients: Clients
+    static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) }
+}
+
 extension StateGet: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> JSONValue {
-        if let prefix { return .object(try d.store.uiState(prefix: prefix)) }
+    func handle(_ ui: UIStore) throws -> JSONValue {
+        if let prefix { return .object(try ui.store.uiState(prefix: prefix)) }
         guard let key else { throw RPCError.invalidParams("missing key") }
-        return try d.store.uiState(prefix: key)[key] ?? .null
+        return try ui.store.uiState(prefix: key)[key] ?? .null
     }
 }
 
 extension StateSet: Handled {
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done {
+    func handle(_ ui: UIStore) throws -> Done { try handle(ui, conn: -1) }
+    func handle(_ ui: UIStore, conn: Int) throws -> Done {
         // Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window
         // (as `scripts.trust`); an agent's call or a repository's script can't record it.
-        if key.hasPrefix("lsp.") { try d.requireApp(conn, "Only Kelp's window can trust a project for language servers.") }
-        try d.store.setUIState(key, value); return Done()
+        if key.hasPrefix("lsp.") { try ui.clients.requireApp(conn, "Only Kelp's window can trust a project for language servers.") }
+        try ui.store.setUIState(key, value); return Done()
     }
 }
 
 extension ClientEvents: Handled {
     static var inOrder: Bool { true }   // before whatever is broadcast after it
-    func handle(_ d: Daemon) throws -> Done { Done() }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.clients.setMuted(conn, !events); return Done() }
+    func handle(_ clients: Clients) throws -> Done { Done() }
+    func handle(_ clients: Clients, conn: Int) throws -> Done { clients.setMuted(conn, !events); return Done() }
 }

@@ -70,19 +70,27 @@ final class SettingsStore: Sendable {
     }
 }
 
-extension Daemon {
-    /// The settings as they are when it's their turn, one change after another: two sets close together can't announce
-    /// themselves the wrong way round (the app takes each event as the whole of the settings).
-    func settingsChanged() {
-        settingsEvents.async { [self] in
-            notify(SettingsEvent(settings: settings.values))
+/// The settings as clients hear of them (`event.settings`): as they are when it's their turn, one change after another,
+/// so two sets close together can't announce themselves the wrong way round (the app takes each event as the whole of
+/// the settings). Keep Mac Awake follows at once.
+final class SettingsEvents: Sendable, DaemonService {
+    let store: SettingsStore
+    private let clients: Clients, sessions: Sessions
+    private let queue = DispatchQueue(label: "kelp.settings-events")
+
+    init(store: SettingsStore, clients: Clients, sessions: Sessions) { self.store = store; self.clients = clients; self.sessions = sessions }
+    static func of(_ d: Daemon) -> SettingsEvents { d.settingsEvents }
+
+    func changed() {
+        queue.async { [self] in
+            clients.notify(SettingsEvent(settings: store.values))
             sessions.applyKeepAwake()
         }
     }
 
     /// From the ticker: hand edits of settings.json.
-    func pollSettings() {
-        if settings.reloadIfChanged() { settingsChanged() }
+    func poll() {
+        if store.reloadIfChanged() { changed() }
     }
 }
 
@@ -90,9 +98,9 @@ extension SettingsGet: Handled { func handle(_ settings: SettingsStore) throws -
 extension SettingsSet: Handled {
     /// A colour dragged or a stepper held sends these quickly: the last one sent is the one that stays.
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> [String: JSONValue] {
-        let all = try d.settings.set(key, value)
-        d.settingsChanged()
+    func handle(_ settings: SettingsEvents) throws -> [String: JSONValue] {
+        let all = try settings.store.set(key, value)
+        settings.changed()
         return all
     }
 }

@@ -22,8 +22,6 @@ extension Daemon {
         try? Data((why + "\n").utf8).write(to: Paths.daemonError(in: root))
         return why
     }
-
-    func requireApp(_ conn: Int, _ refusal: String) throws { try clients.requireApp(conn, refusal) }
 }
 
 extension Clients {

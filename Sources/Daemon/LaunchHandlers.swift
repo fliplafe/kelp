@@ -133,10 +133,16 @@ extension Ping: Handled {
     func handle(_: NoService) throws -> String { "pong" }
 }
 extension DaemonShutdown: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak d] in d?.stop(); exit(0) }
+    func handle(_ shutdown: Shutdown) throws -> Done {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { shutdown.stop(); exit(0) }
         return Done()
     }
+}
+
+/// daemon.shutdown's: the daemon's stop, and nothing else of it.
+struct Shutdown: DaemonService {
+    let stop: @Sendable () -> Void
+    static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } }
 }
 
 /// The agents on this Mac, side by side, each through `offload`; latest from npm where they publish there.

@@ -31,8 +31,13 @@ final class LSPHost: Sendable {
     /// How long a server with no open file keeps running (a tab closed and opened again doesn't restart it).
     let idleDelay: TimeInterval
 
+    let store: Store   // who trusted which project (`lsp.trusted`, written by Kelp's window)
+    let remotes: Remotes
+
     /// Tests shorten the delays.
-    init(retryDelay: TimeInterval = 30, idleDelay: TimeInterval = 60) { self.retryDelay = retryDelay; self.idleDelay = idleDelay }
+    init(store: Store, remotes: Remotes, retryDelay: TimeInterval, idleDelay: TimeInterval) {
+        self.store = store; self.remotes = remotes; self.retryDelay = retryDelay; self.idleDelay = idleDelay
+    }
 
     func open(conn: Int, _ o: LSPOpen) {
         let key = Key(root: o.root, argv: [o.command] + (o.args ?? [])), id = o.root + "|" + o.path
@@ -161,13 +166,15 @@ final class LSPHost: Sendable {
 
 // MARK: methods
 
-extension Daemon {
+extension LSPHost {
     /// The user trusted `root` for language servers and formatters in Kelp's window (`state.set` of `lsp.trusted`, which
     /// only the window may write).
-    func lspTrusted(_ root: String) -> Bool {
+    func trusted(_ root: String) -> Bool {
         ((try? store.uiState(prefix: LSPOpen.trustKey))?[LSPOpen.trustKey]?.array ?? []).contains(.string(root))
     }
+}
 
+extension Daemon {
     static let lspMethods: [any Handled.Type] = [LSPOpen.self, LSPChange.self, LSPClose.self]
     static let lspAsyncMethods: [any AsyncHandled.Type] = [LSPDefinition.self, LSPCompletion.self, LSPSymbol.self]
 }
@@ -175,47 +182,47 @@ extension Daemon {
 extension LSPOpen: Handled {
     /// Before the changes typed after it. Quick: a server starts on a task of its own.
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done {
-        guard d.remotes.of(root) == nil else { throw RPCError.invalidParams("No language servers for a project on another machine.") }
+    func handle(_ lsp: LSPHost) throws -> Done { try handle(lsp, conn: -1) }
+    func handle(_ lsp: LSPHost, conn: Int) throws -> Done {
+        guard lsp.remotes.of(root) == nil else { throw RPCError.invalidParams("No language servers for a project on another machine.") }
         // A project's language servers run its own code: the daemon checks, whoever asks.
-        guard d.lspTrusted(root) else { throw LSPRefusal.untrusted.error }
+        guard lsp.trusted(root) else { throw LSPRefusal.untrusted.error }
         // Not waiting for the login shell's PATH on this thread (seconds, right after the daemon starts): until it's read,
         // a server that isn't installed fails when it starts, off this thread, and the tab just gets no server.
         do { _ = try LoginPath.resolveNow(command) } catch { throw LSPRefusal.notInstalled(command).error }
-        d.lsp.open(conn: conn, self)
+        lsp.open(conn: conn, self)
         return Done()
     }
 }
 
 extension LSPChange: Handled {
     static var inOrder: Bool { true }   // keystrokes' text, in the order typed
-    func handle(_ d: Daemon) throws -> Done { d.lsp.change(root, path, text: text); return Done() }
+    func handle(_ lsp: LSPHost) throws -> Done { lsp.change(root, path, text: text); return Done() }
 }
 
 extension LSPClose: Handled {
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.lsp.close(conn: conn, root, path); return Done() }
+    func handle(_ lsp: LSPHost) throws -> Done { try handle(lsp, conn: -1) }
+    func handle(_ lsp: LSPHost, conn: Int) throws -> Done { lsp.close(conn: conn, root, path); return Done() }
 }
 
 extension LSPDefinition: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> CodeLocation? {
-        guard let c = await d.lsp.client(root, path) else { return nil }
+    func handle(_ lsp: LSPHost) async throws -> CodeLocation? {
+        guard let c = await lsp.client(root, path) else { return nil }
         return try await c.definition(path, line: line, column: column)
     }
 }
 
 extension LSPCompletion: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> [CodeCompletion] {
-        guard let c = await d.lsp.client(root, path) else { return [] }
+    func handle(_ lsp: LSPHost) async throws -> [CodeCompletion] {
+        guard let c = await lsp.client(root, path) else { return [] }
         return try await c.completion(path, line: line, column: column)
     }
 }
 
 extension LSPSymbol: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> String? {
-        guard let c = await d.lsp.client(root, path) else { return nil }
+    func handle(_ lsp: LSPHost) async throws -> String? {
+        guard let c = await lsp.client(root, path) else { return nil }
         return try await c.symbol(path, line: line)
     }
 }

@@ -52,8 +52,8 @@ func waitFor(_ timeout: Double = 8, _ cond: () async throws -> Bool) async throw
 func client(_ root: URL) throws -> RPCClient { try RPCClient(socket: root.appendingPathComponent("kelp.sock").path) }
 
 /// A daemon on a fresh home with `agents` in its agents folder, started, and a client of it.
-func daemon(agents: [AgentManifest] = [], lsp: LSPHost = LSPHost()) throws -> (d: Daemon, c: RPCClient, root: URL) {
-    let root = tmp(); let d = try Daemon(root: root, store: nil, lsp: lsp)
+func daemon(agents: [AgentManifest] = [], lspDelays: (retry: TimeInterval, idle: TimeInterval)? = nil) throws -> (d: Daemon, c: RPCClient, root: URL) {
+    let root = tmp(), d = try lspDelays.map { try Daemon(root: root, store: nil, lspDelays: $0) } ?? Daemon(root: root)
     if !agents.isEmpty {
         try FileManager.default.createDirectory(at: root.appendingPathComponent("agents"), withIntermediateDirectories: true)
         for a in agents { try JSONEncoder().encode(a).write(to: root.appendingPathComponent("agents/\(a.id).json")) }

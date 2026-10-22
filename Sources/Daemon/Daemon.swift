@@ -25,26 +25,30 @@ public final class Daemon: Sendable {
     let lsp: LSPHost   // language servers: one per project and server command, shared by every client
     let watches: Watches   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let sessions: Sessions   // which run, starting, waking, pausing and deleting them
-    let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
+    let settingsEvents: SettingsEvents   // event.settings in order: the last one is the settings now
     let workspaces: Workspaces   // desks, the branches they follow, the .kelp.yaml files the user trusts
     var files: FileService { FileService(remotes: remotes) }   // files.*: read, written, moved here or on a remote project's host
     let remotes: Remotes   // which project folders stand for one on a host (only those in this home's remote/), and how to reach it
 
-    public convenience init(root: URL, store: Store? = nil) throws { try self.init(root: root, store: store, lsp: LSPHost()) }
+    public convenience init(root: URL, store: Store? = nil) throws { try self.init(root: root, store: store, lspDelays: (retry: 30, idle: 60)) }
 
-    init(root: URL, store: Store?, lsp: LSPHost) throws {
+    /// `lspDelays`: how soon a broken language server is started again, and how long one with no open file keeps running
+    /// (tests shorten them).
+    init(root: URL, store: Store?, lspDelays: (retry: TimeInterval, idle: TimeInterval)) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
-        self.root = root; self.lsp = lsp
+        self.root = root
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
         self.settings = SettingsStore(root: root)
         self.remotes = Remotes(home: root)
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store, remotes: remotes)
         self.forges = Forges(offloads: offloads, store: self.store, clients: clients, remotes: remotes)
+        self.lsp = LSPHost(store: self.store, remotes: remotes, retryDelay: lspDelays.retry, idleDelay: lspDelays.idle)
         self.watches = Watches(store: self.store, clients: clients, remotes: remotes)
         self.sessions = Sessions(root: root, socketPath: root.appendingPathComponent("kelp.sock").path, store: self.store, remotes: remotes,
                                  settings: settings, agentUsage: agentUsage, clients: clients, watches: watches, offloads: offloads)
         self.workspaces = Workspaces(root: root, store: self.store, remotes: remotes, sessions: sessions, clients: clients)
+        self.settingsEvents = SettingsEvents(store: settings, clients: clients, sessions: sessions)
         // Remote projects' shared SSH connections; without it, they fail.
         do { try Paths.ensure(URL(fileURLWithPath: remotes.controlDir)) } catch { Log.start.error("no folder for ssh connections: \(error)") }
         watches.reading.withLock { $0.read = { [weak self] k, fast in await self?.sample(k, fast: fast) ?? (nil, nil) } }
@@ -110,7 +114,7 @@ public final class Daemon: Sendable {
         }
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle(); pollSettings() }
+        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle(); settingsEvents.poll() }
         let prune = DispatchSource.makeTimerSource(queue: .global(qos: .background))
         prune.schedule(deadline: .now() + 60, repeating: 86400)   // ended sessions past `keepEnded`
         prune.setEventHandler { [self] in sessions.pruneEnded() }
