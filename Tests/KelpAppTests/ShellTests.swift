@@ -51,3 +51,14 @@ import WorkbenchKit
     #expect(after.tab(uri: "session:new")?.id == old.id && after.tab(uri: "session:old") == nil)
     #expect(after.allTabs.count == 2)
 }
+
+/// The shell follows what a tab shows through observed state, not a callback the tab calls: an untitled file that
+/// gets text shows its dot.
+@MainActor @Test func aTabsLookIsObserved() async throws {
+    let tab = UntitledTab(uri: "untitled:1", app: AppModel())
+    var looks: [TabLook] = []
+    track(owner: tab, now: false) { TabLook(tab) } changed: { looks.append($0) }
+    tab.editor.setText("x"); tab.editor.onChange?("x")   // as typing does
+    for _ in 0..<50 where looks.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(looks.map(\.isEdited) == [true])
+}

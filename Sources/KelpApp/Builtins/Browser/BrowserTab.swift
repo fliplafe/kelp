@@ -4,9 +4,8 @@ import Core
 
 /// One web page as a tab: address bar, back/forward, and Design Mode (click an element → its HTML, computed
 /// styles and a cropped screenshot go into the focused agent's prompt).
-@MainActor
+@MainActor @Observable
 final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMessageHandler, NSTextFieldDelegate {
-    var onChange: (() -> Void)?
     let view: NSView
     private let web: WKWebView
     private let address = NSTextField()
@@ -18,11 +17,15 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     /// `preview:/path/page.html`: a local page shown as the browser sees it, reloaded whenever a file next to it changes.
     private var previewFile: String? { start.hasPrefix("preview:") ? String(start.dropFirst("preview:".count)) : nil }
     private var watcher: FileWatcher?
-    var uri: String { previewFile != nil ? start : web.url?.absoluteString ?? start }
+    /// The page's address and title as of its last commit or load: what the tab shows follows these.
+    private var page: (url: URL?, title: String?) = (nil, nil)
+    var uri: String { previewFile != nil ? start : page.url?.absoluteString ?? start }
     private let start: String
-    var title: String { previewFile.map { ($0 as NSString).lastPathComponent } ?? web.title.flatMap { $0.isEmpty ? nil : $0 } ?? web.url?.host ?? String(localized: "New Page") }
+    var title: String {
+        previewFile.map { ($0 as NSString).lastPathComponent } ?? page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url?.host ?? String(localized: "New Page")
+    }
     var icon: NSImage? { .symbol(previewFile == nil ? "safari" : "eye") }
-    var toolTip: String? { web.url?.absoluteString }
+    var toolTip: String? { page.url?.absoluteString }
 
     init(uri: String, app: AppModel) {
         start = uri; self.app = app; ports = PortsView(app: app)
@@ -113,9 +116,11 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         }
     }
 
-    func webView(_ w: WKWebView, didCommit n: WKNavigation!) { address.stringValue = w.url?.absoluteString ?? ""; ports.isHidden = true; onChange?() }
+    func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
+        address.stringValue = w.url?.absoluteString ?? ""; ports.isHidden = true; page = (w.url, w.title)
+    }
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
-        address.stringValue = w.url?.absoluteString ?? ""; onChange?()
+        address.stringValue = w.url?.absoluteString ?? ""; page = (w.url, w.title)
         if designOn { w.evaluateJavaScript(Self.designJS) }
     }
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError e: Error) { showError(e) }

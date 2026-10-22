@@ -151,7 +151,6 @@ enum DeclarativeExtension {
 final class ExtViewTab: TabContent {
     let uri: String, title: String
     let icon: NSImage?
-    var onChange: (() -> Void)?
     private let controller: NSViewController
     var view: NSView { controller.view }
     init(uri: String, title: String, icon: String, controller: NSViewController) {

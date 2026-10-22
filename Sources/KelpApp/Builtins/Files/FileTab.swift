@@ -8,11 +8,10 @@ import WorkbenchKit
 /// (Settings › Editor › Save automatically turns autosave on). Agents edit files on disk too: unchanged buffers
 /// follow the disk; conflicting edits ask. The daemon reads and writes it (here or on a remote project's host) and says
 /// when its version changes (`WatchTopic.file`); the tab touches no file itself.
-@MainActor
+@MainActor @Observable
 final class FileTab: SavableTab {
     let path: String, url: URL
     let app: AppModel
-    var onChange: (() -> Void)?
     let view: NSView
     private(set) var editor: CodeEditor?
     private(set) var markdown: MarkdownTab?
@@ -39,7 +38,7 @@ final class FileTab: SavableTab {
     private var discarded = false
     func discard() { discarded = true; comparing?.cancel(); isEdited = false }
     /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
-    private var gone = false { didSet { if gone != oldValue { onChange?() } } }
+    private var gone = false
     /// The last save (each waits for the one before) and whether it wrote; `writing` while one is on its way to disk.
     private var saving: Task<Bool, Never>?
     private var writing = false
@@ -187,7 +186,8 @@ final class FileTab: SavableTab {
     private var disk: FileSync.Disk { gone ? .missing : .present(known?.text) }
     /// What was last read or written, and its version.
     private var known: (stamp: FileStamp, text: String?)?
-    private var reading = false, readAgain = false
+    private var reading = false
+    private var readAgain = false
 
     /// ⌘S. False when it couldn't be written, or the user is asked first (an agent changed the file meanwhile, or it's gone).
     @discardableResult
@@ -288,8 +288,7 @@ final class FileTab: SavableTab {
     }
 
     private func setEdited(_ now: Bool) {
-        guard now != isEdited else { return }
-        isEdited = now; onChange?()
+        if now != isEdited { isEdited = now }
     }
 
     /// A new version pushed (`WatchTopic.file`): read again only one this tab didn't read or write itself (a log a dev

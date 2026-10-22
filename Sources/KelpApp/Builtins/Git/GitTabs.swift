@@ -9,7 +9,6 @@ final class DiffTab: TabContent {
     let worktreeId: String, app: AppModel
     private let controller: DiffViewController
     private let file: String?, source: String?, commit: String?
-    var onChange: (() -> Void)?
     private(set) var uri: String
     var view: NSView { controller.view }
     var title: String {
@@ -78,7 +77,6 @@ final class CommitMessageTab: TabContent {
     private let text = CommitTextView()
     private let root = NSView()
     private let commitButton = NSButton()
-    var onChange: (() -> Void)?
     var view: NSView { root }
     var title: String { amend ? String(localized: "Amend Commit") : String(localized: "Commit Message") }
     var icon: NSImage? { .symbol("square.and.pencil") }

@@ -259,15 +259,15 @@ final class EditorArea: NSViewController {
     private func content(_ t: TabRef) -> TabContent? {
         if let c = contents[t.id] { return c }
         let c = app.extensions.tabProvider(for: t.uri)?.make(t.uri) ?? UnavailableTab(uri: t.uri, app: app)
-        c.onChange = { [weak self, weak c] in
-            guard let self, let gid = layout.group(of: t.id) else { return }
-            if let c, c.uri != t.uri, var g = layout.groups[gid], let i = g.tabs.firstIndex(where: { $0.id == t.id }) {
-                g.tabs[i].uri = c.uri; layout.groups[gid] = g; scheduleSave()   // e.g. the browser navigated
+        contents[t.id] = c
+        track(owner: c, now: false) { [weak c] in c.map(TabLook.init) } changed: { [weak self] look in
+            guard let self, let look, let gid = layout.group(of: t.id) else { return }
+            if var g = layout.groups[gid], let i = g.tabs.firstIndex(where: { $0.id == t.id }), g.tabs[i].uri != look.uri {
+                g.tabs[i].uri = look.uri; layout.groups[gid] = g; scheduleSave()   // e.g. the browser navigated
             }
             refreshGroup(gid)
             app.publishUIState()
         }
-        contents[t.id] = c
         return c
     }
 

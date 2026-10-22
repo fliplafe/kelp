@@ -15,8 +15,6 @@ protocol TabContent: AnyObject {
     var toolTip: String? { get }
     /// Unsaved changes: the tab shows a dot, closing it asks first.
     var isEdited: Bool { get }
-    /// Called when title / icon / status / edited state change.
-    var onChange: (() -> Void)? { get set }
     func focus()
     /// Return false to keep the tab (e.g. the user cancelled). Questions are sheets, awaited.
     func close() async -> Bool
@@ -34,8 +32,17 @@ protocol TabContent: AnyObject {
     func goTo(line: Int)
 }
 
+/// What a tab shows of itself. Its parts are observed state (`@Observable` tabs, or the app's models they read): the shell
+/// follows them with `track`, so a tab says nothing when they change.
+struct TabLook: Equatable {
+    let uri: String, title: String, toolTip: String?, isEdited: Bool, badge: TabBadge?, icon: NSImage?
+    @MainActor init(_ c: TabContent) {
+        uri = c.uri; title = c.title; toolTip = c.toolTip; isEdited = c.isEdited; badge = c.badge; icon = c.icon
+    }
+}
+
 /// What a session's tab shows besides its title, and the ring around its pane.
-struct TabBadge {
+struct TabBadge: Equatable {
     /// Its state mark (nil: a terminal whose program doesn't say how far it got).
     var status: AgentStatus?
     /// Finished and not looked at yet (the filled ✓).

@@ -117,7 +117,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
         let t = String(l)
         return declaration.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
     }
-    #expect(requirements.count <= 15, "\(requirements)")
+    #expect(requirements.count <= 14, "\(requirements)")
 }
 
 /// A Swift file's code without its comments and string literals (their words could be any name); lines stay where they were.

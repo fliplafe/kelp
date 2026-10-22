@@ -8,7 +8,6 @@ final class SessionTab: TabContent {
     let sessionId: String
     let app: AppModel
     let pane: PaneView
-    var onChange: (() -> Void)?
     var uri: String { TabURI.session(sessionId) }
     var view: NSView { pane }
 
@@ -21,7 +20,7 @@ final class SessionTab: TabContent {
         pane.onClose = { p in Workbench.closeTab(uri: TabURI.session(p.sessionId)) }
         track(owner: self) { [app] in app.session(sid) } changed: { [weak self] s in
             guard let self, let s else { return }
-            pane.update(s); onChange?()
+            pane.update(s)
         }
     }
 

@@ -5,7 +5,6 @@ import Core
 @MainActor
 final class UnavailableTab: TabContent {
     let uri: String
-    var onChange: (() -> Void)?
     let view: NSView
     var title: String { String(localized: "Turned Off") }
     var icon: NSImage? { .symbol("questionmark.square.dashed") }

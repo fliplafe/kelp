@@ -5,26 +5,25 @@ import WorkbenchKit
 
 /// "untitled:<n>": a new file with no name yet, like VS Code's Untitled-1. Plain text until it's saved: the first ⌘S
 /// asks where and under what name (the extension makes it code; none makes it .txt), then the tab is that file's.
-@MainActor
+@MainActor @Observable
 final class UntitledTab: SavableTab {
     let uri: String, app: AppModel
     let editor = CodeEditor(text: "", url: URL(fileURLWithPath: "/Untitled.txt"))
-    private var wasEdited = false
-    var onChange: (() -> Void)?
     var view: NSView { editor.view }
     let title: String
     var icon: NSImage? { .symbol("doc") }
-    var isEdited: Bool { !discarded && !editor.text.isEmpty }
+    /// Any text, until Don't Save.
+    private(set) var isEdited = false
     private var discarded = false
-    func discard() { discarded = true }
+    func discard() { discarded = true; isEdited = false }
 
     init(uri: String, app: AppModel) {
         self.uri = uri; self.app = app
         title = String(localized: "Untitled-\(TabURI.body(uri))")
         editor.view.clipsToBounds = true
-        editor.onChange = { [weak self] _ in
-            guard let self, isEdited != wasEdited else { return }
-            wasEdited = isEdited; onChange?()
+        editor.onChange = { [weak self] text in
+            guard let self, !discarded, isEdited == text.isEmpty else { return }
+            isEdited = !text.isEmpty
         }
         track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor.refreshAppearance() }
     }
