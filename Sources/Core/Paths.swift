@@ -14,7 +14,7 @@ public enum Paths {
     /// A folder of its own for agents and terminals outside any project (Window › Scratch); not listed with the projects.
     public static var scratch: URL { root.appendingPathComponent("scratch") }
     /// Why kelpd last failed to start (written by kelpd, gone once one starts): what the app's banner says.
-    public static func daemonError(in root: URL = root) -> URL { root.appendingPathComponent("kelpd.err") }
+    public static func daemonError(in root: URL) -> URL { root.appendingPathComponent("kelpd.err") }
 
     public static func ensure(_ u: URL) throws {
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
