@@ -66,7 +66,7 @@ enum Builtins {
                 s("terminal.cursorStyle", "Cursor", "enum", "block", options: ["block", "bar", "underline"]),
                 s("terminal.optionAsAlt", "Option key sends Alt (Meta)", "boolean", false),
                 s("terminal.cleanCopy", "Copy text without the TUI around it", "boolean", true,
-                  "Drops box borders, an agent's indented gutter and trailing spaces from what you copy."),
+                  "Drops box borders, an agent's indented gutter and trailing spaces from what you copy, and joins the lines an agent wrapped at the edge (a long command copies as one line)."),
                 s("terminal.useGhosttyConfig", "Also read ~/.config/ghostty/config", "boolean", false, "Keybindings and other Ghostty options; the theme's colors still apply."),
                 s("terminal.tmux", "Run terminals inside tmux", "boolean", false,
                   "New terminals run in a tmux session of their own (on the host, for a remote project): it keeps running when Kelp quits or "

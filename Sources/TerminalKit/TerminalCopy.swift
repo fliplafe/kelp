@@ -23,11 +23,13 @@ public enum TerminalPaste {
 }
 
 /// Text as it should leave a terminal: what TUIs paint around it (box borders, an agent's indented gutter, padding to the
-/// right edge) isn't part of it.
+/// right edge, the line breaks it wrapped its text with) isn't part of it.
 public enum TerminalCopy {
     static let borders: Set<Character> = ["│", "┃", "║", "▏", "▕"]
 
-    public static func clean(_ s: String) -> String {
+    /// `column`: where the first line starts on screen (a selection that begins past the gutter); `columns`: the row
+    /// width, to join rows a program wrapped (none without it).
+    public static func clean(_ s: String, from column: Int = 0, columns: Int? = nil) -> String {
         var lines = s.components(separatedBy: "\n").map { trimRight($0) }
         // A frame's sides: "│ text │" → "text", when every non-empty line has one.
         let full = lines.filter { !$0.isEmpty }
@@ -38,11 +40,42 @@ public enum TerminalCopy {
                 if let e = t.last, borders.contains(e) { t = t.dropLast() }
                 return trimRight(String(t))
             }
+            return dedent(lines, by: indent(lines)).joined(separator: "\n")
         }
-        // The indent all lines share (Claude Code and Codex draw their text in a gutter).
-        let indents = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map { $0.prefix { $0 == " " }.count }
-        if let m = indents.min(), m > 0 { lines = lines.map { String($0.dropFirst(min(m, $0.prefix { $0 == " " }.count))) } }
+        // The first line as it sits on screen, so it lines up with the rows under it.
+        lines[0] = String(repeating: " ", count: column) + lines[0]
+        // The indent all lines share (Claude Code and Codex draw their text in a gutter, and wrap it themselves).
+        let m = indent(lines)
+        if let columns, m > 0 { lines = unwrap(lines, columns: columns) }
+        lines = dedent(lines, by: m)
+        lines[0] = String(lines[0].dropFirst(max(0, column - m)))
         return lines.joined(separator: "\n")
+    }
+
+    static func indent(_ lines: [String]) -> Int {
+        lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map { $0.prefix { $0 == " " }.count }.min() ?? 0
+    }
+    static func dedent(_ lines: [String], by m: Int) -> [String] {
+        m > 0 ? lines.map { String($0.dropFirst(min(m, $0.prefix { $0 == " " }.count))) } : lines
+    }
+
+    /// Rows joined back where a program broke its text at the right edge (Claude Code and Codex wrap before the terminal
+    /// could, so a long command copies as several lines): a row goes on into the next when the next one's first word
+    /// wouldn't have fit after it. A row that fills its width was broken inside a word, unless the next one starts
+    /// further in — with the space that didn't fit.
+    static func unwrap(_ lines: [String], columns: Int) -> [String] {
+        var out: [String] = [], end = 0, lead = 0   // the last row's end column and indent
+        for line in lines {
+            let own = line.prefix(while: isBlank).count, text = line.dropFirst(own)
+            let word = String(text.prefix { !isBlank($0) })
+            if let last = out.last, end > 0, !word.isEmpty, end + 1 + width(word) > columns {
+                out[out.count - 1] = last + (end >= columns && own <= lead ? "" : " ") + text
+            } else {
+                out.append(line)
+            }
+            end = text.isEmpty ? 0 : width(line); lead = own
+        }
+        return out
     }
 
     static func trimRight(_ s: String) -> String {

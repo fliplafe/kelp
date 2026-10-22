@@ -2377,13 +2377,13 @@
         }
       }
     },
-    "Drops box borders, an agent's indented gutter and trailing spaces from what you copy.": {
+    "Drops box borders, an agent's indented gutter and trailing spaces from what you copy, and joins the lines an agent wrapped at the edge (a long command copies as one line).": {
       "extractionState": "manual",
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Убирает из скопированного рамки, отступ агента слева и пробелы в конце строк."
+            "value": "Убирает из скопированного рамки, отступ агента слева и пробелы в конце строк, а строки, которые агент перенёс у края, склеивает (длинная команда копируется одной строкой)."
           }
         }
       }

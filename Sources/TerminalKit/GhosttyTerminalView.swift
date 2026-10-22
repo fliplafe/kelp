@@ -118,7 +118,7 @@ public final class GhosttyRuntime {
             MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.confirmClipboard(confirm, state: state, request: request) }
         }
         // `fromProgram`: an OSC 52 write (Claude Code copies that way over ssh), which `clipboard-write = ask` flags.
-        rt.write_clipboard_cb = { _, _, contents, count, fromProgram in
+        rt.write_clipboard_cb = { ud, _, contents, count, fromProgram in
             guard let contents, count > 0 else { return }
             var text: String?
             for i in 0..<count {
@@ -127,8 +127,11 @@ public final class GhosttyRuntime {
                 text = String(bytes: UnsafeRawBufferPointer(start: data, count: c.len), encoding: .utf8)
             }
             if let raw = text {
-                DispatchQueue.main.async { MainActor.assumeIsolated {
-                    let text = GhosttyRuntime.cleanCopy && !fromProgram ? TerminalCopy.clean(raw) : raw
+                let view = MainActor.assumeIsolated { GhosttyTerminalView.from(ud) }   // Ghostty writes on the main thread
+                // Later: the selection is read under the lock Ghostty holds while it writes.
+                DispatchQueue.main.async { [weak view] in MainActor.assumeIsolated {
+                    let text = GhosttyRuntime.cleanCopy && !fromProgram
+                        ? TerminalCopy.clean(raw, from: view?.selectionColumn ?? 0, columns: view?.gridSize?.cols) : raw
                     let pb = NSPasteboard.general
                     pb.clearContents(); pb.setString(text, forType: .string)
                     GhosttyRuntime.programCopy = fromProgram ? pb.changeCount : nil
@@ -214,6 +217,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     private var shownGrid: (cols: Int, rows: Int)?
     private var placedAt = Date.distantFuture
     var cellSize = NSSize(width: 8, height: 16)
+    static let padX = 12.0, padY = 8.0   // window-padding in `GhosttyRuntime.overrides`
     var cursor: NSCursor = .iBeam
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
@@ -356,6 +360,15 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         defer { ghostty_surface_free_text(surface, &t) }
         return String(cString: t.text)
     }
+    /// The column the selection starts at: its first line leaves out what's before it.
+    var selectionColumn: Int {
+        guard let surface else { return 0 }
+        var t = ghostty_text_s()
+        guard ghostty_surface_read_selection(surface, &t) else { return 0 }
+        defer { ghostty_surface_free_text(surface, &t) }
+        let cw = Double(ghostty_surface_size(surface).cell_width_px) / (window?.backingScaleFactor ?? 2)
+        return cw > 0 ? max(0, Int(((t.tl_px_x - Self.padX) / cw).rounded())) : 0   // tl_px_x: points, padding included
+    }
     private func readText(_ tag: ghostty_point_tag_e) -> String {
         guard let surface else { return "" }
         var t = ghostty_text_s()
@@ -469,7 +482,7 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         let s = ghostty_surface_size(surface), scale = window?.backingScaleFactor ?? 2
         let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
         guard cw > 0, ch > 0, s.columns > 0 else { return nil }
-        let padX = 12.0, padY = 8.0   // window-padding in the overrides above
+        let padX = Self.padX, padY = Self.padY
         let col = Int((p.x - padX) / cw), row = Int((bounds.height - p.y - padY) / ch)
         guard row >= 0, row < Int(s.rows), col >= 0, col < Int(s.columns) else { return nil }
         let rowText = { (y: Int) -> String? in

@@ -12,6 +12,26 @@ import Testing
     #expect(TerminalCopy.clean("a b\nc") == "a b\nc")
 }
 
+/// A command Claude Code wrapped in its gutter (wrap-ansi, `hard`, `trim: false`, 30 columns in a 32-column terminal),
+/// copied from its first character: one line again.
+let wrappedCommand = "! cd /Users/username/projects/Kelp && swift build -c release --product kelp && swift test --parallel --quiet"
+    + #" && (git cat-file -e 4b825dc642cb6eb9a060e54bf8d69288fbee4904 2>/dev/null && echo "дерево есть" || echo "пустого дерева нет")"#
+let wrappedRows = ["! cd ", "/Users/username/projects/Kelp ", "&& swift build -c release ", "--product kelp && swift test ",
+                   "--parallel --quiet && (git ", "cat-file -e 4b825dc642cb6eb9a0", "60e54bf8d69288fbee4904 ",
+                   #"2>/dev/null && echo "дерево "#, #"есть" || echo "пустого дерева "#, #"нет")"#]
+
+@Test func copyJoinsRowsAProgramWrapped() {
+    let copied = wrappedRows.enumerated().map { $0 == 0 ? $1 : "  " + $1 }.joined(separator: "\n")   // the selection's first row starts past the gutter
+    #expect(TerminalCopy.clean(copied, from: 2, columns: 32) == wrappedCommand)
+    #expect(TerminalCopy.clean("  " + copied, columns: 32) == wrappedCommand)   // from the row's start
+    #expect(TerminalCopy.clean(copied, from: 2).components(separatedBy: "\n").count == wrappedRows.count)   // no width, no joins
+    // Lines that ended before the edge stay apart; so does output without a gutter (`ls` pads its columns to the edge).
+    #expect(TerminalCopy.clean("  short\n  lines", columns: 32) == "short\nlines")
+    #expect(TerminalCopy.clean("aaaa  bbbb  cccc\ndddd", columns: 17) == "aaaa  bbbb  cccc\ndddd")
+    // A selection that starts mid-row keeps its first line as copied, and its rows lose the gutter.
+    #expect(TerminalCopy.clean("run:\n  next", from: 6, columns: 80) == "run:\nnext")
+}
+
 @Test func wordsKeepTheirLineNumbers() {
     let line = "  Edited Sources/App.swift:12:5, see (docs/x.md)."
     #expect(TerminalCopy.word(in: line, at: 12)?.text == "Sources/App.swift:12:5")
@@ -68,6 +88,42 @@ import Testing
     #expect(tried.first == path)
     try click(lastRowOf: link)
     #expect(opened?.absoluteString == link)
+}
+
+/// The same command on screen, selected from its first character and copied with ⌘C: Ghostty's selection gives the column.
+@Test @MainActor func copyingAWrappedCommandGivesOneLine() async throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-rows-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try (wrappedRows.map { "  " + $0 }.joined(separator: "\n") + "\n").write(to: dir.appendingPathComponent("rows"), atomically: true, encoding: .utf8)
+    try "clear; cat rows; echo DONE; sleep 20".write(to: dir.appendingPathComponent("show.sh"), atomically: true, encoding: .utf8)
+    let v = GhosttyTerminalView(command: "/bin/sh show.sh", cwd: dir.path)
+    let surface = try #require(v.surface)
+    let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    w.contentView = v; w.orderFront(nil)
+    defer { w.orderOut(nil) }
+    let deadline = Date() + 5
+    while !v.visibleText.contains("DONE"), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    let s = ghostty_surface_size(surface), scale = w.backingScaleFactor
+    try #require(s.columns == 32)
+    let cw = Double(s.cell_width_px) / scale, ch = Double(s.cell_height_px) / scale
+    let screen = v.visibleText.components(separatedBy: "\n")
+    let first = try #require(screen.firstIndex { $0.hasPrefix("  ! cd") }), last = first + wrappedRows.count - 1
+    func at(_ col: Double, _ row: Int) -> NSPoint { v.convert(NSPoint(x: 12 + col * cw, y: v.bounds.height - 8 - (Double(row) + 0.5) * ch), to: nil) }
+    func send(_ t: NSEvent.EventType, _ p: NSPoint) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: 0, windowNumber: w.windowNumber,
+                                        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+    v.mouseMoved(with: try send(.mouseMoved, at(2.2, first)))
+    v.mouseDown(with: try send(.leftMouseDown, at(2.2, first)))
+    v.mouseDragged(with: try send(.leftMouseDragged, at(31.8, last)))
+    v.mouseUp(with: try send(.leftMouseUp, at(31.8, last)))
+    let pb = NSPasteboard.general, kept = pb.string(forType: .string)
+    defer { pb.clearContents(); if let kept { pb.setString(kept, forType: .string) } }
+    let before = pb.changeCount
+    v.copy(nil)
+    while pb.changeCount == before, Date() < deadline + 2 { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(pb.string(forType: .string) == wrappedCommand)
 }
 
 @Test func wideCharactersTakeTwoColumns() {
