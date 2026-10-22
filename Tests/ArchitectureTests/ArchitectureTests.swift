@@ -40,7 +40,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// AppModel.swift itself is the way (it also manages the connection), so it isn't counted.
 @Test func daemonErrorsAreNotSwallowed() throws {
     func outside(_ found: [String]) -> [String] { found.filter { !$0.hasPrefix("Sources/KelpApp/AppModel.swift:") } }
-    let swallowed = outside(try matches(#"try\? await [^=\n]*\.(call|get|tryCall)\("#, in: ["Sources/KelpApp"]))
+    let swallowed = outside(try matches(#"try\? await (?:[^=\n]*\.)?(call|get|tryCall)\("#, in: ["Sources/KelpApp"]))
     let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: ["Sources/KelpApp"]))
     #expect(swallowed == [], "try? around a call: \(swallowed)")
     #expect(raw == [], "the client called directly: \(raw)")
@@ -112,9 +112,10 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     let start = try #require(text.range(of: "protocol TabContent: AnyObject {"))
     let end = try #require(text.range(of: "\n}", range: start.upperBound..<text.endIndex))
     let body = text[start.upperBound..<end.lowerBound]
-    let requirements = body.split(separator: "\n").filter { l in
-        let t = l.trimmingCharacters(in: .whitespaces)
-        return t.hasPrefix("var ") || t.hasPrefix("func ")
+    let declaration = try NSRegularExpression(pattern: #"^\s*(?:@\w+\s+)*(?:static\s+|mutating\s+)*(?:var|func|subscript|init|associatedtype)\b"#)
+    let requirements = codeOnly(String(body)).split(separator: "\n").filter { l in
+        let t = String(l)
+        return declaration.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
     }
     #expect(requirements.count <= 15, "\(requirements)")
 }
@@ -215,54 +216,74 @@ private func codeOnly(_ s: String) -> String {
 
 /// A project's files are read, written, watched, moved and made by the daemon (`files.*`, `WatchTopic.file(s)`), with a
 /// tab's rules and the same way for a project on another machine. What the app still touches itself is listed with
-/// why: its own folders, a viewer's bytes, whether a path is there. Nothing else does.
+/// why and how often (a ceiling per file): its own folders, a viewer's bytes, whether a path is there. Nothing else does.
 @Test func theAppDoesntTouchProjectFiles() throws {
-    let own: [String: String] = [
-        "AgentIcons.swift": "agents' icons, cached in Kelp's home",
-        "AppModel.swift": "why kelpd didn't start, in Kelp's home",
-        "DevAids.swift": "snapshots for tests",
-        "RemoteSheet.swift": "the hosts in ~/.ssh/config",
-        "CloneSheet.swift": "whether the folder new projects go in is there",
-        "Settings/IconTheme.swift": "an icon theme an extension brings",
-        "Settings/SettingsWindow.swift": "an extension's own folder",
-        "Extensions/Registry.swift": "extensions' folders, Kelp's own",
-        "Extensions/DeclarativeExtension.swift": "an extension's manifest",
-        "Extensions/ExtensionReview.swift": "an extension's manifest, before it's installed",
-        "Extensions/AgentSkills.swift": "the skills Kelp gives agents, in Kelp's home",
-        "Shell/Help.swift": "the guide, written to Kelp's home",
-        "Shell/WorkbenchActions.swift": "a dropped or linked path: a file, a folder, or nothing",
-        "Sidebar/ProjectIcon.swift": "a project's icon, shown",
-        "Sidebar/SidebarCell.swift": "a project folder that's gone",
-        "Sidebar/SidebarActions.swift": "a project folder that's gone",
-        "Builtins/Agents/PathPreview.swift": "a path a terminal printed is a file, before it's a link",
-        "Builtins/Browser/BrowserTab.swift": "a local page, shown: it reloads as its folder changes; a page's screenshot",
-        "Builtins/Files/Preview.swift": "an image's bytes, shown"
+    let own: [String: (Int, String)] = [
+        "AgentCatalog.swift": (1, "an agent CLI's date: it isn't asked its version again until it changes"),
+        "AgentIcons.swift": (4, "agents' icons, cached in Kelp's home"),
+        "AppModel.swift": (2, "why kelpd didn't start, in Kelp's home"),
+        "DevAids.swift": (3, "snapshots for tests"),
+        "RemoteSheet.swift": (1, "the hosts in ~/.ssh/config"),
+        "CloneSheet.swift": (2, "whether the folder new projects go in is there"),
+        "Settings/IconTheme.swift": (2, "an icon theme an extension brings"),
+        "Settings/SettingsWindow.swift": (1, "an extension's own folder"),
+        "Extensions/Registry.swift": (7, "extensions' folders, Kelp's own"),
+        "Extensions/DeclarativeExtension.swift": (4, "an extension's manifest"),
+        "Extensions/ExtensionReview.swift": (1, "an extension's manifest, before it's installed"),
+        "Extensions/AgentSkills.swift": (4, "the skills Kelp gives agents, in Kelp's home"),
+        "Shell/Help.swift": (1, "the guide, written to Kelp's home"),
+        "Shell/WorkbenchActions.swift": (4, "a dropped or linked path: a file, a folder, or nothing"),
+        "Sidebar/ProjectIcon.swift": (3, "a project's icon, shown"),
+        "Sidebar/SidebarCell.swift": (1, "a project folder that's gone"),
+        "Sidebar/SidebarActions.swift": (1, "a project folder that's gone"),
+        "Builtins/Agents/PathPreview.swift": (3, "a path a terminal printed is a file, before it's a link"),
+        "Builtins/Browser/BrowserTab.swift": (2, "a local page, shown: it reloads as its folder changes; a page's screenshot"),
+        "Builtins/Files/Preview.swift": (2, "an image's bytes, shown")
     ]
-    let all = try matches(#"FileManager\.default\.(contents|createFile|moveItem|trashItem|copyItem|removeItem|createDirectory|fileExists|isWritableFile)"#
-        + #"|FileWatcher\(|String\(contentsOf|Data\(contentsOf|\.write\(to(File)?:|\bstat\([^()]*&"#, in: ["Sources/KelpApp"])
-    let left = all.filter { m in !own.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
-    #expect(left == [], "a project's files touched by the app: go through the daemon (files.*)")
-    let gone = own.keys.filter { k in !all.contains { $0.hasPrefix("Sources/KelpApp/" + k + ":") } }
-    #expect(gone == [], "listed, but it touches no file now: take it off the list")
+    let all = try matches(#"FileManager\.default\.(contents|createFile|moveItem|trashItem|copyItem|removeItem|createDirectory|fileExists|isWritableFile"#
+        + #"|enumerator|attributesOfItem|destinationOfSymbolicLink)|FileWatcher\(|FileHandle\(|(String|Data|NSImage|NSDictionary)\(contentsOf"#
+        + #"|\.write\(to(File)?:|\bstat\([^()]*&"#, in: ["Sources/KelpApp"])
+    var found: [String: Int] = [:]
+    for m in all { found[String(m.dropFirst("Sources/KelpApp/".count).split(separator: ":")[0]), default: 0] += 1 }
+    let left = found.filter { f, n in n > own[f]?.0 ?? 0 }
+    #expect(left == [:], "a project's files touched by the app: go through the daemon (files.*)")
+    let gone = own.filter { found[$0.key, default: 0] < $0.value.0 }.keys.sorted()
+    #expect(gone == [], "a ceiling above its file's count now: lower it (to 0: take it off the list) \(found)")
 }
 
 /// The app's state is handed down from the one `AppModel` (it owns the workbench, the settings and the extensions):
 /// the window to its panels and editor areas, the registry to the built-ins' contributions, and on to their views. A
 /// view that reaches `X.shared` instead can only ever show the one app, and its tests have to take turns
-/// (`SharedAppModel`). Only the app's start (main.swift, AppDelegate) and DevAids reach it; the rest has a ceiling per
-/// folder, one line each.
+/// (`SharedAppModel`). Counted: every app singleton's `.shared` and the facades over one (Workbench's statics —
+/// `open`, `editor`, `show`…, only `files` reads nothing but a drag — and `IDEContext.current`). Only the app's start
+/// (main.swift, AppDelegate) and DevAids reach them freely; the rest has a ceiling per folder, one line each.
 @Test func theAppIsHandedItsModel() throws {
     let ceilings: [String: Int] = [
-        "": 63,
-        "Builtins/Agents": 1,
-        "Extensions": 12,
-        "Settings": 11,
-        "Shell": 118,
-        "Sidebar": 1
+        "": 99,
+        "Builtins": 38,
+        "Builtins/Activity": 1,
+        "Builtins/Agents": 14,
+        "Builtins/Browser": 1,
+        "Builtins/Files": 22,
+        "Builtins/Git": 10,
+        "Builtins/Issues": 4,
+        "Editor": 10,
+        "Extensions": 27,
+        "Settings": 20,
+        "Shell": 164,
+        "Sidebar": 12
     ]
     let starts = ["main.swift", "AppDelegate.swift", "DevAids.swift"]
     var found: [String: Int] = [:]
-    let shared = try NSRegularExpression(pattern: #"\b(AppModel|Workbench|SettingsStore|ExtensionRegistry)\.shared\b"#)
+    let declared = try NSRegularExpression(pattern: #"static (?:let|var) shared(?:: (\w+)| = (\w+)\()"#)
+    let singletons = Set(sources(["Sources/KelpApp"]).flatMap { f in
+        declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)).flatMap { m in
+            (1...2).compactMap { Range(m.range(at: $0), in: f.text).map { String(f.text[$0]) } }
+        }
+    })
+    #expect(singletons.contains("AppModel") && singletons.contains("LSPManager"), "\(singletons)")
+    let shared = try NSRegularExpression(pattern: #"\b(?:"# + singletons.sorted().joined(separator: "|")
+        + #")\.shared\b|\bWorkbench\.(?!files\b)[a-z]\w*|\bIDEContext\.current\b"#)
     for f in sources(["Sources/KelpApp"]) where !starts.contains(where: { f.path == "Sources/KelpApp/" + $0 }) {
         let code = codeOnly(f.text)
         let n = shared.numberOfMatches(in: code, range: NSRange(code.startIndex..., in: code))
@@ -276,6 +297,6 @@ private func codeOnly(_ s: String) -> String {
     #expect(ceilings.allSatisfy { found[$0.key, default: 0] >= $0.value },
             "a folder's ceiling is above its count: lower it to \(found)")
     // Singletons of the app's own: no new ones (each is one more thing a second app would share).
-    let singletons = try matches(#"^\s*static let shared = "#, in: ["Sources/KelpApp"])
-    #expect(singletons.count <= 11, "\(singletons)")
+    let made = try matches(#"^\s*static let shared = "#, in: ["Sources/KelpApp"])
+    #expect(made.count <= 11, "\(made)")
 }
