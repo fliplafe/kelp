@@ -35,6 +35,10 @@ public struct FileChange: Codable, Sendable, Equatable {
     public var unstaged: Bool { worktree != "." }
     public var untracked: Bool { index == "?" }
     public var conflicted: Bool { index == "U" || worktree == "U" || (index == "A" && worktree == "A") || (index == "D" && worktree == "D") }
+
+    /// A status lists at most this many (VS Code's limit too): a folder that should be ignored (node_modules) can hold
+    /// hundreds of thousands, and the list goes to the app on each change. A status this long may be missing some.
+    public static let limit = 10_000
 }
 
 /// What Source Control lists, in the order it lists it: conflicts, then what's staged, then the rest.
@@ -192,6 +196,12 @@ public struct SearchMatch: Codable, Sendable, Equatable {
 
 /// Project files: Quick Open's fuzzy match here, listing and search (git, rg) in GitKit.
 public enum ProjectFiles {
+    /// `files.list` gives at most this many (a list this long may be missing some): more than nearly any checkout has,
+    /// and a folder that should be ignored can't make a list Quick Open and the tree choke on.
+    public static let listLimit = 200_000
+    /// `files.search` gives at most this many matches (a list this long may be missing some).
+    public static let searchLimit = 2000
+
     /// A path made ready for fuzzyScore once: Quick Open scores every file of the project on each keystroke.
     /// Unicode scalars of the composed form, so "é" is one letter however the name was stored and "日" can't be matched
     /// from pieces of other characters (as UTF-8 bytes could).

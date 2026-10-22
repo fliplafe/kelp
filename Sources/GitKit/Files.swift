@@ -5,16 +5,20 @@ import Core
 extension ProjectFiles {
     /// Tracked + untracked-but-not-ignored files, relative paths. A tracked file deleted from the folder is left out: git
     /// tags it "R" (one git process instead of a stat per file, and it works on a remote host too). Outside a sparse
-    /// checkout's cone ("S", never checked by git) a file is kept only if it's there.
-    public static func list(_ root: String) throws -> [String] {
-        let lines: [Substring] = try Git.run(["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"], cwd: root)
+    /// checkout's cone ("S", never checked by git) a file is kept only if it's there. The first `limit`.
+    public static func list(_ root: String, limit: Int = listLimit) throws -> [String] {
+        let a = ["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"]
+        let r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit)
+        let lines: [Substring] = String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self)
             .split(separator: "\0").filter { $0.count > 2 }
         let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
         let remote = RemoteHost.of(root) != nil
-        return lines.filter { l in
+        let files = lines.lazy.filter { l in
             guard !l.hasPrefix("R "), !gone.contains(l.dropFirst(2)) else { return false }
             return !l.hasPrefix("S ") || remote || FileManager.default.fileExists(atPath: root + "/" + l.dropFirst(2))
-        }.map { String($0.dropFirst(2)) }
+        }.prefix(limit).map { String($0.dropFirst(2)) } as [String]
+        guard !r.truncated || files.count >= limit else { throw Git.tooMuch(a) }
+        return files
     }
 
     /// Bundled or system ripgrep, else `git grep`.
@@ -23,22 +27,29 @@ extension ProjectFiles {
         return [bundled, "/opt/homebrew/bin/rg", "/usr/local/bin/rg"].compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = 2000) throws -> [SearchMatch] {
+    /// The first `limit` matches; what rg or git grep print past `searchOutput` bytes is read and dropped.
+    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = searchLimit) throws -> [SearchMatch] {
         guard !query.isEmpty else { return [] }
-        var out: String
+        var a: [String], r: (data: Data, truncated: Bool)
         if let rg = ripgrep, RemoteHost.of(root) == nil {   // remote: git grep runs on the host
-            var a = ["--line-number", "--no-heading", "--null", "--color=never", "--max-columns=300", "--max-count=200"]
+            a = ["--line-number", "--no-heading", "--null", "--color=never", "--max-columns=300", "--max-count=200"]
             if !regex { a.append("--fixed-strings") }
             if !caseSensitive { a.append("--ignore-case") }   // like git grep -i below (smart-case would honour capitals)
-            out = try Git.run(a + ["--", query, "."], cwd: root, executable: rg, ok: [0, 1])   // 1 = no matches
+            r = try Git.runPart(a + ["--", query, "."], cwd: root, executable: rg, ok: [0, 1], limit: searchOutput)   // 1 = no matches
         } else {
-            var a = ["grep", "-n", "-z", "--untracked", "-I"]
+            a = ["grep", "-n", "-z", "--untracked", "-I"]
             if !regex { a.append("-F") }
             if !caseSensitive { a.append("-i") }
-            out = try Git.run(a + ["-e", query], cwd: root, ok: [0, 1])
+            r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput)
         }
-        return parseGrep(out, limit: limit)
+        let found = parseGrep(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0x0A) : r.data, as: UTF8.self), limit: limit)
+        // Cut off before `limit` matches: lines that long (git grep has no column limit) are past showing anyway.
+        guard !r.truncated || found.count >= limit else { throw GitError(args: a, status: 0, stderr: "Too much matched to show: search for something longer.") }
+        return found
     }
+
+    /// 2000 matches of rg's 300 columns and a long path fit several times over.
+    static let searchOutput = 16 << 20
 
     /// `path NUL line : text` (rg --null) or `path NUL line NUL text` (git grep -z) lines: the path ends at the NUL, so a
     /// file named "a:b.txt" is found like any other.

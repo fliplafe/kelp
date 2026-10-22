@@ -207,11 +207,20 @@ extension ProcessRun: Handled {
         var env = ProcessInfo.processInfo.environment.filter { k, _ in !PTY.scrubbed.contains { k.hasPrefix($0) } }
         env["PATH"] = d.childPath; env["KELP_HOME"] = d.root.path; env["KELP_SOCKET"] = d.socketPath
         let dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? NSHomeDirectory()
-        let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)))
+        let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)),
+                                   limit: Self.outputLimit)
+        // Not a part as if it were all of it: a formatter's would replace the file's text.
+        guard !r.truncated else {
+            let name = ((argv.first ?? "") as NSString).lastPathComponent
+            throw RPCError.internalError("\(name) printed more than \(Self.outputLimit >> 20) MB, more than Kelp reads.")
+        }
         // Lossy on purpose: a tool's output with a stray byte should still show.
         return Result(code: r.status, stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self),
                       timedOut: r.timedOut)
     }
+
+    /// Of each stream: the reply carries both, JSON-escaped (a control byte takes six), under a connection's `backlogLimit`.
+    static let outputLimit = 16 << 20
 }
 
 extension Daemon {

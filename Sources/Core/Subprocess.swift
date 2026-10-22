@@ -15,7 +15,13 @@ public enum Subprocess {
         public var stderr: Data
         /// Stopped at the time limit (its status is then the signal's).
         public var timedOut: Bool
+        /// It printed more than the run's `limit` on stdout or stderr: that stream here is only its first `limit` bytes.
+        public var truncated: Bool
     }
+
+    /// What `run` keeps of each stream unless told otherwise: far past any answer git, gh or ssh give Kelp, short of a
+    /// runaway (a diff of a regenerated dataset, a `cat` of a log) taking the daemon's memory.
+    public static let outputLimit = 64 << 20
 
     /// The daemon's connection reader while it applies an in-order call (`Handled.inOrder`): whatever was sent after the
     /// call waits for it, so no program runs there. `run` refuses inside `body`, and the call fails instead of stalling.
@@ -27,8 +33,11 @@ public enum Subprocess {
     }
     private static let quickOnlyKey = "dev.kelp.subprocess.quickOnly"
 
-    /// `argv[0]` is a path. `env` is the whole environment.
-    public static func run(_ argv: [String], cwd: String, env: [String: String], stdin: Data? = nil, timeLimit: TimeInterval) throws -> Output {
+    /// `argv[0]` is a path. `env` is the whole environment. Past `limit` bytes a stream is still read to its end, so the
+    /// program ends as it would have (its exit status, whatever it does besides printing), but the rest is dropped and
+    /// the output is `truncated`: a caller that needs all of it fails then, one that can show a part says so.
+    public static func run(_ argv: [String], cwd: String, env: [String: String], stdin: Data? = nil, timeLimit: TimeInterval,
+                           limit: Int = outputLimit) throws -> Output {
         if Thread.current.threadDictionary[quickOnlyKey] != nil {
             let name = argv.first.map { ($0 as NSString).lastPathComponent } ?? "A program"
             throw RPCError.internalError("\(name) can't run from an in-order call: it would hold up the connection.")
@@ -38,7 +47,7 @@ public enum Subprocess {
         p.arguments = Array(argv.dropFirst())
         p.currentDirectoryURL = URL(fileURLWithPath: cwd)
         p.environment = env
-        let out = Reader(), err = Reader(), inp = stdin.map { _ in Pipe() }
+        let out = Reader(limit), err = Reader(limit), inp = stdin.map { _ in Pipe() }
         p.standardOutput = out.pipe; p.standardError = err.pipe; p.standardInput = inp ?? FileHandle.nullDevice
         let exited = DispatchSemaphore(value: 0)
         p.terminationHandler = { _ in exited.signal() }   // set before it starts: one that exits at once isn't missed
@@ -59,13 +68,15 @@ public enum Subprocess {
         // What's still in the pipes arrives at once; only a child holding them open would make this wait run out.
         _ = out.done.wait(timeout: .now() + 2); _ = err.done.wait(timeout: .now() + 2)
         // Its status only once it has exited: asking a Process still running raises, and would take the daemon down.
-        return Output(status: ended ? p.terminationStatus : -1, stdout: out.data, stderr: err.data, timedOut: timedOut)
+        return Output(status: ended ? p.terminationStatus : -1, stdout: out.data, stderr: err.data, timedOut: timedOut,
+                      truncated: out.truncated || err.truncated)
     }
 
     /// `run` without holding the caller's thread (for async callers: the app's main actor, the cooperative pool).
-    public static func run(_ argv: [String], cwd: String, env: [String: String], stdin: Data? = nil, timeLimit: TimeInterval) async throws -> Output {
+    public static func run(_ argv: [String], cwd: String, env: [String: String], stdin: Data? = nil, timeLimit: TimeInterval,
+                           limit: Int = outputLimit) async throws -> Output {
         try await withCheckedThrowingContinuation { c in
-            Thread.detachNewThread { c.resume(with: Result { try run(argv, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit) }) }
+            Thread.detachNewThread { c.resume(with: Result { try run(argv, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit, limit: limit) }) }
         }
     }
 
@@ -85,21 +96,31 @@ public enum Subprocess {
         return [pid] + kids.prefix(max(0, n)).filter { $0 > 0 }.flatMap(tree)
     }
 
-    /// One pipe, read to its end on a thread of its own.
+    /// One pipe, read to its end on a thread of its own; its first `limit` bytes kept.
     private final class Reader: Sendable {
         let pipe = Pipe()
         let done = DispatchSemaphore(value: 0)
-        private let collected = OSAllocatedUnfairLock(initialState: Data())
-        var data: Data { collected.withLock { $0 } }
+        let limit: Int
+        private struct Kept { var data = Data(), truncated = false }
+        private let kept = OSAllocatedUnfairLock(initialState: Kept())
+        init(_ limit: Int) { self.limit = limit }
+        var data: Data { kept.withLock { $0.data } }
+        var truncated: Bool { kept.withLock { $0.truncated } }
         func start() {
             let fd = pipe.fileHandleForReading.fileDescriptor
-            Thread.detachNewThread { [pipe, collected, done] in
+            Thread.detachNewThread { [pipe, kept, done, limit] in
                 // read(2), not FileHandle.read(upToCount:): that one waits for the whole count, so output a lingering
                 // child keeps the pipe open behind would never arrive.
-                var buf = [UInt8](repeating: 0, count: 1 << 16)
+                var buf = [UInt8](repeating: 0, count: 1 << 16), room = limit
                 while true {
                     let n = read(fd, &buf, buf.count)
-                    if n > 0 { let chunk = Data(buf[0..<n]); collected.withLock { $0.append(chunk) } } else if n < 0, errno == EINTR { continue } else { break }
+                    if n > 0 {
+                        // Past the limit it's still read (a full pipe would stop the program) and dropped.
+                        let keep = min(n, room)
+                        room -= keep
+                        if keep > 0 { let chunk = Data(buf[0..<keep]); kept.withLock { $0.data.append(chunk) } }
+                        if keep < n { kept.withLock { $0.truncated = true } }
+                    } else if n < 0, errno == EINTR { continue } else { break }
                 }
                 withExtendedLifetime(pipe) { done.signal() }
             }

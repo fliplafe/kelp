@@ -37,3 +37,13 @@ private let env = ProcessInfo.processInfo.environment
     #expect(r.status == 0 && String(decoding: r.stdout, as: UTF8.self) == "hi\n")
     #expect(Date().timeIntervalSince(start) < 10)
 }
+
+/// Past its limit a stream is still read, so the program runs to its end (its status is its own), but only the first
+/// `limit` bytes are kept, and the output says it's cut.
+@Test func aSubprocessKeepsItsLimitAndRunsToTheEnd() throws {
+    let r = try Subprocess.run(["/bin/sh", "-c", "head -c 3000000 /dev/zero; echo done >&2; exit 3"], cwd: "/tmp", env: env, timeLimit: 30, limit: 1 << 20)
+    #expect(r.status == 3 && !r.timedOut && r.truncated)
+    #expect(r.stdout.count == 1 << 20 && String(decoding: r.stderr, as: UTF8.self) == "done\n")
+    let whole = try Subprocess.run(["/bin/sh", "-c", "head -c 1048576 /dev/zero"], cwd: "/tmp", env: env, timeLimit: 30, limit: 1 << 20)
+    #expect(whole.stdout.count == 1 << 20 && !whole.truncated)   // exactly the limit is all of it
+}

@@ -3,11 +3,12 @@ import Core
 
 extension Git {
     /// Parse `git status --porcelain=v2 -z`: entries end in NUL, paths are as they are (no quoting), and a rename's
-    /// entry is followed by its old path. Renames report the new path.
-    public static func parseStatus(_ s: String) -> [FileChange] {
+    /// entry is followed by its old path. Renames report the new path. The first `limit` entries.
+    public static func parseStatus(_ s: String, limit: Int = .max) -> [FileChange] {
         var out: [FileChange] = [], oldPath = false
         for l in s.split(separator: "\0") {
             if oldPath { oldPath = false; continue }
+            if out.count >= limit { break }
             oldPath = l.hasPrefix("2")
             let f = l.split(separator: " ", maxSplits: l.hasPrefix("2") ? 9 : (l.hasPrefix("u") ? 10 : 8), omittingEmptySubsequences: false)
             switch l.first {
@@ -25,8 +26,14 @@ extension Git {
         return out
     }
 
-    /// `only`: one file's status (a diff of one file mustn't walk every untracked folder in the repository).
-    public static func status(_ path: String, only file: String? = nil) throws -> [FileChange] {
-        parseStatus(try run(["status", "--porcelain=v2", "-z", "-uall"] + (file.map { ["--"] + literal([$0]) } ?? []), cwd: path))
+    /// `only`: one file's status (a diff of one file mustn't walk every untracked folder in the repository). `limit`: the
+    /// first that many entries (`FileChange.limit` for what's shown; git's output past them is read and dropped);
+    /// without one, all of them or an error.
+    public static func status(_ path: String, only file: String? = nil, limit: Int = .max) throws -> [FileChange] {
+        let a = ["status", "--porcelain=v2", "-z", "-uall"] + (file.map { ["--"] + literal([$0]) } ?? [])
+        let r = try runPart(a, cwd: path, limit: Subprocess.outputLimit)
+        let changes = parseStatus(String(decoding: r.truncated ? wholeEntries(r.data, 0) : r.data, as: UTF8.self), limit: limit)
+        guard !r.truncated || changes.count >= limit else { throw tooMuch(a) }
+        return changes
     }
 }

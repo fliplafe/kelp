@@ -138,18 +138,31 @@ extension Git {
         case .commit(let c): a = ["show", "--format=", "-M", "--diff-merges=first-parent"] + common + [try rev(c)]
         case .since(let tree): a += [try rev(tree), try snapshotTree(path)]   // two trees: new files included, nothing staged
         }
-        if let file { a += ["--"] + literal([file]) }
+        let only = file.map { ["--"] + literal([$0]) } ?? []
         var budget = Allowance(oneFile: file != nil)
-        var diffs = parseDiff(try runData(a, cwd: path), budget: &budget)
+        // Read up to twice the budget: the budget is spent by then, unless whole files were past their share. git's
+        // output after that is dropped as it comes; the files it held are named by a second, short run, header only.
+        let out = try runPart(a + only, cwd: path, limit: 2 * diffBudget)
+        var diffs = parseDiff(out.truncated ? wholeFiles(out.data) : out.data, budget: &budget)
+        if out.truncated {
+            let shown = Set(diffs.map(\.path))
+            let names = try run(a + ["--name-only", "-z"] + only, cwd: path).split(separator: "\0").map(String.init)
+            diffs += names.filter { !shown.contains($0) }.map { FileDiff(path: $0, header: "diff --git a/\($0) b/\($0)", hunks: [], binary: false, tooLarge: true) }
+        }
         // Untracked files are invisible to `git diff`; show them as all-added for working-tree sources.
         if case .unstaged = source { diffs += try untrackedDiffs(path, only: file, budget: &budget) }
         if case .allUncommitted = source { diffs += try untrackedDiffs(path, only: file, budget: &budget) }
         return diffs
     }
 
+    /// The files of diff output cut off somewhere: up to where the last one begins.
+    static func wholeFiles(_ d: Data) -> Data {
+        d.range(of: Data("\ndiff --git ".utf8), options: .backwards).map { d[...$0.lowerBound] } ?? Data()
+    }
+
     static func untrackedDiffs(_ path: String, only: String?, budget: inout Allowance) throws -> [FileDiff] {
         let remote = RemoteHost.of(path)
-        let files = try status(path, only: only).filter { $0.untracked && (only == nil || $0.path == only) }
+        let files = try status(path, only: only, limit: FileChange.limit).filter { $0.untracked && (only == nil || $0.path == only) }
         // On the host: all of them in one round trip, each at most a byte past the limit (the folder here is a marker).
         let there = remote.map { r in (try? untrackedOnHost(r, files.map(\.path), budget: budget.left)) ?? [:] } ?? [:]
         return files.compactMap { f in

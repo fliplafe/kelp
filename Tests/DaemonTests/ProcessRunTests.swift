@@ -26,3 +26,13 @@ import Core
         await #expect(throws: RPCError.self, "\(id)") { try await c.call(ProcessRun(argv: ["/bin/echo", "ran"], extensionId: id)) }
     }
 }
+
+/// Output past what the reply carries is an error, not a part passed off as the whole (a formatter's would replace the
+/// file's text with it).
+@Test func aProgramThatPrintsTooMuchFails() async throws {
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    await #expect(throws: RPCError.self) {
+        try await c.call(ProcessRun(argv: ["/bin/sh", "-c", "head -c \((16 << 20) + 1) /dev/zero"]))
+    }
+    #expect(try await c.call(ProcessRun(argv: ["/bin/sh", "-c", "head -c 1000 /dev/zero"])).stdout.utf8.count == 1000)
+}

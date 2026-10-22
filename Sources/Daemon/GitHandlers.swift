@@ -4,7 +4,7 @@ import GitKit
 
 // Source control, files and review comments: everything runs here, off the UI.
 
-extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path) } }
+extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path, limit: FileChange.limit) } }
 extension GitBranches: Handled { func handle(_ d: Daemon) throws -> Result { try Git.branches(d.cwd(forWorktree: id).path) } }
 extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> Result { try Git.lineStats(d.cwd(forWorktree: id).path) } }
 /// The branch checked out now (a workspace's record can be stale after a switch).

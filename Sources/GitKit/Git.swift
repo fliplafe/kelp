@@ -23,9 +23,23 @@ extension Git {
     }
 
     /// `run`, its output as the bytes git wrote (a diff of a file that isn't UTF-8 goes back to `git apply` unchanged).
+    /// More than `Subprocess.outputLimit` of it is an error: nothing here works on a part as if it were the whole.
     @discardableResult
     public static func runData(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
                                env extra: [String: String] = [:], timeLimit: TimeInterval = 300) throws -> Data {
+        let r = try runPart(args, cwd: cwd, stdin: stdin, executable: executable, ok: ok, env: extra, timeLimit: timeLimit, limit: Subprocess.outputLimit)
+        guard !r.truncated else { throw tooMuch(args) }
+        return r.data
+    }
+
+    static func tooMuch(_ args: [String]) -> GitError {
+        GitError(args: args, status: 0, stderr: "It printed more than \(Subprocess.outputLimit >> 20) MB, more than Kelp reads.")
+    }
+
+    /// `runData` keeping the first `limit` bytes of the output: `truncated` says there was more (read and dropped), for a
+    /// caller that shows a part (a long status, a huge diff) and says so.
+    static func runPart(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
+                        env extra: [String: String] = [:], timeLimit: TimeInterval = 300, limit: Int) throws -> (data: Data, truncated: Bool) {
         // timeLimit: longest a git / gh / ssh run may take before it's stopped (it then fails like any other error). Five
         // minutes: far past any real fetch or push, short of a thread lost for good.
         var args = args, executable = executable, cwd = cwd
@@ -43,12 +57,15 @@ extension Git {
         env["GIT_OPTIONAL_LOCKS"] = "0"   // a status doesn't rewrite the index (which would wake the file watchers again)
         env.merge(extra) { $1 }
         // A host that drops packets or a credential helper waiting on nobody is stopped at the time limit, with its children.
-        let r = try Subprocess.run([executable] + args, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit)
+        let r = try Subprocess.run([executable] + args, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit, limit: limit)
         guard ok.contains(r.status), !r.timedOut else {
             throw GitError(args: args, status: r.status, stderr: String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return r.stdout
+        return (r.stdout, r.truncated)
     }
+
+    /// `d` up to its last `separator`, inclusive: the whole entries of output cut off mid-entry.
+    static func wholeEntries(_ d: Data, _ separator: UInt8) -> Data { d.lastIndex(of: separator).map { d[...$0] } ?? Data() }
 
     /// File names as pathspecs that mean just those files: "[id].tsx" isn't a pattern for "i.tsx" or "d.tsx".
     /// (Not `--literal-pathspecs`: `stash -u` uses pathspec magic of its own and then leaves untracked files behind.)

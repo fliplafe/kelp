@@ -246,6 +246,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         section(.staged, g.staged)
         section(.changes, g.changes)
         if changes.isEmpty, info != nil { out.append(Node(.note(String(localized: "No changes")))) }
+        if changes.count >= FileChange.limit { out.append(Node(.note(String(localized: "Showing the first \(FileChange.limit) changes")))) }
         roots = out
         outline.reloadData(); outline.expandItem(nil, expandChildren: true)
     }

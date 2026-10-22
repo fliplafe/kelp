@@ -8,7 +8,9 @@ extension Daemon {
         let argv = try RemoteHost.of(cwd).map { [RemoteHost.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + args)] }
             ?? [LoginPath.resolve("tmux")] + args
         var env = ProcessInfo.processInfo.environment; env["PATH"] = childPath
-        return try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeLimit)
+        let r = try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeLimit)
+        guard !r.truncated else { throw RPCError.internalError("tmux printed more than \(Subprocess.outputLimit >> 20) MB, more than Kelp reads.") }
+        return r
     }
 
     /// The tmux session it runs in: a remote agent's on the host, or the one a terminal attaches to.

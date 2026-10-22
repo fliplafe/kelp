@@ -10569,6 +10569,16 @@
           }
         }
       }
+    },
+    "Showing the first %lld changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показаны первые %lld изменений"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

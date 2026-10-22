@@ -84,6 +84,7 @@ extension IDE {
         guard r.status == 0 else {
             throw RPCError.internalError("Couldn't download \(url): \(String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
         }
+        guard !r.truncated else { throw RPCError.internalError("Couldn't download \(url): it's larger than \(Subprocess.outputLimit >> 20) MB.") }
         return r.stdout
     }
 
