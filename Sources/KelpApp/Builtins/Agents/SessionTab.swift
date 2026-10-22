@@ -29,21 +29,22 @@ final class SessionTab: TabContent {
         session.map(AgentCatalog.displayName) ?? String(localized: "Session")
     }
     var icon: NSImage? { AgentCatalog.icon(session?.agent) }
-    /// A terminal shows a state only while a program in it says how far it got (a build).
-    var status: AgentStatus? { session.flatMap { $0.agent == "shell" ? ($0.progress == nil ? nil : .working) : $0.endedWithError ? .error : $0.markStatus } }
-    var progress: Double? { session?.progress.map { Double($0) / 100 } }
+    var badge: TabBadge? {
+        let s = session
+        // A terminal shows a state only while a program in it says how far it got (a build).
+        return TabBadge(status: s.flatMap { $0.agent == "shell" ? ($0.progress == nil ? nil : .working) : $0.endedWithError ? .error : $0.markStatus },
+                        unread: s?.unread ?? false, meter: AppModel.shared.contextShare[sessionId],
+                        progress: s?.progress.map { Double($0) / 100 }, attention: s.flatMap(Self.attention))
+    }
     /// The ring around its pane: it asks (orange), failed (red), or finished and wasn't looked at yet (accent).
-    var attention: NSColor? {
-        guard let s = session, s.agent != "shell" else { return nil }
+    private static func attention(_ s: Session) -> NSColor? {
+        guard s.agent != "shell" else { return nil }
         if s.status == .waiting { return .systemOrange }
         if s.status == .error || s.endedWithError { return s.unread ? .systemRed : nil }
         return s.status == .done && s.unread ? .controlAccentColor : nil
     }
-    var unread: Bool { session?.unread ?? false }
-    var isTerminal: Bool { true }
     /// Only one on screen: a hidden pane's grid is from whatever size it last had.
     var terminalGrid: (cols: Int, rows: Int)? { pane.window == nil ? nil : pane.gridSize }
-    var meter: Double? { AppModel.shared.contextShare[sessionId] }
     var toolTip: String? {
         session.map { "\(title) — \($0.statusWords)" + ($0.summary.isEmpty ? "" : "\n\($0.summary)") + ($0.workingElsewhere.map { "\n\($0)" } ?? "") }
     }

@@ -102,8 +102,21 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
             found.append("\(f.path):\(code[..<r.lowerBound].filter { $0 == "\n" }.count + 1): \(code[r])")
         }
     }
-    // The one left: EditorAgents sizes a new terminal from PaneView.lastGrid.
-    #expect(found.count <= 1, "built-ins named outside Builtins/: \(found)")
+    #expect(found == [], "built-ins named outside Builtins/")
+}
+
+/// What the shell asks of every tab stays short: a question only one kind of tab answers is that tab's own (its provider's
+/// menu, its badge), not one more requirement every tab carries a "not this one" default for.
+@Test func tabContentAsksLittle() throws {
+    let text = try #require(sources(["Sources/KelpApp/Editor"]).first { $0.path.hasSuffix("/TabContent.swift") }?.text)
+    let start = try #require(text.range(of: "protocol TabContent: AnyObject {"))
+    let end = try #require(text.range(of: "\n}", range: start.upperBound..<text.endIndex))
+    let body = text[start.upperBound..<end.lowerBound]
+    let requirements = body.split(separator: "\n").filter { l in
+        let t = l.trimmingCharacters(in: .whitespaces)
+        return t.hasPrefix("var ") || t.hasPrefix("func ")
+    }
+    #expect(requirements.count <= 15, "\(requirements)")
 }
 
 /// A Swift file's code without its comments and string literals (their words could be any name); lines stay where they were.

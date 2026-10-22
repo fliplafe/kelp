@@ -66,7 +66,7 @@ extension SharedAppModel {
         let file = FileTab(uri: TabURI.file(p))
         let tab: TabContent = file
         #expect(tab.fileURL == URL(fileURLWithPath: p))
-        #expect(!tab.isTerminal && tab.terminalGrid == nil && tab.attention == nil)
+        #expect(tab.badge == nil && tab.terminalGrid == nil)
         tab.goTo(line: 3)
         #expect(file.editor?.cursor?.line == 3)
         #expect(await tab.close())   // nothing edited: closes without asking

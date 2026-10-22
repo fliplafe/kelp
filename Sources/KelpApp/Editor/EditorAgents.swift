@@ -37,7 +37,7 @@ extension EditorArea {
     /// The size the new terminal will have, so the shell's first screen isn't drawn for another width (zsh's stray "%"
     /// line, an agent's banner wrapped twice). A split gets half; a guess on the small side only leaves room.
     private func terminalSize(split: SplitDirection?) -> (Int, Int)? {
-        guard let g = focusedContent?.terminalGrid ?? contents.values.lazy.compactMap(\.terminalGrid).first ?? PaneView.lastGrid else { return nil }
+        guard let g = focusedContent?.terminalGrid ?? contents.values.lazy.compactMap(\.terminalGrid).first ?? Workbench.terminalGrid else { return nil }
         switch split {
         case .right?: return (max(20, g.cols / 2 - 1), g.rows)
         case .down?: return (g.cols, max(5, g.rows / 2 - 1))

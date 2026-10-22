@@ -137,15 +137,9 @@ final class PaneView: NSView {
 
     func focus() { ghostty.focus() }
 
-    /// Columns × rows now; the last one seen anywhere sizes the next terminal before it's on screen.
-    static var lastGrid: (cols: Int, rows: Int)? = {   // kept across launches: the window usually opens at the same size
-        let g = UserDefaults.standard.array(forKey: "terminal.lastGrid") as? [Int] ?? []
-        return g.count == 2 ? (g[0], g[1]) : nil
-    }() {
-        didSet { if let g = lastGrid, g != oldValue ?? (0, 0) { UserDefaults.standard.set([g.cols, g.rows], forKey: "terminal.lastGrid") } }
-    }
+    /// Columns × rows now; the last one seen anywhere (`Workbench.terminalGrid`) sizes the next terminal before it's on screen.
     var gridSize: (cols: Int, rows: Int)? {
-        if let g = ghostty.gridSize { Self.lastGrid = g; return g }
+        if let g = ghostty.gridSize { Workbench.terminalGrid = g; return g }
         return nil
     }
 

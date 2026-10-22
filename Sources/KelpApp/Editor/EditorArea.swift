@@ -195,15 +195,16 @@ final class EditorArea: NSViewController {
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(Self.disambiguated(model.tabs.map { t in
             if let c = contents[t.id] {
-                return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: c.status, unread: c.unread, toolTip: c.toolTip,
-                    edited: c.isEdited, meter: c.meter, progress: c.progress)
+                let b = c.badge
+                return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: b?.status, unread: b?.unread ?? false, toolTip: c.toolTip,
+                    edited: c.isEdited, meter: b?.meter, progress: b?.progress)
             }
             return Self.placeholder(t)
         }, model.tabs), selected: model.selectedTab?.id)
         g.show(visible?.view)
         // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
-        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.isTerminal == true
-        g.attention = visible?.attention
+        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.badge != nil
+        g.attention = visible?.badge?.attention
         showEdited()
     }
 

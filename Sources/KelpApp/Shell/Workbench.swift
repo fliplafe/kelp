@@ -20,4 +20,12 @@ final class Workbench {
     }
     /// For Back / Forward (⌃⌘← / ⌃⌘→). Observed: the title bar's arrows follow it.
     var history = WorkspaceHistory()
+    /// Columns × rows of the last terminal seen on screen: sizes the next one before it's shown. Kept across launches:
+    /// the window usually opens at the same size.
+    static var terminalGrid: (cols: Int, rows: Int)? = {
+        let g = UserDefaults.standard.array(forKey: "terminal.lastGrid") as? [Int] ?? []
+        return g.count == 2 ? (g[0], g[1]) : nil
+    }() {
+        didSet { if let g = terminalGrid, g != oldValue ?? (0, 0) { UserDefaults.standard.set([g.cols, g.rows], forKey: "terminal.lastGrid") } }
+    }
 }
