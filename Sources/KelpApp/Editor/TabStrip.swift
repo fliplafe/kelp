@@ -258,16 +258,27 @@ private final class TabButton: NSControl, NSDraggingSource {
         return [.working, .waiting, .error].contains(s) || (s == .done && item?.unread == true)
     }
 
+    /// It asks, or it failed and wasn't looked at: the whole capsule takes the colour, so the pane that calls for you
+    /// reads across the window, not only by its 12 pt mark.
+    private var call: (fill: NSColor, text: NSColor)? {
+        switch item?.status {
+        case .waiting?: (.systemOrange, .textOrange)
+        case .error? where item?.unread == true: (.systemRed, .textRed)
+        default: nil
+        }
+    }
+
     private func updateLook() {
         let edited = item?.edited == true
         close.isHidden = !hover; editedDot.isHidden = hover || !edited
         icon.isHidden = hover || edited || showsState
         mark.alphaValue = hover || edited || !showsState ? 0 : 1   // StatusMark hides itself when there's no state
-        let active = selected && groupFocused
-        title.textColor = selected ? .labelColor : .secondaryLabelColor
-        title.font = .systemFont(ofSize: 12, weight: active ? .medium : .regular)
+        let active = selected && groupFocused, call = call
+        title.textColor = call?.text ?? (selected ? .labelColor : .secondaryLabelColor)
+        title.font = .systemFont(ofSize: 12, weight: active || call != nil ? .medium : .regular)
         icon.contentTintColor = active ? .controlAccentColor : .secondaryLabelColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
+            if let call { layer?.backgroundColor = call.fill.withAlphaComponent(selected ? 0.24 : 0.16).cgColor; return }
             let fill = selected ? (groupFocused ? 0.12 : 0.07) : hover ? 0.05 : 0
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(fill).cgColor
         }

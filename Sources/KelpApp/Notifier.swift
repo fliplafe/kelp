@@ -116,11 +116,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private func post(_ s: Session) {
         // No banner if the user is already looking at that pane (what it asks stays marked until it's answered).
         if NSApp.isActive, (NSApp.delegate as? AppDelegate)?.isViewing(session: s.id) == true { return }
-        let wt = AppModel.shared.worktree(s.worktreeId)
+        let m = AppModel.shared, wt = m.worktree(s.worktreeId)
         let c = UNMutableNotificationContent()
         c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you")
             : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
-        c.subtitle = wt?.branch ?? ""
+        c.subtitle = [wt?.displayName, m.repo(wt?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")   // as its Needs You row
         c.body = s.summary.isEmpty ? (s.status == .waiting ? String(localized: "Waiting for your answer") : String(localized: "Ready for review")) : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]
         if Self.asksPermission(s) { c.categoryIdentifier = "permission" }

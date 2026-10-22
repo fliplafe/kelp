@@ -204,8 +204,9 @@ final class EditorArea: NSViewController {
             return placeholder(t)
         }, model.tabs), selected: model.selectedTab?.id)
         g.show(visible?.view)
-        // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
-        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.badge != nil
+        // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little. Never the one
+        // that calls for you: it's the pane to look at.
+        g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.badge.map { $0.attention == nil } == true
         g.attention = visible?.badge?.attention
         showEdited()
     }
