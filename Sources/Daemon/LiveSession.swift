@@ -32,7 +32,8 @@ final class LiveSession: Sendable {
     let state: OSAllocatedUnfairLock<State>
     private let log: FileHandle?
     private let logURL: URL
-    /// Text typed in order, Enter included (see `type`).
+    /// Everything written into the program, in order: text Kelp types (Enter included, see `type`) and the user's keys,
+    /// so keys pressed while a send waits for its Enter land after that Enter instead of being sent with it.
     let sends = DispatchQueue(label: "kelp.session.send")
     private let statusQueue = DispatchQueue(label: "kelp.session.status")
     private let turnWork = DispatchQueue(label: "kelp.session.turn", qos: .utility)
@@ -118,8 +119,10 @@ final class LiveSession: Sendable {
         var probe = false, topic: String?, url: String?, limits: [ClaudeLimits.Reading] = []
         var answer: (input: String, asked: NSRegularExpression)?
         var attached = Set<Int>(), id = ""
+        var trimLog = false
     }
 
+    /// On the PTY's queue, one chunk after another: the log is written here, after the lock, in that order.
     private func handleOutput(_ d: Data) {
         let text = String(decoding: d, as: UTF8.self)
         let heard = state.withLock { s -> Heard in
@@ -127,8 +130,7 @@ final class LiveSession: Sendable {
             // A copy, at twice the limit: removeFirst on Data only re-slices, and the storage kept every byte the session
             // ever printed (300 MB of output held 300 MB). The slack makes the copy rare.
             if s.ring.count > 2 * Self.ringLimit { s.ringModes.read(s.ring.dropLast(Self.ringLimit)); s.ring = Data(s.ring.suffix(Self.ringLimit)) }
-            try? log?.write(contentsOf: d); s.logSize += d.count
-            if s.logSize > Self.logLimit, let n = Self.trimmed(log, logURL) { s.logSize = n }
+            s.logSize += d.count
             let said = (s.record.summary, s.record.progress)
             var h = Heard(probe: s.readReports(text, d), topic: s.readTopic(text, d))
             // The chunk without escapes, once, for the two readers that want it.
@@ -137,10 +139,13 @@ final class LiveSession: Sendable {
             if Date() > s.redrawUntil { s.detector.output(text); s.lastOutputAt = Date() }
             s.notePasteMode(d)
             h.answer = s.autoAnswer(); h.url = s.localURL(plain); h.limits = s.newLimits(d)
-            h.attached = s.attached; h.id = s.record.id
+            h.attached = s.attached; h.id = s.record.id; h.trimLog = s.logSize > Self.logLimit
             emit(s.sync() ?? (said != (s.record.summary, s.record.progress) ? s.record : nil))
             return h
         }
+        // Disk, off the lock: a slow disk or the trim (a megabyte read back) doesn't hold up typing, attaching or status.
+        try? log?.write(contentsOf: d)
+        if heard.trimLog, let n = Self.trimmed(log, logURL) { state.withLock { $0.logSize = n } }
         if heard.probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !heard.limits.isEmpty { callbacks.limits?(heard.limits) }
         if let url = heard.url { callbacks.localURL?(url) }
@@ -160,17 +165,18 @@ final class LiveSession: Sendable {
         if still { pty.write(Data(a.input.utf8)) }
     }
 
+    /// On the PTY's queue too, after its last output: the log closes after the last write.
     private func handleExit(_ code: Int32) {
         state.withLock { s in
             s.ended = true
-            if s.record.status == .hibernated { try? log?.close(); return }
+            if s.record.status == .hibernated { return }
             s.detector.exited()
             let exitCode = (code & 0x7f) == 0 ? (code >> 8) & 0xff : 0   // killed by a signal (closed, stopped) isn't a failure
             if exitCode != 0, s.record.agent != "shell" { s.record.summary = "Ended with an error (exit code \(exitCode))" }
             s.record.progress = nil; s.record.exitCode = Int((code & 0x7f) == 0 ? (code >> 8) & 0xff : 128 + (code & 0x7f))
             emit(s.sync())
-            try? log?.close()
         }
+        try? log?.close()
     }
 
     /// `kelp report`: the record to publish when only what it says changed (a new state goes out through `callbacks.status`).
@@ -240,9 +246,12 @@ final class LiveSession: Sendable {
         }
     }
 
+    /// Bytes into the program after anything Kelp is still typing (`sends`): a key never lands between a send's text and its Enter.
+    func write(_ d: Data) { sends.async { [pty] in pty.write(d) } }
+
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
     func userInput(_ d: Data) {
-        pty.write(d)
+        write(d)
         guard !TerminalReplies.isReply(d) else { return }   // the terminal answering the agent, not the user typing
         let firstPrompt = state.withLock { s -> String? in
             // Keys that answer a question or menu on screen ("1", Return on an option) aren't a line being written.
@@ -319,9 +328,11 @@ final class LiveSession: Sendable {
     /// The history, `conn` gets the output from here on. `send` runs under the lock with that history, so it goes out
     /// before any of the live output that follows. It starts by setting the modes the cut-off part had set (Codex's
     /// alternate screen and mouse reporting): without them the new terminal keeps the wheel and clicks to itself.
+    /// nil once it was let go (`letGo`): its program is stopping, and nothing it shows would be live.
     @discardableResult
-    func attach(_ conn: Int, send: @Sendable (Data) -> Void = { _ in }) -> Data {
+    func attach(_ conn: Int, send: @Sendable (Data) -> Void = { _ in }) -> Data? {
         state.withLock { s in
+            guard !s.letGo else { return nil }
             s.attached.insert(conn)
             var modes = s.ringModes
             modes.read(s.ring.dropLast(Self.ringLimit))
@@ -331,6 +342,8 @@ final class LiveSession: Sendable {
         }
     }
     func detach(_ conn: Int) { state.withLock { _ = $0.attached.remove(conn) } }
+    /// Out of `live` with its program still to stop (paused, deleted): nobody attaches from now on. Who was attached.
+    func letGo() -> Set<Int> { state.withLock { s in s.letGo = true; defer { s.attached = [] }; return s.attached } }
 }
 
 extension LiveSession {
@@ -351,6 +364,7 @@ extension LiveSession {
         /// TUIs redraw everything after a resize; that output isn't the agent working.
         var redrawUntil = Date.distantPast
         var discarded = false            // being deleted: nothing it does may save its record again
+        var letGo = false                // out of `live`, its program stopping: no new attach (`letGo()`)
         var ended = false
 
         // What the output says.

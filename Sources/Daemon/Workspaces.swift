@@ -105,6 +105,7 @@ extension Daemon {
     /// A session already out of `live`: recorded as paused (a resumable agent) or ended — said here and saved now, since
     /// nothing records its exit any more — then stopped with all it started. Its pids, for `waitGone`.
     func pause(_ ls: LiveSession, _ manifests: [AgentManifest]) -> [pid_t] {
+        hangUpStreams(ls)
         if Self.resumable(ls.snapshot, manifests) {
             publish(ls.markHibernated())
         } else {

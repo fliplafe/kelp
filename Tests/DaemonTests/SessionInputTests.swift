@@ -37,6 +37,22 @@ import Agents
     #expect(!(try await screen()).contains("half"))
 }
 
+/// Keys the user presses while a send waits for its Return (0.3 s, so the agent takes the text as typed) land after
+/// that Return: they used to go in between, and the Return sent them with the prompt ("hellox").
+@Test func keysPressedDuringASendComeAfterItsReturn() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "keys-after")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "stty -echo; echo ready; exec cat"))
+    func screen() async throws -> String { try await w.c.call(SessionRead(id: s.id)) }
+    #expect(try await waitFor(10) { try await screen().contains("ready") })
+    try await Task.sleep(for: .seconds(2.5))   // started up: the send is typed now
+    _ = try await w.c.call(SessionSend(id: s.id, text: "hello"))
+    _ = try await w.c.call(SessionWrite(id: s.id, base64: Data("x\r".utf8).base64EncodedString()))   // within its 0.3 s
+    func lines() async throws -> [String] { try await screen().split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) } }
+    #expect(try await waitFor(10) { try await lines().contains("x") })
+    #expect(try await lines().suffix(2) == ["hello", "x"])
+}
+
 /// What the user typed and hasn't sent, followed from their keys.
 @Test func theUsersUnsentLineIsFollowedFromTheirKeys() {
     var s = LiveSession.State(record: Session(cwd: "/", command: "cat"), manifest: AgentManifest(id: "custom", name: "Custom", command: "/bin/cat"),

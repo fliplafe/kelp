@@ -91,6 +91,7 @@ extension Daemon {
     private func pauseIdle(_ ls: LiveSession) {
         wakeLocks.withLock(ls.snapshot.id) {
             guard live.remove(ls, if: { !$0.isAttached }) else { return }
+            hangUpStreams(ls)   // none by the check; one that came just after it ends too
             let s = ls.markHibernated()
             Self.waitGone(ls.pty.terminate())   // SIGKILL after 2 s for what ignores the hangup: a wake must not start a second copy
             publish(s)

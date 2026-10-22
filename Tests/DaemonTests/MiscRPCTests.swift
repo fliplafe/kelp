@@ -325,6 +325,30 @@ func trustQuestionStandIn() -> String {
     #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)   // paused, not ended
 }
 
+/// A terminal showing an agent whose workspace is archived is hung up as the agent pauses (`kelp attach` ends, and the app
+/// attaches again when it shows the tab): it used to stay open on a screen nothing reached, typing into a stopped
+/// program. Hanging up wakes nothing.
+@Test func archivingHangsUpTheTerminalsShowingItsAgents() async throws {
+    let sleepy = AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo up; sleep 30", "x"], autoAnswers: [], resumeArgs: ["--resume"])
+    let w = try await world(agents: [sleepy]); defer { w.d.stop() }
+    let wt = try await desk(w, "shown")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy"]), as: Session.self)
+    let fd = try Unix.connect(w.root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
+    var tv = timeval(tv_sec: 1, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: "session.stream", params: .obj(["id": .string(s.id)]))))
+    var buf = [UInt8](repeating: 0, count: 65536)
+    func readsUntilEnd(_ seconds: Double) -> Bool {   // true: the daemon closed the stream
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end { let n = read(fd, &buf, buf.count); if n == 0 { return true }; if n < 0, errno != EAGAIN, errno != EINTR { return true } }
+        return false
+    }
+    #expect(!readsUntilEnd(1.5))   // attached: it streams
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    #expect(readsUntilEnd(5))
+    try await Task.sleep(for: .seconds(0.5))
+    #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
+}
+
 /// A plain program (no conversation to resume) ends with its workspace, as the record says, even one that ignores the
 /// hangup; unarchived, the workspace doesn't show it running.
 @Test func archivingAWorkspaceEndsItsPlainProgramsForGood() async throws {

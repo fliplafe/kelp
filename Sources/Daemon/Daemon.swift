@@ -236,7 +236,9 @@ public final class Daemon: Sendable {
         }
         let (cols, rows) = Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
         guard let ls = try? liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
-        ls.attach(c.id) { c.send($0) }   // queued under the session's lock: no live output gets ahead of it
+        // Queued under the session's lock: no live output gets ahead of it. One paused at this moment ends the attach,
+        // as the pause does for those already attached (`letGo`).
+        guard ls.attach(c.id, send: { c.send($0) }) != nil else { return }
         if !leftover.isEmpty { ls.userInput(leftover) }
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
@@ -246,6 +248,12 @@ public final class Daemon: Sendable {
         }
         ls.detach(c.id)
     }
+
+    /// A session taken out of `live` with its program still to stop (paused, deleted): the terminals streaming it are
+    /// hung up, so `kelp attach` ends instead of showing a screen nothing reaches any more (the app attaches again when
+    /// the tab is shown). JSON subscribers just stop getting output; the record's status tells them why.
+    func hangUpStreams(_ ls: LiveSession) { clients.split(ls.letGo()).raw.forEach { $0.hangUp() } }
+    static let pausedAsAttached = RPCError.invalidParams("The session was paused as it was opened. Open it again.")
 
     /// Output to attached connections: raw ones get bytes, the rest a JSON event.
     func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
@@ -265,11 +273,13 @@ public final class Daemon: Sendable {
            let ls = try? await offload({ [self] in try liveSession(sid) }) {
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
+            var attached = true
             clients.ifConnected(c.id) {
-                _ = ls.attach(c.id) { history in
+                attached = ls.attach(c.id) { history in
                     if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) { c.send(Self.replyLine(id: id, result: r)) }
-                }
+                } != nil
             }
+            if !attached, let d = Self.errorLine(id: id, Self.pausedAsAttached) { c.send(d) }
             return
         }
         do {
@@ -423,7 +433,7 @@ public final class Daemon: Sendable {
         if !keepTmux { endOwnTmux(s) }
         wakeLocks.withLock(s.id) {
             let ls = live.remove(s.id)
-            if let ls { Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
+            if let ls { hangUpStreams(ls); Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
             do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
             try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
         }

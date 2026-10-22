@@ -15,6 +15,10 @@ final class PaneView: NSView {
     /// `kelp attach` still streams, and from which daemon (`AppModel.connections` when it started).
     private var attached = true
     private var attachedTo = AppModel.shared.connections
+    /// The status last seen: a session that goes from running to paused had its terminals hung up (the daemon ends
+    /// `kelp attach` then), this one's included.
+    /// Limit: a pause and a wake handled in one run-loop turn look like no change; a per-session pause count would see it.
+    private var lastStatus: AgentStatus?
 
     var onClose: ((PaneView) -> Void)?
     var onRestart: ((PaneView) -> Void)?
@@ -77,16 +81,23 @@ final class PaneView: NSView {
 
     /// A new connection may be a new daemon (an update, Restart Background Service, a crash), whose session this stream
     /// no longer reaches — libghostty reports the attach's exit only after a key press, so the connection is the sign.
+    /// So is a pause: the daemon hangs up the terminals of a session it pauses (its workspace archived or closed).
     /// The session living on, attach again: only on screen, a hidden tab attaches when shown (a restart mustn't wake
-    /// every paused agent). Against the same daemon that's one history replay, nothing lost. Ended: "Session ended".
-    private func settle() {
+    /// every paused agent). A paused one attaches again when it's shown next (which wakes it, as opening any paused tab
+    /// does) or on Resume, never on screen right after its pause. Against the same daemon that's one history replay,
+    /// nothing lost. Ended: "Session ended".
+    private func settle(shown: Bool = false) {
         let s = AppModel.shared.session(sessionId), m = AppModel.shared
-        if let s, s.status != .exited, m.connected, m.connections != attachedTo, window != nil { reattach(s) }
+        if s?.status == .hibernated, let was = lastStatus, was != .hibernated { attached = false }
+        lastStatus = s?.status
+        if let s, s.status != .exited, m.connected, window != nil, m.connections != attachedTo || shown && !attached { reattach(s) }
+        let paused = !attached && s?.status == .hibernated
         ended.isHidden = attached && s?.status != .exited
         // ssh ends with 255 when the connection drops: Restart connects again (to the agent still running in tmux there).
         let lost = s?.exitCode == 255 && s.flatMap { RemoteHost.of($0.cwd) } != nil
-        endedLabel.stringValue = lost ? String(localized: "Connection lost") : String(localized: "Session ended")
-        restartButton.title = lost ? String(localized: "Reconnect") : String(localized: "Restart")
+        endedLabel.stringValue = paused ? String(localized: "Paused") : lost ? String(localized: "Connection lost") : String(localized: "Session ended")
+        restartButton.title = paused ? String(localized: "Resume") : lost ? String(localized: "Reconnect") : String(localized: "Restart")
+        restartButton.image = NSImage(systemSymbolName: paused ? "play.fill" : "arrow.clockwise", accessibilityDescription: nil)
     }
 
     private func reattach(_ s: Session) {
@@ -105,7 +116,7 @@ final class PaneView: NSView {
             ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         }
     }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle() }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle(shown: true) }
 
     /// A link ⌘-clicked in the terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
     /// the two. Files open as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target
@@ -197,7 +208,10 @@ final class PaneView: NSView {
     }
 
     @objc private func closeTapped() { onClose?(self) }
-    @objc private func restartTapped() { onRestart?(self) }
+    /// Resume on a paused pane attaches again (and so wakes the agent); otherwise the session starts over.
+    @objc private func restartTapped() {
+        if !attached, let s = AppModel.shared.session(sessionId), s.status == .hibernated { reattach(s); settle() } else { onRestart?(self) }
+    }
 
     // MARK: drops: files/images/text into the agent's prompt
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
