@@ -183,6 +183,7 @@ private func codeOnly(_ s: String) -> String {
         "Builtins/Agents/PaneView.swift": "a terminal out of sight lets go of its agent once it could pause idle",
         "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
         "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
+        "Builtins/Git/CommitCard.swift": "a commit's card opens once the pointer rests on its row, and closes a moment after it leaves",
         "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list"
     ]
     let all = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])

@@ -50,6 +50,15 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     var more = false, limit = 200, loadingMore = false
     var commitFiles: [String: [FileChange]] = [:]
     var openCommits = Set<String>()
+    /// The card of the commit under the pointer, with the daemon's details (quiet: without them it shows the row's).
+    lazy var card: CommitCard = {
+        let c = CommitCard()
+        c.load = { [weak self] hash in
+            guard let self, let wid = self.worktreeId else { return nil }
+            return await self.app.quiet(GitCommitDetails(id: wid, commit: hash))
+        }
+        return c
+    }()
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])
     private var roots: [Node] = [], graphRoots: [Node] = []
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
@@ -256,6 +265,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     }
 
     private func rebuildGraph() {
+        card.close()   // its row is about to be rebuilt
         graphRoots = commits.indices.map { i in
             let n = Node(.commit(i)), h = commits[i].hash
             if openCommits.contains(h) { n.children = (commitFiles[h] ?? []).map { Node(.commitFile(h, $0)) } }
@@ -318,6 +328,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             let pushed: Bool? = info?.remote.isEmpty ?? true ? nil : !unpushed.contains(c.hash)
             let cell = CommitCell(c, graphWidth: graphWidth, isHead: c.hash.hasPrefix(info?.head ?? "\u{0}"), pushed: pushed, landsAfter: landing[c.hash])
             if syncing?.push == true { cell.pulse(true) }
+            cell.onHover = { [weak self, weak cell] on in
+                if let self, let cell { self.card.hover(on, commit: c, pushed: pushed, over: cell) }
+            }
             return cell
         case .commitFile(let h, let f):
             let cell = FileCell(f, letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
@@ -339,6 +352,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     // MARK: clicks
 
     @objc private func clicked(_ o: NSOutlineView) {
+        card.close()
         guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
         switch n.kind {
         case .section(let s): toggle(s)

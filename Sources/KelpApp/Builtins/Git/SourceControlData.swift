@@ -21,7 +21,7 @@ extension SourceControlController {
         ciWatch.key = info?.upstream != nil ? shown : nil   // no upstream: no CI line
     }
 
-    override func viewDidDisappear() { super.viewDidDisappear(); followWatches() }
+    override func viewDidDisappear() { super.viewDidDisappear(); followWatches(); card.close() }
 
     /// Refresh, and after an action: read git again now rather than on the next file event.
     func reloadAll() { if let wid = worktreeId { app.watchAgain(.git, wid) } }

@@ -139,6 +139,16 @@ public struct FileDiff: Codable, Sendable, Equatable {
     }
 }
 
+/// A commit's message body (the subject is the graph's), its author's email, and its size against the first parent.
+public struct CommitDetails: Codable, Sendable, Equatable {
+    public var body: String
+    public var email: String
+    public var files: Int, added: Int, removed: Int
+    public init(body: String, email: String, files: Int, added: Int, removed: Int) {
+        self.body = body; self.email = email; self.files = files; self.added = added; self.removed = removed
+    }
+}
+
 /// One row of the commit graph (VS Code's Source Control Graph). Lines are lane pairs:
 /// `top` runs from the row's top edge (lane `[0]`) to its middle (lane `[1]`), `bottom` from the middle to the bottom edge.
 public struct GraphCommit: Codable, Sendable, Equatable {

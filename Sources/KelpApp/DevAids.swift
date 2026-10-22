@@ -94,6 +94,15 @@ extension AppDelegate {
         let picked = env["KELP_SNAPSHOT_WINDOW"] == "settings" ? SettingsWindow.window : NSApp.windows.filter(\.isVisible).last { want != nil && $0.title.hasPrefix(want ?? "") }
         guard let w = picked ?? main.window,
               let v = w.contentView?.superview ?? w.contentView else { exit(2) }
+        // KELP_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
+        // reached otherwise without moving the user's pointer). The picture is taken a moment later: a hover card opens
+        // after a pause (a commit's waits half a second).
+        if !Self.hovered, let texts = env["KELP_HOVER"] {
+            Self.hovered = true
+            for text in texts.split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
+            RunLoop.main.add(Timer(timeInterval: 1.2, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)   // main run loop
+            return
+        }
         if want != nil { print("WINDOW", w.title, w.frame) }
         print("WINDOWS", NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? "-" : $0.title)(\(type(of: $0)))" }.joined(separator: ", "))
         if let s = w.attachedSheet {
@@ -101,9 +110,6 @@ extension AppDelegate {
             // Its own window: drawn next to the snapshot as "<name>-sheet.png".
             Self.snap(s, to: path.replacingOccurrences(of: ".png", with: "-sheet.png"))
         }
-        // KELP_HOVER="calc.py|Changes": a mouse-entered event for the views showing these texts (hover states can't be
-        // reached otherwise without moving the user's pointer).
-        for text in (env["KELP_HOVER"] ?? "").split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
         Self.snap(w, to: path)
         // A popover (limits details…) is its own window: next to the snapshot, as "<name>-popover.png".
         // An alert shown on its own (a background app has no window to put the sheet on): "<name>-alert.png".
@@ -153,6 +159,7 @@ extension AppDelegate {
 }
 
 extension AppDelegate {
+    static var hovered = false
     static func hover(_ text: String, in root: NSView, window: NSWindow) {
         guard let label = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text }) else { print("HOVER no", text); return }
         var v: NSView? = label

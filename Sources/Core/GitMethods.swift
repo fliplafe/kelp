@@ -96,6 +96,12 @@ public struct GitCommitFiles: RPCMethod {
     public var id: String, commit: String
     public init(id: String, commit: String) { self.id = id; self.commit = commit }
 }
+/// What a commit's card shows beyond its graph row: the message's body, the author's email, how big the change is.
+public struct GitCommitDetails: RPCMethod {
+    public static let name = "git.commitDetails"; public typealias Result = CommitDetails
+    public var id: String, commit: String
+    public init(id: String, commit: String) { self.id = id; self.commit = commit }
+}
 public struct GitDiscard: RPCMethod {
     public static let name = "git.discard"; public typealias Result = Done
     public var id: String, files: [String]?

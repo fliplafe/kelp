@@ -10,6 +10,11 @@ import WorkbenchKit
     #expect(bare.text == "Add a folder without git as a project")
 }
 
+@Test func aBodyReflowsIntoParagraphsButKeepsListsAndCode() {
+    let body = "The daemon pauses its agents\nas it stops.\n\n\nIt now:\n- refuses a new agent\n- ends its program\n  at once\n\n    swift test\n1. then this"
+    #expect(CommitSubject.reflow(body) == "The daemon pauses its agents as it stops.\n\nIt now:\n- refuses a new agent\n- ends its program\n  at once\n\n    swift test\n1. then this")
+}
+
 @Test func namesKeepTheirCaseAndOtherSubjectsStayAsWritten() {
     #expect(CommitSubject("fix(daemon): SIGKILL only the processes").text == "SIGKILL only the processes")
     #expect(CommitSubject("docs: kelp.json fields").text == "kelp.json fields")

@@ -65,6 +65,22 @@ extension Git {
         return out
     }
 
+    /// The body of a commit's message, its author's email and its size against the first parent, in one git run.
+    /// A binary file counts as a file, not as lines.
+    public static func commitDetails(_ path: String, commit: String) throws -> CommitDetails {
+        let out = try run(["show", "--numstat", "--format=%ae%x1f%b%x1e", "-M", "--diff-merges=first-parent", rev(commit)], cwd: path)
+        let parts = out.split(separator: "\u{1e}", maxSplits: 1, omittingEmptySubsequences: false)
+        let head = (parts.first ?? "").split(separator: "\u{1f}", maxSplits: 1, omittingEmptySubsequences: false)
+        var d = CommitDetails(body: head.count > 1 ? head[1].trimmingCharacters(in: .whitespacesAndNewlines) : "",
+                              email: String(head.first ?? ""), files: 0, added: 0, removed: 0)
+        for line in (parts.count > 1 ? parts[1] : "").split(separator: "\n") {
+            let f = line.split(separator: "\t", maxSplits: 2)
+            guard f.count == 3 else { continue }
+            d.files += 1; d.added += Int(f[0]) ?? 0; d.removed += Int(f[1]) ?? 0
+        }
+        return d
+    }
+
     /// Source Control reads this on every change in the folder: one for-each-ref answers what took five git processes
     /// (each an ssh round trip for a remote project). Detached or before the first commit, HEAD is asked for itself.
     public static func branches(_ path: String) throws -> BranchInfo {

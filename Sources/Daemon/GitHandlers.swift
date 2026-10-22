@@ -101,6 +101,9 @@ extension GitGraph: Handled {
 extension GitCommitFiles: Handled {
     func handle(_ d: Daemon) throws -> Result { try Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "") }
 }
+extension GitCommitDetails: Handled {
+    func handle(_ d: Daemon) throws -> Result { try Git.commitDetails(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "") }
+}
 extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> Done { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? []); return Done() } }
 
 extension GitRemoteOp: Handled {
@@ -176,7 +179,7 @@ extension CommentSend: Handled {
 
 extension Daemon {
     static let gitMethods: [any Handled.Type] = [GitStatus.self, GitBranches.self, GitLineStats.self, GitPush.self, GitDiff.self, GitLog.self,
-        GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self,
+        GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self, GitCommitDetails.self,
         GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesSearch.self,
         CommentAdd.self, CommentList.self, CommentSetState.self, CommentSend.self]
 }

@@ -28,6 +28,7 @@ files.write
 files.writeRemote
 git.branches
 git.commit
+git.commitDetails
 git.commitFiles
 git.diff
 git.discard

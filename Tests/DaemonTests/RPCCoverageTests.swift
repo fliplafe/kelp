@@ -45,6 +45,8 @@ private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.w
     let hash = try #require(all["commits"]?.array?.first?["hash"]?.string)
     let files = try await r.call("git.commitFiles", ["commit": .string(hash)]).array ?? []
     #expect(files.compactMap { $0["path"]?.string } == ["b.txt"])
+    let details = try await r.call("git.commitDetails", ["commit": .string(hash)])
+    #expect(details["files"]?.int == 1 && details["added"]?.int == 1 && details["body"]?.string == "")
 }
 
 @Test func discardBringsBackTheFileAndStashHidesAndRestoresChanges() async throws {

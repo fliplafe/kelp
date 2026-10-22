@@ -17,6 +17,17 @@ public struct CommitSubject: Equatable, Sendable {
         text = Self.capitalized(String(m.4))
     }
 
+    /// A message body as a card shows it: git's hard wraps (at about 72 columns) joined back into paragraphs. Blank
+    /// lines, list items and indented lines (code) keep their breaks.
+    public static func reflow(_ body: String) -> String {
+        body.components(separatedBy: "\n\n").map { para in
+            para.split(separator: "\n").reduce(into: "") { out, line in
+                let own = line.first?.isWhitespace == true || line.prefixMatch(of: #/[-*•] |\d+[.)] /#) != nil
+                out += out.isEmpty ? String(line) : (own ? "\n" : " ") + line
+            }
+        }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     /// "open the file" → "Open the file", as a sentence reads once the prefix is gone. A first word that isn't plain
     /// lowercase ("SIGKILL", "kelp.json", "iOS") is a name and stays as it is.
     static func capitalized(_ s: String) -> String {

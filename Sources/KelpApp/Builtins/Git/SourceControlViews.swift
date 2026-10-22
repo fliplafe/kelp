@@ -144,8 +144,11 @@ final class NoteCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
-final class CommitCell: NSTableCellView {
+final class CommitCell: NSTableCellView, Hoverable {
     private let subject: NSTextField, up = NSImageView()
+    /// The pointer came onto or left the row: the commit's card follows it.
+    var onHover: ((Bool) -> Void)?
+    func setHover(_ on: Bool) { onHover?(on) }
 
     /// The commit's line; its branches and tags get a line of their own under it, so they never squeeze the words.
     static var lineHeight: CGFloat { TextSize.of(22) }
@@ -193,9 +196,10 @@ final class CommitCell: NSTableCellView {
             refs.leadingAnchor.constraint(equalTo: subject.leadingAnchor), refs.topAnchor.constraint(equalTo: row.bottomAnchor, constant: -1),
             refs.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10)
         ])
+        // The card (CommitCard) shows all this to the pointer; VoiceOver reads it here.
         let when = Date(timeIntervalSince1970: c.date).formatted(date: .abbreviated, time: .shortened)
-        toolTip = "\(c.subject)\n\n\(c.author) · \(when)\n\(c.hash.prefix(10))" + (c.refs.isEmpty ? "" : "\n" + c.refs.joined(separator: ", "))
-            + (unpushed ? "\n" + notPushed : "")
+        setAccessibilityHelp("\(c.subject)\n\n\(c.author) · \(when)\n\(c.hash.prefix(10))" + (c.refs.isEmpty ? "" : "\n" + c.refs.joined(separator: ", "))
+            + (unpushed ? "\n" + notPushed : ""))
     }
     required init?(coder: NSCoder) { fatalError() }
 

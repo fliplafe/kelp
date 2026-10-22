@@ -156,6 +156,16 @@ func fuzzy(_ path: String, _ query: String) -> Int? { ProjectFiles.fuzzyScore(.i
     #expect(Git.unpushed(list, remotes: []).isEmpty)   // no remote at all: nothing to mark
 }
 
+@Test func commitDetailsHaveTheBodyTheEmailAndTheSize() throws {
+    let repo = try tempRepo()
+    try "a\nB\nc\nd\n".write(toFile: repo + "/f.txt", atomically: true, encoding: .utf8)
+    try Data([0, 1, 2, 0]).write(to: URL(fileURLWithPath: repo + "/blob.bin")); try Git.run(["add", "f.txt", "blob.bin"], cwd: repo)
+    try Git.run(["commit", "-q", "--author=Ada <ada@example.com>", "-m", "fix: b", "-m", "Why it changed,\nwrapped.\n\nSecond paragraph."], cwd: repo)
+    let d = try Git.commitDetails(repo, commit: "HEAD")
+    #expect(d == CommitDetails(body: "Why it changed,\nwrapped.\n\nSecond paragraph.", email: "ada@example.com", files: 2, added: 2, removed: 1))
+    #expect(try Git.commitDetails(repo, commit: "HEAD~1").body.isEmpty)
+}
+
 @Test func graphAndBranchesFromARealRepo() throws {
     let repo = try tempRepo()
     try Git.run(["switch", "-q", "-c", "feature"], cwd: repo)
