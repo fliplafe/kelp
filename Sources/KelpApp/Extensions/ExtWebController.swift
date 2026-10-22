@@ -9,7 +9,7 @@ import WorkbenchKit
 
 /// An extension's HTML page with `window.kelp` (exec, terminal, open, agent, settings, workspace).
 @MainActor
-final class ExtWebController: NSViewController, WKScriptMessageHandler {
+final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNavigationDelegate {
     private let page: URL, folder: URL
     private var web: WKWebView!
     init(page: URL, folder: URL) { self.page = page; self.folder = folder; super.init(nibName: nil, bundle: nil) }
@@ -20,6 +20,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
         cfg.userContentController.add(WeakHandler(self), name: "kelp")
         cfg.userContentController.addUserScript(WKUserScript(source: Self.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: cfg); web.isInspectable = true
+        web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground")
         view = web
         web.loadFileURL(page, allowingReadAccessTo: folder)
@@ -27,7 +28,22 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
         track(owner: self) { SettingsStore.shared.values } changed: { [weak self] _ in self?.push() }
     }
 
+    /// The window stays on the extension's own pages: the bridge is in every page it shows, and `push` hands it the
+    /// settings and the workspace's path. A link elsewhere opens as a preview's do (`PreviewLinks`); its frames load anything.
+    func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if let f = a.targetFrame, !f.isMainFrame { decisionHandler(.allow); return }
+        guard let u = a.request.url, !Self.isOwn(u, folder) else { decisionHandler(.allow); return }
+        decisionHandler(.cancel)
+        if a.navigationType == .linkActivated { PreviewLinks.open(u) }
+    }
+
+    /// A page in the extension's folder; nothing else is (a site, `about:blank`, a file elsewhere).
+    static func isOwn(_ u: URL, _ folder: URL) -> Bool {
+        u.isFileURL && u.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/")
+    }
+
     private func push() {
+        guard let u = web.url, Self.isOwn(u, folder) else { return }
         let ctx = IDEContext.current
         let ws: JSONValue = .obj(["name": .string(ctx.workspace?.displayName ?? ""), "path": .string(ctx.workspace?.path ?? ""),
                                   "branch": .string(ctx.workspace?.branch ?? ""), "project": .string(ctx.project?.name ?? "")])
@@ -38,8 +54,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         // The handler is visible to every frame, whatever it loaded: only the extension's own page may run commands.
-        guard m.frameInfo.isMainFrame, let u = m.frameInfo.request.url, u.isFileURL,
-              u.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") else { return }
+        guard m.frameInfo.isMainFrame, let u = m.frameInfo.request.url, Self.isOwn(u, folder) else { return }
         guard let d = m.body as? [String: Any], let op = d["op"] as? String else { return }
         let id = d["id"] as? Int ?? 0, arg = d["arg"] as? String ?? ""
         let ctx = IDEContext.current
@@ -66,7 +81,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler {
     }
 
     private func reply(_ id: Int, _ v: JSONValue) {
-        guard let s = try? String(data: JSONEncoder().encode(v), encoding: .utf8) else { return }
+        guard let u = web.url, Self.isOwn(u, folder), let s = try? String(data: JSONEncoder().encode(v), encoding: .utf8) else { return }
         web.evaluateJavaScript("window.kelp.__resolve(\(id), \(s))")
     }
 

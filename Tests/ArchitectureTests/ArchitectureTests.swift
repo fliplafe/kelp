@@ -264,13 +264,13 @@ private func codeOnly(_ s: String) -> String {
         "Builtins/Activity": 1,
         "Builtins/Agents": 14,
         "Builtins/Browser": 1,
-        "Builtins/Files": 22,
+        "Builtins/Files": 20,
         "Builtins/Git": 10,
         "Builtins/Issues": 4,
         "Editor": 10,
         "Extensions": 27,
         "Settings": 20,
-        "Shell": 164,
+        "Shell": 166,
         "Sidebar": 12
     ]
     let starts = ["main.swift", "AppDelegate.swift", "DevAids.swift"]

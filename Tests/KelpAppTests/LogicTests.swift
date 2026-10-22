@@ -180,3 +180,15 @@ extension SharedAppModel {
     let said = AppModel.whyNoService(root: root)
     #expect(said.hasPrefix(AppModel.noService) && said.contains("invalid active developer path") && said.contains("xcode-select --install"))
 }
+
+/// An extension's page stays its own: the bridge and what it's handed (settings, the workspace's path) never reach a site
+/// or a file the extension didn't ship that a link or a script took the window to.
+@Test @MainActor func anExtensionsWindowStaysOnItsOwnPages() {
+    let folder = URL(fileURLWithPath: "/tmp/ext/board")
+    #expect(ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board/index.html"), folder))
+    #expect(ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board/pages/b.html"), folder))
+    #expect(!ExtWebController.isOwn(URL(string: "https://example.com/index.html")!, folder))
+    #expect(!ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board-evil/index.html"), folder))
+    #expect(!ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board/../other/index.html"), folder))
+    #expect(!ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board"), folder))
+}
