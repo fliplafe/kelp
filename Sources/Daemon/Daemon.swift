@@ -40,7 +40,7 @@ public final class Daemon: Sendable {
         self.settings = SettingsStore(root: root)
         self.remotes = Remotes(home: root)
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store, remotes: remotes)
-        self.forges = Forges(offloads: offloads)
+        self.forges = Forges(offloads: offloads, store: self.store, clients: clients, remotes: remotes)
         self.watches = Watches(store: self.store, clients: clients, remotes: remotes)
         self.sessions = Sessions(root: root, socketPath: root.appendingPathComponent("kelp.sock").path, store: self.store, remotes: remotes,
                                  settings: settings, agentUsage: agentUsage, clients: clients, watches: watches, offloads: offloads)
@@ -287,5 +287,4 @@ public final class Daemon: Sendable {
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
-    func cwd(forWorktree id: String) throws -> Worktree { try store.worktree(named: id) }
 }

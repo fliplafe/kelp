@@ -19,7 +19,13 @@ final class Forges: Sendable {
         func cancel(_ id: String) { running.withLock { $0[id] }?.interrupt() }
     }
 
-    init(offloads: Slots) { self.offloads = offloads }
+    let store: Store, clients: Clients, remotes: Remotes
+
+    init(offloads: Slots, store: Store, clients: Clients, remotes: Remotes) {
+        self.offloads = offloads; self.store = store; self.clients = clients; self.remotes = remotes
+    }
+
+    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
     static let linearKeyAccount = "linear-api-key"
 

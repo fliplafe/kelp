@@ -114,10 +114,10 @@ func trustQuestionStandIn() -> String {
 
 @Test func onlyOneCloneCanClaimAFolderName() throws {
     let parent = tmp().path
-    #expect(Daemon.claim(parent + "/app"))      // the first clone gets the folder
-    #expect(!Daemon.claim(parent + "/app"))     // a second one with the same name is refused before it can touch it
+    #expect(Workspaces.claim(parent + "/app"))      // the first clone gets the folder
+    #expect(!Workspaces.claim(parent + "/app"))     // a second one with the same name is refused before it can touch it
     try "theirs".write(toFile: parent + "/file", atomically: true, encoding: .utf8)
-    #expect(!Daemon.claim(parent + "/file"))    // a file in the way counts too
+    #expect(!Workspaces.claim(parent + "/file"))    // a file in the way counts too
 }
 
 @Test func twoRemoteFoldersWithTheSameNameAreTwoProjects() async throws {

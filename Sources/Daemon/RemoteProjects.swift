@@ -59,7 +59,7 @@ extension RepoAddRemote: Handled {
         // A folder of its own, made here: /a/app and /b/app on one host don't share one, and a failure below removes
         // only this folder, never another project's.
         var folder = hostDir.appendingPathComponent(name), n = 2
-        while !Daemon.claim(folder.path) {
+        while !Workspaces.claim(folder.path) {
             guard n < 100 else { throw RPCError.internalError("No free folder for \(name) in \(hostDir.path)") }
             folder = hostDir.appendingPathComponent("\(name)-\(n)"); n += 1
         }

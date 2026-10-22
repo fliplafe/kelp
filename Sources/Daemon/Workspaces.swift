@@ -25,6 +25,9 @@ final class Workspaces: Sendable {
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
+    /// Makes the folder, or fails if anything is there already: of two clones racing for one name, exactly one gets it.
+    static func claim(_ dest: String) -> Bool { mkdir(dest, 0o755) == 0 }
+
     /// The folder of the workspace a client named.
     func folder(_ worktreeId: String) throws -> String { try store.worktree(named: worktreeId).path }
 

@@ -206,16 +206,16 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
 }
 
 @Test func cloneNamesAndNewFoldersAreChecked() throws {
-    #expect(Daemon.repoName("git@github.com:me/app.git") == "app")
-    #expect(Daemon.repoName("https://gitlab.com/me/app/") == "app")
-    #expect(Daemon.repoName("  https://x.org/me/tool.git \n") == "tool")
-    #expect(Daemon.repoName("") == "")
+    #expect(Forges.repoName("git@github.com:me/app.git") == "app")
+    #expect(Forges.repoName("https://gitlab.com/me/app/") == "app")
+    #expect(Forges.repoName("  https://x.org/me/tool.git \n") == "tool")
+    #expect(Forges.repoName("") == "")
     let parent = tmp().path
-    #expect(try Daemon.newFolder("  proj ", in: parent) == parent + "/proj")
-    for bad in ["", "a/b", ".hidden"] { #expect(throws: (any Error).self) { try Daemon.newFolder(bad, in: parent) } }
-    #expect(throws: (any Error).self) { try Daemon.newFolder("x", in: parent + "/missing") }   // the parent must exist
+    #expect(try Forges.newFolder("  proj ", in: parent) == parent + "/proj")
+    for bad in ["", "a/b", ".hidden"] { #expect(throws: (any Error).self) { try Forges.newFolder(bad, in: parent) } }
+    #expect(throws: (any Error).self) { try Forges.newFolder("x", in: parent + "/missing") }   // the parent must exist
     try FileManager.default.createDirectory(atPath: parent + "/taken", withIntermediateDirectories: true)
-    #expect(throws: (any Error).self) { try Daemon.newFolder("taken", in: parent) }
+    #expect(throws: (any Error).self) { try Forges.newFolder("taken", in: parent) }
 }
 
 @Test func agentVersionsAreTheFirstSemver() throws {

@@ -164,23 +164,23 @@ extension AgentsVersions: AsyncHandled {
 }
 
 extension TaskFromIssue: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> Result {
-        guard let r = try d.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
+    func handle(_ work: ForgeWork) async throws -> Result {
+        guard let r = try work.workspaces.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
         let body = body ?? "", url = url ?? ""
         var branch = branch.flatMap { $0.isEmpty ? nil : $0 } ?? IssueRef.branchName(ref.hasPrefix("#") ? String(ref.dropFirst()) : ref.lowercased(), title: title)
         if let branchPrefix, !branchPrefix.isEmpty, !branch.hasPrefix(branchPrefix) { branch = branchPrefix + branch }
-        let unique = try await d.offload { [branch] in
+        let unique = try await work.forges.offloads.run { [branch] in
             var unique = branch, n = 2
-            while Git.branchExists(r.path, unique, remotes: d.remotes) { unique = "\(branch)-\(n)"; n += 1 }
+            while Git.branchExists(r.path, unique, remotes: work.workspaces.remotes) { unique = "\(branch)-\(n)"; n += 1 }
             return unique
         }
-        let created = try await d.offload { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(d.workspaces) }
+        let created = try await work.forges.offloads.run { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(work.workspaces) }
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
-        let (w, s) = try await d.offload { () throws -> (Worktree, Session) in
-            guard let w = try d.store.update(Worktree.self, created.worktree.id, {
+        let (w, s) = try await work.forges.offloads.run { () throws -> (Worktree, Session) in
+            guard let w = try work.workspaces.store.update(Worktree.self, created.worktree.id, {
                 $0.issue = ref; $0.issueURL = url; $0.linearIssueId = linearId ?? ""
             }) else { throw RPCError.internalError("worktree vanished") }
-            let cfg = d.workspaces.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
+            let cfg = work.workspaces.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
             let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
             var text = cfg.issueCommand.map { Recipes.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
@@ -189,11 +189,11 @@ extension TaskFromIssue: AsyncHandled {
             o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
             (o.cols, o.rows) = Sessions.Launch.size(cols: cols, rows: rows)
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
-            return (w, try d.sessions.spawn(cwd: w.path, manifest: d.sessions.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
+            return (w, try work.workspaces.sessions.spawn(cwd: w.path, manifest: work.workspaces.sessions.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
         }
-        await d.forges.moveLinear(w, to: .inProgress)
-        await d.forges.moveJira(w, toName: "progress", category: "indeterminate")
-        d.notify(ChangedEvent.worktree)
+        await work.forges.moveLinear(w, to: .inProgress)
+        await work.forges.moveJira(w, toName: "progress", category: "indeterminate")
+        work.workspaces.notify(ChangedEvent.worktree)
         // An untrusted .kelp.yaml's setup didn't run: said, as worktree.create says it, so the caller can ask.
         return Result(worktree: w, session: s, setupNeedsTrust: created.setupNeedsTrust == true)
     }

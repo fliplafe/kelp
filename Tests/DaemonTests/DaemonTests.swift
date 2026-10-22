@@ -375,7 +375,7 @@ final class NoteBox: @unchecked Sendable {
     let (d, c, _) = try daemon(); defer { d.stop() }
     let src = try makeRepo(), parent = tmp().path
     try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
-    #expect(Daemon.repoName("git@github.com:me/app.git") == "app" && Daemon.repoName("https://gitlab.com/me/tool/") == "tool")
+    #expect(Forges.repoName("git@github.com:me/app.git") == "app" && Forges.repoName("https://gitlab.com/me/tool/") == "tool")
     let r = try await c.call("repo.clone", .obj(["url": .string(src), "parent": .string(parent), "id": "a"]))
     let name = (src as NSString).lastPathComponent
     #expect(r["path"]?.string?.hasSuffix("/" + name) == true)

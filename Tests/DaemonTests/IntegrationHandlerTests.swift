@@ -91,7 +91,7 @@ private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.
         let repo: Repo = try await c.call("repo.add", .obj(["path": .string(path)]), as: Repo.self)
         let w = try #require(try await c.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })
         let merge = JSONValue.obj(["worktreeId": .string(w.id), "pr": .int(7)])
-        await #expect(throws: Daemon.bitbucketNeedsCredentials) { _ = try await c.call("github.pr-merge", merge) }
+        await #expect(throws: Forges.bitbucketNeedsCredentials) { _ = try await c.call("github.pr-merge", merge) }
         let asked = OSAllocatedUnfairLock(initialState: "")
         StubURL.serve("api.bitbucket.org") { r in asked.withLock { $0 = r.method + " " + r.path }; return (200, "{}") }
         _ = try await c.call("bitbucket.setCredentials", .obj(["user": "me", "token": "t"]))

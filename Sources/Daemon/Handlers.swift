@@ -37,6 +37,7 @@ extension SettingsStore: DaemonService { static func of(_ d: Daemon) -> Settings
 extension Remotes: DaemonService { static func of(_ d: Daemon) -> Remotes { d.remotes } }
 extension Sessions: DaemonService { static func of(_ d: Daemon) -> Sessions { d.sessions } }
 extension Workspaces: DaemonService { static func of(_ d: Daemon) -> Workspaces { d.workspaces } }
+extension Forges: DaemonService { static func of(_ d: Daemon) -> Forges { d.forges } }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
