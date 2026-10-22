@@ -106,6 +106,29 @@ extension GitHubProjectItems: Handled {
 
 // MARK: also a web API
 
+extension GitAuthorAvatar: AsyncHandled {
+    func handle(_ d: Daemon) async throws -> Data? {
+        let key = email.lowercased()
+        if let hit = d.forges.avatars.withLock({ $0[key] }), hit.value != nil || Date().timeIntervalSince(hit.at) < 600 { return hit.value }
+        let path = try d.cwd(forWorktree: id).path, email = email
+        // The forge the project's origin is on; elsewhere only a GitHub noreply address tells its account.
+        let url = try? await d.offload { () throws -> URL? in
+            let origin = (try? Git.run(["remote", "get-url", "origin"], cwd: path))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if GitLab.isGitLab(remote: origin) { return try GitLab.avatarURL(email: email, cwd: path) }
+            if Git.webRepo(origin)?.0.lowercased().contains("github") == true { return try GitHub.avatarURL(email: email, cwd: path) }
+            return GitHub.noreplyAvatar(email)
+        }
+        var data: Data?
+        if let url = url ?? nil {
+            let (body, resp) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 15))
+            if (resp as? HTTPURLResponse)?.statusCode == 200, !body.isEmpty { data = body }
+        }
+        let found = data
+        d.forges.avatars.withLock { $0[key] = (Date(), found) }
+        return found
+    }
+}
+
 extension GitHubPRs: AsyncHandled {
     func handle(_ d: Daemon) async throws -> [GitHub.PullRequest] {
         let (_, path) = try d.repoPath(worktreeId: worktreeId, repoId: repoId)
@@ -266,5 +289,5 @@ extension Daemon {
     static let asyncMethods: [any AsyncHandled.Type] = [GitHubPRs.self, GitHubPRCreate.self, GitHubPRMerge.self, LinearSetKey.self,
         LinearStatus.self, LinearIssues.self, LinearTeams.self, LinearStates.self, LinearSetState.self, JiraSetCredentials.self, JiraStatus.self,
         JiraIssues.self, JiraTransitions.self, JiraTransitionIssue.self, BitbucketSetCredentials.self, BitbucketStatus.self,
-        AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self]
+        AgentsVersions.self, TaskFromIssue.self, RepoClone.self, RepoCloneCancel.self, GitAuthorAvatar.self]
 }

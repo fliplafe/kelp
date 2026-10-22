@@ -96,6 +96,13 @@ public struct GitCommitFiles: RPCMethod {
     public var id: String, commit: String
     public init(id: String, commit: String) { self.id = id; self.commit = commit }
 }
+/// The picture of a commit author's account on the project's GitHub or GitLab (through gh / glab), as image data.
+/// nil: no account has the email, or the project isn't on either.
+public struct GitAuthorAvatar: RPCMethod {
+    public static let name = "git.authorAvatar"; public typealias Result = Data?
+    public var id: String, email: String
+    public init(id: String, email: String) { self.id = id; self.email = email }
+}
 /// What a commit's card shows beyond its graph row: the message's body, the author's email, how big the change is.
 public struct GitCommitDetails: RPCMethod {
     public static let name = "git.commitDetails"; public typealias Result = CommitDetails

@@ -47,6 +47,8 @@ private func write(_ r: Rig, _ name: String, _ text: String) throws { try text.w
     #expect(files.compactMap { $0["path"]?.string } == ["b.txt"])
     let details = try await r.call("git.commitDetails", ["commit": .string(hash)])
     #expect(details["files"]?.int == 1 && details["added"]?.int == 1 && details["body"]?.string == "")
+    // No forge behind the project and no GitHub noreply address: no picture, and nothing asked over the network.
+    #expect(try await r.call("git.authorAvatar", ["email": "ada@example.com"]) == .null)
 }
 
 @Test func discardBringsBackTheFileAndStashHidesAndRestoresChanges() async throws {

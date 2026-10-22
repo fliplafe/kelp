@@ -57,6 +57,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             guard let self, let wid = self.worktreeId else { return nil }
             return await self.app.quiet(GitCommitDetails(id: wid, commit: hash))
         }
+        c.picture = { [weak self] email in
+            guard let self, let wid = self.worktreeId, let data = await self.app.quiet(GitAuthorAvatar(id: wid, email: email)) ?? nil else { return nil }
+            return NSImage(data: data)
+        }
         return c
     }()
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])

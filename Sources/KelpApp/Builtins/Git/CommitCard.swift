@@ -10,8 +10,11 @@ final class CommitCard {
     private var shown: String?
     private var opening: Task<Void, Never>?, closing: Task<Void, Never>?
     private var details: [String: CommitDetails] = [:]
+    private var pictures: [String: NSImage] = [:]
     /// The daemon's details of a commit; without them the card shows what the graph knows.
     var load: (@MainActor (String) async -> CommitDetails?)?
+    /// The author's picture from the project's forge, by email; without one the card keeps the initial.
+    var picture: (@MainActor (String) async -> NSImage?)?
 
     init() { popover.behavior = .transient }
 
@@ -52,13 +55,20 @@ final class CommitCard {
     }
 
     private func show(_ c: GraphCommit, details d: CommitDetails?, pushed: Bool?, over row: NSView) {
-        let v = CommitCardView(c, details: d, pushed: pushed)
+        let email = d?.email.lowercased() ?? ""
+        let v = CommitCardView(c, details: d, pushed: pushed, picture: pictures[email])
         v.onInside = { [weak self] inside in if inside { self?.closing?.cancel() } else { self?.closeSoon() } }
         let vc = NSViewController(); vc.view = v
         popover.contentViewController = vc
         popover.contentSize = v.fittingSize
         shown = c.hash
         popover.show(relativeTo: row.bounds, of: row, preferredEdge: .minX)   // shown already: it moves to this row
+        guard !email.isEmpty, pictures[email] == nil else { return }
+        Task { [weak self, weak v] in
+            guard let img = await self?.picture?(email) else { return }
+            self?.pictures[email] = img
+            if self?.shown == c.hash { v?.avatar.image = img }
+        }
     }
 }
 
@@ -66,9 +76,16 @@ final class CommitCard {
 final class CommitCardView: NSView {
     var onInside: ((Bool) -> Void)?
     static let width: CGFloat = 320
+    /// The author's picture, or their initial until it comes (or when the forge has none).
+    let avatar = NSImageView()
 
-    init(_ c: GraphCommit, details d: CommitDetails?, pushed: Bool?) {
+    init(_ c: GraphCommit, details d: CommitDetails?, pushed: Bool?, picture: NSImage?) {
         super.init(frame: .zero)
+        let size = TextSize.of(18)
+        avatar.image = picture ?? Self.initial(c.author, size: size); avatar.imageScaling = .scaleProportionallyUpOrDown
+        avatar.wantsLayer = true; avatar.layer?.cornerRadius = size / 2; avatar.layer?.masksToBounds = true
+        avatar.setAccessibilityElement(false)   // the name follows it
+        NSLayoutConstraint.activate([avatar.widthAnchor.constraint(equalToConstant: size), avatar.heightAnchor.constraint(equalToConstant: size)])
         let s = CommitSubject(c.subject)
         var rows: [NSView] = []
         if let head = Self.header(s, merge: c.parents.count > 1, unpushed: pushed == false) { rows.append(head) }
@@ -90,7 +107,7 @@ final class CommitCardView: NSView {
             let r = NSStackView(views: refs.prefix(4).map { Badge(text: $0.0, color: $0.1, strong: $0.2) } + [NSView()]); r.spacing = 4
             rows.append(r)
         }
-        rows.append(Self.meta(c))
+        rows.append(Self.meta(c, avatar: avatar))
         rows.append(Self.footer(c, details: d))
         let stack = NSStackView(views: rows); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
         stack.setCustomSpacing(10, after: line)
@@ -133,8 +150,21 @@ final class CommitCardView: NSView {
         return row
     }
 
-    /// "Nikolay · 3h ago · Oct 22, 8:17 PM".
-    private static func meta(_ c: GraphCommit) -> NSView {
+    /// A letter in a circle of a colour the name picks (the graph's lane colours).
+    static func initial(_ name: String, size: CGFloat) -> NSImage {
+        let color = GraphView.color(name.unicodeScalars.reduce(0) { $0 &+ Int($1.value) })
+        let letter = NSAttributedString(string: name.first.map { String($0).uppercased() } ?? "?",
+                                        attributes: [.font: NSFont.systemFont(ofSize: size * 0.5, weight: .semibold), .foregroundColor: NSColor.white])
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+            color.setFill(); NSBezierPath(ovalIn: r).fill()
+            let s = letter.size()
+            letter.draw(at: NSPoint(x: (r.width - s.width) / 2, y: (r.height - s.height) / 2))
+            return true
+        }
+    }
+
+    /// The author's picture, "Nikolay · 3h ago · Oct 22, 8:17 PM".
+    private static func meta(_ c: GraphCommit, avatar: NSView) -> NSView {
         let date = Date(timeIntervalSince1970: c.date), age = Date().timeIntervalSince(date)
         let ago = age < 60 ? String(localized: "now") : String(localized: "\(shortSpan(age)) ago")
         let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
@@ -142,7 +172,8 @@ final class CommitCardView: NSView {
                                            : .dateTime.month(.abbreviated).day().year().hour().minute())
         let author = label(c.author, font: .ui(11, weight: .medium)); author.textColor = .labelColor
         author.setContentCompressionResistancePriority(.init(200), for: .horizontal)
-        let row = NSStackView(views: [author, label("· \(ago) · \(when)", font: .ui(11)), NSView()]); row.spacing = 4
+        let row = NSStackView(views: [avatar, author, label("· \(ago) · \(when)", font: .ui(11)), NSView()]); row.spacing = 4
+        row.setCustomSpacing(6, after: avatar)
         return row
     }
 

@@ -239,3 +239,9 @@ private func d(_ s: String) -> Data { Data(s.utf8) }
     #expect(GitLab.queryValue("feat/login") == "feat%2Flogin")
     #expect(GitLab.queryValue("plain-name_1.2~x") == "plain-name_1.2~x")
 }
+
+@Test func aNoreplyAddressNamesItsGitHubAccount() {
+    #expect(GitHub.noreplyAvatar("129620956+Ada@users.noreply.github.com")?.absoluteString == "https://avatars.githubusercontent.com/u/129620956?s=64")
+    #expect(GitHub.noreplyAvatar("ada@users.noreply.github.com")?.absoluteString == "https://github.com/ada.png?size=64")
+    #expect(GitHub.noreplyAvatar("ada@example.com") == nil)
+}

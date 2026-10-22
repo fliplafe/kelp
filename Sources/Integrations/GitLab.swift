@@ -98,6 +98,15 @@ public enum GitLab {
         var iid: Int, title: String, description: String?, web_url: String, labels: [String], assignees: [User], state: String
     }
 
+    /// The avatar of the account behind a commit author's email on this repo's GitLab, 64 px. A Gravatar the instance
+    /// falls back to is left out: the email's hash would go to a third party. nil: no account has it.
+    public static func avatarURL(email: String, cwd: String) throws -> URL? {
+        struct Raw: Decodable { var avatar_url: String? }
+        let raw = try JSONDecoder().decode(Raw.self, from: api("avatar?email=\(queryValue(email))&size=64", cwd: cwd))
+        guard let u = raw.avatar_url.flatMap(URL.init(string:)), u.host?.contains("gravatar") != true else { return nil }
+        return u
+    }
+
     public static func issues(cwd: String, mine: Bool) throws -> [GitHub.Issue] {
         try JSONDecoder().decode([RawIssue].self, from: api("projects/:id/issues?state=opened&per_page=50" + (mine ? "&scope=assigned_to_me" : ""), cwd: cwd)).map {
             GitHub.Issue(number: $0.iid, title: $0.title, body: $0.description ?? "", url: $0.web_url, labels: $0.labels,

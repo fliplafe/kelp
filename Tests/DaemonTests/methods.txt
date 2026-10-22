@@ -26,6 +26,7 @@ files.search
 files.trash
 files.write
 files.writeRemote
+git.authorAvatar
 git.branches
 git.commit
 git.commitDetails

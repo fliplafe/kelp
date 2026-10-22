@@ -9,6 +9,8 @@ import Integrations
 final class Forges: Sendable {
     let offloads: Slots
     let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: GitHub.PullRequest?)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
+    /// Commit authors' avatars by email (git.authorAvatar): one ask per author, a miss asked again after ten minutes.
+    let avatars = OSAllocatedUnfairLock<[String: (at: Date, value: Data?)]>(initialState: [:])
     /// Running clones by the id the app gave them, for `repo.cloneCancel`.
     let clones = Clones()
     final class Clones: Sendable {

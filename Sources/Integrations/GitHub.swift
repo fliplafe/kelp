@@ -43,6 +43,26 @@ extension GitHub {
 
     // MARK: Commands
 
+    /// The avatar of the account behind a commit author's email, 64 px. A noreply address names its account, so that
+    /// one needs no call; any other is looked up among this repo's commits (GitHub ties an email to an account only
+    /// through them). nil: no account has it.
+    public static func avatarURL(email: String, cwd: String) throws -> URL? {
+        if let u = noreplyAvatar(email) { return u }
+        let q = "repos/{owner}/{repo}/commits?author=\(GitLab.queryValue(email))&per_page=1"
+        let s = String(decoding: try gh(["api", q, "--jq", ".[0].author.avatar_url // empty"], cwd: cwd), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty ? nil : URL(string: s + (s.contains("?") ? "&" : "?") + "s=64")
+    }
+
+    /// "123+ada@users.noreply.github.com" is account 123; the older "ada@users.noreply.github.com" is ada's.
+    public static func noreplyAvatar(_ email: String) -> URL? {
+        if let m = email.lowercased().wholeMatch(of: /(\d+)\+[^@]+@users\.noreply\.github\.com/) {
+            return URL(string: "https://avatars.githubusercontent.com/u/\(m.1)?s=64")
+        }
+        if let m = email.lowercased().wholeMatch(of: /([a-z0-9-]+)@users\.noreply\.github\.com/) { return URL(string: "https://github.com/\(m.1).png?size=64") }
+        return nil
+    }
+
     public static func pullRequests(cwd: String, filter: PRFilter = .open) throws -> [PullRequest] {
         let extra: [String] = switch filter {
         case .open: []
