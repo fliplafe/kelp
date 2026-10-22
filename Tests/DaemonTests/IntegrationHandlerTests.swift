@@ -7,7 +7,7 @@ import Agents
 @testable import Daemon
 import TestSupport
 
-private func clearKeys() { for a in [Daemon.linearKeyAccount, Daemon.jiraAccount, Daemon.bitbucketAccount] { Keychain.delete(a) } }
+private func clearKeys() { for a in [Forges.linearKeyAccount, Forges.jiraAccount, Forges.bitbucketAccount] { Keychain.delete(a) } }
 
 private let viewer = #"{"data":{"viewer":{"id":"u1","name":"Ada","email":"ada@x.io"}}}"#
 

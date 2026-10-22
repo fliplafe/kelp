@@ -23,11 +23,11 @@ public final class Daemon: Sendable {
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
-    let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: GitHub.PullRequest?)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
     let agentUsage: AgentUsage   // what the agents left on disk: conversations, token usage, plan limits
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
+    let forges: Forges   // pull requests by branch, running clones, the trackers' clients
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
     let watches = Watches()   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
@@ -45,6 +45,7 @@ public final class Daemon: Sendable {
         self.socketPath = root.appendingPathComponent("kelp.sock").path
         self.settings = SettingsStore(root: root)
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store)
+        self.forges = Forges(offloads: offloads)
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh")
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail

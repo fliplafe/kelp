@@ -105,14 +105,7 @@ extension Daemon {
     /// their turn in the order they came, holding no thread meanwhile. `quick` work (`Handled.quick`) takes no slot and
     /// starts no program.
     func offload<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
-        if !quick { await offloads.acquire() }
-        return try await withCheckedThrowingContinuation { c in
-            Thread.detachNewThread { [offloads] in
-                let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
-                if !quick { offloads.release() }
-                c.resume(with: r)
-            }
-        }
+        try await offloads.run(quick: quick, work)
     }
 
     /// 128 at once: wider than any fan-out Kelp makes itself (the sidebar's PR per folder, every watched folder's status),
@@ -148,6 +141,18 @@ final class Slots: Sendable {
             return s.waiting.removeFirst()
         }
         next?.resume()
+    }
+
+    /// `work` on a thread of its own once it has a slot (`Daemon.offload`); `quick`, at once, with no slot and no program.
+    func run<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
+        if !quick { await acquire() }
+        return try await withCheckedThrowingContinuation { c in
+            Thread.detachNewThread { [self] in
+                let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
+                if !quick { release() }
+                c.resume(with: r)
+            }
+        }
     }
 }
 

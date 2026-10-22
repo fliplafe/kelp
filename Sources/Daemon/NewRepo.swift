@@ -6,14 +6,6 @@ import GitKit
 /// Add Project's other two ways in: clone by URL (progress as `event.clone`; a half-made folder is removed when it fails
 /// or is cancelled) and a new empty project (`git init`, like the scratch project).
 extension Daemon {
-    /// Running clones by the id the app gave them, for `repo.cloneCancel`.
-    final class Clones: Sendable {
-        private let running = OSAllocatedUnfairLock<[String: Process]>(initialState: [:])
-        func set(_ id: String, _ p: Process?) { running.withLock { $0[id] = p } }
-        func cancel(_ id: String) { running.withLock { $0[id] }?.interrupt() }
-    }
-    static let clones = Clones()
-
     /// "git@github.com:me/app.git", "https://gitlab.com/me/app" → "app".
     static func repoName(_ url: String) -> String {
         var n = url.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: { "/:".contains($0) }).last.map(String.init) ?? ""
@@ -58,7 +50,7 @@ extension Daemon {
             guard let line = log.add(h.availableData) else { return }
             self?.notify(CloneEvent(id: id, line: line), to: [conn])
         }
-        Self.clones.set(id, proc)
+        forges.clones.set(id, proc)
         let status: (Int32, Process.TerminationReason) = try await withCheckedThrowingContinuation { c in
             proc.terminationHandler = { c.resume(returning: ($0.terminationStatus, $0.terminationReason)) }
             do { try proc.run() } catch {
@@ -67,7 +59,7 @@ extension Daemon {
                 c.resume(throwing: error)
             }
         }
-        Self.clones.set(id, nil)
+        forges.clones.set(id, nil)
         err.fileHandleForReading.readabilityHandler = nil
         guard status.0 == 0 else {
             try? FileManager.default.removeItem(atPath: dest)   // this clone made it (mkdir above), nobody else wrote there
@@ -111,4 +103,4 @@ extension RepoClone: AsyncHandled {
         return try await d.offload { try RepoAdd(path: dest).handle(d) }   // runs git: off the cooperative pool
     }
 }
-extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> Done { Daemon.clones.cancel(id); return Done() } }
+extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> Done { d.forges.clones.cancel(id); return Done() } }

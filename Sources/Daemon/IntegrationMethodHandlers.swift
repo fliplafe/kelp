@@ -35,10 +35,10 @@ extension Daemon {
 extension GitHubBranchPR: Handled {
     func handle(_ d: Daemon) throws -> GitHub.PullRequest? {
         let w = try d.cwd(forWorktree: worktreeId), branch = d.checkedOut(w), key = w.path + "@" + branch
-        if let hit = d.prCache.withLock({ $0[key] }), Date().timeIntervalSince(hit.at) < 120 { return hit.value }
+        if let hit = d.forges.prCache.withLock({ $0[key] }), Date().timeIntervalSince(hit.at) < 120 { return hit.value }
         // nil: no PR, or gh couldn't tell (try? flattens to one optional)
         let v = GitLab.isGitLab(cwd: w.path) ? try? GitLab.mergeRequest(cwd: w.path, branch: branch) : try? GitHub.pullRequest(cwd: w.path, branch: branch)
-        d.prCache.withLock { $0[key] = (Date(), v) }
+        d.forges.prCache.withLock { $0[key] = (Date(), v) }
         return v
     }
 }
@@ -110,7 +110,7 @@ extension GitHubPRs: AsyncHandled {
     func handle(_ d: Daemon) async throws -> [GitHub.PullRequest] {
         let (_, path) = try d.repoPath(worktreeId: worktreeId, repoId: repoId)
         if let slug = try await d.offload({ BitbucketClient.slug(cwd: path) }) {
-            guard let bb = await d.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
+            guard let bb = await d.forges.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
             return try await bb.pullRequests(workspace: slug.workspace, repo: slug.repo)
         }
         let filter = filter
@@ -141,7 +141,7 @@ extension GitHubPRCreate: AsyncHandled {
         if prBase != r.baseBranch, !body.contains("Stacked on") { body = "Stacked on `\(prBase)`.\n\n" + body }
         let url: String
         if let slug = try await d.offload({ BitbucketClient.slug(cwd: path) }) {
-            guard let bb = await d.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
+            guard let bb = await d.forges.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
             url = try await bb.createPR(workspace: slug.workspace, repo: slug.repo, title: title, body: body, source: branch, destination: prBase)
         } else if try await d.offload({ GitLab.isGitLab(cwd: path) }) {
             url = try await d.offload { [title, body] in try GitLab.createMR(cwd: path, title: title, body: body, base: prBase, draft: draft) }
@@ -150,8 +150,8 @@ extension GitHubPRCreate: AsyncHandled {
         }
         try d.store.update(Worktree.self, w.id) { $0.prURL = url; $0.prNumber = Int(url.split(separator: "/").last ?? "") }
         d.notify(ChangedEvent.worktree)
-        await d.moveLinear(w, to: .inReview)
-        await d.moveJira(w, toName: "review", category: "indeterminate")
+        await d.forges.moveLinear(w, to: .inReview)
+        await d.forges.moveJira(w, toName: "review", category: "indeterminate")
         return Result(url: url, title: title)
     }
 }
@@ -162,7 +162,7 @@ extension GitHubPRMerge: AsyncHandled {
         let how = method ?? "squash"
         if let slug = try await d.offload({ BitbucketClient.slug(cwd: w.path) }) {
             // Bitbucket's API or nothing: gh would look for the number on whatever GitHub repository it found.
-            guard let bb = await d.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
+            guard let bb = await d.forges.bitbucketClient() else { throw Daemon.bitbucketNeedsCredentials }
             try await bb.merge(workspace: slug.workspace, repo: slug.repo, id: n)
         } else if try await d.offload({ GitLab.isGitLab(cwd: w.path) }) {
             try await d.offload { try GitLab.mergeMR(cwd: w.path, number: n, squash: how == "squash") }
@@ -170,8 +170,8 @@ extension GitHubPRMerge: AsyncHandled {
             let m = GitHub.MergeMethod(rawValue: how) ?? .squash
             try await d.offload { try GitHub.mergePR(cwd: w.path, number: n, method: m) }
         }
-        await d.moveLinear(w, to: .done)
-        await d.moveJira(w, toName: "done", category: "done")
+        await d.forges.moveLinear(w, to: .done)
+        await d.forges.moveJira(w, toName: "done", category: "done")
         d.notify(ChangedEvent.worktree)
         return Done()
     }
@@ -179,38 +179,38 @@ extension GitHubPRMerge: AsyncHandled {
 
 extension LinearSetKey: AsyncHandled {
     func handle(_ d: Daemon) async throws -> LinearUser? {
-        if key.isEmpty { try await d.keepSecret("", account: Daemon.linearKeyAccount); return nil }
+        if key.isEmpty { try await d.forges.keepSecret("", account: Forges.linearKeyAccount); return nil }
         let me = try await LinearClient(apiKey: key).viewer()   // validate before saving
-        try await d.keepSecret(key, account: Daemon.linearKeyAccount)
+        try await d.forges.keepSecret(key, account: Forges.linearKeyAccount)
         return me
     }
 }
 extension LinearStatus: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Result {
-        guard let l = await d.linearClient() else { return Result(connected: false) }
+        guard let l = await d.forges.linearClient() else { return Result(connected: false) }
         let me = try? await l.viewer()
         return Result(connected: me != nil, name: me?.name ?? "")
     }
 }
 extension LinearIssues: AsyncHandled {
     func handle(_ d: Daemon) async throws -> [LinearIssue] {
-        guard let l = await d.linearClient() else { throw RPCError.invalidParams("Linear is not connected (Settings › Integrations)") }
+        guard let l = await d.forges.linearClient() else { throw RPCError.invalidParams("Linear is not connected (Settings › Integrations)") }
         if let teamId { return try await l.teamIssues(teamId: teamId) }
         return try await l.myIssues()
     }
 }
 extension LinearTeams: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> [LinearTeam] { guard let l = await d.linearClient() else { return [] }; return try await l.teams() }
+    func handle(_ d: Daemon) async throws -> [LinearTeam] { guard let l = await d.forges.linearClient() else { return [] }; return try await l.teams() }
 }
 extension LinearStates: AsyncHandled {
     func handle(_ d: Daemon) async throws -> [LinearState] {
-        guard let l = await d.linearClient() else { return [] }
+        guard let l = await d.forges.linearClient() else { return [] }
         return try await l.workflowStates(teamId: teamId)
     }
 }
 extension LinearSetState: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Done {
-        guard let l = await d.linearClient() else { throw RPCError.invalidParams("Linear is not connected") }
+        guard let l = await d.forges.linearClient() else { throw RPCError.invalidParams("Linear is not connected") }
         try await l.setState(issueId: issueId, stateId: stateId)
         return Done()
     }
@@ -218,31 +218,31 @@ extension LinearSetState: AsyncHandled {
 
 extension JiraSetCredentials: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Account? {
-        if token.isEmpty { try await d.keepSecret("", account: Daemon.jiraAccount); return nil }
+        if token.isEmpty { try await d.forges.keepSecret("", account: Forges.jiraAccount); return nil }
         let name = try await JiraClient(site: site, email: email, token: token).myself()   // validate before saving
-        try await d.keepSecret(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Daemon.jiraAccount)
+        try await d.forges.keepSecret(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Forges.jiraAccount)
         return Account(name: name)
     }
 }
 extension JiraStatus: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Result {
-        guard let j = await d.jiraClient() else { return Result(connected: false) }
+        guard let j = await d.forges.jiraClient() else { return Result(connected: false) }
         let n = try? await j.myself()
         return Result(connected: n != nil, name: n ?? "", site: j.site)
     }
 }
 extension JiraIssues: AsyncHandled {
     func handle(_ d: Daemon) async throws -> [JiraIssue] {
-        guard let j = await d.jiraClient() else { throw RPCError.invalidParams("Jira is not connected (Settings › Integrations)") }
+        guard let j = await d.forges.jiraClient() else { throw RPCError.invalidParams("Jira is not connected (Settings › Integrations)") }
         return try await j.search(jql: jql ?? JiraClient.myOpenJQL)
     }
 }
 extension JiraTransitions: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> [JiraTransition] { guard let j = await d.jiraClient() else { return [] }; return try await j.transitions(key: key) }
+    func handle(_ d: Daemon) async throws -> [JiraTransition] { guard let j = await d.forges.jiraClient() else { return [] }; return try await j.transitions(key: key) }
 }
 extension JiraTransitionIssue: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Done {
-        guard let j = await d.jiraClient() else { throw RPCError.invalidParams("Jira is not connected") }
+        guard let j = await d.forges.jiraClient() else { throw RPCError.invalidParams("Jira is not connected") }
         try await j.transition(key: key, id: id)
         return Done()
     }
@@ -250,13 +250,13 @@ extension JiraTransitionIssue: AsyncHandled {
 
 extension BitbucketSetCredentials: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Done {
-        try await d.keepSecret(token.isEmpty ? "" : String(decoding: try JSONEncoder().encode(["user": user, "token": token]), as: UTF8.self),
-                               account: Daemon.bitbucketAccount)
+        try await d.forges.keepSecret(token.isEmpty ? "" : String(decoding: try JSONEncoder().encode(["user": user, "token": token]), as: UTF8.self),
+                               account: Forges.bitbucketAccount)
         return Done()
     }
 }
 extension BitbucketStatus: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> Result { Result(connected: await d.bitbucketClient() != nil) }
+    func handle(_ d: Daemon) async throws -> Result { Result(connected: await d.forges.bitbucketClient() != nil) }
 }
 
 extension Daemon {
