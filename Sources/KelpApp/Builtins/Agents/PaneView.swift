@@ -8,13 +8,14 @@ import WorkbenchKit
 @MainActor
 final class PaneView: NSView {
     let sessionId: String
+    let app: AppModel
     private var ghostty: GhosttyTerminalView
     private let ended = NSStackView()
     private let endedLabel = NSTextField(labelWithString: String(localized: "Session ended"))
     private let restartButton = NSButton()
     /// `kelp attach` still streams, and from which daemon (`AppModel.connections` when it started).
     private var attached = true
-    private var attachedTo = AppModel.shared.connections
+    private var attachedTo: Int
     /// The status last seen: a session that goes from running to paused had its terminals hung up (the daemon ends
     /// `kelp attach` then), this one's included.
     /// Limit: a pause and a wake handled in one run-loop turn look like no change; a per-session pause count would see it.
@@ -23,8 +24,8 @@ final class PaneView: NSView {
     var onClose: ((PaneView) -> Void)?
     var onRestart: ((PaneView) -> Void)?
 
-    init(session: Session) {
-        sessionId = session.id
+    init(session: Session, app: AppModel) {
+        sessionId = session.id; self.app = app; attachedTo = app.connections
         ghostty = Self.terminal(session)
         super.init(frame: .zero)
         wantsLayer = true
@@ -34,11 +35,11 @@ final class PaneView: NSView {
         NSLayoutConstraint.activate([ended.centerXAnchor.constraint(equalTo: centerXAnchor), ended.centerYAnchor.constraint(equalTo: centerYAnchor)])
         registerForDraggedTypes([.fileURL, .png, .tiff, .string])
         update(session)
-        track(owner: self) { AppModel.shared.connections } changed: { [weak self] _ in self?.settle() }
+        track(owner: self) { [app] in app.connections } changed: { [weak self] _ in self?.settle() }
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    private let preview = PathPreview()
+    private lazy var preview = PathPreview(app: app)
 
     private static func terminal(_ s: Session) -> GhosttyTerminalView {
         let kelp = Bundle.main.bundleURL.appendingPathComponent(Bundle.main.bundleIdentifier == nil ? "kelp" : "Contents/MacOS/kelp").path
@@ -57,7 +58,7 @@ final class PaneView: NSView {
         g.onOpenURL = Self.openLink
         g.onPasteRefused = { Banner.show(String(localized: "Not pasted: a program put these lines on the clipboard, and this terminal would run them as typed. Copy them yourself to paste here.")) }
         // Paths the agent prints are its folder's: its own worktree once it went into one.
-        let cwd = { AppModel.shared.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
+        let cwd = { [app] in app.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
         g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
         g.onHoverWord = { [weak self, weak g] tokens, rect in
             guard let self, let g else { return }
@@ -87,7 +88,7 @@ final class PaneView: NSView {
     /// does) or on Resume, never on screen right after its pause. Against the same daemon that's one history replay,
     /// nothing lost. Ended: "Session ended".
     private func settle(shown: Bool = false) {
-        let s = AppModel.shared.session(sessionId), m = AppModel.shared
+        let s = app.session(sessionId), m = app
         if s?.status == .hibernated, let was = lastStatus, was != .hibernated { attached = false }
         lastStatus = s?.status
         if let s, s.status != .exited, m.connected, window != nil, m.connections != attachedTo || shown && !attached { reattach(s) }
@@ -105,7 +106,7 @@ final class PaneView: NSView {
         findBar?.removeFromSuperview(); findBar = nil   // it searched the old terminal
         ghostty.removeFromSuperview()
         ghostty = Self.terminal(s)
-        attached = true; attachedTo = AppModel.shared.connections
+        attached = true; attachedTo = app.connections
         buildTerminal(s)
         if focused { focus() }
     }
@@ -204,7 +205,7 @@ final class PaneView: NSView {
     @objc private func closeTapped() { onClose?(self) }
     /// Resume on a paused pane attaches again (and so wakes the agent); otherwise the session starts over.
     @objc private func restartTapped() {
-        if !attached, let s = AppModel.shared.session(sessionId), s.status == .hibernated { reattach(s); settle() } else { onRestart?(self) }
+        if !attached, let s = app.session(sessionId), s.status == .hibernated { reattach(s); settle() } else { onRestart?(self) }
     }
 
     // MARK: drops: files/images/text into the agent's prompt

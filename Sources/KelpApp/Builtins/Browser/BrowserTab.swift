@@ -12,7 +12,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     private let address = NSTextField()
     private let designButton = NSButton()
     /// Shown instead of a blank page: the workspace's servers.
-    private let ports = PortsView()
+    private let ports: PortsView
+    let app: AppModel
     private var designOn = false
     /// `preview:/path/page.html`: a local page shown as the browser sees it, reloaded whenever a file next to it changes.
     private var previewFile: String? { start.hasPrefix("preview:") ? String(start.dropFirst("preview:".count)) : nil }
@@ -23,8 +24,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     var icon: NSImage? { .symbol(previewFile == nil ? "safari" : "eye") }
     var toolTip: String? { web.url?.absoluteString }
 
-    init(uri: String) {
-        start = uri
+    init(uri: String, app: AppModel) {
+        start = uri; self.app = app; ports = PortsView(app: app)
         let cfg = WKWebViewConfiguration()
         cfg.preferences.isElementFullscreenEnabled = true
         cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")   // "Inspect Element" in the page's context menu
@@ -173,18 +174,18 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(msg, forType: .string)
             Banner.show(source.isEmpty ? String(localized: "Element details copied") : String(localized: "Copied \(source) and the element's details")); return
         }
-        guard let sid = Workbench.shared.focusedSession else {
+        guard let sid = app.workbench.focusedSession else {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(msg, forType: .string)
             Banner.show(String(localized: "No agent in this workspace — the element details were copied to the clipboard.")); return
         }
-        Task { await AppModel.shared.call(SessionSend(id: sid, text: msg, enter: false)) }
+        Task { await app.call(SessionSend(id: sid, text: msg, enter: false)) }
         Workbench.focus(session: sid)
     }
 
     /// A dev server's absolute path as the workspace sees it (`src/App.tsx:12`); others stay as they are.
     private func relativeSource(_ s: String) -> String {
         var s = s.replacingOccurrences(of: "file://", with: "")
-        if let root = AppModel.shared.worktree(Workbench.shared.workspaceId)?.path {
+        if let root = app.worktree(app.workbench.workspaceId)?.path {
             for r in [root, (root as NSString).resolvingSymlinksInPath] where s.hasPrefix(r + "/") { s = String(s.dropFirst(r.count + 1)) }
         }
         return s

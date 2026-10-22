@@ -40,13 +40,14 @@ enum TerminalPaths {
 /// The popover the terminal shows for a path under the pointer.
 @MainActor
 final class PathPreview {
+    private let app: AppModel
     private let popover = NSPopover()
-    init() { popover.behavior = .semitransient; popover.animates = false }
+    init(app: AppModel) { self.app = app; popover.behavior = .semitransient; popover.animates = false }
 
     /// The first of `tokens` (what the word under the pointer may be) that is a file; none closes it.
     func show(_ tokens: [String], rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
         guard let f = tokens.lazy.compactMap({ TerminalPaths.resolve($0, cwd: cwd) }).first else { popover.close(); return }
-        let model = PreviewModel(path: f.path, line: f.line, cwd: cwd)
+        let model = PreviewModel(path: f.path, line: f.line, cwd: cwd, app: app)
         let host = NSHostingController(rootView: PathPreviewView(model: model))
         host.sizingOptions = .preferredContentSize   // placed and resized around the anchor (see HoverCard)
         popover.contentViewController = host
@@ -63,9 +64,10 @@ final class PreviewModel {
     var lines: [Line] = []
     var image: NSImage?
     var changed = false
+    private let app: AppModel
 
-    init(path: String, line: Int?, cwd: String) {
-        self.path = path; self.line = line
+    init(path: String, line: Int?, cwd: String, app: AppModel) {
+        self.path = path; self.line = line; self.app = app
         name = (path as NSString).lastPathComponent
         let dir = (path as NSString).deletingLastPathComponent, root = (cwd as NSString).standardizingPath   // both without /private
         folder = dir.hasPrefix(root + "/") ? String(dir.dropFirst(root.count + 1)) : dir == root ? "" : (dir as NSString).abbreviatingWithTildeInPath
@@ -77,7 +79,7 @@ final class PreviewModel {
         guard let worktree else { return }
         Task {
             // Uncommitted changes in it: show those (the hunk with the line asked about, else the first).
-            let d = await AppModel.shared.quiet(GitDiff(id: worktree, source: "all", file: path))
+            let d = await app.quiet(GitDiff(id: worktree, source: "all", file: path))
             guard let hunks = d?.first?.hunks, !hunks.isEmpty else { return }
             let h = hunks.first { h in line.map { l in h.lines.contains { $0.newLine == l } } ?? false } ?? hunks[0]
             changed = true

@@ -42,11 +42,12 @@ enum Builtins {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
     }
 
-    static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) { _ in
+    static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) { app in
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["session"], make: { SessionTab(uri: $0) },
-                              closeUnbuilt: { await SessionTab.close(session: TabURI.body($0)) }, menu: SessionTab.menu)]
-        c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab() })
+        c.tabs = [TabProvider(schemes: ["session"], make: { SessionTab(uri: $0, app: app) },
+                              closeUnbuilt: { await SessionTab.close(app, session: TabURI.body($0)) },
+                              menu: { SessionTab.menu(app, $0, uri: $1, workspace: $2, openBeside: $3) })]
+        c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab(app: app) })
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", specs: [
                 s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: AgentCatalog.all.map(\.id)),
@@ -62,7 +63,7 @@ enum Builtins {
                 s("usage.readPlans", "Show plan limits", "boolean", true,
                   "Opens /usage of Claude Code (every 10 minutes), Grok and Antigravity (every 30) in the background "
                     + "and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
-            ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings().frame(height: 300); AccountsSettings() }) }),
+            ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings(app: app).frame(height: 300); AccountsSettings(app: app) }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),
                 s("terminal.fontSize", "Font size", "number", 13),
@@ -88,10 +89,10 @@ enum Builtins {
             cmd("agents.sideBySide", "Agents Side by Side", "ctrl+cmd+t") { editor?.toggleSideBySide() },
             cmd("agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
             cmd("agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
-            cmd("agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show() },
+            cmd("agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show(app) },
             // Like Caffeine: ticked keeps the Mac awake until unticked, which goes back to the setting's default.
             cmd("power.keepAwake", "Keep Mac Awake") {
-                SettingsStore.shared.set("power.keepAwake", SettingsStore.shared.string("power.keepAwake") == "always" ? nil : .string("always"))
+                app.settings.set("power.keepAwake", app.settings.string("power.keepAwake") == "always" ? nil : .string("always"))
             }
         ]
         return c
@@ -195,15 +196,15 @@ enum Builtins {
     }
 
     /// Off on a clean install (`ExtensionRegistry.offByDefault`): Settings › Extensions turns it on.
-    static let activity = Builtin("kelp.activity", "Activity", "CPU and memory of each agent and terminal, with Stop.", icon: "gauge.with.dots.needle.33percent") { _ in
+    static let activity = Builtin("kelp.activity", "Activity", "CPU and memory of each agent and terminal, with Stop.", icon: "gauge.with.dots.needle.33percent") { app in
         var c = Contributions()
-        c.panels = [PanelSpec(id: "activity", title: "Activity", icon: "gauge.with.dots.needle.33percent", extensionId: "kelp.activity") { ActivityController() }]
+        c.panels = [PanelSpec(id: "activity", title: "Activity", icon: "gauge.with.dots.needle.33percent", extensionId: "kelp.activity") { ActivityController(app: app) }]
         return c
     }
 
-    static let browser = Builtin("kelp.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") { _ in
+    static let browser = Builtin("kelp.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") { app in
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"]) { BrowserTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"]) { BrowserTab(uri: $0, app: app) }]
         c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
         c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", key: "shift+cmd+b") { args in
             Workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
@@ -211,20 +212,20 @@ enum Builtins {
         return c
     }
 
-    static let issues = Builtin("kelp.issues", "Issues & Pull Requests", "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.", icon: "checklist") { _ in
+    static let issues = Builtin("kelp.issues", "Issues & Pull Requests", "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.", icon: "checklist") { app in
         var c = Contributions()
         c.panels = [PanelSpec(id: "issues", title: "Issues & PRs", icon: "checklist", extensionId: "kelp.issues") {
-            let t = TasksViewController()
-            track(owner: t) { Workbench.shared.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
+            let t = TasksViewController(app: app)
+            track(owner: t) { app.workbench.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
             return t
-        }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController() }]
+        }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController(app: app) }]
         c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", specs: [],
-                                      custom: { AnyView(IntegrationsSettings()) })]
+                                      custom: { AnyView(IntegrationsSettings(app: app)) })]
         // The workspace's project on GitHub / GitLab / Bitbucket, in the default browser.
-        c.commands = [cmd("forge.openRepo", "Open Repository in Browser") { Forge.open(\.repo) },
-                      cmd("forge.openCI", "Open CI/CD in Browser") { Forge.open(\.ci) },
-                      cmd("forge.openPulls", "Open Pull Requests in Browser") { Forge.open(\.pulls) },
-                      cmd("forge.openIssues", "Open Issues in Browser") { Forge.open(\.issues) }]
+        c.commands = [cmd("forge.openRepo", "Open Repository in Browser") { Forge.open(app, \.repo) },
+                      cmd("forge.openCI", "Open CI/CD in Browser") { Forge.open(app, \.ci) },
+                      cmd("forge.openPulls", "Open Pull Requests in Browser") { Forge.open(app, \.pulls) },
+                      cmd("forge.openIssues", "Open Issues in Browser") { Forge.open(app, \.issues) }]
         return c
     }
 

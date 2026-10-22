@@ -6,6 +6,8 @@ import Agents
 /// Per-agent: its version (and a newer one, if published), Install / Update in a terminal you can watch, and overrides:
 /// binary, arguments, environment. Secrets in the environment go to the login keychain. Reset deletes the override.
 struct AgentsSettings: View {
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     @State private var agents = AgentManifest.load()
     @State private var selection: String? = "claude"
     @State private var command = ""
@@ -106,7 +108,7 @@ struct AgentsSettings: View {
     /// One remote project's folder per host: a command run in it runs on that host, in its login shell.
     private var hosts: [(host: String, folder: String)] {
         var seen = Set<String>()
-        return AppModel.shared.repos.compactMap { r in RemoteHost.of(r.path).flatMap { seen.insert($0.host).inserted ? ($0.host, r.path) : nil } }
+        return app.repos.compactMap { r in RemoteHost.of(r.path).flatMap { seen.insert($0.host).inserted ? ($0.host, r.path) : nil } }
     }
 
     /// The agent's own command, in a terminal in the workspace on screen, so what it does is in plain sight.
@@ -121,7 +123,7 @@ struct AgentsSettings: View {
 
     private func loadVersions() async {
         // Quiet: a version column beside each agent (npm offline, say); unknown versions just stay blank.
-        let rows = await AppModel.shared.quiet(AgentsVersions(), timeout: 60) ?? []
+        let rows = await app.quiet(AgentsVersions(), timeout: 60) ?? []
         var v: [String: (String?, String?)] = [:]
         for r in rows { v[r.id] = (r.version, r.latest) }
         for a in agents where v[a.id] == nil { v[a.id] = (nil, nil) }
@@ -166,18 +168,18 @@ struct AgentsSettings: View {
         }, uniquingKeysWith: { $1 })
         // Secrets: the daemon puts them in the keychain; the file only says where they are.
         for (k, v) in pairs where AgentManifest.isSecret(k) && v != AgentManifest.keychainValue && !v.isEmpty {
-            guard await AppModel.shared.call(AgentSetSecret(agent: m.id, key: k, value: v)) != nil else { return }
+            guard await app.call(AgentSetSecret(agent: m.id, key: k, value: v)) != nil else { return }
             pairs[k] = AgentManifest.keychainValue
         }
         for k in m.env.keys where pairs[k] == nil && m.env[k] == AgentManifest.keychainValue {
-            await AppModel.shared.call(AgentSetSecret(agent: m.id, key: k))   // removed: forget it
+            await app.call(AgentSetSecret(agent: m.id, key: k))   // removed: forget it
         }
         m.env = pairs.filter { !$0.value.isEmpty }   // a preset's blank line until it's filled in
         do { try AgentManifest.saveOverride(m) } catch {
             Banner.show(String(localized: "Couldn't save \(m.name): \(error.localizedDescription)"), style: .error); return
         }
         reload(); saved = true
-        AppModel.shared.agents = AgentManifest.load()
+        app.agents = AgentManifest.load()
         AgentAvailability.shared.refresh(force: true)
     }
 }

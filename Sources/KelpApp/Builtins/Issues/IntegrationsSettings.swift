@@ -3,6 +3,8 @@ import SwiftUI
 import Core
 
 struct IntegrationsSettings: View {
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     @State private var key = ""
     @State private var linearStatus = String(localized: "Checking…")
     @State private var gh = CLIState()
@@ -32,12 +34,12 @@ struct IntegrationsSettings: View {
                 SecureField("API token", text: $jiraToken)
                 HStack {
                     Button("Connect") { Task {
-                        if let r = await AppModel.shared.call(JiraSetCredentials(site: jiraSite, email: jiraEmail, token: jiraToken)) {
+                        if let r = await app.call(JiraSetCredentials(site: jiraSite, email: jiraEmail, token: jiraToken)) {
                             jiraStatus = String(localized: "Connected as \(r?.name ?? "")"); jiraToken = ""
                         }
                     } }.disabled(jiraSite.isEmpty || jiraEmail.isEmpty || jiraToken.isEmpty)
                     Button("Disconnect") { Task {
-                        if await AppModel.shared.call(JiraSetCredentials(site: "", email: "", token: "")) != nil {
+                        if await app.call(JiraSetCredentials(site: "", email: "", token: "")) != nil {
                             jiraStatus = String(localized: "Not connected")
                         }
                     } }
@@ -49,7 +51,7 @@ struct IntegrationsSettings: View {
                 TextField("Username or email", text: $bbUser)
                 SecureField("API token / app password", text: $bbToken)
                 Button("Save") { Task {
-                    if await AppModel.shared.call(BitbucketSetCredentials(user: bbUser, token: bbToken)) != nil {
+                    if await app.call(BitbucketSetCredentials(user: bbUser, token: bbToken)) != nil {
                         bbStatus = String(localized: "Saved"); bbToken = ""
                     }
                 } }
@@ -61,19 +63,19 @@ struct IntegrationsSettings: View {
                 SecureField("Personal API key", text: $key)
                 HStack {
                     Button("Connect") { Task { await connect() } }.disabled(key.isEmpty)
-                    Button("Disconnect") { Task { if await AppModel.shared.call(LinearSetKey(key: "")) != nil { linearStatus = String(localized: "Not connected") } } }
+                    Button("Disconnect") { Task { if await app.call(LinearSetKey(key: "")) != nil { linearStatus = String(localized: "Not connected") } } }
                 }
                 Text("Create a key in Linear › Settings › Security & access. It's stored in your login keychain.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .task {
-            let s = await AppModel.shared.call(LinearStatus())
+            let s = await app.call(LinearStatus())
             let off = String(localized: "Not connected")
             linearStatus = s?.connected == true ? String(localized: "Connected as \(s?.name ?? "")") : off
-            let j = await AppModel.shared.call(JiraStatus())
+            let j = await app.call(JiraStatus())
             jiraStatus = j?.connected == true ? String(localized: "Connected to \(j?.site ?? "") as \(j?.name ?? "")") : off
-            bbStatus = (await AppModel.shared.call(BitbucketStatus()))?.connected == true ? String(localized: "Credentials saved") : off
+            bbStatus = (await app.call(BitbucketStatus()))?.connected == true ? String(localized: "Credentials saved") : off
             await check()
         }
     }
@@ -99,11 +101,11 @@ struct IntegrationsSettings: View {
             if let u = r.user { return CLIState(status: String(localized: "Signed in as \(u)")) }
             return CLIState(status: String(localized: "\(site) CLI isn't signed in (or \(site) can't be reached)"), setup: Forge.signIn(cli))
         }
-        gh = state(await AppModel.shared.call(GitHubStatus()), "gh", "GitHub")
-        glab = state(await AppModel.shared.call(GitLabStatus()), "glab", "GitLab")
+        gh = state(await app.call(GitHubStatus()), "gh", "GitHub")
+        glab = state(await app.call(GitLabStatus()), "glab", "GitLab")
     }
     private func connect() async {
-        if let me = await AppModel.shared.call(LinearSetKey(key: key)) {
+        if let me = await app.call(LinearSetKey(key: key)) {
             linearStatus = String(localized: "Connected as \(me?.name ?? "")"); key = ""
         }
     }

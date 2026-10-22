@@ -44,10 +44,10 @@ enum Forge {
     static func open(_ url: String) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
 
     /// One of the workspace's pages (the palette's commands); a banner when origin isn't on a site.
-    static func open(_ page: KeyPath<GitWebPages.Pages, String>) {
-        guard let w = Workbench.shared.workspaceId else { NSSound.beep(); return }
+    static func open(_ app: AppModel, _ page: KeyPath<GitWebPages.Pages, String>) {
+        guard let w = app.workbench.workspaceId else { NSSound.beep(); return }
         Task {
-            guard let pages = await AppModel.shared.call(GitWebPages(worktreeId: w)) else { return }   // the banner says why
+            guard let pages = await app.call(GitWebPages(worktreeId: w)) else { return }   // the banner says why
             guard let pages else { Banner.show(String(localized: "This project's origin isn't on GitHub, GitLab or Bitbucket."), style: .error); return }
             open(pages[keyPath: page])
         }

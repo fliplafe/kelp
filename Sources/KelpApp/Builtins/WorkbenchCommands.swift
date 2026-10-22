@@ -6,12 +6,12 @@ extension Builtins {
     /// The shell's own actions (sidebar and inspector, panes, tabs, workspaces, text size, the Run menu, help) as commands,
     /// so the menu bar, Settings › Keyboard, the palette and agents (`kelp run <id>`) reach them the same way.
     static let workbench = Builtin("kelp.workbench", "Window & Workbench", "Panes, tabs, workspaces, the sidebar and inspector: the commands of the window.",
-                                   icon: "macwindow", essential: true) { _ in
+                                   icon: "macwindow", essential: true) { app in
         var c = Contributions()
         c.commands = [
             cmd("workbench.openSettings", "Settings…", "cmd+,") { SettingsWindow.show() },
             cmd("workbench.openExtensions", "Extensions…") { SettingsWindow.show(section: "extensions") },
-            cmd("workbench.restartService", "Restart Background Service…") { restartService() },
+            cmd("workbench.restartService", "Restart Background Service…") { restartService(app) },
             cmd("workbench.toggleSidebar", "Show Sidebar", "cmd+0") { Workbench.window?.toggleSidebarPanel() },
             cmd("workbench.toggleInspector", "Show Inspector", "opt+cmd+0") { Workbench.window?.toggleInspectorPanel() },
             cmd("workbench.toggleFocusMode", "Focus Mode", "ctrl+cmd+z") { Workbench.window?.toggleFocusMode() },
@@ -20,9 +20,9 @@ extension Builtins {
             },
             cmd("workbench.commandPalette", "Command Palette…", "shift+cmd+p") { QuickOpen.shared.show(commandsOnly: true) },
             cmd("workbench.scratch", "Scratch", "ctrl+opt+cmd+k") { ScratchWindow.shared.toggle() },
-            cmd("view.biggerText", "Bigger Text", "cmd+plus") { zoomText(1) },
-            cmd("view.smallerText", "Smaller Text", "cmd+-") { zoomText(-1) },
-            cmd("view.defaultTextSize", "Default Text Size") { zoomText(nil) },
+            cmd("view.biggerText", "Bigger Text", "cmd+plus") { zoomText(app, 1) },
+            cmd("view.smallerText", "Smaller Text", "cmd+-") { zoomText(app, -1) },
+            cmd("view.defaultTextSize", "Default Text Size") { zoomText(app, nil) },
             cmd("view.maximizePane", "Maximize Pane", "shift+cmd+return") { editor?.toggleZoom() },
             cmd("view.equalizePanes", "Equalize Panes") { editor?.equalizePanes() },
             cmd("view.nextPane", "Next Pane", "cmd+]") { editor?.focusGroup(1) },
@@ -69,17 +69,17 @@ extension Builtins {
     }
 
     /// Terminal and editor text zoom together, like a browser; the settings stay the one source.
-    private static func zoomText(_ step: Double?) {
-        let s = SettingsStore.shared
+    private static func zoomText(_ app: AppModel, _ step: Double?) {
+        let s = app.settings
         for key in ["terminal.fontSize", "editor.fontSize"] {
             s.set(key, .double(step.map { min(40, max(8, (s.number(key) ?? 13) + $0)) } ?? 13))
         }
     }
 
-    private static func restartService() {
+    private static func restartService(_ app: AppModel) {
         let a = NSAlert(); a.messageText = String(localized: "Restart the background service?")
         a.informativeText = String(localized: "Running agent sessions end. Workspaces, history and settings are kept.")
         a.addButton(withTitle: String(localized: "Restart")); a.addButton(withTitle: String(localized: "Cancel"))
-        Task { if await runSheet(a) == .alertFirstButtonReturn { await AppModel.shared.restartDaemon() } }
+        Task { if await runSheet(a) == .alertFirstButtonReturn { await app.restartDaemon() } }
     }
 }

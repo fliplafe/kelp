@@ -6,6 +6,9 @@ import Core
 /// without them, a button that installs and signs in. The globe opens the project's pages on its site.
 @MainActor
 final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     private final class Item: NSObject {
         enum Kind { case run(CIRuns.Run), job(CIRuns.Job, run: Int), step(CIRuns.Step) }
         let kind: Kind
@@ -35,7 +38,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private var shownLog = "", shownJob: (job: CIRuns.Job, run: Int)?
     private var branchName = ""
     /// The branch's runs, watched while the panel shows: the daemon looks again while one runs, and says when they changed.
-    private let ciWatch = Watched(.ci)
+    private lazy var ciWatch = Watched(.ci, in: app)
     private var autoOpened = Set<Int>()
 
     override func loadView() {
@@ -89,8 +92,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.follow(); self?.loadPages() }
-        track(owner: self) { [weak self] in AppModel.shared.ci[self?.worktree ?? ""] } changed: { [weak self] in self?.apply($0) }
+        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.follow(); self?.loadPages() }
+        track(owner: self) { [weak self, app] in app.ci[self?.worktree ?? ""] } changed: { [weak self] in self?.apply($0) }
     }
 
     /// From origin, not gh: there even when gh or glab isn't set up.
@@ -98,7 +101,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         guard let w = worktree else { return }
         pages = nil; webButton.isHidden = true
         Task {
-            let p = await AppModel.shared.quiet(GitWebPages(worktreeId: w)) ?? nil   // a decoration: without it there's no globe
+            let p = await app.quiet(GitWebPages(worktreeId: w)) ?? nil   // a decoration: without it there's no globe
             guard w == worktree else { return }
             pages = p; webButton.isHidden = p == nil
         }
@@ -127,7 +130,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func follow() { ciWatch.key = view.window != nil ? worktree : nil }
 
     /// Refresh, and after starting runs: the daemon reads them now, and keeps looking for a while.
-    private func reload() { if let w = worktree { AppModel.shared.watchAgain(.ci, w) } }
+    private func reload() { if let w = worktree { app.watchAgain(.ci, w) } }
 
     private func apply(_ e: CIEvent?) {
         guard let e, e.worktree == worktree else { return }
@@ -173,7 +176,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func expand(_ item: Item, openFailed: Bool) async {
         guard case .run(let run) = item.kind, let w = worktree else { return }
         if item.children == nil {
-            guard let jobs = await AppModel.shared.call(CIJobs(worktreeId: w, run: run.id)) else { return }   // the banner says why; asked again next time
+            guard let jobs = await app.call(CIJobs(worktreeId: w, run: run.id)) else { return }   // the banner says why; asked again next time
             item.children = jobs.map { j in let i = Item(.job(j, run: run.id)); i.children = j.steps.map { Item(.step($0)) }; return i }
             outline.reloadItem(item, reloadChildren: true)
         }
@@ -193,7 +196,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let slow = whileSlow { [weak self] in if self?.shownJob?.job.id == job.id { self?.log.string = String(localized: "Loading the log…") } }
         Task {
             defer { slow.cancel() }
-            let r = await AppModel.shared.tryCall(CILog(worktreeId: w, job: job.id))
+            let r = await app.tryCall(CILog(worktreeId: w, job: job.id))
             guard shownJob?.job.id == job.id else { return }
             shownLog = r.value ?? r.error ?? ""
             log.string = shownLog
@@ -213,7 +216,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     private func rerun(_ w: String, run: Int) {
         Task {
-            if await AppModel.shared.call(CIRerun(worktreeId: w, run: run)) != nil {
+            if await app.call(CIRerun(worktreeId: w, run: run)) != nil {
                 Banner.show(String(localized: "Re-running the failed jobs")); reload()
             }
         }
@@ -249,7 +252,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             var inputs: [String: String] = [:]
             for (k, v) in fields { inputs[k] = (v as? NSPopUpButton)?.titleOfSelectedItem ?? (v as? NSTextField)?.stringValue ?? "" }
-            if await AppModel.shared.call(CIDispatch(worktreeId: w, workflow: wf.file, branch: branchName, inputs: inputs)) != nil {
+            if await app.call(CIDispatch(worktreeId: w, workflow: wf.file, branch: branchName, inputs: inputs)) != nil {
                 Banner.show(String(localized: "Started \(wf.name)")); reload()
             }
         }

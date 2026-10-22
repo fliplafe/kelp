@@ -6,25 +6,26 @@ import WorkbenchKit
 @MainActor
 final class SessionTab: TabContent {
     let sessionId: String
+    let app: AppModel
     let pane: PaneView
     var onChange: (() -> Void)?
     var uri: String { TabURI.session(sessionId) }
     var view: NSView { pane }
 
-    init?(uri: String) {
+    init?(uri: String, app: AppModel) {
         let sid = TabURI.body(uri)
-        guard let s = AppModel.shared.session(sid) else { return nil }
-        sessionId = sid
-        pane = PaneView(session: s)
+        guard let s = app.session(sid) else { return nil }
+        sessionId = sid; self.app = app
+        pane = PaneView(session: s, app: app)
         pane.onRestart = { p in AgentActions.restart(p.sessionId) }
         pane.onClose = { p in Workbench.closeTab(uri: TabURI.session(p.sessionId)) }
-        track(owner: self) { AppModel.shared.session(sid) } changed: { [weak self] s in
+        track(owner: self) { [app] in app.session(sid) } changed: { [weak self] s in
             guard let self, let s else { return }
             pane.update(s); onChange?()
         }
     }
 
-    private var session: Session? { AppModel.shared.session(sessionId) }
+    private var session: Session? { app.session(sessionId) }
     var title: String {
         session.map(AgentCatalog.displayName) ?? String(localized: "Session")
     }
@@ -33,7 +34,7 @@ final class SessionTab: TabContent {
         let s = session
         // A terminal shows a state only while a program in it says how far it got (a build).
         return TabBadge(status: s.flatMap { $0.agent == "shell" ? ($0.progress == nil ? nil : .working) : $0.endedWithError ? .error : $0.markStatus },
-                        unread: s?.unread ?? false, meter: AppModel.shared.contextShare[sessionId],
+                        unread: s?.unread ?? false, meter: app.contextShare[sessionId],
                         progress: s?.progress.map { Double($0) / 100 }, attention: s.flatMap(Self.attention))
     }
     /// The ring around its pane: it asks (orange), failed (red), or finished and wasn't looked at yet (accent).
@@ -52,42 +53,42 @@ final class SessionTab: TabContent {
 
     /// Closing the tab ends the session; it asks only when something would stop: a working agent, or a program
     /// running in a terminal (an idle shell or a finished agent just closes).
-    func close() async -> Bool { await Self.close(session: sessionId) }
+    func close() async -> Bool { await Self.close(app, session: sessionId) }
 
     /// Its items in the tab's context menu.
-    static func menu(_ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
+    static func menu(_ app: AppModel, _ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
         let sid = TabURI.body(uri)
         m.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
         m.add(String(localized: "Restart")) { AgentActions.restart(sid) }
         m.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
         m.setSubmenu(AgentActions.handoffMenu(sid), for: m.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
         m.add(String(localized: "Changes in Its Last Turn")) {
-            Workbench.shared.focusedSession = sid
+            app.workbench.focusedSession = sid
             openBeside(TabURI.diff(workspace, source: "turn"))
         }
     }
 
     /// Also for a tab that was never built (EditorArea closes those without making them).
-    static func close(session sid: String) async -> Bool {
-        let session = AppModel.shared.session(sid)
+    static func close(_ app: AppModel, session sid: String) async -> Bool {
+        let session = app.session(sid)
         if let s = session, s.agent != "shell", s.status == .working {
             let a = NSAlert(); a.messageText = String(localized: "Stop \(AgentCatalog.displayName(s))?")
             a.informativeText = String(localized: "The agent is still working. Closing the tab ends its session.")
             a.addButton(withTitle: String(localized: "Stop Agent")); a.addButton(withTitle: String(localized: "Cancel"))
             guard await runSheet(a) == .alertFirstButtonReturn else { return false }
-        } else if session?.agent == "shell", let program = await busy(sid) {
+        } else if session?.agent == "shell", let program = await busy(app, sid) {
             let a = NSAlert()
             a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
             guard await runSheet(a) == .alertFirstButtonReturn else { return false }
         }
-        Task { await AppModel.shared.call(SessionKill(id: sid)) }
+        Task { await app.call(SessionKill(id: sid)) }
         return true
     }
 
     /// What runs in the foreground of a terminal: the tab closes or stays on this answer. A daemon that doesn't answer
     /// within 2 s closes the tab as if nothing ran.
-    private static func busy(_ sid: String) async -> String? {
-        await AppModel.shared.quiet(SessionBusy(id: sid), timeout: 2) ?? nil
+    private static func busy(_ app: AppModel, _ sid: String) async -> String? {
+        await app.quiet(SessionBusy(id: sid), timeout: 2) ?? nil
     }
 }

@@ -12,9 +12,12 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     private let fullText = NSButton(checkboxWithTitle: String(localized: "Search inside conversations"), target: nil, action: nil)
     private let status = NSTextField(labelWithString: "")
     private var rows: [AgentSessionInfo] = []
+    /// The app it was last shown for: what it lists and resumes is that app's daemon's.
+    private var app = AppModel.shared
     private let pending = Debounce()
 
-    func show() {
+    func show(_ app: AppModel) {
+        self.app = app
         if window == nil { build() }
         window?.makeKeyAndOrderFront(nil); load()
     }
@@ -53,7 +56,7 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
         Task {
             defer { slow.cancel() }
-            rows = await AppModel.shared.call(HistoryList(query: search.stringValue, fullText: fullText.state == .on ? true : nil)) ?? []
+            rows = await app.call(HistoryList(query: search.stringValue, fullText: fullText.state == .on ? true : nil)) ?? []
             let q = search.stringValue.trimmingCharacters(in: .whitespaces)
             status.stringValue = rows.isEmpty
                 ? (q.isEmpty ? String(localized: "No conversations yet") : String(localized: "No conversations match “\(q)”"))
@@ -93,8 +96,8 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let r = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard rows.indices.contains(r) else { return }
         Task {
-            guard let s = await AppModel.shared.call(HistoryResume(session: rows[r])) else { return }
-            AppModel.shared.upsert(s)
+            guard let s = await app.call(HistoryResume(session: rows[r])) else { return }
+            app.upsert(s)
             // A conversation from a folder that isn't a project opens in the workspace on screen (it keeps its own folder).
             if let w = s.worktreeId { Workbench.show(workspace: w) }
             Workbench.open(TabURI.session(s.id))

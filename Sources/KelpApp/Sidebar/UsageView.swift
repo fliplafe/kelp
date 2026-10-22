@@ -20,8 +20,7 @@ struct UsageView: View {
         var other: Line? { lines.filter { $0 != main }.max { $0.used < $1.used } }
     }
     let app: AppModel
-    /// Limit: the default is for the usage tab (Agents), not handed the app yet.
-    init(app: AppModel = AppModel.shared) { self.app = app }
+    init(app: AppModel) { self.app = app }
     @State private var rows: [Row] = []
     @State private var hovered: String?
 

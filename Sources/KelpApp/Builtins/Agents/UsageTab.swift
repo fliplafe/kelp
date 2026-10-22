@@ -12,11 +12,13 @@ final class UsageTab: TabContent {
     let view: NSView
     var title: String { String(localized: "Usage") }
     var icon: NSImage? { .symbol("chart.bar") }
-    init() { view = NSHostingView(rootView: UsageReportView()) }
+    init(app: AppModel) { view = NSHostingView(rootView: UsageReportView(app: app)) }
     func focus() {}
 }
 
 struct UsageReportView: View {
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     struct Row: Identifiable { let id: String; let cost: Double; let tokens: Int }
     @State private var range = 30
     @State private var days: [Row] = []
@@ -30,7 +32,7 @@ struct UsageReportView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 section(String(localized: "Plan Limits")) {
-                    UsageView()
+                    UsageView(app: app)
                     Text("What each agent reports for its plan; the fullest one first. Faded numbers are older than half an hour.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -78,7 +80,7 @@ struct UsageReportView: View {
         loading = true; slow = false
         let hint = Task { try? await Task.sleep(for: .seconds(3)); if loading { slow = true } }
         defer { hint.cancel() }
-        let read = await AppModel.shared.tryCall(UsageReport(days: range))
+        let read = await app.tryCall(UsageReport(days: range))
         let r = read.value; failed = read.error
         func rows(_ groups: [UsageReport.Group]?) -> [Row] { (groups ?? []).map { Row(id: $0.name, cost: $0.cost, tokens: $0.tokens) } }
         days = rows(r?.days).sorted { $0.id < $1.id }; models = rows(r?.models); projects = rows(r?.projects)

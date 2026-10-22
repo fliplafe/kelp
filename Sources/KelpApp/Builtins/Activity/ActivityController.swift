@@ -5,6 +5,9 @@ import Core
 /// everything under its terminal, busiest first, with Stop. Measured every two seconds while the panel shows.
 @MainActor
 final class ActivityController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     private struct Row { var session: Session; var cpu: Double; var memory: Int; var processes: Int }
     private let table = NSTableView()
     private let total = NSTextField(labelWithString: "")
@@ -31,18 +34,18 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     /// Watched while the panel shows: the daemon measures every two seconds and says when it changed.
-    override func viewDidAppear() { super.viewDidAppear(); watched.key = ""; show(AppModel.shared.activity) }
+    override func viewDidAppear() { super.viewDidAppear(); watched.key = ""; show(app.activity) }
     override func viewDidDisappear() { super.viewDidDisappear(); watched.key = nil }
-    private let watched = Watched(.activity)
+    private lazy var watched = Watched(.activity, in: app)
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        track(owner: self) { AppModel.shared.activity } changed: { [weak self] in self?.show($0) }
+        track(owner: self) { [app] in app.activity } changed: { [weak self] in self?.show($0) }
     }
 
     private func show(_ e: ActivityEvent?) {
         guard let e else { return }
-        let m = AppModel.shared
+        let m = app
         // Couldn't measure: say why where "No sessions running." would be, not that nothing runs.
         empty.stringValue = e.error.map { String(localized: "Couldn't measure the sessions: \($0)") } ?? String(localized: "No sessions running.")
         rows = (e.usage ?? []).compactMap { u in
@@ -61,7 +64,7 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     func numberOfRows(in t: NSTableView) -> Int { rows.count }
 
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
-        let r = rows[row], s = r.session, m = AppModel.shared
+        let r = rows[row], s = r.session, m = app
         let icon = NSImageView(image: (s.agent == "shell" ? NSImage.symbol("terminal") : AgentCatalog.icon(s.agent)) ?? NSImage())
         let name = NSTextField(labelWithString: s.agent == "shell" ? (s.title.isEmpty ? String(localized: "Terminal") : s.title) : AgentCatalog.displayName(s))
         name.font = .ui(12, weight: .medium); name.lineBreakMode = .byTruncatingTail

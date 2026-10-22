@@ -6,6 +6,9 @@ import Core
 /// issue → worktree + agent, failed check / review comments → agent, PR merge, Linear state.
 @MainActor
 final class TasksViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     let source = NSPopUpButton()
     private let split = NSSplitView()
     private var dividerPlaced = false
@@ -77,7 +80,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private lazy var setupButton = ClosureButton(title: "") { [weak self] in if let s = self?.setup { Forge.run(s) } }
 
     func show(worktree id: String?) {
-        let r = AppModel.shared.worktree(id)?.repoId ?? AppModel.shared.repos.first?.id
+        let r = app.worktree(id)?.repoId ?? app.repos.first?.id
         guard r != repoId else { return }
         repoId = r
         guard isViewLoaded else { return }
@@ -90,7 +93,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func nameSources() {
         guard let repoId else { return }
         Task {
-            let forge = await AppModel.shared.quiet(GitHubForge(repoId: repoId))   // the list's own load says what failed
+            let forge = await app.quiet(GitHubForge(repoId: repoId))   // the list's own load says what failed
             source.item(at: 0)?.title = forge == "gitlab" ? String(localized: "Merge Requests") : String(localized: "Pull Requests")
         }
     }
@@ -104,7 +107,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case 2:
             filter.addItems(withTitles: [String(localized: "My issues")])
             Task {   // team boards
-                for t in await AppModel.shared.quiet(LinearTeams()) ?? [] {   // the list's own load says what failed
+                for t in await app.quiet(LinearTeams()) ?? [] {   // the list's own load says what failed
                     filter.addItem(withTitle: String(localized: "Team: \(t.name)")); filter.lastItem?.representedObject = t.id
                 }
             }
@@ -130,7 +133,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             defer { slow.cancel() }
             var rows: [Row] = []
             do {
-                let m = AppModel.shared
+                let m = app
                 switch src {
                 case 0: rows = try await m.get(GitHubPRs(repoId: repoId, filter: ["open", "mine", "review"][max(0, f)])).map(Row.pr)
                 case 1: rows = try await m.get(GitHubIssues(repoId: repoId, filter: f == 1 ? "mine" : "open")).map(Row.issue)
@@ -243,7 +246,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             color: text.isEmpty ? .secondaryLabelColor : .labelColor))
     }
 
-    private func worktreeFor(branch: String) -> Worktree? { AppModel.shared.worktrees.first { $0.branch == branch && !$0.archived } }
+    private func worktreeFor(branch: String) -> Worktree? { app.worktrees.first { $0.branch == branch && !$0.archived } }
 
     private func prDetail(_ r: GitHub.PullRequest) {
         let n = r.number, branch = r.headRefName
@@ -264,7 +267,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         guard let repoId else { return }
         Task { [weak self] in
             guard let self else { return }
-            let read = await AppModel.shared.tryCall(GitHubChecks(repoId: repoId, pr: n))
+            let read = await app.tryCall(GitHubChecks(repoId: repoId, pr: n))
             let checks = read.value ?? []
             if let e = read.error { checksBox.addArrangedSubview(label(String(localized: "Couldn't read the checks: \(e)"), color: .secondaryLabelColor)) }
             else if checks.isEmpty { checksBox.addArrangedSubview(label(String(localized: "No checks reported."), color: .secondaryLabelColor)) }
@@ -284,15 +287,15 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func statePicker(_ r: LinearIssue) -> NSView {
         let pop = NSPopUpButton(); pop.addItem(withTitle: r.state.name)
         Task {
-            guard let states = await AppModel.shared.quiet(LinearStates(teamId: r.team.id)) else { return }   // keeps the current state
+            guard let states = await app.quiet(LinearStates(teamId: r.team.id)) else { return }   // keeps the current state
             pop.removeAllItems()
             for s in states { pop.addItem(withTitle: s.name); pop.lastItem?.representedObject = s.id }
             pop.selectItem(withTitle: r.state.name)
         }
         let id = r.id
-        let sink = ClosureTarget { [weak pop] in
+        let sink = ClosureTarget { [weak pop, app] in
             guard let sid = pop?.selectedItem?.representedObject as? String else { return }
-            Task { await AppModel.shared.call(LinearSetState(issueId: id, stateId: sid)) }
+            Task { await app.call(LinearSetState(issueId: id, stateId: sid)) }
         }
         pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
         let row = NSStackView(views: [NSTextField(labelWithString: String(localized: "State:")), pop]); row.spacing = 6
@@ -302,13 +305,13 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func jiraTransitions(_ key: String, current: String) -> NSView {
         let pop = NSPopUpButton(); pop.addItem(withTitle: current.isEmpty ? String(localized: "Status") : current)
         Task {
-            let ts = await AppModel.shared.quiet(JiraTransitions(key: key)) ?? []   // none offered: the status stays as shown
+            let ts = await app.quiet(JiraTransitions(key: key)) ?? []   // none offered: the status stays as shown
             for t in ts { pop.addItem(withTitle: "→ " + t.name); pop.lastItem?.representedObject = t.id }
         }
-        let sink = ClosureTarget { [weak pop, weak self] in
+        let sink = ClosureTarget { [weak pop, weak self, app] in
             guard let id = pop?.selectedItem?.representedObject as? String else { return }
             Task {
-                if await AppModel.shared.call(JiraTransitionIssue(key: key, id: id)) != nil {
+                if await app.call(JiraTransitionIssue(key: key, id: id)) != nil {
                     self?.status.stringValue = String(localized: "Moved \(key)")
                 }
             }
@@ -327,24 +330,24 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     private func agentSession(_ wt: Worktree) -> String? {
-        AppModel.shared.sessions.last { $0.worktreeId == wt.id && $0.status != .exited && $0.agent != "shell" && $0.agent != "custom" }?.id
+        app.sessions.last { $0.worktreeId == wt.id && $0.status != .exited && $0.agent != "shell" && $0.agent != "custom" }?.id
     }
     private func sendRecipe(_ name: String, _ wt: Worktree, _ vars: [String: String]) async {
         guard let sid = agentSession(wt) else { status.stringValue = String(localized: "No running agent in \(wt.branch) — start one first"); return }
         guard await GitFix.type(name, worktree: wt.id, vars: vars, into: sid) else { return }
-        status.stringValue = String(localized: "Typed into \(AppModel.shared.session(sid)?.displayTitle ?? "agent") — press Return there to send")
+        status.stringValue = String(localized: "Typed into \(app.session(sid)?.displayTitle ?? "agent") — press Return there to send")
     }
     private func fixCheck(_ name: String, _ run: Int, _ wt: Worktree) {
         guard let repoId else { return }
         Task {
-            let log = await AppModel.shared.call(GitHubFailedLog(repoId: repoId, runId: run)) ?? ""
+            let log = await app.call(GitHubFailedLog(repoId: repoId, runId: run)) ?? ""
             await sendRecipe("fixCI", wt, ["check": name, "error": log])
         }
     }
     private func sendReview(_ n: Int, _ wt: Worktree) {
         guard let repoId else { return }
         Task {
-            guard let cs = await AppModel.shared.call(GitHubReviewComments(repoId: repoId, pr: n)) else { return }   // the banner says why
+            guard let cs = await app.call(GitHubReviewComments(repoId: repoId, pr: n)) else { return }   // the banner says why
             guard !cs.isEmpty else { status.stringValue = String(localized: "No review comments"); return }
             var parts: [String] = []
             for (i, c) in cs.enumerated() {
@@ -362,8 +365,8 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             // The merge runs in a workspace of the project (gh needs a checkout); the PR's own if it has one.
-            guard let wid = wt?.id ?? AppModel.shared.worktrees.first(where: { $0.repoId == repoId })?.id else { NSSound.beep(); return }
-            if await AppModel.shared.call(GitHubPRMerge(worktreeId: wid, pr: n)) != nil { status.stringValue = String(localized: "Merged #\(n)"); reload() }
+            guard let wid = wt?.id ?? app.worktrees.first(where: { $0.repoId == repoId })?.id else { NSSound.beep(); return }
+            if await app.call(GitHubPRMerge(worktreeId: wid, pr: n)) != nil { status.stringValue = String(localized: "Merged #\(n)"); reload() }
         }
     }
 }

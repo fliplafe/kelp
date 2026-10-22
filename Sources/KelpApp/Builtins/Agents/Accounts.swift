@@ -15,16 +15,18 @@ struct AccountProfile: Codable, Hashable, Identifiable {
 
 @MainActor
 enum Accounts {
-    static func load() async -> [AccountProfile] {
-        let saved = await AppModel.shared.call(SettingsGet())?["accounts.profiles"]   // a banner when the settings can't be read
+    static func load(_ app: AppModel) async -> [AccountProfile] {
+        let saved = await app.call(SettingsGet())?["accounts.profiles"]   // a banner when the settings can't be read
         return (try? saved?.decode([AccountProfile].self)) ?? []
     }
-    static func save(_ list: [AccountProfile]) async {
-        await AppModel.shared.call(SettingsSet(key: "accounts.profiles", value: (try? JSONValue.from(list)) ?? .array([])))
+    static func save(_ app: AppModel, _ list: [AccountProfile]) async {
+        await app.call(SettingsSet(key: "accounts.profiles", value: (try? JSONValue.from(list)) ?? .array([])))
     }
 }
 
 struct AccountsSettings: View {
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     @State private var profiles: [AccountProfile] = []
     @State private var selection: AccountProfile.ID?
     @State private var newName = ""
@@ -43,26 +45,26 @@ struct AccountsSettings: View {
                 Button("Add") {
                     let n = newName.trimmingCharacters(in: .whitespaces); guard !n.isEmpty else { return }
                     profiles.append(AccountProfile(name: n, agent: newAgent, dir: AccountProfile.defaultDir(agent: newAgent, name: n)))
-                    newName = ""; Task { await Accounts.save(profiles) }
+                    newName = ""; Task { await Accounts.save(app, profiles) }
                 }
                 Spacer()
                 Button("Log In…") { login() }.disabled(selection == nil)
-                Button("Remove") { profiles.removeAll { $0.id == selection }; Task { await Accounts.save(profiles) } }.disabled(selection == nil)
+                Button("Remove") { profiles.removeAll { $0.id == selection }; Task { await Accounts.save(app, profiles) } }.disabled(selection == nil)
             }
             Text("Log in once per profile; afterwards pick the account when starting an agent. Usage and limits per account show in Agents › Usage.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
-        .task { profiles = await Accounts.load() }
+        .task { profiles = await Accounts.load(app) }
     }
 
     /// Opens the agent in that profile so the user can run its login flow once.
     private func login() {
-        guard let p = profiles.first(where: { $0.id == selection }), let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        guard let p = profiles.first(where: { $0.id == selection }), let wid = app.workbench.workspaceId else { NSSound.beep(); return }
         Task {
-            guard let s = await AppModel.shared.call(SessionCreate(worktreeId: wid, agent: p.agent, title: String(localized: "Log in: \(p.name)"),
+            guard let s = await app.call(SessionCreate(worktreeId: wid, agent: p.agent, title: String(localized: "Log in: \(p.name)"),
                                                                    profile: p.name)) else { return }
-            AppModel.shared.upsert(s); Workbench.open(TabURI.session(s.id))
+            app.upsert(s); Workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }

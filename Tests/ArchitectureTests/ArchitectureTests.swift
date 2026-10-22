@@ -253,15 +253,11 @@ private func codeOnly(_ s: String) -> String {
 @Test func theAppIsHandedItsModel() throws {
     let ceilings: [String: Int] = [
         "": 74,
-        "Builtins": 5,
-        "Builtins/Activity": 4,
-        "Builtins/Agents": 30,
-        "Builtins/Browser": 9,
-        "Builtins/Issues": 36,
+        "Builtins/Agents": 1,
         "Extensions": 20,
         "Settings": 24,
         "Shell": 118,
-        "Sidebar": 2
+        "Sidebar": 1
     ]
     let starts = ["main.swift", "AppDelegate.swift", "DevAids.swift"]
     var found: [String: Int] = [:]
