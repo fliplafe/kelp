@@ -192,7 +192,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     ]
 
     /// Presets overridden/extended by `*.json` files in `dir`. Bad files are skipped, never fatal.
-    public static func load(dir: URL = Paths.agents) -> [AgentManifest] {
+    public static func load(dir: URL) -> [AgentManifest] {
         var all = Dictionary(uniqueKeysWithValues: presets.map { ($0.id, withInstall($0)) })
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for f in files where f.pathExtension == "json" {
@@ -202,12 +202,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     }
 
     /// Settings UI: save an override (binary, args, env…) or reset to the preset by deleting it.
-    public static func saveOverride(_ m: AgentManifest, dir: URL = Paths.agents) throws {
+    public static func saveOverride(_ m: AgentManifest, dir: URL) throws {
         try Paths.ensure(dir)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]
         try e.encode(m).write(to: dir.appendingPathComponent("\(m.id).json"))
     }
-    public static func resetOverride(id: String, dir: URL = Paths.agents) {
+    public static func resetOverride(id: String, dir: URL) {
         try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(id).json"))
     }
 

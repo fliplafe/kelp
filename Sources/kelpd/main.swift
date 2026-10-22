@@ -1,4 +1,5 @@
 import Foundation
+import Core
 import Daemon
 
 // kelpd: background daemon. Run by launchd (see `kelp install`) or started on demand by the app/CLI.
@@ -10,7 +11,7 @@ if getrlimit(RLIMIT_NOFILE, &files) == 0, files.rlim_cur < rlim_t(OPEN_MAX) {
 }
 nonisolated(unsafe) var signalSources: [DispatchSourceSignal] = []   // must outlive this scope or the handlers vanish
 do {
-    let d = try Daemon()
+    let d = try Daemon(root: Paths.root)
     try d.start()
     for s in [SIGTERM, SIGINT, SIGHUP] {
         signal(s, SIG_IGN)
@@ -21,6 +22,6 @@ do {
     }
     dispatchMain()
 } catch {
-    FileHandle.standardError.write(Data("kelpd: \(Daemon.startFailed(error))\n".utf8))
+    FileHandle.standardError.write(Data("kelpd: \(Daemon.startFailed(error, root: Paths.root))\n".utf8))
     exit(1)
 }

@@ -59,7 +59,7 @@ public enum IDE {
     public static func isValidExtensionID(_ id: String) -> Bool { id.wholeMatch(of: /[a-z0-9][a-z0-9.-]*/) != nil }
 
     /// What the app shows (`ui.state`) when it runs, else the folders in `dir`.
-    public static func extensions(client c: RPCClient, dir: URL = Paths.extensions) async throws -> JSONValue {
+    public static func extensions(client c: RPCClient, dir: URL) async throws -> JSONValue {
         if let shown = try await c.call(UIStateGet())["extensions"] { return shown }
         let disabled = try await disabledExtensions(client: c)
         let folders = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
@@ -89,7 +89,7 @@ public enum IDE {
 
     /// `<dir>/<id>/` with a working starter (extension.json + README.md), and the authoring guide next to it. Returns the folder.
     @discardableResult
-    public static func scaffoldExtension(id: String, name: String?, description: String?, in dir: URL = Paths.extensions) throws -> URL {
+    public static func scaffoldExtension(id: String, name: String?, description: String?, in dir: URL) throws -> URL {
         guard isValidExtensionID(id) else { throw invalidID(id) }
         let folder = dir.appendingPathComponent(id)
         guard !FileManager.default.fileExists(atPath: folder.path) else { throw RPCError.invalidParams("\(folder.path) already exists") }

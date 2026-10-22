@@ -96,7 +96,7 @@ extension IDE {
     /// Puts an extension folder into `dir` as `name`; one already there goes to the Trash. `move`: a folder of ours
     /// (`fetchExtension`'s), taken rather than copied.
     @discardableResult
-    public static func installExtension(_ folder: URL, as name: String, in dir: URL = Paths.extensions, move: Bool = false) throws -> URL {
+    public static func installExtension(_ folder: URL, as name: String, in dir: URL, move: Bool = false) throws -> URL {
         // The name is a folder inside `dir`: "..", "a/b" or ".hidden" would point somewhere else (".." is ~/.kelp itself,
         // which the line below would send to the Trash).
         guard isPlainName(name) else { throw RPCError.invalidParams("“\(name)” can't be an extension's folder name.") }

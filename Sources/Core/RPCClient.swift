@@ -37,7 +37,7 @@ public final class RPCClient: Sendable {
         }
     }
 
-    public init(socket: String = Paths.socket.path) throws {
+    public init(socket: String) throws {
         fd = try Unix.connect(socket)
         Thread.detachNewThread { [self] in readLoop() }
     }

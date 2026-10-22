@@ -8,7 +8,7 @@ import Agents
 struct AgentsSettings: View {
     let app: AppModel
     init(app: AppModel) { self.app = app }
-    @State private var agents = AgentManifest.load()
+    @State private var agents = AgentManifest.load(dir: Paths.agents)
     @State private var selection: String? = "claude"
     @State private var command = ""
     @State private var args = ""
@@ -51,7 +51,7 @@ struct AgentsSettings: View {
                     }.fixedSize()
                 }
                 HStack {
-                    Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id); reload() } }
+                    Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id, dir: Paths.agents); reload() } }
                     Spacer()
                     if saved { Text("Saved").foregroundStyle(.secondary) }
                     Button("Save") { Task { await save() } }.keyboardShortcut(.defaultAction)
@@ -157,7 +157,7 @@ struct AgentsSettings: View {
         command = m.command; args = m.args.joined(separator: " ")
         env = m.env.map { "\($0)=\($1)" }.sorted().joined(separator: "\n"); saved = false
     }
-    private func reload() { agents = AgentManifest.load(); load() }
+    private func reload() { agents = AgentManifest.load(dir: Paths.agents); load() }
     /// "Saved" only once it is: a secret the keychain refused, or a file that couldn't be written, says why instead.
     private func save() async {
         guard var m = current else { return }
@@ -175,11 +175,11 @@ struct AgentsSettings: View {
             await app.call(AgentSetSecret(agent: m.id, key: k))   // removed: forget it
         }
         m.env = pairs.filter { !$0.value.isEmpty }   // a preset's blank line until it's filled in
-        do { try AgentManifest.saveOverride(m) } catch {
+        do { try AgentManifest.saveOverride(m, dir: Paths.agents) } catch {
             Banner.show(String(localized: "Couldn't save \(m.name): \(error.localizedDescription)"), style: .error); return
         }
         reload(); saved = true
-        app.agents = AgentManifest.load()
+        app.agents = AgentManifest.load(dir: Paths.agents)
         app.availability.refresh(force: true)
     }
 }

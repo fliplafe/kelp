@@ -30,7 +30,7 @@ public final class Daemon: Sendable {
     var files: FileService { FileService(remotes: remotes) }   // files.*: read, written, moved here or on a remote project's host
     let remotes: Remotes   // which project folders stand for one on a host (only those in this home's remote/), and how to reach it
 
-    public init(root: URL = Paths.root, store: Store? = nil) throws {
+    public init(root: URL, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
         self.root = root
         try Paths.ensure(root)

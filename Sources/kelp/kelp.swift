@@ -61,12 +61,12 @@ func daemonBinary() -> String {
 }
 
 func connect() throws -> RPCClient {
-    if let c = try? RPCClient() { return c }
+    if let c = try? RPCClient(socket: Paths.socket.path) { return c }
     // Start the daemon on demand.
     let p = Process(); p.executableURL = URL(fileURLWithPath: daemonBinary())
     p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
     try? p.run()
-    for _ in 0..<50 { usleep(100_000); if let c = try? RPCClient() { return c } }
+    for _ in 0..<50 { usleep(100_000); if let c = try? RPCClient(socket: Paths.socket.path) { return c } }
     throw RPCError.internalError("cannot reach the Kelp daemon at \(Paths.socket.path)")
 }
 
@@ -347,14 +347,14 @@ func plist() -> String {
     static func ext(_ sub: String?, _ c: RPCClient) async throws {
         switch sub {
         case "list":
-            for e in try await IDE.extensions(client: c).array ?? [] {
+            for e in try await IDE.extensions(client: c, dir: Paths.extensions).array ?? [] {
                 let tags = [e["builtin"]?.bool == true ? "(built-in)" : nil, e["enabled"]?.bool == false ? "(disabled)" : nil].compactMap { $0 }
                 print(([e["id"]?.string ?? "", e["name"]?.string ?? ""] + tags).joined(separator: "\t"))
             }
         case "new":
             let name = flag("--name"), description = flag("--description")
             guard let id = args.first else { fail("ext new <id> [--name N] [--description D]") }
-            let folder = try IDE.scaffoldExtension(id: id, name: name, description: description)
+            let folder = try IDE.scaffoldExtension(id: id, name: name, description: description, in: Paths.extensions)
             print("created \(folder.path)\nguide:   \(folder.deletingLastPathComponent().appendingPathComponent("EXTENSIONS.md").path)")
         case "enable", "disable":
             guard let id = args.first else { fail("ext enable|disable <id>") }
@@ -371,7 +371,7 @@ func plist() -> String {
             var dir: ObjCBool = false
             if what.contains("/"), FileManager.default.fileExists(atPath: what, isDirectory: &dir), dir.boolValue {
                 let src = URL(fileURLWithPath: what).standardizedFileURL
-                installed(try IDE.installExtension(src, as: src.lastPathComponent))
+                installed(try IDE.installExtension(src, as: src.lastPathComponent, in: Paths.extensions))
             } else if what.contains("/") {
                 installed(try await fetch(what, as: nil, c))
             } else {
@@ -397,7 +397,7 @@ func plist() -> String {
     /// Downloads it through the daemon and moves it in, as `name` (else its id).
     static func fetch(_ source: String, as name: String?, _ c: RPCClient) async throws -> URL {
         let folder = URL(fileURLWithPath: try await c.call(ExtensionFetch(source: source)).folder)
-        return try IDE.installExtension(folder, as: name ?? folder.lastPathComponent, move: true)
+        return try IDE.installExtension(folder, as: name ?? folder.lastPathComponent, in: Paths.extensions, move: true)
     }
 
     static func manifest(_ folder: URL) -> JSONValue {

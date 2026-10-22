@@ -57,7 +57,7 @@ final class AppModel {
     @ObservationIgnored var watching: [WatchStart: Int] = [:]
     /// `event.repo` / `event.worktree` / `event.removed` handled so far, per id: a list asked for before one may be older.
     @ObservationIgnored var recordEvents: [String: Int] = [:]
-    @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load()
+    @ObservationIgnored var agents: [AgentManifest] = AgentManifest.load(dir: Paths.agents)
 
     /// `event.session`s handled so far, per session: a list asked for before one of them may be older than it.
     @ObservationIgnored private var sessionEvents: [String: Int] = [:]
@@ -151,9 +151,9 @@ final class AppModel {
         // its home's lock until its agents are gone (up to 3 s), so the kelpd started meanwhile finds it taken and exits.
         // One that's already running takes no harm: a second kelpd exits at once.
         for _ in 0..<3 {
-            if let c = try? RPCClient() { client = c; break }
+            if let c = try? RPCClient(socket: Paths.socket.path) { client = c; break }
             launchDaemon()
-            for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); if let c = try? RPCClient() { client = c; break } }
+            for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); if let c = try? RPCClient(socket: Paths.socket.path) { client = c; break } }
             if client != nil { break }
         }
         guard let c = client else {
