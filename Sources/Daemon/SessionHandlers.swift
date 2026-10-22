@@ -147,8 +147,8 @@ extension SessionTurn: Handled {
 
 extension SessionLastReply: Handled {
     func handle(_ d: Daemon) throws -> String? {
-        guard let t = d.existing(id).flatMap(d.transcript(of:)) else { return nil }
-        return Daemon.lastReply(transcript: t)
+        guard let t = d.existing(id).flatMap(d.agentUsage.transcript(of:)) else { return nil }
+        return AgentUsage.lastReply(transcript: t)
     }
 }
 

@@ -22,7 +22,7 @@ extension Daemon {
         let bytes = max(0, min(bytes, 16 << 20))
         if let ls = existing(id) { return ls.tail(bytes) }
         // Only a session Kelp has: the id names a file, and "../../x" would name any .log the user can read.
-        guard (try? store.session(id)) != nil, let d = Self.tail(of: root.appendingPathComponent("history/\(id).log"), bytes: bytes) else {
+        guard (try? store.session(id)) != nil, let d = Data(tailOf: root.appendingPathComponent("history/\(id).log"), bytes: bytes) else {
             throw RPCError.invalidParams("no history for \(id)")
         }
         return d
@@ -33,7 +33,7 @@ extension Daemon {
     func handoffFile(_ s: Session, full: Bool) throws -> URL {
         let limit = full ? 400_000 : 40_000
         let body: String
-        if let t = existing(s.id).flatMap(transcript(of:)), let talk = Self.conversation(transcript: t, limit: limit), !talk.isEmpty {
+        if let t = existing(s.id).flatMap(agentUsage.transcript(of:)), let talk = AgentUsage.conversation(transcript: t, limit: limit), !talk.isEmpty {
             body = talk
         } else {
             let d = try liveSessionOrLog(s.id, bytes: limit)
@@ -44,25 +44,6 @@ extension Daemon {
         let u = dir.appendingPathComponent("\(s.id).md")
         try ("# Previous session (\(s.agent ?? "agent"), \(s.cwd))\n\n" + body + "\n").write(to: u, atomically: true, encoding: .utf8)
         return u
-    }
-
-    /// "## You / ## Claude" turns from a Claude Code transcript, newest kept when it's longer than `limit`.
-    static func conversation(transcript url: URL, limit: Int) -> String? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        var turns: [String] = []
-        for line in data.split(separator: 0x0A) {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], let type = o["type"] as? String,
-                  type == "user" || type == "assistant", let msg = o["message"] as? [String: Any] else { continue }
-            let text: String
-            if let s = msg["content"] as? String { text = s }
-            else { text = ((msg["content"] as? [[String: Any]]) ?? []).compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n") }
-            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty, !t.hasPrefix("<") else { continue }   // tool results and system notes aren't the conversation
-            turns.append("## \(type == "user" ? "You" : "Agent")\n\n\(t)")
-        }
-        var out = turns.joined(separator: "\n\n")
-        if out.count > limit { out = "…\n\n" + String(out.suffix(limit)) }
-        return out
     }
 
     // MARK: keep awake

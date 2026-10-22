@@ -37,7 +37,7 @@ extension Daemon {
     /// Where a session's Claude conversations are: under its profile's config dir when it has one.
     func claudeProjects(_ rec: Session) -> URL {
         rec.profile.flatMap { profile($0, agent: "claude") }.map { URL(fileURLWithPath: $0.dir).appendingPathComponent("projects") }
-            ?? agentHomes.withLock { $0 }.claude
+            ?? agentUsage.agentHomes.withLock { $0 }.claude
     }
 
     /// Account profiles keep each agent login in its own config dir: switching needs no re-login.
@@ -115,7 +115,7 @@ extension Daemon {
         var project: String?
         if let wid = worktreeId, let w = try? store.worktree(wid), let r = try? store.repo(w.repoId),
            AgentTrust.normal(cwd) == AgentTrust.normal(w.path) || AgentTrust.normal(cwd).hasPrefix(AgentTrust.normal(w.path) + "/"),
-           !Self.changesAgentConfig(w.path, base: r.baseBranch) {
+           !AgentConfig.changed(w.path, base: r.baseBranch) {
             project = r.path
         }
         // The config the agent will read: the session's variables over the daemon's own (a kelpd started from a shell
@@ -124,18 +124,6 @@ extension Daemon {
         let expectedAndSettled = !AgentTrust.trusts(agent: m.id, folders: [cwd], env: env)
             && project.map { AgentTrust.trusts(agent: m.id, folders: [$0], env: env) } == true
         return expectedAndSettled ? m : out
-    }
-
-    /// What a trusted folder lets an agent run on its own: hooks, MCP servers, its settings. A branch (someone else's PR)
-    /// that changes these against the base asks the user, though the project is trusted; so does one Kelp can't compare.
-    static let agentConfig = [".claude", ".mcp.json", ".codex", ".gemini", ".cursor"]
-    /// At any depth: a session can start in a folder inside the workspace, and the agent reads that folder's config.
-    static let agentConfigSpecs = agentConfig.flatMap { [":(glob)**/" + $0, ":(glob)**/" + $0 + "/**"] }
-    static func changesAgentConfig(_ path: String, base: String) -> Bool {
-        guard Git.isRevision(base) else { return true }   // a base that reads as an option can't be compared: the user is asked
-        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + agentConfigSpecs, cwd: path)) == nil   // exit 1: differs (base: checked above)
-        let pending = (try? Git.run(["status", "--porcelain", "--"] + agentConfigSpecs, cwd: path))?.isEmpty != true
-        return committed || pending
     }
 
     /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
@@ -212,7 +200,7 @@ extension Daemon {
         }
         notify(s)
         watches.touched(.init(topic: .context, key: s.id), tag: s.status.rawValue, self)   // a turn ended or began: how full now
-        if s.status == .done || s.status == .waiting, let a = s.agent { planUsed(a) }
+        if s.status == .done || s.status == .waiting, let a = s.agent { agentUsage.planUsed(a) }
     }
 
     /// Name a session (and optionally its fresh branch) from the first prompt; a manual title always wins.

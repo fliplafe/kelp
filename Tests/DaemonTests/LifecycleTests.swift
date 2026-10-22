@@ -59,7 +59,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 /// Numbers out of range (a typo on the CLI: `kelp terminal read <id> -1`) are clamped, not a crash that ends every agent.
 @Test func outOfRangeNumbersAreClamped() async throws {
     let (d, c, w, _) = try await project(); defer { d.stop() }
-    d.agentHomes.withLock { $0 = (tmp(), tmp()) }
+    d.agentUsage.agentHomes.withLock { $0 = (tmp(), tmp()) }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "echo hi; sleep 30", "cols": -3, "rows": 70000]),
                                       as: Session.self)
     _ = try await c.call("session.read", .obj(["id": .string(s.id), "bytes": -1]))

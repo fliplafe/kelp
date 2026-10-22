@@ -201,7 +201,12 @@ private func codeOnly(_ s: String) -> String {
     let extensions = try matches(#"^extension Daemon\b"#, in: ["Sources/Daemon"])
     let shared = try matches(#"^(?:private |fileprivate |public )?(?:let|var) \w+|^\s+(?:private |public )?static let \w+ = (?!Logger\()[A-Z]\w*(?:<[^>]*>)?\("#,
                              in: ["Sources/Daemon"])
-    #expect(stored <= 25, "Daemon's stored properties: \(stored)")
-    #expect(extensions.count <= 35, "extensions of Daemon: \(extensions)")
-    #expect(shared.count <= 3, "state outside an instance: \(shared)")
+    #expect(stored <= 20, "Daemon's stored properties: \(stored)")
+    #expect(extensions.count <= 32, "extensions of Daemon: \(extensions)")
+    #expect(shared.count <= 2, "state outside an instance: \(shared)")
+    // A service gets what it uses at init: one that names Daemon reaches back into everything.
+    let services = ["AgentUsage.swift", "UsageProbe.swift", "AgentConfig.swift"]
+    let named = sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } && codeOnly(f.text).contains("Daemon") }
+    #expect(named.map(\.path) == [])
+    #expect(sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } }.count == services.count)
 }

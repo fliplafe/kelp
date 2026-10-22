@@ -106,6 +106,9 @@ line, a dev server's URL, an agent's status change as it happens) are direct cal
 else a `NotificationCenter` name.
 
 ## Concurrency and ordering (the daemon)
+- **Parts.** `Daemon` is the connections, the method registry (`Daemon.methods`) and the services it puts together,
+  each keeping its own state under its own locks and given what it uses at init (none names `Daemon`):
+  `AgentUsage` (what agents leave on disk: conversations, token usage, context windows, plan limits).
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
   files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool; at most
   128 run at once, the rest wait their turn. A quick one (`Handled.quick`: `session.hook`, `session.report`,

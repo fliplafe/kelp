@@ -298,7 +298,7 @@ final class NoteBox: @unchecked Sendable {
     ]
     try FileManager.default.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true)
     try (lines.joined(separator: "\n") + "\n").write(to: f, atomically: true, encoding: .utf8)
-    #expect(Daemon.lastReply(transcript: f) == "Fixed the parser tests.")
+    #expect(AgentUsage.lastReply(transcript: f) == "Fixed the parser tests.")
 }
 
 /// The context ring reads the last real reply, skips subagents and API errors, and drops to what a compaction left.
@@ -310,10 +310,10 @@ final class NoteBox: @unchecked Sendable {
     try write([reply,
                #"{"type":"assistant","isSidechain":true,"message":{"model":"m","usage":{"input_tokens":5}}}"#,
                #"{"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}"#])
-    let c = try #require(Daemon.contextUsage(transcript: f))
+    let c = try #require(AgentUsage.contextUsage(transcript: f))
     #expect(c.used == 250_100 && c.peak == 250_100 && c.model == "m")
     try write([reply, #"{"type":"system","subtype":"compact_boundary","compactMetadata":{"preTokens":260000,"postTokens":40000}}"#])
-    let after = try #require(Daemon.contextUsage(transcript: f))
+    let after = try #require(AgentUsage.contextUsage(transcript: f))
     #expect(after.used == 40_000 && after.peak == 260_000 && after.model == "m")
 }
 
@@ -350,7 +350,7 @@ final class NoteBox: @unchecked Sendable {
         #"{"type":"assistant","message":{"content":[{"type":"text","text":"Done: login.html"}]}}"#
     ]
     try lines.joined(separator: "\n").write(to: u, atomically: true, encoding: .utf8)
-    let brief = try #require(Daemon.conversation(transcript: u, limit: 10_000))
+    let brief = try #require(AgentUsage.conversation(transcript: u, limit: 10_000))
     #expect(brief == "## You\n\nAdd a login page\n\n## Agent\n\nI'll add it.\n\n## Agent\n\nDone: login.html")
 }
 
@@ -492,14 +492,14 @@ final class NoteBox: @unchecked Sendable {
 /// A finished turn moves the agent's plan read up to half a minute away; it never puts a sooner one off.
 @Test func turnEndBringsPlanReadForward() throws {
     let d = try Daemon(root: tmp())
-    let every = try #require(Daemon.planProbes.first { $0.agent == "claude" }).every
-    d.plans.withLock { $0["claude"] = .init(at: Date()) }
-    d.planUsed("claude")
-    let due = try #require(d.plans.withLock { $0 }["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
+    let every = try #require(AgentUsage.planProbes.first { $0.agent == "claude" }).every
+    d.agentUsage.plans.withLock { $0["claude"] = .init(at: Date()) }
+    d.agentUsage.planUsed("claude")
+    let due = try #require(d.agentUsage.plans.withLock { $0 }["claude"]?.at).addingTimeInterval(every).timeIntervalSinceNow
     #expect(due > 25 && due <= 30)
-    d.plans.withLock { $0["claude"]?.at = .distantPast }
-    d.planUsed("claude")
-    #expect(d.plans.withLock { $0 }["claude"]?.at == .distantPast)
+    d.agentUsage.plans.withLock { $0["claude"]?.at = .distantPast }
+    d.agentUsage.planUsed("claude")
+    #expect(d.agentUsage.plans.withLock { $0 }["claude"]?.at == .distantPast)
 }
 
 /// Twice as many stuck git / gh calls as there are cores still leave the daemon answering (they don't hold the cooperative pool).
@@ -520,7 +520,7 @@ final class NoteBox: @unchecked Sendable {
 /// History and usage answer from the agents' folders (empty, then one conversation), now off the cooperative pool.
 @Test func historyAndUsageFromAgentFolders() async throws {
     let d = try Daemon(root: tmp()), home = tmp()
-    d.agentHomes.withLock { $0 = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions")) }
+    d.agentUsage.agentHomes.withLock { $0 = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions")) }
     #expect(try await d.handle("history.list", .null, conn: 0) == .array([]))
     let dir = home.appendingPathComponent("projects/-work-app"), now = ISO8601DateFormatter().string(from: Date())
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

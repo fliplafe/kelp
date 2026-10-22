@@ -23,19 +23,8 @@ public final class Daemon: Sendable {
     // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
-    let usageCache = OSAllocatedUnfairLock<(at: Date, value: UsageGet.Result)?>(initialState: nil)
     let prCache = OSAllocatedUnfairLock<[String: (at: Date, value: GitHub.PullRequest?)]>(initialState: [:])   // "path@branch" → its PR (github.branchPR)
-    /// Claude models with the 1M context window (contextWindow); nil until first asked.
-    let longContextModels = OSAllocatedUnfairLock<Set<String>?>(initialState: nil)
-    /// Claude Code's usage by day / model / folder, read incrementally (usage.report).
-    let usageIndex: UsageIndex
-    /// Where Claude Code and Codex keep their conversations, before the account profiles' (tests set it before the first call).
-    let agentHomes = OSAllocatedUnfairLock(initialState: (claude: ClaudeHistory.defaultRoot, codex: CodexHistory.defaultRoot))
-    /// Latest Claude plan usage by kind ("weekly", "session"…), as printed by Claude Code.
-    let claudeLimits = OSAllocatedUnfairLock<[String: (reading: ClaudeLimits.Reading, at: Date)]>(initialState: [:])
-    /// From the agents' own /usage screens, by agent id (UsageProbe).
-    let plans = OSAllocatedUnfairLock<[String: PlanState]>(initialState: [:])
-    func recordLimits(_ r: [ClaudeLimits.Reading]) { claudeLimits.withLock { for x in r { $0[x.kind] = (x, Date()) } } }
+    let agentUsage: AgentUsage   // what the agents left on disk: conversations, token usage, plan limits
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
@@ -55,7 +44,7 @@ public final class Daemon: Sendable {
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
         self.socketPath = root.appendingPathComponent("kelp.sock").path
         self.settings = SettingsStore(root: root)
-        self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
+        self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store)
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh")
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
@@ -106,7 +95,7 @@ public final class Daemon: Sendable {
         // The usage index reads gigabytes the first time: do it in the background now, not when Usage is opened.
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 30) { [self] in
             let since = Calendar.current.date(byAdding: .day, value: -89, to: Calendar.current.startOfDay(for: Date())) ?? Date()
-            _ = usageIndex.rows(roots: agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
+            _ = agentUsage.usageIndex.rows(roots: agentUsage.agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
         }
         let listenFD: Int32
         do { listenFD = try Unix.listen(socketPath) } catch {
@@ -412,7 +401,7 @@ public final class Daemon: Sendable {
             publish(ls.snapshot); ls.noteTurn(s.status)
             if s.status == .exited { _ = live.remove(ls) }
         }
-        if rec.agent == "claude" { c.limits = { [weak self] r in self?.recordLimits(r) } }
+        if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }
         // Naming follows the session however it started (created, or woken from a pause).
         c.firstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
         if !["shell", "custom"].contains(rec.agent ?? "custom") {

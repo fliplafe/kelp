@@ -233,51 +233,18 @@ extension SessionReport: Handled {
 
 extension SessionContextWindow: Handled {
     func handle(_ d: Daemon) throws -> Usage? {
-        guard let t = d.existing(id).flatMap(d.transcript(of:)), let c = Daemon.contextUsage(transcript: t) else { return nil }
-        return Usage(used: c.used, window: d.contextWindow(model: c.model, peak: c.peak))
+        guard let t = d.existing(id).flatMap(d.agentUsage.transcript(of:)), let c = AgentUsage.contextUsage(transcript: t) else { return nil }
+        return Usage(used: c.used, window: d.agentUsage.contextWindow(model: c.model, peak: c.peak))
     }
 }
 
-extension Daemon {
-    /// Tokens in the context of a Claude Code conversation: the last reply's input (with cache) plus its output, or what a
-    /// newer compaction left. `peak` is the most it held (a compaction's starting size counts), for telling the window.
-    static func contextUsage(transcript url: URL) -> (used: Int, peak: Int, model: String)? {
-        guard let data = tail(of: url, bytes: 1 << 20) else { return nil }   // a turn's tool results can be hundreds of KB
-        var compacted: (pre: Int, post: Int)?
-        for line in data.split(separator: 0x0A).reversed() {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["isSidechain"] as? Bool != true else { continue }
-            if compacted == nil, o["subtype"] as? String == "compact_boundary" {
-                // Without postTokens (older Claude Code) what's left is unknown until the next reply.
-                guard let m = o["compactMetadata"] as? [String: Any], let post = m["postTokens"] as? Int else { return nil }
-                compacted = (m["preTokens"] as? Int ?? 0, post); continue
-            }
-            guard o["type"] as? String == "assistant", let m = o["message"] as? [String: Any], let u = m["usage"] as? [String: Any] else { continue }
-            let used = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"].reduce(0) { $0 + ((u[$1] as? Int) ?? 0) }
-            guard used > 0 else { continue }   // API errors and other synthetic replies carry no usage
-            return (compacted?.post ?? used, max(used, compacted?.pre ?? 0), m["model"] as? String ?? "")
-        }
-        return compacted.map { ($0.post, $0.pre, "") }
-    }
-
-    /// The text of the last assistant message in a Claude Code transcript (read from the file's tail).
-    static func lastReply(transcript url: URL) -> String? {
-        guard let data = tail(of: url, bytes: 262_144) else { return nil }
-        for line in data.split(separator: 0x0A).reversed() {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], o["type"] as? String == "assistant",
-                  let content = (o["message"] as? [String: Any])?["content"] as? [[String: Any]] else { continue }
-            let text = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { return String(text.prefix(4000)) }
-        }
-        return nil
-    }
-
+extension Data {
     /// The file's last `bytes` (all of it when shorter); nil when it can't be opened.
-    static func tail(of url: URL, bytes: Int) -> Data? {
+    init?(tailOf url: URL, bytes: Int) {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }
         let size = (try? h.seekToEnd()) ?? 0
         try? h.seek(toOffset: size > UInt64(bytes) ? size - UInt64(bytes) : 0)
-        return (try? h.readToEnd()) ?? Data()
+        self = (try? h.readToEnd()) ?? Data()
     }
 }

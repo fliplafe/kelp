@@ -6,7 +6,7 @@ import GitKit
 
 /// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok Build, Antigravity). A hidden copy of
 /// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
-extension Daemon {
+extension AgentUsage {
     struct PlanProbe: Sendable {
         let agent: String, command: String, every: TimeInterval
         let ready: @Sendable (String) -> Bool    // its prompt is drawn
@@ -87,8 +87,8 @@ extension Daemon {
     /// come in unseen: a Kelp workspace whose config matches its base branch (the check a launch makes before answering
     /// trust), or any other folder with no agent config at all.
     static func quietFolder(_ dir: String, base: String?) -> Bool {
-        if let base { return !changesAgentConfig(dir, base: base) }
-        return !agentConfig.contains { FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent($0)) }
+        if let base { return !AgentConfig.changed(dir, base: base) }
+        return !AgentConfig.files.contains { FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent($0)) }
     }
 
     /// Where the hidden copy of an agent opens: a folder it already trusts, or it stops at its trust question and `/usage`

@@ -109,7 +109,7 @@ final class LiveSession: Sendable {
     /// The log's own last `ringLimit` bytes, read from the file, become the log: after a wake the ring holds only what was
     /// printed since, and trimming to that would drop most of what the session showed before its pause. Its new size.
     private static func trimmed(_ log: FileHandle?, _ url: URL) -> Int? {
-        guard let log, let tail = Daemon.tail(of: url, bytes: ringLimit) else { return nil }
+        guard let log, let tail = Data(tailOf: url, bytes: ringLimit) else { return nil }
         try? log.truncate(atOffset: 0); try? log.write(contentsOf: tail)
         return tail.count
     }

@@ -352,13 +352,13 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// start in that subfolder, and the agent reads its config there.
 @Test func agentConfigInASubfolderCounts() throws {
     let repo = try makeRepo()
-    #expect(!Daemon.changesAgentConfig(repo, base: "main"))
+    #expect(!AgentConfig.changed(repo, base: "main"))
     try Git.run(["checkout", "-qb", "pr"], cwd: repo)
     try FileManager.default.createDirectory(atPath: repo + "/sub/.claude", withIntermediateDirectories: true)
     try "{}".write(toFile: repo + "/sub/.claude/settings.json", atomically: true, encoding: .utf8)
-    #expect(Daemon.changesAgentConfig(repo, base: "main"))   // not committed yet
+    #expect(AgentConfig.changed(repo, base: "main"))   // not committed yet
     try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "sub config"], cwd: repo)
-    #expect(Daemon.changesAgentConfig(repo, base: "main"))   // committed on the branch
+    #expect(AgentConfig.changed(repo, base: "main"))   // committed on the branch
 }
 
 /// A draft (an issue's brief) to a program that takes no pastes isn't submitted line by line: it arrives as one line,
@@ -452,9 +452,9 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
                      #"New MCP server found in .mcp.json: tools\n\xe2\x9d\xaf 1. Use this and all future MCP servers\n  2. Continue without\n"#] {
         let pressed = tmp().path + "-pressed"
         let script = "stty -icanon -echo; printf '\(question)'; IFS= read -rsn1 k && touch \(pressed); sleep 30"
-        let probe = Daemon.PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
+        let probe = AgentUsage.PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
                                      shown: { $0.contains("% used") }, parse: { _ in [] })
-        let (readings, _) = Daemon.probe(probe, argv: ["/bin/bash", "-c", script], cwd: NSTemporaryDirectory())
+        let (readings, _) = AgentUsage.probe(probe, argv: ["/bin/bash", "-c", script], cwd: NSTemporaryDirectory())
         #expect(readings.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: pressed), "a key reached: \(question)")
     }
@@ -566,7 +566,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     try Git.run(["clone", "-q", "--", origin, clone], cwd: "/tmp")
     #expect(Git.defaultBranch(repo: clone) != "--output=" + victim && !Git.defaultBranch(repo: clone).hasPrefix("-"))
     #expect(throws: GitError.self) { try Git.currentBranch(clone) }
-    #expect(Daemon.changesAgentConfig(clone, base: evil))   // refused: asked, not compared
+    #expect(AgentConfig.changed(clone, base: evil))   // refused: asked, not compared
     let w = try await world(); defer { w.d.stop() }
     let repo: Repo = try await w.c.call("repo.add", .obj(["path": .string(clone)]), as: Repo.self)
     #expect(!repo.baseBranch.hasPrefix("-"))

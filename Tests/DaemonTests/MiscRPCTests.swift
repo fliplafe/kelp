@@ -83,7 +83,7 @@ func trustQuestionStandIn() -> String {
 
 @Test func planLimitsAreReadInAFolderTheAgentAlreadyTrusts() {
     func pick(_ used: [String], _ trusted: [String], usable: Set<String>? = nil) -> String? {
-        Daemon.probeFolder(used: used, trusted: trusted, remoteRoot: "/h/.kelp/remote", home: "/h") { usable?.contains($0) ?? true }
+        AgentUsage.probeFolder(used: used, trusted: trusted, remoteRoot: "/h/.kelp/remote", home: "/h") { usable?.contains($0) ?? true }
     }
     // A trusted folder in Documents, Desktop… that Kelp never opened isn't touched: macOS would ask for it out of nowhere.
     #expect(pick([], ["/h/Documents/app", "/h/Desktop/x", "/Volumes/usb/y", "/p/web"]) == "/p/web")
@@ -515,16 +515,16 @@ func trustQuestionStandIn() -> String {
 /// The hidden usage probe opens no folder whose agent config (hooks, MCP servers) came in unseen.
 @Test func theUsageProbeAvoidsFoldersWithNewAgentConfig() throws {
     let repo = try makeRepo()
-    #expect(Daemon.quietFolder(repo, base: "main"))                       // config as on main
+    #expect(AgentUsage.quietFolder(repo, base: "main"))                       // config as on main
     try Git.run(["checkout", "-qb", "pr"], cwd: repo)
     try FileManager.default.createDirectory(atPath: repo + "/.claude", withIntermediateDirectories: true)
     try #"{"hooks":{"SessionStart":[]}}"#.write(toFile: repo + "/.claude/settings.json", atomically: true, encoding: .utf8)
-    #expect(!Daemon.quietFolder(repo, base: "main"))                      // not committed yet
+    #expect(!AgentUsage.quietFolder(repo, base: "main"))                      // not committed yet
     try Git.run(["add", "."], cwd: repo); try Git.run(["commit", "-qm", "hook"], cwd: repo)
-    #expect(!Daemon.quietFolder(repo, base: "main"))                      // committed on the branch
+    #expect(!AgentUsage.quietFolder(repo, base: "main"))                      // committed on the branch
     // A folder Kelp has no base for: only one without agent config.
     let plain = tmp().path
-    #expect(Daemon.quietFolder(plain, base: nil))
+    #expect(AgentUsage.quietFolder(plain, base: nil))
     try "{}".write(toFile: plain + "/.mcp.json", atomically: true, encoding: .utf8)
-    #expect(!Daemon.quietFolder(plain, base: nil))
+    #expect(!AgentUsage.quietFolder(plain, base: nil))
 }
