@@ -29,4 +29,6 @@ cat > dist/appcast.xml <<EOF
 </rss>
 EOF
 git tag "v$V" && git push -q origin "v$V"   # the commit the DMG was built from
-gh release create "v$V" dist/Kelp.dmg dist/appcast.xml --verify-tag --title "Kelp $V" --generate-notes
+# Labels on the page (the URLs keep the file names): appcast.xml sorts first, and people took it for the app.
+gh release create "v$V" "dist/Kelp.dmg#Kelp $V for macOS (download this)" "dist/appcast.xml#Update feed (read by the app, not a download)" \
+  --verify-tag --title "Kelp $V" --notes "**Download: [Kelp.dmg]($REPO/releases/download/v$V/Kelp.dmg)** (macOS 14+)." --generate-notes
