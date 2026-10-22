@@ -95,3 +95,14 @@ import Agents
     #expect(!fm.fileExists(atPath: orphan.path))
     #expect(fm.fileExists(atPath: fresh.path))   // a session being created writes its log before its record
 }
+
+/// An agent asked for while the daemon stops isn't started: its pause has passed, so it would run on after the daemon
+/// with nobody to pause it, and a wake later would start a second copy.
+@Test func nothingStartsWhileTheDaemonStops() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await desk(w, "stopping")
+    w.d.sessions.pauseAll()
+    await #expect(throws: RPCError.self) { _ = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "exec sleep 30")) }
+    #expect(try w.d.store.sessions().isEmpty)
+    #expect(w.d.sessions.live.all.isEmpty)
+}

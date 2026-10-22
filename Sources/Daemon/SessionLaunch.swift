@@ -138,7 +138,7 @@ extension Sessions {
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows, callbacks: callbacks(for: rec))
         if rec.tmux != nil { ls.attachedToRunning() }
-        live.add(ls)
+        do { try live.add(ls) } catch { ls.discard(); ls.start(); throw error }   // its record stays paused
         publish(ls.snapshot)
         ls.start()
         return ls

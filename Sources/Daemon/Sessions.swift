@@ -112,7 +112,7 @@ final class Sessions: Sendable {
         let sid = rec.id
         // The record first: a program nobody has a record of could be neither seen nor stopped.
         do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
-        live.add(ls)
+        do { try live.add(ls) } catch { ls.discard(); ls.start(); try? store.delete(rec); throw error }
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
@@ -191,10 +191,10 @@ final class Sessions: Sendable {
     }
 
     /// Every running one, as the daemon stops: paused (a resumable agent comes back paused, not as a second copy) or
-    /// ended, its whole tree gone before this returns.
+    /// ended, its whole tree gone before this returns. None starts or wakes from now on.
     func pauseAll() {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        Self.waitGone(live.all.flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] })
+        Self.waitGone(live.close().flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] })
     }
 
     // MARK: keep awake
