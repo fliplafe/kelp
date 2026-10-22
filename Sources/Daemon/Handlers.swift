@@ -161,7 +161,7 @@ extension DaemonInfo: Handled {
     func handle(_ d: Daemon) throws -> Result {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
-                      liveSessions: d.live.all.filter { $0.snapshot.status != .exited }.count)
+                      liveSessions: d.sessions.live.all.filter { $0.snapshot.status != .exited }.count)
     }
 }
 
@@ -228,17 +228,17 @@ extension SessionReport: Handled {
     static var quick: Bool { true }   // `kelp report`: the agent waits for it
     func handle(_ d: Daemon) throws -> Done {
         guard ProgramStatus.states.contains(state) else { throw RPCError.invalidParams("state is one of idle, working, blocked, done, error, clear") }
-        guard let ls = d.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
+        guard let ls = d.sessions.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
         let r = ProgramStatus.Report(state: state, kind: state == "blocked" ? kind : nil, msg: message,
                                      progress: state == "working" ? progress.map { min(100, max(0, $0)) } : nil)
-        if ls.report(r) != nil { d.publish(ls) }
+        if ls.report(r) != nil { d.sessions.publish(ls) }
         return Done()
     }
 }
 
 extension SessionContextWindow: Handled {
     func handle(_ d: Daemon) throws -> Usage? {
-        guard let t = d.existing(id).flatMap(d.agentUsage.transcript(of:)), let c = AgentUsage.contextUsage(transcript: t) else { return nil }
+        guard let t = d.sessions.existing(id).flatMap(d.agentUsage.transcript(of:)), let c = AgentUsage.contextUsage(transcript: t) else { return nil }
         return Usage(used: c.used, window: d.agentUsage.contextWindow(model: c.model, peak: c.peak))
     }
 }

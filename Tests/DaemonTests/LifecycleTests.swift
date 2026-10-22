@@ -23,7 +23,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     let (d, c, w, _) = try await project(); defer { d.stop() }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "echo last-words"]), as: Session.self)
     #expect(try await waitFor { try await status(c, s.id) == .exited })
-    #expect(try await waitFor { d.existing(s.id) == nil })
+    #expect(try await waitFor { d.sessions.existing(s.id) == nil })
     let h = try await c.call("session.attach", .obj(["id": .string(s.id)]))
     let screen = String(bytes: Data(base64Encoded: h["history"]?.string ?? "") ?? Data(), encoding: .utf8) ?? ""
     #expect(screen.contains("last-words"))
@@ -35,7 +35,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 @Test func restartLeavesNoGhost() async throws {
     let (d, c, w, root) = try await project(); defer { d.stop() }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "sleep 30"]), as: Session.self)
-    let old = try #require(d.existing(s.id))
+    let old = try #require(d.sessions.existing(s.id))
     let r: Session = try await c.call("session.restart", .obj(["id": .string(s.id)]), as: Session.self)
     #expect(try await waitFor(10) { kill(s.pid, 0) != 0 })   // the old program is gone
     // Its exit handled (the old session says exited) and everything that queued (a save, an event) done: then nothing

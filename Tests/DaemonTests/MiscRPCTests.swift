@@ -198,7 +198,7 @@ func trustQuestionStandIn() -> String {
     let w = try await world(agents: [AgentManifest(id: "claude-like", name: "Agent", command: "/bin/cat")]); defer { w.d.stop() }
     let wt = try await desk(w, "turns")
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "claude-like"]), as: Session.self)
-    let live = try #require(w.d.existing(s.id))
+    let live = try #require(w.d.sessions.existing(s.id))
     live.noteTurn(.working)                                              // turn 1: changes a file
     #expect(try await waitFor(5) { live.turnBase != nil })
     try "changed\n".write(toFile: wt.path + "/a.txt", atomically: true, encoding: .utf8)

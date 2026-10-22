@@ -76,7 +76,7 @@ extension Daemon {
     func settingsChanged() {
         settingsEvents.async { [self] in
             notify(SettingsEvent(settings: settings.values))
-            applyKeepAwake()
+            sessions.applyKeepAwake()
         }
     }
 

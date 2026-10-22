@@ -113,7 +113,8 @@ else a `NotificationCenter` name.
   each keeping its own state under its own locks and given what it uses at init (none names `Daemon`):
   `AgentUsage` (what agents leave on disk: conversations, token usage, context windows, plan limits), `Forges` (pull
   requests by branch, running clones, the trackers' clients and their keychain secrets), `Workspaces` (desks, the
-  branches they follow, the `.kelp.yaml` files the user trusts).
+  branches they follow, the `.kelp.yaml` files the user trusts), `Watches` (what clients watch, read through a hook the
+  daemon sets), `Sessions` (which run, starting, waking, pausing and deleting them, their tmux, keeping the Mac awake).
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
   files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool; at most
   128 run at once, the rest wait their turn. A quick one (`Handled.quick`: `session.hook`, `session.report`,
@@ -133,7 +134,7 @@ else a `NotificationCenter` name.
   connection) gets no broadcasts.
 - **Writes to a client** leave in order from that connection's own queue. A client whose writes make no progress for
   30 s is hung up on, and so is one more than 256 MiB behind.
-- **Locks**, outermost first: a session's wake lock (`WakeLocks`; several are taken in id order) → `SessionTable` →
+- **Locks**, outermost first: a session's wake lock (`Sessions.wakeLocks`; several are taken in id order) → `Sessions.live` →
   `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another session's is taken.
   Everything about a session that changes is one struct (`LiveSession.State`) under that lock, touched only inside
   `withLock`, so the compiler checks it; what it tells the daemon (`LiveSession.Callbacks`) is fixed at launch.

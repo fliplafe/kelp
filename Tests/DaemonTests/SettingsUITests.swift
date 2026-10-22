@@ -96,8 +96,8 @@ final class EventBox: @unchecked Sendable {
     }
     let root = tmp()
     let d = try Daemon(root: root)
-    _ = try d.settings.set("power.keepAwake", .string("always")); d.applyKeepAwake()
+    _ = try d.settings.set("power.keepAwake", .string("always")); d.sessions.applyKeepAwake()
     #expect(held() == [kIOPMAssertPreventUserIdleDisplaySleep])
-    _ = try d.settings.set("power.keepAwake", .string("off")); d.applyKeepAwake()
+    _ = try d.settings.set("power.keepAwake", .string("off")); d.sessions.applyKeepAwake()
     #expect(held().isEmpty)
 }

@@ -5,7 +5,7 @@ import Agents
 import AgentData
 import Integrations
 
-extension Daemon.Launch {
+extension Sessions.Launch {
     init(_ o: some LaunchOptions) {
         self.init()
         model = o.model; effort = o.effort; prompt = o.prompt; title = o.title; profile = o.profile
@@ -20,7 +20,7 @@ extension SessionCreate: Handled {
         var dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
         if let worktreeId, dir == nil { dir = try d.cwd(forWorktree: worktreeId).path }
         guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
-        var o = Daemon.Launch(self)
+        var o = Sessions.Launch(self)
         if let tmux {   // a terminal running tmux: the record keeps the argv that attaches again (Tmux.session)
             let name = Tmux.name(tmux)
             guard !name.isEmpty else { throw RPCError.invalidParams("Name the tmux session.") }
@@ -30,7 +30,7 @@ extension SessionCreate: Handled {
                   RemoteHost.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
             o.argv = Tmux.argv(Tmux.own())   // a terminal in a tmux session of its own, which ends with it (Tmux.isOwn)
         }
-        return try d.spawn(cwd: dir, manifest: d.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
+        return try d.sessions.spawn(cwd: dir, manifest: d.sessions.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
                                  worktreeId: worktreeId, o)
     }
 }
@@ -42,22 +42,22 @@ extension SessionRestart: Handled {
         // Under its wake lock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
         // If the new one can't start, the old one still ends as Ended. The record is read there, as it is then (a rename
         // just before is kept, in it and in the new session's title).
-        let old: Session = try d.wakeLocks.withLock(id) {
-            if let ls = d.existing(id) { Daemon.waitGone(ls.pty.terminate()) }
+        let old: Session = try d.sessions.wakeLocks.withLock(id) {
+            if let ls = d.sessions.existing(id) { Sessions.waitGone(ls.pty.terminate()) }
             else { try d.store.update(Session.self, id) { if $0.status == .hibernated { $0.status = .exited } } }
             guard let s = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
             return s
         }
-        let m = try d.manifest(old.agent, command: nil, fallbackArgv: old.argv)
-        var o = Daemon.Launch(self); o.title = old.titleManual ? old.title : nil
+        let m = try d.sessions.manifest(old.agent, command: nil, fallbackArgv: old.argv)
+        var o = Sessions.Launch(self); o.title = old.titleManual ? old.title : nil
         if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
         // A remote agent still running in its tmux session on the host: the new tab attaches to it (after a dropped
         // connection, that's all a restart is), so there's still one copy. Starting afresh ends it.
         if resume != false { o.tmux = old.tmux }
         // The new session pins an id of its own, never the old one's.
-        o.argv = Daemon.withoutSessionId(resume != false ? d.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
-        let s = try d.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
-        d.discard(old, keepTmux: old.tmux == nil || resume != false)   // its exit, still to come, doesn't save it again
+        o.argv = Daemon.withoutSessionId(resume != false ? d.sessions.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
+        let s = try d.sessions.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
+        d.sessions.discard(old, keepTmux: old.tmux == nil || resume != false)   // its exit, still to come, doesn't save it again
         return s
     }
 }
@@ -68,11 +68,11 @@ extension SessionHandoff: Handled {
         // The brief is a file on this Mac: an agent on a remote host couldn't read it.
         if RemoteHost.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
         let transcript = try d.handoffFile(old, full: full == true)
-        var o = Daemon.Launch(self)
+        var o = Sessions.Launch(self)
         o.prompt = "Read \(transcript.path) — the transcript of the previous agent session in this project. "
             + (prompt ?? "Continue the task where the previous agent left off.")
         o.title = (old.title.isEmpty ? (old.agent ?? "agent") : old.title) + " (handoff)"
-        return try d.spawn(cwd: old.cwd, manifest: d.manifest(agent ?? old.agent, command: nil), worktreeId: old.worktreeId, o)
+        return try d.sessions.spawn(cwd: old.cwd, manifest: d.sessions.manifest(agent ?? old.agent, command: nil), worktreeId: old.worktreeId, o)
     }
 }
 
@@ -85,10 +85,10 @@ extension HistoryResume: Handled {
             wid = try d.store.worktrees().first { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == real }?.id
         }
         guard FileManager.default.fileExists(atPath: cwd) else { throw RPCError.invalidParams("the session's folder no longer exists: \(cwd)") }
-        var o = Daemon.Launch(self); o.title = s.title.isEmpty ? "Resumed \(s.agent.rawValue)" : s.title
-        var m = try d.manifest(s.agent.rawValue, command: nil)
+        var o = Sessions.Launch(self); o.title = s.title.isEmpty ? "Resumed \(s.agent.rawValue)" : s.title
+        var m = try d.sessions.manifest(s.agent.rawValue, command: nil)
         m.args += Array(History.resumeCommand(for: s).dropFirst())
-        return try d.spawn(cwd: cwd, manifest: m, worktreeId: wid, o)
+        return try d.sessions.spawn(cwd: cwd, manifest: m, worktreeId: wid, o)
     }
 }
 
@@ -96,9 +96,9 @@ extension HistoryResume: Handled {
 extension SessionHook: Handled {
     static var quick: Bool { true }   // the agent waits for its hook
     func handle(_ d: Daemon) throws -> Done {
-        guard let ls = d.existing(id) else { return Done() }
-        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; d.follow(ls, transcript: transcript) }
-        if let cwd, ls.workIn(cwd) != nil { d.publish(ls) }
+        guard let ls = d.sessions.existing(id) else { return Done() }
+        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; d.sessions.follow(ls, transcript: transcript) }
+        if let cwd, ls.workIn(cwd) != nil { d.sessions.publish(ls) }
         if let notification, Hooks.isIdleReminder(notification) { return Done() }
         guard let event else { throw RPCError.invalidParams("missing event") }
         let background = Hooks.hasBackgroundWork(.obj(["background_tasks": .array(backgroundTasks ?? [])]))
@@ -110,8 +110,8 @@ extension SessionHook: Handled {
 extension SessionAnnotate: Handled {
     static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
-        guard let ls = d.existing(id) else { return Done() }
-        if let summary { _ = ls.update { $0.summary = summary }; d.publish(ls) }
+        guard let ls = d.sessions.existing(id) else { return Done() }
+        if let summary { _ = ls.update { $0.summary = summary }; d.sessions.publish(ls) }
         if let st = status.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
         return Done()
     }
@@ -147,7 +147,7 @@ extension AgentsVersions: AsyncHandled {
             for m in manifests {
                 g.addTask {
                     try? await d.offload { () -> Item? in
-                        let path = d.childPath   // the login shell's PATH: the first read waits for the shell
+                        let path = Sessions.childPath   // the login shell's PATH: the first read waits for the shell
                         guard let exe = try? LoginPath.resolve(m.command) else { return nil }
                         let v = Daemon.run([exe, "--version"], path: path, timeout: 4).flatMap(Daemon.semver)
                         let npm = try? LoginPath.resolve("npm")
@@ -184,12 +184,12 @@ extension TaskFromIssue: AsyncHandled {
             let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
             var text = cfg.issueCommand.map { Recipes.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
-            var o = Daemon.Launch()
+            var o = Sessions.Launch()
             // Typed, not sent, unless asked: the issue's text is whoever filed it, not the user (it could tell the agent anything).
             o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
-            (o.cols, o.rows) = Daemon.Launch.size(cols: cols, rows: rows)
+            (o.cols, o.rows) = Sessions.Launch.size(cols: cols, rows: rows)
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
-            return (w, try d.spawn(cwd: w.path, manifest: d.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
+            return (w, try d.sessions.spawn(cwd: w.path, manifest: d.sessions.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
         }
         await d.forges.moveLinear(w, to: .inProgress)
         await d.forges.moveJira(w, toName: "progress", category: "indeterminate")
@@ -216,7 +216,7 @@ extension ProcessRun: Handled {
         if let extensionId { try d.requireEnabledExtension(extensionId) }
         // What sessions get (PATH with `kelp` on it, this home), minus the markers of whatever started the daemon.
         var env = ProcessInfo.processInfo.environment.filter { k, _ in !PTY.scrubbed.contains { k.hasPrefix($0) } }
-        env["PATH"] = d.childPath; env["KELP_HOME"] = d.root.path; env["KELP_SOCKET"] = d.socketPath
+        env["PATH"] = Sessions.childPath; env["KELP_HOME"] = d.root.path; env["KELP_SOCKET"] = d.socketPath
         let dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? NSHomeDirectory()
         let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)),
                                    limit: Self.outputLimit)

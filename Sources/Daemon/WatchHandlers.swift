@@ -41,7 +41,7 @@ extension Daemon {
         case .context:
             // A 1 MB transcript tail: while the agent works, and when its status changes (`touched`).
             let usage = try? await ask(SessionContextWindow(id: k.key))
-            let working = existing(k.key)?.snapshot.status == .working
+            let working = sessions.existing(k.key)?.snapshot.status == .working
             return (line(ContextEvent(session: k.key, usage: usage ?? nil)), working ? 15 : nil)
         case .limits:
             // From memory (the probes read the plans on their own clock): cheap.

@@ -59,7 +59,7 @@ extension RepoRemove: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let desks = Set(try d.store.worktrees(repo: r.id).map(\.id))
-        for s in try d.store.sessions() where desks.contains(s.worktreeId ?? "") { d.discard(s) }
+        for s in try d.store.sessions() where desks.contains(s.worktreeId ?? "") { d.sessions.discard(s) }
         try d.store.delete(r); d.notify(ChangedEvent.repo)
         return Done()
     }
@@ -90,7 +90,7 @@ extension WorktreeCreate: Handled {
             Git.linkShared(cfg.shared, repo: r.path, worktree: path)
             if tabs != false {
                 for t in cfg.tabs {
-                    do { _ = try d.spawn(cwd: path, manifest: d.manifest(t, command: nil), worktreeId: w.id) }
+                    do { _ = try d.sessions.spawn(cwd: path, manifest: d.sessions.manifest(t, command: nil), worktreeId: w.id) }
                     catch { Log.session.error(".kelp.yaml tab \(t, privacy: .public) didn't start: \(error)") }
                 }
             }
@@ -99,8 +99,8 @@ extension WorktreeCreate: Handled {
         if asks, setup != false, !read.trusted {
             result.setupNeedsTrust = true   // the app asks, then scripts.trust + scripts.run "setup"
         } else if let cmd = cfg.setup, setup != false {
-            var o = Daemon.Launch(); o.title = "setup"
-            let s = try d.spawn(cwd: path, manifest: .custom(cmd), worktreeId: w.id, o)
+            var o = Sessions.Launch(); o.title = "setup"
+            let s = try d.sessions.spawn(cwd: path, manifest: .custom(cmd), worktreeId: w.id, o)
             result.setupSession = s.id
         }
         d.notify(ChangedEvent.worktree)
@@ -129,12 +129,12 @@ extension WorktreeRemove: Handled {
             // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
             // writing can't have its work deleted under it.
             try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
-            try d.pauseSessions(of: w.id)
+            try d.sessions.pauseSessions(of: w.id)
             try Git.removeWorktree(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop)
         } else {
-            try d.pauseSessions(of: w.id)
+            try d.sessions.pauseSessions(of: w.id)
         }
-        for s in try d.store.sessions() where s.worktreeId == w.id { d.discard(s) }
+        for s in try d.store.sessions() where s.worktreeId == w.id { d.sessions.discard(s) }
         try d.store.delete(w)
         d.notify(ChangedEvent.worktree)
         return Done()
@@ -166,7 +166,7 @@ extension Daemon {
         if workspaces.isMain(w, r), try store.worktrees(repo: r.id).filter({ workspaces.isMain($0, r) && !$0.archived }).count < 2 {
             throw RPCError.invalidParams("A project keeps at least one workspace.")
         }
-        try pauseSessions(of: w.id)
+        try sessions.pauseSessions(of: w.id)
         try store.update(Worktree.self, w.id) { $0.archived = true }
         notify(ChangedEvent.worktree)
     }
@@ -175,7 +175,7 @@ extension Daemon {
         guard try store.worktrees(repo: r.id).filter({ workspaces.isMain($0, r) }).count > 1 else {
             throw RPCError.invalidParams("A project keeps at least one workspace; remove the project instead.")
         }
-        for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
+        for s in try store.sessions() where s.worktreeId == w.id { sessions.discard(s) }
         try store.delete(w)
         notify(ChangedEvent.worktree)
     }

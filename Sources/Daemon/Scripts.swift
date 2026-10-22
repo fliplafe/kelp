@@ -83,8 +83,8 @@ extension ScriptsRun: Handled {
         guard let s = cfg.scripts.first(where: { $0.name == name }) ?? cfg.setup.flatMap({ name == "setup" ? .init(name: name, command: $0) : nil }) else {
             throw RPCError.invalidParams("No “\(name)” command in .kelp.yaml.")
         }
-        var o = Daemon.Launch(); o.title = name
-        return try d.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o)
+        var o = Sessions.Launch(); o.title = name
+        return try d.sessions.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o)
     }
 }
 

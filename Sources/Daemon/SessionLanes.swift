@@ -47,25 +47,18 @@ protocol SessionInput: Handled {
 extension SessionInput {
     /// Off the reader thread (another handler, a test): here, in order with the session's other input.
     func handle(_ d: Daemon) throws -> Result {
-        if d.lanes.isClear(id), let ls = d.existing(id) { return try apply(to: ls) }
-        try d.mustWake(id)
-        return try d.lanes.runHere(id) { try apply(to: d.liveSession(id)) }
+        if d.sessions.lanes.isClear(id), let ls = d.sessions.existing(id) { return try apply(to: ls) }
+        try d.sessions.mustWake(id)
+        return try d.sessions.lanes.runHere(id) { try apply(to: d.sessions.liveSession(id)) }
     }
 
     /// On the connection's reader thread: `done` with the reply's result, now or from the lane.
     static func answerInOrder(_ p: JSONValue, _ d: Daemon, done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
         do {
             let m = try decoded(p)
-            if d.lanes.isClear(m.id), let ls = d.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
-            try d.mustWake(m.id)
-            d.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: d.liveSession(m.id))) }) }
+            if d.sessions.lanes.isClear(m.id), let ls = d.sessions.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
+            try d.sessions.mustWake(m.id)
+            d.sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: d.sessions.liveSession(m.id))) }) }
         } catch { done(.failure(error)) }
-    }
-}
-
-extension Daemon {
-    /// Not running: it has to be paused, to be woken for input.
-    func mustWake(_ id: String) throws {
-        guard try existing(id) != nil || store.session(id)?.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
     }
 }

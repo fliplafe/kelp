@@ -215,7 +215,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 
     /// Hangup and SIGTERM to the program and everything it started (a server in a shell's job too), then SIGKILL to
     /// whatever is still there after `grace` seconds (some TUIs ignore SIGTERM, servers treat SIGHUP as "reload").
-    /// Returns them all, for `Daemon.waitGone`.
+    /// Returns them all, for `Sessions.waitGone`.
     /// Limit: a descendant's pid could be reused within `grace`; checking start times would rule that out.
     @discardableResult
     public func terminate(grace: TimeInterval = 2) -> [pid_t] {

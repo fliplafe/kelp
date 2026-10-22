@@ -104,9 +104,9 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let w = try await world(); defer { w.d.stop() }
     let wt = try await desk(w, "deleted")
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "sleep 30"]), as: Session.self)
-    let last = try #require(w.d.existing(s.id)?.snapshot)
-    w.d.discard(s)
-    w.d.publish(last)   // late: a title or status change that looked the session up before it went
+    let last = try #require(w.d.sessions.existing(s.id)?.snapshot)
+    w.d.sessions.discard(s)
+    w.d.sessions.publish(last)   // late: a title or status change that looked the session up before it went
     #expect(try w.d.store.session(s.id) == nil)
 }
 
@@ -255,7 +255,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sleepy2"]), as: Session.self)
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
     _ = try await w.c.call("session.resize", .obj(["id": .string(s.id), "cols": 100, "rows": 30]))   // as a request: answered after it ran
-    #expect(w.d.existing(s.id) == nil)
+    #expect(w.d.sessions.existing(s.id) == nil)
     #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
 }
 
@@ -281,7 +281,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     projects[w.repo.path] = ["hasTrustDialogAccepted": true]
     config["projects"] = projects
     try JSONSerialization.data(withJSONObject: config).write(to: URL(fileURLWithPath: file))
-    let answered = w.d.trustAnswered(claude, cwd: wt.path, worktreeId: wt.id, env: [:])   // no profile: the daemon's config
+    let answered = w.d.sessions.trustAnswered(claude, cwd: wt.path, worktreeId: wt.id, env: [:])   // no profile: the daemon's config
     #expect(answered.autoAnswers.contains(AgentManifest.trust))
 }
 
@@ -339,8 +339,8 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "chatty"]), as: Session.self)
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
     w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("go\r".utf8).base64EncodedString())]))   // its heuristics on
-    #expect(try await waitFor(10) { w.d.existing(s.id)?.snapshot.status == .working })
-    let ls = try #require(w.d.existing(s.id))
+    #expect(try await waitFor(10) { w.d.sessions.existing(s.id)?.snapshot.status == .working })
+    let ls = try #require(w.d.sessions.existing(s.id))
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
     #expect(try await waitFor(10) { ls.hasEnded })   // its last words and exit handled
     await withCheckedContinuation { done in ls.inOrder { done.resume() } }   // and any status change that queued
@@ -387,7 +387,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
     #expect(try await waitFor(10) { try await screen().contains("rm -rf") })   // the draft, typed
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "and also this"]))   // `kelp send`, with Enter
-    let ls = try #require(w.d.existing(s.id))
+    let ls = try #require(w.d.sessions.existing(s.id))
     for _ in 0..<3 { await withCheckedContinuation { c in ls.inOrder { c.resume() } }; ls.tick() }   // ticks that could deliver it
     #expect(!(try await screen()).contains("GOT["))   // nothing submitted
     w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("\r".utf8).base64EncodedString())]))   // the user sends it
@@ -408,7 +408,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(a.id)]))).string?.contains("up") == true })
     _ = try await w.c.call("worktree.archive", .obj(["id": .string(other.id)]))   // b paused
     _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(other.id)]))
-    let la = try #require(w.d.existing(a.id))
+    let la = try #require(w.d.sessions.existing(a.id))
     let archiving = Task { try await w.c.call("worktree.archive", .obj(["id": .string(slow.id)])) }   // ~2 s: a ignores SIGTERM
     #expect(try await waitFor(10) { String(decoding: la.tail(4000), as: UTF8.self).contains("STOPPING") })   // under way, its lock held
     _ = try await w.c.call("session.attach", .obj(["id": .string(b.id)]))   // wakes b

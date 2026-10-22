@@ -79,7 +79,7 @@ import Agents
 /// Sessions that ended over a week ago go, records and logs, and logs nobody's record names; paused and newer ones stay.
 @Test func endedSessionsGoAfterAWeek() throws {
     let (d, _, root) = try daemon(); defer { d.stop() }
-    let week = Daemon.keepEnded, history = root.appendingPathComponent("history"), fm = FileManager.default
+    let week = Sessions.keepEnded, history = root.appendingPathComponent("history"), fm = FileManager.default
     try fm.createDirectory(at: history, withIntermediateDirectories: true)
     let old = Session(cwd: "/tmp", command: "x", status: .exited, createdAt: Date() - week - 3600)
     var recent = Session(cwd: "/tmp", command: "x", status: .exited, createdAt: Date() - week - 3600); recent.statusAt = Date() - 3600
@@ -88,7 +88,7 @@ import Agents
     let orphan = history.appendingPathComponent("orphan.log"), fresh = history.appendingPathComponent("fresh.log")
     try Data().write(to: orphan); try Data().write(to: fresh)
     try fm.setAttributes([.modificationDate: Date() - 2 * 86400], ofItemAtPath: orphan.path)
-    d.pruneEnded()
+    d.sessions.pruneEnded()
     #expect(try d.store.sessions().map(\.id).sorted() == [recent.id, paused.id].sorted())
     #expect(!fm.fileExists(atPath: history.appendingPathComponent("\(old.id).log").path))
     #expect(fm.fileExists(atPath: history.appendingPathComponent("\(recent.id).log").path))

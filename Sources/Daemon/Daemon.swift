@@ -11,7 +11,6 @@ public final class Daemon: Sendable {
     public let store: Store
     let socketPath: String
     let root: URL
-    let live = SessionTable()
     let clients = Clients()
     /// What start() opens and stop() closes: the socket, the flock on kelpd.lock (one daemon per KELP_HOME), the sources.
     private struct Running: @unchecked Sendable {   // the sources are only set up and cancelled, under `running`'s lock
@@ -20,17 +19,12 @@ public final class Daemon: Sendable {
     }
     private let running = OSAllocatedUnfairLock(initialState: Running())
     let settings: SettingsStore
-    // Each under a lock of its own (not `lock`, which guards the sessions and connections): nothing else depends on them.
-    /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
-    let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
     let agentUsage: AgentUsage   // what the agents left on disk: conversations, token usage, plan limits
-    let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
-    let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
     let forges: Forges   // pull requests by branch, running clones, the trackers' clients
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
     let watches: Watches   // what clients watch (watch.start), read while anyone does and pushed when it changed
-    let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
+    let sessions: Sessions   // which run, starting, waking, pausing and deleting them
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
     let workspaces: Workspaces   // desks, the branches they follow, the .kelp.yaml files the user trusts
 
@@ -45,6 +39,8 @@ public final class Daemon: Sendable {
         self.forges = Forges(offloads: offloads)
         self.workspaces = Workspaces(root: root, store: self.store, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
         self.watches = Watches(store: self.store, clients: clients)
+        self.sessions = Sessions(root: root, socketPath: socketPath, store: self.store, settings: settings, agentUsage: agentUsage,
+                                 clients: clients, watches: watches)
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh")
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
@@ -60,11 +56,6 @@ public final class Daemon: Sendable {
                 }
             }
         }
-    }
-
-    /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
-    var childPath: String {
-        [Bundle.main.executableURL?.deletingLastPathComponent().path ?? "", LoginPath.value].filter { !$0.isEmpty }.joined(separator: ":")
     }
 
     /// When this binary was built; the app compares it with the kelpd it ships to spot a stale daemon after an update.
@@ -86,7 +77,7 @@ public final class Daemon: Sendable {
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
         do {
             for var s in try store.sessions() where s.status != .exited {
-                s.status = Self.resumable(s, manifests) ? .hibernated : .exited
+                s.status = Sessions.resumable(s, manifests) ? .hibernated : .exited
                 s.progress = nil   // what ran there isn't getting any further
                 try store.save(s)
             }
@@ -118,10 +109,10 @@ public final class Daemon: Sendable {
         }
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in live.all.forEach { $0.tick() }; applyKeepAwake(); hibernateIdle(); pollSettings() }
+        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle(); pollSettings() }
         let prune = DispatchSource.makeTimerSource(queue: .global(qos: .background))
         prune.schedule(deadline: .now() + 60, repeating: 86400)   // ended sessions past `keepEnded`
-        prune.setEventHandler { [self] in pruneEnded() }
+        prune.setEventHandler { [self] in sessions.pruneEnded() }
         running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t; $0.prune = prune }
         src.resume(); t.resume(); prune.resume()
         workspaces.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.workspaces.followHeads() } }   // not once stopped
@@ -135,9 +126,7 @@ public final class Daemon: Sendable {
         if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
         // Every program ends with the daemon, whole trees (a job in a process group of its own, an agent that ignores the
         // hangup), each recorded as pausing records it: a resumable agent comes back paused, not as a second copy.
-        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        let pids = live.all.flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] }
-        Self.waitGone(pids)
+        sessions.pauseAll()
         lsp.stopAll()
         watches.stopAll()
         workspaces.stopWatching()
@@ -207,7 +196,7 @@ public final class Daemon: Sendable {
             }
             clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
             watches.drop(c.id)
-            live.all.forEach { $0.detach(c.id) }
+            sessions.live.all.forEach { $0.detach(c.id) }
             lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
             c.close()
         }
@@ -220,11 +209,11 @@ public final class Daemon: Sendable {
     private func stream(_ c: Connection, session: String, size: JSONValue?, leftover: Data) {
         clients.setRaw(c.id, true)   // before waking: its status events must not land in the byte stream
         defer { clients.setRaw(c.id, false) }
-        if existing(session) == nil, (try? store.session(session))?.status == .exited {
-            c.send(TerminalReplies.withoutQueries((try? liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
+        if sessions.existing(session) == nil, (try? store.session(session))?.status == .exited {
+            c.send(TerminalReplies.withoutQueries((try? sessions.liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
-        let (cols, rows) = Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
-        guard let ls = try? liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
+        let (cols, rows) = Sessions.Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
+        guard let ls = try? sessions.liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
         // Queued under the session's lock: no live output gets ahead of it. One paused at this moment ends the attach,
         // as the pause does for those already attached (`letGo`).
         guard ls.attach(c.id, send: { c.send($0) }) != nil else { return }
@@ -238,18 +227,7 @@ public final class Daemon: Sendable {
         ls.detach(c.id)
     }
 
-    /// A session taken out of `live` with its program still to stop (paused, deleted): the terminals streaming it are
-    /// hung up, so `kelp attach` ends instead of showing a screen nothing reaches any more (the app attaches again when
-    /// the tab is shown). JSON subscribers just stop getting output; the record's status tells them why.
-    func hangUpStreams(_ ls: LiveSession) { clients.split(ls.letGo()).raw.forEach { $0.hangUp() } }
     static let pausedAsAttached = RPCError.invalidParams("The session was paused as it was opened. Open it again.")
-
-    /// Output to attached connections: raw ones get bytes, the rest a JSON event.
-    func deliver(_ id: String, _ data: Data, to subs: Set<Int>) {
-        let (raw, json) = clients.split(subs)
-        raw.forEach { $0.send(data) }
-        if !json.isEmpty { notify(OutputEvent(session: id, data: data), to: json) }
-    }
 
     private func respond(_ req: Request, conn c: Connection) async {
         let id = req.id ?? .null
@@ -258,8 +236,8 @@ public final class Daemon: Sendable {
         // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
         // queued inside the session's lock, which `Handled` can't express.
         if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.decoded(req.params ?? .null))?.id,
-           existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
-           let ls = try? await offload({ [self] in try liveSession(sid) }) {
+           sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
+           let ls = try? await offload({ [self] in try sessions.liveSession(sid) }) {
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
             var attached = true
@@ -294,134 +272,5 @@ public final class Daemon: Sendable {
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
-    // MARK: sessions
-
-    /// A running session, without waking a paused one.
-    func existing(_ id: String) -> LiveSession? { live[id] }
-
-    func liveSession(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
-        if let s = live[id] { return s }
-        return try wakeLocks.withLock(id) {   // paused sessions wake on first use
-            if let s = live[id] { return s }
-            return try wake(id, cols: cols, rows: rows)
-        }
-    }
-
-    struct Launch {
-        var model: String?, effort: String?, resume = false
-        var prompt: String?, title: String?
-        var draft = false   // type the prompt, don't send it
-        var profile: String?
-        var openURLs = false   // the first local URL it prints opens in the workspace's browser (event.devserver)
-        var cols: UInt16 = 120, rows: UInt16 = 32
-        var argv: [String]?   // restart: reuse exactly
-        var tmux: String?   // restart: the host's tmux session the old one's agent still runs in
-
-        /// A terminal size: anything out of range is clamped, nothing (or 0) is 120 × 32.
-        static func size(cols: Int?, rows: Int?) -> (cols: UInt16, rows: UInt16) {
-            let c = UInt16(clamping: cols ?? 0), r = UInt16(clamping: rows ?? 0)
-            return (c > 0 ? c : 120, r > 0 ? r : 32)
-        }
-    }
-
-    @discardableResult
-    func spawn(cwd: String, manifest: AgentManifest, worktreeId: String?, _ o: Launch = Launch()) throws -> Session {
-        var argv = o.argv ?? manifest.argv(model: o.model, effort: o.effort, resume: o.resume)
-        var rec = Session(worktreeId: worktreeId, cwd: cwd, command: argv.joined(separator: " "), agent: manifest.id,
-                          title: o.title ?? "", titleManual: o.title != nil, argv: argv)
-        // A remote project's sessions run on its host (see `launchArgv`). Kelp's hooks and skills are files on this Mac,
-        // so they stay out: status comes from what the screen shows.
-        let local = RemoteHost.of(cwd) == nil
-        if local, o.argv == nil, let flag = manifest.hooksSettingsFlag {
-            let f = root.appendingPathComponent("hooks-\(manifest.id).json")
-            try Hooks.writeSettings(to: f)
-            argv += [flag, f.path]
-        }
-        // Kelp's skills (written by the app, only the ones turned on), for this session only: nothing goes into ~/.claude.
-        if local, o.argv == nil, let flag = manifest.pluginDirFlag, Self.hasPlugins(Paths.agentSkills) {
-            argv += [flag, Paths.agentSkills.path]
-            // Without a word of context, "add a panel" reads as a request for the agent's own UI.
-            if let ctx = manifest.contextFlag, let text = Self.kelpContext(Paths.agentSkills) { argv += [ctx, text] }
-        }
-        // Its own id, unless it resumes one (a restart's argv carries none: see session.restart).
-        if local, let flag = manifest.sessionIdFlag, !argv.contains(flag), !manifest.resumes(argv) { argv += [flag, rec.id.lowercased()] }
-        rec.argv = argv
-        rec.profile = o.profile
-        // A remote agent runs in a tmux session of its own on the host: a dropped connection or a daemon restart leaves it working.
-        if !local, !["shell", "custom"].contains(manifest.id) { rec.tmux = o.tmux ?? Tmux.own() }
-        let env = launchEnv(manifest, rec)
-        let ls = try LiveSession(record: rec, manifest: liveManifest(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
-                                 argv: try launchArgv(argv, cwd: cwd, manifest: manifest, tmux: rec.tmux), env: env,
-                                 historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows,
-                                 callbacks: callbacks(for: rec, devServerIn: o.openURLs ? worktreeId : nil))   // e.g. Jupyter Lab's URL
-        if o.tmux != nil { ls.attachedToRunning() }
-        rec = ls.snapshot
-        let sid = rec.id
-        // The record first: a program nobody has a record of could be neither seen nor stopped.
-        do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
-        live.add(ls)
-        if let p = o.prompt {
-            ls.queuePrompt(p, draft: o.draft)
-            if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
-        }
-        ls.start()   // after the record is saved: its first status must not be overwritten
-        notify(rec)
-        return rec
-    }
-
-    /// What runs: `argv` itself, or for a remote project ssh running it in the project's folder on the host. Records
-    /// keep the plain argv, so a restart or a wake wraps it once (older records kept the ssh line: that runs as it is).
-    func launchArgv(_ argv: [String], cwd: String, manifest: AgentManifest, tmux: String? = nil) throws -> [String] {
-        var run = argv
-        if let remote = RemoteHost.of(cwd), argv.first != RemoteHost.ssh {
-            // A command line (`.custom`: zsh -lc "…") goes to sh there: the host may have no zsh.
-            let onHost = manifest.id == "custom" && argv.count == 3 && argv[1] == "-lc" ? ["sh", "-c", argv[2]] : argv
-            let loginShell = manifest.id == "shell" && Tmux.session(argv) == nil
-            let command = tmux.map { remote.command(onHost, inTmux: $0) } ?? remote.command(loginShell ? nil : onHost)
-            run = [RemoteHost.ssh] + remote.sshArgs(tty: true) + [command]
-        }
-        guard let exe = run.first else { throw RPCError.invalidParams("empty command") }
-        return [try LoginPath.resolve(exe)] + run.dropFirst()
-    }
-
-    /// What a session tells the daemon, from its first byte on. An ended session leaves `live`: its fd and pid belong to
-    /// nobody now, and its log still shows what it printed. `devServerIn`: the first local URL it prints opens in that
-    /// workspace's browser.
-    func callbacks(for rec: Session, devServerIn worktree: String? = nil) -> LiveSession.Callbacks {
-        let sid = rec.id
-        var c = LiveSession.Callbacks()
-        c.output = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
-        c.status = { [weak self] ls, s in
-            guard let self, !ls.isDiscarded else { return }
-            // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
-            // The turn bookkeeping gets each change, in order.
-            publish(ls.snapshot); ls.noteTurn(s.status)
-            if s.status == .exited { _ = live.remove(ls) }
-        }
-        if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }
-        // Naming follows the session however it started (created, or woken from a pause).
-        c.firstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
-        if !["shell", "custom"].contains(rec.agent ?? "custom") {
-            c.topic = { [weak self] t in
-                guard let self else { return }
-                DispatchQueue.global(qos: .utility).async { self.retitle(session: sid, topic: t) }
-            }
-        }
-        if let worktree { c.localURL = { [weak self] url in self?.notify(DevServerEvent(worktree: worktree, url: url, session: sid)) } }
-        return c
-    }
-
-    /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.
-    /// Under its wake lock, as a wake is: a paused session being opened at this moment can't come back after its record and log
-    /// are gone (it would restart an agent for a deleted project and save the record again). A terminal's own tmux session
-    /// ends with it unless `keepTmux` (a restart, whose new session attaches to it).
-    func discard(_ s: Session, keepTmux: Bool = false) {
-        if !keepTmux { endOwnTmux(s) }
-        wakeLocks.withLock(s.id) {
-            let ls = live.remove(s.id)
-            if let ls { hangUpStreams(ls); Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
-            do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
-            try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
-        }
-    }
+    func cwd(forWorktree id: String) throws -> Worktree { try workspaces.worktree(id) }
 }

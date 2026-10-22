@@ -8,7 +8,7 @@ import AgentData
 extension SessionList: Handled {
     static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> [Session] {
-        let all = try d.store.sessions().map { s -> Session in d.existing(s.id)?.snapshot ?? s }
+        let all = try d.store.sessions().map { s -> Session in d.sessions.existing(s.id)?.snapshot ?? s }
         return all.filter { worktreeId == nil || $0.worktreeId == worktreeId }
     }
 }
@@ -16,18 +16,18 @@ extension SessionList: Handled {
 extension SessionAttach: Handled {
     func handle(_ d: Daemon) throws -> Result { try handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) throws -> Result {
-        if d.existing(id) == nil, try d.store.session(id)?.status == .exited {   // ended: what it last printed, from its log
-            return Result(history: TerminalReplies.withoutQueries(try d.liveSessionOrLog(id, bytes: LiveSession.ringLimit)).base64EncodedString())
+        if d.sessions.existing(id) == nil, try d.store.session(id)?.status == .exited {   // ended: what it last printed, from its log
+            return Result(history: TerminalReplies.withoutQueries(try d.sessions.liveSessionOrLog(id, bytes: LiveSession.ringLimit)).base64EncodedString())
         }
         // Showing a tab isn't reading it: the app marks it read once it was looked at (or typed into).
-        guard let history = try d.liveSession(id).attach(conn) else { throw Daemon.pausedAsAttached }
+        guard let history = try d.sessions.liveSession(id).attach(conn) else { throw Daemon.pausedAsAttached }
         return Result(history: history.base64EncodedString())
     }
 }
 
 extension SessionDetach: Handled {
     func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.existing(id)?.detach(conn); return Done() }
+    func handle(_ d: Daemon, conn: Int) throws -> Done { d.sessions.existing(id)?.detach(conn); return Done() }
 }
 
 extension SessionWrite: SessionInput {
@@ -57,8 +57,8 @@ extension SessionSend: SessionInput {
 extension SessionResize: Handled {
     static var inOrder: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
-        let (c, r) = Daemon.Launch.size(cols: cols, rows: rows)
-        d.existing(id)?.resize(cols: c, rows: r)
+        let (c, r) = Sessions.Launch.size(cols: cols, rows: rows)
+        d.sessions.existing(id)?.resize(cols: c, rows: r)
         return Done()
     }
 }
@@ -67,19 +67,19 @@ extension SessionResize: Handled {
 /// on the old copy while a wake starts a new one.
 extension SessionKill: Handled {
     func handle(_ d: Daemon) throws -> Done {
-        try d.wakeLocks.withLock(id) {
-            if let ls = d.existing(id) { ls.pty.terminate() }
-            else if var s = try d.store.session(id), s.status == .hibernated { s.status = .exited; d.publish(s) }   // don't wake just to kill
+        try d.sessions.wakeLocks.withLock(id) {
+            if let ls = d.sessions.existing(id) { ls.pty.terminate() }
+            else if var s = try d.store.session(id), s.status == .hibernated { s.status = .exited; d.sessions.publish(s) }   // don't wake just to kill
         }
-        if let s = try d.store.session(id) { d.endOwnTmux(s) }
+        if let s = try d.store.session(id) { d.sessions.endOwnTmux(s) }
         return Done()
     }
 }
 
 extension SessionChoose: Handled {
     func handle(_ d: Daemon) throws -> Bool {
-        guard let ls = d.existing(id), ls.choose(answer) != nil else { return false }
-        d.publish(ls)
+        guard let ls = d.sessions.existing(id), ls.choose(answer) != nil else { return false }
+        d.sessions.publish(ls)
         return true
     }
 }
@@ -108,9 +108,9 @@ extension PortsStop: Handled {
 
 extension SessionBusy: Handled {
     func handle(_ d: Daemon) throws -> String? {
-        guard let ls = d.existing(id) else { return nil }
+        guard let ls = d.sessions.existing(id) else { return nil }
         // In a terminal's own tmux session tmux is always in front: what runs is in its panes (closing ends them).
-        if let name = Tmux.session(ls.snapshot.argv), Tmux.isOwn(name) { return d.tmuxBusy(name, cwd: ls.snapshot.cwd) }
+        if let name = Tmux.session(ls.snapshot.argv), Tmux.isOwn(name) { return d.sessions.tmuxBusy(name, cwd: ls.snapshot.cwd) }
         return ls.pty.foregroundProgram
     }
 }
@@ -120,7 +120,7 @@ extension Daemon {
     /// of the text still matters.
     func printed(_ id: String, bytes: Int) throws -> String {
         // swiftlint:disable:next optional_data_string_conversion
-        StatusDetector.stripANSI(String(decoding: try liveSessionOrLog(id, bytes: bytes), as: UTF8.self))
+        StatusDetector.stripANSI(String(decoding: try sessions.liveSessionOrLog(id, bytes: bytes), as: UTF8.self))
     }
 }
 extension SessionRead: Handled { func handle(_ d: Daemon) throws -> String { try d.printed(id, bytes: bytes ?? 8192) } }
@@ -129,17 +129,17 @@ extension SessionContext: Handled { func handle(_ d: Daemon) throws -> String { 
 /// Never re-inserts a deleted one (publish only updates).
 extension SessionMarkRead: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(false) != nil { d.publish(ls) }; return Done() }
+    func handle(_ d: Daemon) throws -> Done { if let ls = d.sessions.existing(id), ls.setUnread(false) != nil { d.sessions.publish(ls) }; return Done() }
 }
 extension SessionMarkUnread: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(true) != nil { d.publish(ls) }; return Done() }
+    func handle(_ d: Daemon) throws -> Done { if let ls = d.sessions.existing(id), ls.setUnread(true) != nil { d.sessions.publish(ls) }; return Done() }
 }
 
 extension SessionTurn: Handled {
     static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> Info? {
-        guard let ls = d.existing(id) else { return nil }
+        guard let ls = d.sessions.existing(id) else { return nil }
         let turn = ls.lastTurn.map { t in Turn(files: t.files.map { .init(path: $0.path, added: $0.added, removed: $0.removed) }, seconds: t.seconds) }
         return Info(turn: turn, hasBase: ls.turnBase != nil)
     }
@@ -147,7 +147,7 @@ extension SessionTurn: Handled {
 
 extension SessionLastReply: Handled {
     func handle(_ d: Daemon) throws -> String? {
-        guard let t = d.existing(id).flatMap(d.agentUsage.transcript(of:)) else { return nil }
+        guard let t = d.sessions.existing(id).flatMap(d.agentUsage.transcript(of:)) else { return nil }
         return AgentUsage.lastReply(transcript: t)
     }
 }

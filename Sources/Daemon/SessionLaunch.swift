@@ -7,7 +7,7 @@ import AgentData
 
 /// What goes into starting, pausing and waking a session: its environment and account, the trust answer, resuming its
 /// conversation, titles, and the agent manifests.
-extension Daemon {
+extension Sessions {
 
     /// One sentence naming the skills that are turned on (their folders exist).
     static func kelpContext(_ dir: URL) -> String? {
@@ -30,7 +30,7 @@ extension Daemon {
         // Not into tmux: its server keeps the first client's environment for every pane, whichever tab they're shown in.
         if Tmux.session(rec.argv) == nil { env["KELP_SESSION"] = rec.id }
         env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
-        env["PATH"] = childPath
+        env["PATH"] = Self.childPath
         return env
     }
 
@@ -261,8 +261,6 @@ extension Daemon {
         }
         return m
     }
-
-    func cwd(forWorktree id: String) throws -> Worktree { try workspaces.worktree(id) }
 
     /// Closing a desk ends its agents and forgets its layout; the folder is untouched. The last one stays.
     /// Out of sight, nothing lost: its agents pause (they resume their conversations when it comes back), its tabs stay.

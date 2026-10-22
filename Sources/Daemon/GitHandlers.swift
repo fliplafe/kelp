@@ -17,7 +17,7 @@ extension GitDiff: Handled {
         let src: DiffSource
         switch source ?? "all" {
         case "turn":   // since the agent's last turn started, where it worked then (its own worktree, maybe)
-            guard let s = session, let ls = d.existing(s), let base = ls.turnBase else {
+            guard let s = session, let ls = d.sessions.existing(s), let base = ls.turnBase else {
                 throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.")
             }
             src = .since(tree: base); dir = ls.turnDir ?? dir

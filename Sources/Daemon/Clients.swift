@@ -5,7 +5,7 @@ import Core
 /// Who is connected to the socket: each client, which of them are raw byte pipes (`kelp attach`), which is Kelp's window
 /// (and what it last said it shows). Under a lock of its own.
 ///
-/// Lock order in the daemon, outermost first: a session's wake lock (`WakeLocks`, several taken by id) → `SessionTable` →
+/// Lock order in the daemon, outermost first: a session's wake lock (`Sessions.wakeLocks`, several taken by id) → `Sessions.live` →
 /// `Clients` → a session's own lock →
 /// a `Connection`'s. (A session's lock is never held while another is taken: output, status and hooks call out after.) `attachIfConnected` holds this one while it subscribes, and the reader's cleanup takes it
 /// first, so a connection is either subscribed and then cleaned up, or never subscribed.

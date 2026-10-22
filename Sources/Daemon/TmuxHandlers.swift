@@ -2,12 +2,12 @@ import Foundation
 import Core
 
 /// tmux where a workspace's sessions run: on this Mac, or on a remote project's host (see `Tmux`).
-extension Daemon {
+extension Sessions {
     /// `tmux <args>`, on the host for a remote project through its login shell, as its terminals are (tmux is on that PATH).
     func tmux(_ args: [String], cwd: String, timeLimit: TimeInterval = 30) throws -> Subprocess.Output {
         let argv = try RemoteHost.of(cwd).map { [RemoteHost.ssh] + $0.sshArgs(tty: false) + [$0.command(["tmux"] + args)] }
             ?? [LoginPath.resolve("tmux")] + args
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = childPath
+        var env = ProcessInfo.processInfo.environment; env["PATH"] = Self.childPath
         let r = try Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeLimit)
         guard !r.truncated else { throw RPCError.internalError("tmux printed more than \(Subprocess.outputLimit >> 20) MB, more than Kelp reads.") }
         return r
@@ -31,7 +31,7 @@ extension Daemon {
 
 extension TmuxList: Handled {
     func handle(_ d: Daemon) throws -> Result {
-        let r = try d.tmux(["list-sessions", "-F", Tmux.format], cwd: d.cwd(forWorktree: worktreeId).path)
+        let r = try d.sessions.tmux(["list-sessions", "-F", Tmux.format], cwd: d.cwd(forWorktree: worktreeId).path)
         let err = String(decoding: r.stderr, as: UTF8.self)
         if r.status == 0 { return Tmux.parse(String(decoding: r.stdout, as: UTF8.self)) }
         if Tmux.noServer(err) { return [] }

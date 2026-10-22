@@ -118,7 +118,7 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     try await hibernate(after: 0, w.c)
     // A wake that takes 2 s: its lock held elsewhere (as an idle pause holds it).
     let held = OSAllocatedUnfairLock(initialState: false)
-    Thread.detachNewThread { w.d.wakeLocks.withLock(s.id) { held.withLock { $0 = true }; Thread.sleep(forTimeInterval: 2) } }
+    Thread.detachNewThread { w.d.sessions.wakeLocks.withLock(s.id) { held.withLock { $0 = true }; Thread.sleep(forTimeInterval: 2) } }
     #expect(try await waitFor(5) { held.withLock { $0 } })
     let lines = try sendAtOnce(w.root, [(SessionSend.name, .obj(["id": .string(s.id), "text": "hello-lane"])), (Ping.name, .null)])
     #expect(lines.contains { $0["id"]?.int == 2 && $0["result"] == "pong" })

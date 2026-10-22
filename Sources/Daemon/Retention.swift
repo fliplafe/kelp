@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-extension Daemon {
+extension Sessions {
     /// How long an ended session stays. The app drops an ended session's tab the next time it starts; after that only
     /// its id reaches it (`kelp terminal read`, `kelp wait` in a script). A week covers a window left open that long.
     static let keepEnded: TimeInterval = 7 * 86400
