@@ -3,10 +3,14 @@
 A native macOS IDE between a classic editor like VS Code and an agent app like Claude Desktop: agents work side by
 side, and the code they touch is one tab away to read, review and edit.
 
+![An agent's finished change next to its diff, with every workspace's agents in the sidebar](docs/screenshots/agent-and-diff.png)
+
 - **Code at hand.** Editor with language servers, file tree, diffs, browser; any tab in any split.
 - **Agents first.** Any CLI agent, live status, review as a diff; agents keep working after you quit the app.
 - **Extensible.** Panels, commands and themes come from extensions; a JSON file is enough.
 - **Native.** Swift + AppKit, terminal on libghostty. No Electron, no cloud, no telemetry.
+
+![An agent waiting on a question; the sidebar counts who needs you](docs/screenshots/agent-asks.png)
 
 Requires macOS 14+.
 
