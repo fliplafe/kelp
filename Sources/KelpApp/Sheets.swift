@@ -39,7 +39,7 @@ enum AgentActions {
             guard let s = await AppModel.shared.call(SessionRestart(id: sid)) else { return }
             AppModel.shared.sessions.removeAll { $0.id == sid }
             AppModel.shared.upsert(s)
-            Workbench.editor?.replace(session: sid, with: s.id)
+            Workbench.replace(session: sid, with: s.id, workspace: s.worktreeId)
         }
     }
 

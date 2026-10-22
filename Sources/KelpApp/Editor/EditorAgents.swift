@@ -74,16 +74,12 @@ extension EditorArea {
         }
     }
 
-    /// Restart: the new session takes the old one's tab.
-    func replace(session old: String, with new: String) { replace(TabURI.session(old), with: TabURI.session(new)) }
-
     /// `new` in the tab that showed `old`, in its place (a restarted session, a new file saved under a name).
-    func replace(_ old: String, with new: String) {
-        guard let t = layout.tab(uri: old), let gid = layout.group(of: t.id), var g = layout.groups[gid],
-              let i = g.tabs.firstIndex(of: t) else { open(new); return }
+    /// `focus: false` for a workspace that isn't on screen.
+    func replace(_ old: String, with new: String, focus: Bool = true) {
+        guard let t = layout.replace(old, with: new) else { open(new, focus: focus); return }
         contents[t.id] = nil
-        g.tabs[i].uri = new; layout.groups[gid] = g
-        render(); select(t.id)
+        render(); select(t.id, focus: focus)
     }
 
     func focus(session sid: String) {

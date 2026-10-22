@@ -40,6 +40,15 @@ extension Workbench {
         window?.editors.current?.open(uri, split: split, focus: focus)
     }
 
+    /// Restart: the new session takes the old one's tab in the workspace it belongs to, which may not be the one on screen
+    /// (Restart from the sidebar).
+    static func replace(session old: String, with new: String, workspace: String?) {
+        let o = TabURI.session(old), n = TabURI.session(new)
+        if let k = keyArea, workspace == nil || workspace == k.workspaceId { k.replace(o, with: n); return }
+        if let workspace, workspace != shared.workspaceId { window?.editors.replaceInBackground(o, with: n, workspace: workspace); return }
+        window?.editors.current?.replace(o, with: n)
+    }
+
     static func focus(session id: String) {
         guard let s = AppModel.shared.session(id) else { return }
         if let k = keyArea, s.worktreeId == k.workspaceId { k.focus(session: id) } else {

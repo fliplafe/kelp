@@ -30,6 +30,15 @@ public struct WorkspaceLayout: Codable, Equatable {
     public func group(of tab: String) -> String? { groups.first { $0.value.tabs.contains { $0.id == tab } }?.key }
     public func tab(uri: String) -> TabRef? { allTabs.first { $0.uri == uri } }
 
+    /// `new` in the tab that showed `old`, in its place (a restarted session, a file saved under a new name); nil when
+    /// no tab shows `old`.
+    @discardableResult
+    public mutating func replace(_ old: String, with new: String) -> TabRef? {
+        guard let t = tab(uri: old), let gid = group(of: t.id), let i = groups[gid]?.tabs.firstIndex(of: t) else { return nil }
+        groups[gid]?.tabs[i].uri = new
+        return t
+    }
+
     /// Adds a tab to `group` (or the focused group, or a new one) and selects it.
     @discardableResult
     public mutating func add(_ uri: String, to group: String? = nil, at index: Int? = nil) -> TabRef {

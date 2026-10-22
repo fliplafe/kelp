@@ -432,6 +432,14 @@ final class EditorHost: NSViewController {
         if l.tab(uri: uri) == nil { _ = l.add(uri, to: l.focusedGroup?.id); l.save(id, to: app.uiState) }
     }
 
+    /// A restarted session into its old tab in a workspace that isn't on screen, the same two ways.
+    func replaceInBackground(_ old: String, with new: String, workspace id: String) {
+        if let a = areas[id] { a.replace(old, with: new, focus: false); return }
+        var l = WorkspaceLayout.load(id, from: app.uiState)
+        if l.replace(old, with: new) == nil, l.tab(uri: new) == nil { l.add(new, to: l.focusedGroup?.id) }
+        l.save(id, to: app.uiState)
+    }
+
     private func refresh() {
         for (id, a) in areas where AppModel.shared.worktree(id) == nil {
             a.view.removeFromSuperview(); areas[id] = nil; recent.removeAll { $0 == id }

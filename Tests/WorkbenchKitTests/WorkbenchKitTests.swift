@@ -281,3 +281,11 @@ private func sh(_ shell: String, _ cmd: String) throws -> String {
     #expect(one.ids == [b2.id] && !one.keptSome)
     #expect(WorkspaceClosing(picked: [b1], open: [b1], repos: [b]).ids.isEmpty)   // a project's last workspace stays
 }
+
+@Test func replacePutsTheNewURIInTheOldTabsPlace() {
+    var l = WorkspaceLayout()
+    let a = l.add("session:a"), b = l.add("file:///x")
+    #expect(l.replace("session:a", with: "session:b")?.id == a.id)
+    #expect(l.focusedGroup?.tabs.map(\.uri) == ["session:b", "file:///x"] && l.focusedGroup?.tabs.last == b)
+    #expect(l.replace("session:gone", with: "session:c") == nil)
+}

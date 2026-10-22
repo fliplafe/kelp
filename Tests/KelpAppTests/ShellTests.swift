@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import WorkbenchKit
 @testable import KelpApp
 
 /// A project's icon is looked for off the main thread: its initial shows at once, the icon once it's found.
@@ -38,4 +39,15 @@ import Testing
         let colors = [term.background, term.foreground, term.cursor, term.selection].compactMap { $0 } + palette
         #expect(colors.allSatisfy { $0.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil }, "\(t.id): a color isn't #rrggbb")
     }
+}
+
+/// Restart from the sidebar: the new agent takes its old tab in its own workspace, which isn't the one on screen.
+@MainActor @Test func aRestartedAgentKeepsItsTabInItsOwnWorkspace() {
+    let app = AppModel(), host = EditorHost(app: app)
+    var l = WorkspaceLayout()
+    let old = l.add("session:old"); l.add("file:///x"); l.save("other", to: app.uiState)
+    host.replaceInBackground("session:old", with: "session:new", workspace: "other")
+    let after = WorkspaceLayout.load("other", from: app.uiState)
+    #expect(after.tab(uri: "session:new")?.id == old.id && after.tab(uri: "session:old") == nil)
+    #expect(after.allTabs.count == 2)
 }
