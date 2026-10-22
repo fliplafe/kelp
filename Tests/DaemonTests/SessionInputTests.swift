@@ -126,3 +126,27 @@ import Agents
     await withCheckedContinuation { c in ls.inOrder { c.resume() } }   // whatever was queued is saved by now
     #expect(try w.d.store.session(s.id)?.status == .hibernated)
 }
+
+/// A paused agent woken at once says it's running: a status change of its old program that was queued before the pause
+/// doesn't save the pause again over the wake. It did when that change was queued a second time behind the pause.
+@Test func aWakeIsntWrittenOverByThePausedProgram() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "rewake")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    let old = try #require(w.d.sessions.live[s.id])
+    let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
+    old.inOrder { first.wait() }
+    old.hook("working")   // its status change, queued behind `first`
+    let paused = OSAllocatedUnfairLock(initialState: false)
+    Thread.detachNewThread { try? w.d.sessions.pauseSessions(of: wt.id); paused.withLock { $0 = true } }
+    try await Task.sleep(for: .milliseconds(300))   // the pause's own save is queued now
+    old.inOrder { second.wait() }   // whatever the status change queues again lands behind this
+    first.signal()
+    #expect(try await waitFor(10) { paused.withLock { $0 } })
+    let woken = try w.d.sessions.liveSession(s.id)
+    await withCheckedContinuation { c in woken.inOrder { c.resume() } }
+    second.signal()
+    await withCheckedContinuation { c in old.inOrder { c.resume() } }
+    #expect(try w.d.store.session(s.id)?.status != .hibernated)
+}

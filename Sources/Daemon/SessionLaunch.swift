@@ -188,16 +188,20 @@ extension Sessions {
     /// Holds the session until it ran: one that just ended and left `live` still gets its last record saved.
     func publish(_ ls: LiveSession) {
         ls.inOrder { [weak self] in
-            guard let self, !ls.isDiscarded else { return }
+            guard let self, !ls.isFinal else { return }
             save(ls.snapshot)
         }
     }
+
+    /// On the session's status queue itself (its status callback): saved there and then. Queued again it would land after
+    /// a pause queued meanwhile, and over the record of the wake that followed.
+    func publishHere(_ ls: LiveSession) { if !ls.isFinal { save(ls.snapshot) } }
 
     /// A pause or an end, saved and said now, after every status change queued before it: one that read the record just
     /// before would otherwise write "working" over it, and a paused agent would never wake.
     func publishLast(_ ls: LiveSession) {
         let done = DispatchSemaphore(value: 0)
-        ls.inOrder { [self] in save(ls.snapshot); done.signal() }
+        ls.inOrder { [self] in save(ls.snapshot); ls.finish(); done.signal() }
         done.wait()
     }
 

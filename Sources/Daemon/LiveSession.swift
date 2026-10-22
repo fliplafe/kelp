@@ -87,8 +87,10 @@ final class LiveSession: Sendable {
 
     /// Being deleted: it stops, and neither its exit nor anything else saves its record again.
     @discardableResult
-    func discard() -> [pid_t] { state.withLock { $0.discarded = true }; return pty.terminate() }
-    var isDiscarded: Bool { state.withLock { $0.discarded } }
+    func discard() -> [pid_t] { state.withLock { $0.final = true }; return pty.terminate() }
+    /// Its record says its last (a pause, an end): nothing it does saves it again.
+    func finish() { state.withLock { $0.final = true } }
+    var isFinal: Bool { state.withLock { $0.final } }
     /// The program exited and that was handled (its record final, its log closed).
     var hasEnded: Bool { state.withLock { $0.ended } }
     var topic: String? { state.withLock { $0.lastTopic } }
@@ -361,7 +363,7 @@ extension LiveSession {
         var lastOutputAt: Date?
         /// TUIs redraw everything after a resize; that output isn't the agent working.
         var redrawUntil = Date.distantPast
-        var discarded = false            // being deleted: nothing it does may save its record again
+        var final = false                // deleted, or its last record saved: nothing it does may save its record again
         var letGo = false                // out of `live`, its program stopping: no new attach (`letGo()`)
         var ended = false
 

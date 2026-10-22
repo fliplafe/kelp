@@ -151,10 +151,10 @@ final class Sessions: Sendable {
         var c = LiveSession.Callbacks()
         c.output = { [weak self] id, data, subs in self?.deliver(id, data, to: subs) }
         c.status = { [weak self] ls, s in
-            guard let self, !ls.isDiscarded else { return }
+            guard let self, !ls.isFinal else { return }
             // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
             // The turn bookkeeping gets each change, in order.
-            publish(ls); ls.noteTurn(s.status, remotes: remotes)
+            publishHere(ls); ls.noteTurn(s.status, remotes: remotes)
             if s.status == .exited { _ = live.remove(ls) }
         }
         if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }
