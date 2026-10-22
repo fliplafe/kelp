@@ -113,7 +113,9 @@ extension AgentUsage {
                 .first { $0["id"] as? Int == 2 && ($0["result"] != nil || $0["error"] != nil) }
             return answer != nil
         }
-        return CodexUsage.limits(rateLimits: (answer?["result"] as? [String: Any])?["rateLimits"], at: Date())
+        let l = CodexUsage.limits(rateLimits: (answer?["result"] as? [String: Any])?["rateLimits"], at: Date())
+        if l == nil { Log.session.error("codex app-server gave no limits: \(answer.map { "\($0)" } ?? "no answer in 20 s")") }
+        return l
     }
 
     /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session

@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import Core
+import AgentData
 @testable import Daemon
 
 /// Codex's limits come from its app server, asked over a terminal (with its input closed it quits before answering);
@@ -16,4 +18,19 @@ import Testing
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
     let l = try #require(AgentUsage.codexLimits(path: fake.path))
     #expect(l.primaryUsedPercent == 14 && l.primaryResetsAt == Date(timeIntervalSince1970: 1_792_715_745) && l.secondaryUsedPercent == 2)
+}
+
+/// The app server's reading is the default account's: when the default logged none, it comes first and a profile's
+/// reading stays (it used to take the profile's place).
+@Test func codexAppServerLimitsAreTheDefaultAccounts() async throws {
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let home = tmp(), work = tmp(), day = work.appendingPathComponent("sessions/2026/10/20")
+    d.agentUsage.agentHomes.withLock { $0 = (home.appendingPathComponent("projects"), home.appendingPathComponent("sessions")) }
+    try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+    try #"{"timestamp":"2026-10-20T00:00:00.000Z","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":80}}}}"#
+        .write(to: day.appendingPathComponent("rollout-1.jsonl"), atomically: true, encoding: .utf8)
+    _ = try await c.call(SettingsSet(key: "usage.readPlans", value: .bool(false)))   // no real probe
+    _ = try await c.call(SettingsSet(key: "accounts.profiles", value: .array([.obj(["name": "work", "agent": "codex", "dir": .string(work.path)])])))
+    d.agentUsage.codexLive.withLock { $0.limits = CodexUsage.limits(rateLimits: ["primary": ["usedPercent": 14]], at: Date()) }
+    #expect(try await c.call(UsageGet(force: true)).codex.map(\.primaryUsedPercent) == [14, 80])
 }

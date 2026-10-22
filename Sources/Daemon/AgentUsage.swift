@@ -94,10 +94,6 @@ final class AgentUsage: Sendable {
         var o = v
         refreshPlansIfStale()
         refreshCodexIfStale()
-        // The default account's (the first): its app server's reading, unless a session logged a newer one since.
-        if let live = codexLive.withLock({ $0.limits }), live.observedAt.timeIntervalSince1970 > o.codex.first?.observedAt ?? 0 {
-            if o.codex.isEmpty { o.codex = [Self.codex(live)] } else { o.codex[0] = Self.codex(live) }
-        }
         let plans = self.plans.withLock { $0 }
         o.plans = plans.filter { !$0.value.readings.isEmpty }.mapValues { s in
             s.readings.map { UsageGet.Limit(kind: $0.kind, percent: $0.percent, resets: $0.resets) }

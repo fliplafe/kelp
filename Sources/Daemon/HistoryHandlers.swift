@@ -23,8 +23,11 @@ extension UsageGet: Handled {
                                  week: AgentUsage.block(UsageIndex.block(rows, from: weekStart, to: now)),
                                  block: d.agentUsage.usageIndex.currentBlock(roots: [r], now: now).map(AgentUsage.block)))
         }
-        for r in roots.codex where FileManager.default.fileExists(atPath: r.path) {
-            if let l = CodexUsage.latest(root: r) { codex.append(AgentUsage.codex(l)) }
+        let live = d.agentUsage.codexLive.withLock { $0.limits }
+        for (i, r) in roots.codex.enumerated() where i == 0 || FileManager.default.fileExists(atPath: r.path) {
+            // The default account's (the first) is also asked of its app server (UsageProbe): the newer reading wins.
+            let l = [CodexUsage.latest(root: r), i == 0 ? live : nil].compactMap { $0 }.max { $0.observedAt < $1.observedAt }
+            if let l { codex.append(AgentUsage.codex(l)) }
         }
         let v = Result(claude: claude, codex: codex)
         d.agentUsage.usageCache.withLock { $0 = (Date(), v) }
