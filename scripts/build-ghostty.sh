@@ -17,7 +17,7 @@ if [ ! -d "$SRC/.git" ]; then git clone -q https://github.com/ghostty-org/ghostt
 git -C "$SRC" fetch -q --depth 1 origin "$GHOSTTY_COMMIT" 2>/dev/null || git -C "$SRC" fetch -q origin
 git -C "$SRC" checkout -q "$GHOSTTY_COMMIT"
 (cd "$SRC" && "$ZIG" build -Demit-xcframework=true -Demit-macos-app=false -Dxcframework-target=universal -Doptimize=ReleaseFast)
-rm -rf Vendor/GhosttyKit.xcframework
+rm -rf Vendor/GhosttyKit.xcframework; mkdir -p Vendor   # a fresh clone has no Vendor/ (gitignored)
 cp -R "$SRC/macos/GhosttyKit.xcframework" Vendor/
 cp "$SRC/LICENSE" Vendor/GhosttyKit.xcframework/   # for the app's credits (scripts/bundle.sh)
 for h in Vendor/GhosttyKit.xcframework/*/Headers; do cp "$SRC/include/module.modulemap" "$h/"; done
