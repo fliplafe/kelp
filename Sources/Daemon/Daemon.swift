@@ -173,8 +173,9 @@ public final class Daemon: Sendable {
                     // layout or a terminal size that finished second must not win over the newer one): applied here, one
                     // after another, calls and notifications alike (`Answered.inOrder`); a call's reply goes out in that order.
                     if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder {
-                        let id = req.id ?? .null, notification = req.isNotification
+                        let id = req.id ?? .null, notification = req.isNotification, method = req.method
                         let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { r in
+                            if case .failure(let e) = r { Self.log(method, failed: e, notification: notification) }
                             guard !notification else { return }
                             switch r {
                             case .success(let d): c.send(Self.replyLine(id: id, result: d))
@@ -213,7 +214,14 @@ public final class Daemon: Sendable {
             c.send(TerminalReplies.withoutQueries((try? sessions.liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
         let (cols, rows) = Sessions.Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
-        guard let ls = try? sessions.liveSession(session, cols: cols, rows: rows) else { c.send(Data("kelp: no such session\r\n".utf8)); return }
+        let ls: LiveSession
+        do { ls = try sessions.liveSession(session, cols: cols, rows: rows) } catch {
+            // One Kelp has that didn't wake says why (its agent's CLI gone, its folder deleted), here and in the log.
+            guard (try? store.session(session)) != nil else { c.send(Data("kelp: no such session\r\n".utf8)); return }
+            let why = (error as? RPCError)?.message ?? "\(error)"
+            Log.session.error("\(session, privacy: .public) didn't wake for a terminal: \(why)")
+            c.send(Data("kelp: \(why)\r\n".utf8)); return
+        }
         // Queued under the session's lock: no live output gets ahead of it. One paused at this moment ends the attach,
         // as the pause does for those already attached (`letGo`).
         guard ls.attach(c.id, send: { c.send($0) }) != nil else { return }
@@ -253,10 +261,16 @@ public final class Daemon: Sendable {
             let r = try await answer(req.method, req.params ?? .null, conn: c.id)
             if !req.isNotification { c.send(Self.replyLine(id: id, result: r)) }
         } catch {
-            if let e = error as? RPCError { Log.rpc.debug("\(req.method, privacy: .public) failed: \(e.message)") }
-            else { Log.rpc.error("\(req.method, privacy: .public) failed: \(error)") }
+            Self.log(req.method, failed: error, notification: req.isNotification)
             if !req.isNotification, let d = Self.errorLine(id: id, error) { c.send(d) }
         }
+    }
+
+    /// A call's refusal went back to its caller; a notification's failure (a layout or UI state not saved) and anything
+    /// unexpected has only the log.
+    static func log(_ method: String, failed error: Error, notification: Bool) {
+        if let e = error as? RPCError, !notification { Log.rpc.debug("\(method, privacy: .public) failed: \(e.message)") }
+        else { Log.rpc.error("\(method, privacy: .public) failed: \((error as? RPCError)?.message ?? "\(error)")") }
     }
 
     /// A reply line around a result already encoded: the result isn't decoded and encoded again on its way out.

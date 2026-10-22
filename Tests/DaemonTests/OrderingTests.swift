@@ -104,6 +104,23 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     #expect(String(decoding: out, as: UTF8.self) == "kelp: no such session\r\n")
 }
 
+/// A paused agent that can't wake shows why in its terminal: it used to say "no such session" whatever went wrong.
+@Test func aTerminalSaysWhyItsAgentDidntWake() async throws {
+    let (d, _, root) = try daemon(); defer { d.stop() }
+    let s = Session(cwd: "/tmp", command: "gone", agent: "gone", status: .hibernated)
+    try d.store.save(s)
+    let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path)
+    defer { close(fd) }
+    Unix.writeAll(fd, try Wire.line(RPCRequest(id: nil, method: "session.stream", params: .obj(["id": .string(s.id)]))))
+    var out = Data(), buf = [UInt8](repeating: 0, count: 4096)
+    while true {
+        let n = read(fd, &buf, buf.count)
+        if n <= 0 { break }
+        out.append(contentsOf: buf[0..<n])
+    }
+    #expect(String(decoding: out, as: UTF8.self) == "kelp: unknown agent gone\r\n")
+}
+
 /// A send to a paused agent wakes it (git, files, a spawn) off the connection's reader thread: what that connection sends
 /// next is answered meanwhile, and the send's own reply comes once the woken agent has the text. It used to wake on the
 /// reader thread, so the app's next calls — and its main thread, once the socket filled — waited out the wake.
