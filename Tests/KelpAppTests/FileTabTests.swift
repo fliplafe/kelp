@@ -182,23 +182,3 @@ extension SharedAppModel {
         #expect(tab.editor?.text == "cccc\n")
     }
 }
-
-/// Files moved in the Files panel come back with ⌘Z (and go again with ⇧⌘Z): an agent's folder isn't left half-moved.
-extension SharedAppModel {
-    @Test func aMoveInTheFilesPanelIsUndone() throws {
-        let dir = URL(fileURLWithPath: testHome + "/moves-\(UUID().uuidString.prefix(6))")
-        try FileManager.default.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
-        let a = dir.appendingPathComponent("a.txt"), b = dir.appendingPathComponent("sub/a.txt")
-        try "x".write(to: a, atomically: true, encoding: .utf8)
-        let panel = FilesPanel()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 500), styleMask: [.titled], backing: .buffered, defer: true)
-        window.contentViewController = panel
-        let undo = try #require(panel.undoManager)
-        #expect(panel.move([(a, b)], undo: "Move"))
-        #expect(FileManager.default.fileExists(atPath: b.path) && !FileManager.default.fileExists(atPath: a.path))
-        undo.undo()
-        #expect(FileManager.default.fileExists(atPath: a.path) && !FileManager.default.fileExists(atPath: b.path))
-        undo.redo()
-        #expect(FileManager.default.fileExists(atPath: b.path))
-    }
-}

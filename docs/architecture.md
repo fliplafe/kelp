@@ -97,6 +97,9 @@ daemon reads a topic once for all its watchers, only while someone watches, and 
 only when it changed; the app counts its watchers (`AppModel.watch`, `Watched`) and keeps what came in observed state
 (`AppModel.git`, `.ports`…). Watching what's watched again (`watchAgain`) reads it now: after a commit or a push.
 Clocks left in the app are its own (relative times, "still loading" hints, reconnecting) — ArchitectureTests lists them.
+A project's files are the daemon's too: the Files panel's tree is the pushed list, and its moves, trashes, copies and
+new files are `files.*` calls (a remote project's refused there, with why). What the app still reads or checks itself
+(its own folders, a viewer's bytes, whether a path is there) ArchitectureTests lists with why.
 
 Inside the app there is one way to learn that something changed, like Zed's observed entities: state — anything with
 a current value (sessions, settings, text size, the editor theme, the tab on screen) — is `@Observable`, and AppKit code

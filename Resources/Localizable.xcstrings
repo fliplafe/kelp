@@ -1899,16 +1899,6 @@
         }
       }
     },
-    "Couldn't create a file in /%@.": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Не удалось создать файл в /%@."
-          }
-        }
-      }
-    },
     "Couldn't install %@: %@": {
       "localizations": {
         "en": {
@@ -8433,16 +8423,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сброс %@"
-          }
-        }
-      }
-    },
-    "“%@” already exists here.": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "«%@» здесь уже есть."
           }
         }
       }

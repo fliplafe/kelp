@@ -163,8 +163,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     func edit() {
         guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { NSSound.beep(); return }
         let path = (AppModel.shared.repo(w.repoId)?.path ?? w.path) + "/.kelp.yaml"
-        if !FileManager.default.fileExists(atPath: path) {
-            try? """
+        let keys = """
             # Kelp's Run menu runs these in the workspace's folder (Kelp asks before the first run).
             # run: npm run dev
             # test: npm test
@@ -172,8 +171,11 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
             # script.deploy: ./scripts/deploy.sh
             # setup: npm install          (also runs in each new worktree)
 
-            """.write(toFile: path, atomically: true, encoding: .utf8)
+            """
+        Task {
+            // Made only when there's none: one that's there fails to be made, and opens as it is.
+            _ = await AppModel.shared.tryCall(FilesCreate(path: path, text: keys))
+            Workbench.open(TabURI.file(path))
         }
-        Workbench.open(TabURI.file(path))
     }
 }

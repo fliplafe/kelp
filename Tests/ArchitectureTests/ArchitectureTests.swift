@@ -210,3 +210,36 @@ private func codeOnly(_ s: String) -> String {
     #expect(named.map(\.path) == [])
     #expect(sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } }.count == services.count)
 }
+
+/// A project's files are read, written, watched, moved and made by the daemon (`files.*`, `WatchTopic.file(s)`), with a
+/// tab's rules and the same way for a project on another machine. What the app still touches itself is listed with
+/// why: its own folders, a viewer's bytes, whether a path is there. Nothing else does.
+@Test func theAppDoesntTouchProjectFiles() throws {
+    let own: [String: String] = [
+        "AgentIcons.swift": "agents' icons, cached in Kelp's home",
+        "AppModel.swift": "why kelpd didn't start, in Kelp's home",
+        "DevAids.swift": "snapshots for tests",
+        "RemoteSheet.swift": "the hosts in ~/.ssh/config",
+        "CloneSheet.swift": "whether the folder new projects go in is there",
+        "Settings/IconTheme.swift": "an icon theme an extension brings",
+        "Settings/SettingsWindow.swift": "an extension's own folder",
+        "Extensions/Registry.swift": "extensions' folders, Kelp's own",
+        "Extensions/DeclarativeExtension.swift": "an extension's manifest",
+        "Extensions/ExtensionReview.swift": "an extension's manifest, before it's installed",
+        "Extensions/AgentSkills.swift": "the skills Kelp gives agents, in Kelp's home",
+        "Shell/Help.swift": "the guide, written to Kelp's home",
+        "Shell/WorkbenchActions.swift": "a dropped or linked path: a file, a folder, or nothing",
+        "Sidebar/ProjectIcon.swift": "a project's icon, shown",
+        "Sidebar/SidebarCell.swift": "a project folder that's gone",
+        "Sidebar/SidebarActions.swift": "a project folder that's gone",
+        "Builtins/Agents/PathPreview.swift": "a path a terminal printed is a file, before it's a link",
+        "Builtins/Browser/BrowserTab.swift": "a local page, shown: it reloads as its folder changes; a page's screenshot",
+        "Builtins/Files/Preview.swift": "an image's bytes, shown"
+    ]
+    let all = try matches(#"FileManager\.default\.(contents|createFile|moveItem|trashItem|copyItem|removeItem|createDirectory|fileExists|isWritableFile)"#
+        + #"|FileWatcher\(|String\(contentsOf|Data\(contentsOf|\.write\(to(File)?:|\bstat\([^()]*&"#, in: ["Sources/KelpApp"])
+    let left = all.filter { m in !own.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
+    #expect(left == [], "a project's files touched by the app: go through the daemon (files.*)")
+    let gone = own.keys.filter { k in !all.contains { $0.hasPrefix("Sources/KelpApp/" + k + ":") } }
+    #expect(gone == [], "listed, but it touches no file now: take it off the list")
+}

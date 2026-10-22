@@ -1,68 +1,74 @@
 import AppKit
 import Core
-import Quartz
-import Markdown
-import WorkbenchKit
 
-/// File operations, each undoable with ⌘Z.
+/// File operations, done by the daemon (`files.*`: the same rules for every client, and a remote project's refused there
+/// instead of acting on the folder that stands for it here), each undoable with ⌘Z.
 extension FilesPanel {
-    // MARK: file operations, each one undoable with ⌘Z (as moves: trashing is a move into the Trash)
-    // Moves and trashing are renames on the same volume (instant) and stay synchronous, so undo/redo register in their
-    // own undo group; copying a folder dropped from Finder can take minutes and runs off the main thread.
+    // ⌘Z is registered as the operation starts, not when the daemon answers: one registered while an undo runs is that
+    // undo's redo, one registered later would be a new action (and clear the redo). What it undoes is the answer, awaited.
 
-    /// Moves each `from → to`; ⌘Z moves them back.
-    @discardableResult func move(_ pairs: [(URL, URL)], undo name: String) -> Bool {
-        var done: [(URL, URL)] = []
-        for (a, b) in pairs {
-            do { try FileManager.default.moveItem(at: a, to: b); done.append((a, b)) } catch { showError(error); break }
+    /// Moves each pair (`unique`: a taken name becomes Finder's "name copy"); ⌘Z moves back what moved.
+    @discardableResult
+    func move(_ pairs: @escaping @MainActor () async -> [FileMove], unique: Bool = false, undo name: String) -> Task<[FileMove], Never> {
+        let t = Task {
+            let p = await pairs()
+            guard !p.isEmpty, let r = await AppModel.shared.call(FilesMove(pairs: p, unique: unique)) else { return [FileMove]() }
+            return done(r)
         }
-        if !done.isEmpty {
-            undoManager?.registerUndo(withTarget: self) { $0.move(done.reversed().map { ($0.1, $0.0) }, undo: name) }
-            undoManager?.setActionName(name)
-        }
-        reloadTree(); return done.count == pairs.count
+        undoable(name, t) { $0.move({ await t.value.reversed().map(\.back) }, undo: name) }
+        return t
     }
 
-    func trash(_ urls: [URL], undo name: String) {
-        var back: [(URL, URL)] = []
-        for u in urls {
-            var out: NSURL?
-            do { try FileManager.default.trashItem(at: u, resultingItemURL: &out) } catch { showError(error); break }
-            if let t = out as URL? { back.append((t, u)) }
+    /// Moves each to the Trash; ⌘Z moves them back from where they went.
+    @discardableResult
+    func trash(_ paths: @escaping @MainActor () async -> [String], undo name: String) -> Task<[FileMove], Never> {
+        let t = Task {
+            let p = await paths()
+            guard !p.isEmpty, let r = await AppModel.shared.call(FilesTrash(paths: p)) else { return [FileMove]() }
+            return done(r)
         }
-        if !back.isEmpty { undoManager?.registerUndo(withTarget: self) { $0.move(back, undo: name) }; undoManager?.setActionName(name) }
-        reloadTree()
+        undoable(name, t) { $0.move({ await t.value.reversed().map(\.back) }, undo: name) }
+        return t
     }
 
-    /// Copies into `dir`, taking Finder's "name copy" when the name is taken; ⌘Z puts the copies in the Trash.
-    func copy(_ urls: [URL], into dir: URL, undo name: String) {
-        Task {
-            let (made, failure) = await Task.detached { () -> ([URL], Error?) in
-                var made: [URL] = []
-                for u in urls {
-                    let dst = Self.free(dir.appendingPathComponent(u.lastPathComponent))
-                    do { try FileManager.default.copyItem(at: u, to: dst); made.append(dst) } catch { return (made, error) }
-                }
-                return (made, nil)
-            }.value
-            if let failure { showError(failure) }
-            if !made.isEmpty { undoManager?.registerUndo(withTarget: self) { $0.trash(made, undo: name) }; undoManager?.setActionName(name) }
+    /// Copies into `dir` (Finder's "name copy" when the name is taken); ⌘Z puts the copies in the Trash.
+    func copy(_ paths: [String], into dir: String, undo name: String) {
+        let t = Task {
+            guard let r = await AppModel.shared.call(FilesCopy(paths: paths, into: dir)) else { return [String]() }
+            if let e = r.error { Banner.show(e, style: .error) }
             reloadTree()
+            return r.made
         }
+        undoable(name, t) { $0.trash({ await t.value }, undo: name) }
     }
 
-    /// `u`, or the first of "name copy.ext", "name copy 2.ext"… (`word: nil`: "name 2.ext") that doesn't exist.
-    nonisolated static func free(_ u: URL, word: String? = "copy") -> URL {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: u.path) else { return u }
-        let ext = u.pathExtension, base = u.deletingPathExtension().lastPathComponent, dir = u.deletingLastPathComponent()
-        var i = word == nil ? 2 : 1
-        while true {
-            let stem = [base, word].compactMap { $0 }.joined(separator: " ") + (i > 1 ? " \(i)" : "")
-            let c = dir.appendingPathComponent(ext.isEmpty ? stem : stem + "." + ext)
-            if !fm.fileExists(atPath: c.path) { return c }
-            i += 1
-        }
+    /// A new file in `dir` ("untitled", "untitled 2"…); ⌘Z puts it in the Trash.
+    func create(in dir: String, undo name: String) -> Task<String?, Never> {
+        let t = Task { await AppModel.shared.call(FilesCreate(path: dir + "/untitled", unique: true)).map { [$0] } ?? [] }
+        undoable(name, t) { $0.trash({ await t.value }, undo: name) }
+        return Task { await t.value.first }
+    }
+
+    /// What moved; why the rest didn't, said.
+    private func done(_ r: FilesMove.Result) -> [FileMove] {
+        if let e = r.error { Banner.show(e, style: .error) }
+        reloadTree()
+        return r.done
+    }
+
+    /// ⌘Z for what `t` does, registered now: `inverse` runs on undo (and registers the redo). One that did nothing
+    /// takes its entry back off, so ⌘Z doesn't skip a step.
+    private func undoable<T: Collection>(_ name: String, _ t: Task<T, Never>, _ inverse: @escaping @MainActor (FilesPanel) -> Void) {
+        guard let um = undoManager else { return }
+        let entry = UndoEntry()   // its own target, to be taken off alone
+        // A step of its own, closed now: outside an event (after an await) the group opened by event would stay open
+        // and take in the next action too, and one ⌘Z would undo both. Inside an undo, it's that undo's redo.
+        let own = um.groupingLevel == 0
+        if own { um.groupsByEvent = false; um.beginUndoGrouping() }
+        um.registerUndo(withTarget: entry) { [weak self] _ in _ = entry; if let self { inverse(self) } }
+        um.setActionName(name)
+        if own { um.endUndoGrouping(); um.groupsByEvent = true }
+        Task { if await t.value.isEmpty { um.removeAllActions(withTarget: entry) } }
     }
 
     /// ⌘C: the file itself, for pasting here, in Finder, or into a terminal (its path).
@@ -75,6 +81,12 @@ extension FilesPanel {
     @objc func paste(_ sender: Any?) {
         let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         guard !urls.isEmpty else { NSSound.beep(); return }
-        copy(urls, into: URL(fileURLWithPath: root).appendingPathComponent(selectedDir), undo: String(localized: "Paste"))
+        copy(urls.map(\.path), into: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).path, undo: String(localized: "Paste"))
     }
+}
+
+private final class UndoEntry {}
+
+private extension FileMove {
+    var back: FileMove { FileMove(from: to, to: from) }
 }
