@@ -189,6 +189,22 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     #expect(n > 0 && String(decoding: buf[0..<max(n, 0)], as: UTF8.self).contains("\"id\":1"))
 }
 
+/// Every offload slot held by slow work and more waiting for one: an agent's hook still comes through at once (its
+/// `kelp hook` waits for the reply before the agent goes on). It used to wait for a slot behind all of them.
+@Test func aHookIsAnsweredWhileEverySlotIsHeld() async throws {
+    let release = DispatchSemaphore(value: 0), held = Daemon.offloadLimit + 10
+    let started = OSAllocatedUnfairLock(initialState: 0)
+    let (d, _, root) = try daemon(); defer { for _ in 0..<held { release.signal() }; d.stop() }
+    for _ in 0..<held { Task { try? await d.offload { started.withLock { $0 += 1 }; release.wait() } } }
+    #expect(try await waitFor(10) { started.withLock { $0 } == Daemon.offloadLimit })   // every slot taken, the rest waiting
+    let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path); defer { close(fd) }
+    var tv = timeval(tv_sec: 3, tv_usec: 0); setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    Unix.writeAll(fd, try Wire.line(RPCRequest(id: 1, method: SessionHook.name, params: .obj(["id": "gone", "event": "working"]))))
+    var buf = [UInt8](repeating: 0, count: 4096)
+    let n = read(fd, &buf, buf.count)
+    #expect(n > 0 && String(decoding: buf[0..<max(n, 0)], as: UTF8.self).contains("\"id\":1"))
+}
+
 /// The app's attach (JSON): the reply with the history comes before any live output, as with `kelp attach`.
 @Test func jsonAttachSendsHistoryBeforeLiveOutput() async throws {
     let (d, c, w, root) = try await project(); defer { d.stop() }

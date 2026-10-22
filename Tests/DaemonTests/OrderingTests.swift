@@ -144,6 +144,25 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     _ = try await w.d.answer(GitStatus.name, p, conn: -1)
 }
 
+/// A quick method (`Handled.quick`) doesn't wait for a slot behind slow programs, so it must start none: each one, called
+/// on a running session as agents and the app call it, answers without (`Subprocess.quickOnly` would fail it). None is
+/// in order as well: those are the reader thread's already.
+@Test func quickMethodsStartNoProgram() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let desk = try await firstDesk(w)
+    let s = try await w.c.call(SessionCreate(worktreeId: desk.id, command: "exec cat"))
+    let quick = Daemon.methods.values.compactMap { $0 as? any Handled.Type }.filter { $0.quick }
+    #expect(quick.count >= 10)
+    let p = JSONValue.obj(["id": .string(s.id), "event": "working", "state": "working", "summary": "x", "key": "k", "cwd": .string(desk.path),
+                           "transcript": .string("/tmp/\(UUID().uuidString.lowercased()).jsonl")])
+    for t in quick {
+        let ordered = t.inOrder; #expect(!ordered, "\(t.name)")
+        do { _ = try await w.d.answer(t.name, p, conn: -1) } catch { Issue.record("\(t.name): \(error)") }
+    }
+    let status = JSONValue.obj(["id": .string(desk.id)])   // and one that runs git can't go that way
+    await #expect(throws: RPCError.self) { _ = try await w.d.offload(quick: true) { try GitStatus.answerNow(status, w.d, conn: -1) } }
+}
+
 /// A burst of offloaded work (git, gh, ssh) runs at most `offloadLimit` at once; the rest wait their turn, and all of it
 /// finishes. Each used to get a thread at once, however many came.
 @Test func offloadRunsAtMostItsLimitAtOnce() async throws {

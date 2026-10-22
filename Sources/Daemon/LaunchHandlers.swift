@@ -94,6 +94,7 @@ extension HistoryResume: Handled {
 
 /// A late one (it was paused or ended since) wakes nothing.
 extension SessionHook: Handled {
+    static var quick: Bool { true }   // the agent waits for its hook
     func handle(_ d: Daemon) throws -> Done {
         guard let ls = d.existing(id) else { return Done() }
         if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; d.follow(ls, transcript: transcript) }
@@ -107,6 +108,7 @@ extension SessionHook: Handled {
 }
 
 extension SessionAnnotate: Handled {
+    static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> Done {
         guard let ls = d.existing(id) else { return Done() }
         if let summary { _ = ls.update { $0.summary = summary }; d.publish(ls) }
@@ -126,7 +128,10 @@ extension RecipeRender: Handled {
     }
 }
 
-extension Ping: Handled { func handle(_ d: Daemon) throws -> String { "pong" } }
+extension Ping: Handled {
+    static var quick: Bool { true }
+    func handle(_ d: Daemon) throws -> String { "pong" }
+}
 extension DaemonShutdown: Handled {
     func handle(_ d: Daemon) throws -> Done {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak d] in d?.stop(); exit(0) }

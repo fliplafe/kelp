@@ -10,6 +10,7 @@ import GitKit
 final class Watches: Sendable {
     struct Key: Hashable, Sendable { let topic: WatchTopic, key: String }
     private struct Entry {
+        let number: Int                // this watch's: a read begun for one stopped since says nothing to the next
         var watchers: Set<Int>
         var last: Data?                // the event as last sent (sorted keys): the next goes out only when it differs
         var reading = false, again = false
@@ -19,15 +20,20 @@ final class Watches: Sendable {
         var tag: String?               // context: the session's status at the last read
     }
     private let entries = OSAllocatedUnfairLock<[Key: Entry]>(initialState: [:])
-    private let timers = OSAllocatedUnfairLock(initialState: 0)
+    private let numbers = OSAllocatedUnfairLock(initialState: 0)   // watches' and scheduled reads'
     /// Reads so far by key: tests see one read for two watchers, and none after the last one left.
     let reads = OSAllocatedUnfairLock<[Key: Int]>(initialState: [:])
     var running: Int { entries.withLock { $0.count } }
+    /// A test's stand-in for reading a topic (to hold one read back while a newer one finishes). In a struct, not bare
+    /// in the lock: see `Store.Listener`.
+    struct StandIn: Sendable { var read: (@Sendable (Key) async -> Data?)? }
+    let standIn = OSAllocatedUnfairLock(initialState: StandIn())
     private let files = DispatchQueue(label: "kelp.watches.files")
 
     func start(_ k: Key, conn: Int, _ d: Daemon) {
+        let n = numbers.withLock { $0 += 1; return $0 }
         let (new, again, last) = entries.withLock { e -> (Bool, Bool, Data?) in
-            guard var x = e[k] else { e[k] = Entry(watchers: [conn]); return (true, false, nil) }
+            guard var x = e[k] else { e[k] = Entry(number: n, watchers: [conn]); return (true, false, nil) }
             let again = !x.watchers.insert(conn).inserted
             if again { x.fastUntil = Date().addingTimeInterval(45) }
             e[k] = x
@@ -88,7 +94,7 @@ final class Watches: Sendable {
     }
 
     private func schedule(_ k: Key, after t: TimeInterval, _ d: Daemon) {
-        let n = timers.withLock { $0 += 1; return $0 }
+        let n = numbers.withLock { $0 += 1; return $0 }
         let ok = entries.withLock { e -> Bool in
             guard var x = e[k] else { return false }
             x.timer = n; e[k] = x; return true
@@ -101,18 +107,20 @@ final class Watches: Sendable {
     }
 
     private func read(_ k: Key, _ d: Daemon) {
-        let go = entries.withLock { e -> Date? in
+        let go = entries.withLock { e -> (Date, Int)? in
             guard var x = e[k] else { return nil }
             if x.reading { x.again = true; e[k] = x; return nil }
             x.reading = true; x.timer = nil; e[k] = x
-            return x.fastUntil
+            return (x.fastUntil, x.number)
         }
-        guard let fastUntil = go else { return }
+        guard let (fastUntil, number) = go else { return }
         Task {
-            let (line, next) = await Self.sample(k, d, fast: fastUntil > Date())
+            let (line, next): (Data?, TimeInterval?) = if let s = standIn.withLock({ $0.read }) { (await s(k), nil) } else { await Self.sample(k, d, fast: fastUntil > Date()) }
             reads.withLock { $0[k, default: 0] += 1 }
-            let (send, to, again) = entries.withLock { e -> (Data?, Set<Int>, Bool) in
-                guard var x = e[k] else { return (nil, [], false) }   // stopped meanwhile
+            let ours = entries.withLock { e -> (send: Data?, to: Set<Int>, again: Bool)? in
+                // Stopped meanwhile, maybe started again: what it read may be older than the new watch's first value,
+                // and the new one keeps its own clock.
+                guard var x = e[k], x.number == number else { return nil }
                 x.reading = false
                 let changed = line != nil && line != x.last
                 if changed { x.last = line }
@@ -120,6 +128,7 @@ final class Watches: Sendable {
                 e[k] = x
                 return (changed ? line : nil, x.watchers, again)
             }
+            guard let (send, to, again) = ours else { return }
             if let send { d.clients.targets(to).forEach { $0.send(send) } }
             if again { read(k, d) } else if let next { schedule(k, after: next, d) }
         }

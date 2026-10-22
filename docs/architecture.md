@@ -106,8 +106,10 @@ else a `NotificationCenter` name.
 
 ## Concurrency and ordering (the daemon)
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
-  files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool. Accepting
-  connections and the 2 Hz ticker (session ticks, keep-awake, pausing idle agents, settings.json polling) have their own
+  files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool; at most
+  128 run at once, the rest wait their turn. A quick one (`Handled.quick`: `session.hook`, `session.report`,
+  `state.get`…) takes no turn: it starts no program (`Subprocess.quickOnly` fails one that would). Store writes and the
+  events they push go one at a time, in commit order. Accepting connections and the 2 Hz ticker (session ticks, keep-awake, pausing idle agents, settings.json polling) have their own
   queues.
 - **Ordering.** Replies to one connection can come back in any order, as in JSON-RPC and LSP; clients match them by id.
   What is only right in the order it was sent says so on its type (`Answered.inOrder`: keystrokes `session.write`,

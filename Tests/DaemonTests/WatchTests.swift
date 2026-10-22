@@ -73,3 +73,26 @@ private final class Heard: Sendable {
     _ = try await w.c.call(WorktreeRemove(id: desk.id))
     #expect(try await waitFor(5) { heard.events(RemovedEvent.self).contains { $0.session == s.id } })
 }
+
+/// A watch stopped and started again while its first read was still out: that read, finishing last, says nothing. It
+/// used to be taken for the new watch's and pushed after the newer value, leaving the app with the old one.
+@Test func aReadFromBeforeAStopIsNotPushedAfterTheNewerOne() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let heard = Heard(); heard.listen(w.c)
+    let reads = OSAllocatedUnfairLock(initialState: 0), release = OSAllocatedUnfairLock(initialState: false)
+    @Sendable func line(_ used: Int) -> Data? { try? Wire.line(RPCNotification(ContextEvent(session: "s", usage: .init(used: used, window: 9)))) }
+    w.d.watches.standIn.withLock {
+        $0.read = { _ in
+            guard reads.withLock({ $0 += 1; return $0 }) == 1 else { return line(2) }
+            while !release.withLock({ $0 }) { try? await Task.sleep(for: .milliseconds(10)) }
+            return line(1)   // the first read, from before the stop
+        }
+    }
+    w.c.notify(WatchStart(.context, "s"))
+    #expect(try await waitFor(5) { reads.withLock { $0 } == 1 })
+    w.c.notify(WatchStop(.context, "s")); w.c.notify(WatchStart(.context, "s"))
+    #expect(try await waitFor(5) { heard.events(ContextEvent.self).last?.usage?.used == 2 })
+    release.withLock { $0 = true }
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(heard.events(ContextEvent.self).map { $0.usage?.used } == [2])
+}

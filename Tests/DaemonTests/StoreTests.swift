@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import Core
 @testable import Daemon
@@ -39,4 +40,37 @@ import Core
     #expect(try s.comments(worktree: w.id).count == 1)
     try s.delete(r)   // cascades to the workspace
     #expect(try s.comments(worktree: w.id).isEmpty)
+}
+
+/// Changes are told in the order they were committed: the last one told is what the database holds. Told after the
+/// write, unordered, two writers could pass each other in between and leave the app with the older record.
+@Test func changesAreToldInTheOrderTheyWereCommitted() throws {
+    let s = try Store()
+    let r = Repo(name: "demo", path: "/tmp/demo"); try s.save(r)
+    let w = Worktree(repoId: r.id, branch: "b", path: "/p"); try s.save(w)
+    let committed = OSAllocatedUnfairLock<[String]>(initialState: []), told = OSAllocatedUnfairLock<[String]>(initialState: [])
+    // A teller takes a while (the daemon's encodes and queues an event per client): a later one can't overtake.
+    s.changed.withLock { $0.tell = { c in if case .worktree(let x) = c { usleep(.random(in: 0...1000)); told.withLock { $0.append(x.note) } } } }
+    let all = DispatchGroup()
+    for t in 0..<8 {
+        all.enter()
+        Thread.detachNewThread {
+            for i in 0..<50 { _ = try? s.update(Worktree.self, w.id) { $0.note = "\(t).\(i)"; committed.withLock { $0.append("\(t).\(i)") } } }
+            all.leave()
+        }
+    }
+    all.wait()
+    let (a, b) = (told.withLock { $0 }, committed.withLock { $0 })
+    let first = a.indices.first { $0 >= b.count || a[$0] != b[$0] }   // not a diff of 400 lines
+    #expect(a.count == b.count && first == nil, "told out of order from #\(first ?? -1)")
+}
+
+/// Thousands of changes told, as a daemon tells over a day of status changes: the listener stays as it was set. Held by
+/// the lock as a bare function, each read wrapped it once more (in a debug build), and 3200 overflowed the stack.
+@Test func aListenerToldThousandsOfChangesStaysOneCall() throws {
+    let s = try Store()
+    let r = Repo(name: "demo", path: "/tmp/demo"); try s.save(r)
+    let w = Worktree(repoId: r.id, branch: "b", path: "/p"); try s.save(w)
+    s.changed.withLock { $0.tell = { _ in } }
+    for i in 0..<4000 { _ = try s.update(Worktree.self, w.id) { $0.note = "\(i)" } }
 }

@@ -6,6 +6,7 @@ import AgentData
 // Sessions: listing, attaching, typing into, stopping, reading.
 
 extension SessionList: Handled {
+    static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> [Session] {
         let all = try d.store.sessions().map { s -> Session in d.existing(s.id)?.snapshot ?? s }
         return all.filter { worktreeId == nil || $0.worktreeId == worktreeId }
@@ -125,10 +126,17 @@ extension SessionRead: Handled { func handle(_ d: Daemon) throws -> String { try
 extension SessionContext: Handled { func handle(_ d: Daemon) throws -> String { try d.printed(id, bytes: bytes ?? 24_000) } }
 
 /// Never re-inserts a deleted one (publish only updates).
-extension SessionMarkRead: Handled { func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(false) != nil { d.publish(ls) }; return Done() } }
-extension SessionMarkUnread: Handled { func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(true) != nil { d.publish(ls) }; return Done() } }
+extension SessionMarkRead: Handled {
+    static var quick: Bool { true }
+    func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(false) != nil { d.publish(ls) }; return Done() }
+}
+extension SessionMarkUnread: Handled {
+    static var quick: Bool { true }
+    func handle(_ d: Daemon) throws -> Done { if let ls = d.existing(id), ls.setUnread(true) != nil { d.publish(ls) }; return Done() }
+}
 
 extension SessionTurn: Handled {
+    static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> Info? {
         guard let ls = d.existing(id) else { return nil }
         let turn = ls.lastTurn.map { t in Turn(files: t.files.map { .init(path: $0.path, added: $0.added, removed: $0.removed) }, seconds: t.seconds) }

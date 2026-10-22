@@ -62,7 +62,7 @@ public final class Daemon: Sendable {
         RemoteHost.controlDir = ssh.path
         RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
         self.store.changed.withLock {
-            $0 = { [weak self] c in
+            $0.tell = { [weak self] c in
                 self?.recordChanged(c)   // records go to the clients as they change
                 switch c {   // and a project added, moved or removed is followed (watchHeads) from then on
                 case .repo, .repoRemoved: self?.watchHeads()

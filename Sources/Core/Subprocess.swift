@@ -23,8 +23,9 @@ public enum Subprocess {
     /// runaway (a diff of a regenerated dataset, a `cat` of a log) taking the daemon's memory.
     public static let outputLimit = 64 << 20
 
-    /// The daemon's connection reader while it applies an in-order call (`Handled.inOrder`): whatever was sent after the
-    /// call waits for it, so no program runs there. `run` refuses inside `body`, and the call fails instead of stalling.
+    /// The daemon's connection reader while it applies an in-order call (`Handled.inOrder`), and a quick one
+    /// (`Handled.quick`), which takes no turn behind slow programs: no program runs there. `run` refuses inside `body`, and
+    /// the call fails instead of stalling.
     public static func quickOnly<T>(_ body: () throws -> T) rethrows -> T {
         let d = Thread.current.threadDictionary
         d[quickOnlyKey] = true
@@ -40,7 +41,7 @@ public enum Subprocess {
                            limit: Int = outputLimit) throws -> Output {
         if Thread.current.threadDictionary[quickOnlyKey] != nil {
             let name = argv.first.map { ($0 as NSString).lastPathComponent } ?? "A program"
-            throw RPCError.internalError("\(name) can't run from an in-order call: it would hold up the connection.")
+            throw RPCError.internalError("\(name) can't run from a quick or in-order call: it would hold up others.")
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: argv.first ?? "/usr/bin/false")

@@ -40,6 +40,7 @@ extension Daemon {
 }
 
 extension StateGet: Handled {
+    static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> JSONValue {
         if let prefix { return .object(try d.store.uiState(prefix: prefix)) }
         guard let key else { throw RPCError.invalidParams("missing key") }

@@ -24,17 +24,22 @@ protocol Answered: RPCMethod {
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
 protocol Handled: Answered {
+    /// Memory or a short write to the store, never a program: answered on a thread of its own at once, not after a slot
+    /// in `offload` behind slow git, gh or ssh (an agent's `kelp hook` waits for its reply). `Subprocess.quickOnly`
+    /// holds it to that: one that starts a program fails instead of quietly becoming slow.
+    static var quick: Bool { get }
     func handle(_ d: Daemon) throws -> Result
     func handle(_ d: Daemon, conn: Int) throws -> Result
 }
 
 extension Handled {
     static var inOrder: Bool { false }
+    static var quick: Bool { false }
     func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
 
     /// On the calling thread: an in-order method's, on the reader thread.
     static func answerNow(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Data { try JSONEncoder().encode(decoded(p).handle(d, conn: conn)) }
-    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload { try answerNow(p, d, conn: conn) } }
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload(quick: quick) { try answerNow(p, d, conn: conn) } }
 }
 
 extension RPCMethod {
@@ -97,13 +102,14 @@ extension Daemon {
     /// A thread of its own, not GCD's pool: that one stops at 64 threads (concurrent queues Kelp makes draw from it too),
     /// Swift's tasks run on it as well, and once slow hosts hold them all no request is answered. git, gh and ssh all have
     /// time limits, so a thread is held only while its program runs; at most `offloadLimit` run at once, the rest wait
-    /// their turn in the order they came, holding no thread meanwhile.
-    func offload<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        await offloads.acquire()
+    /// their turn in the order they came, holding no thread meanwhile. `quick` work (`Handled.quick`) takes no slot and
+    /// starts no program.
+    func offload<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
+        if !quick { await offloads.acquire() }
         return try await withCheckedThrowingContinuation { c in
             Thread.detachNewThread { [offloads] in
-                let r = Result(catching: work)
-                offloads.release()
+                let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
+                if !quick { offloads.release() }
                 c.resume(with: r)
             }
         }
@@ -146,6 +152,7 @@ final class Slots: Sendable {
 }
 
 extension DaemonInfo: Handled {
+    static var quick: Bool { true }
     func handle(_ d: Daemon) throws -> Result {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
@@ -213,6 +220,7 @@ extension RepoRemoveWorktrees: Handled {
 }
 
 extension SessionReport: Handled {
+    static var quick: Bool { true }   // `kelp report`: the agent waits for it
     func handle(_ d: Daemon) throws -> Done {
         guard ProgramStatus.states.contains(state) else { throw RPCError.invalidParams("state is one of idle, working, blocked, done, error, clear") }
         guard let ls = d.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
