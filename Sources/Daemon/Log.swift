@@ -23,6 +23,10 @@ extension Daemon {
         return why
     }
 
+    func requireApp(_ conn: Int, _ refusal: String) throws { try clients.requireApp(conn, refusal) }
+}
+
+extension Clients {
     /// KelpApp beside this daemon (one bundle, or one build folder); KELP_APP_EXECUTABLE stands in for it in tests.
     static var appExecutable: String {
         #if DEBUG   // tests stand in for the app; a release build takes no word for it from whoever started kelpd
@@ -35,9 +39,9 @@ extension Daemon {
     /// For what only Kelp's window may do (its state, trusting a project): anyone else is refused, and the log says who,
     /// so a second install or a stale app (whose path isn't the one beside this daemon) can be told apart.
     func requireApp(_ conn: Int, _ refusal: String) throws {
-        let peer = clients.peer(conn)
-        guard peer != Daemon.appExecutable else { return }
-        Log.rpc.notice("refused \(refusal, privacy: .public): \(peer ?? "an unknown program", privacy: .public) isn't \(Daemon.appExecutable, privacy: .public)")
+        let peer = peer(conn)
+        guard peer != Self.appExecutable else { return }
+        Log.rpc.notice("refused \(refusal, privacy: .public): \(peer ?? "an unknown program", privacy: .public) isn't \(Self.appExecutable, privacy: .public)")
         throw RPCError.invalidParams(refusal)
     }
 }

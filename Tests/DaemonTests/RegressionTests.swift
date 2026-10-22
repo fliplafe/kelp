@@ -323,7 +323,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let d = try Daemon(root: root); defer { d.stop() }
     let r = Repo(name: "older", path: path, baseBranch: "main")
     try d.store.save(r)   // as an older daemon left it: a project, no desk
-    #expect(try WorktreeList(repoId: r.id).handle(d).isEmpty)
+    #expect(try WorktreeList(repoId: r.id).handle(d.workspaces).isEmpty)
     #expect(try d.store.worktrees(repo: r.id).isEmpty)
     try d.start()
     #expect(try await waitFor { try d.store.worktrees(repo: r.id).count == 1 })

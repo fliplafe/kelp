@@ -118,12 +118,12 @@ extension SessionAnnotate: Handled {
 }
 
 extension RecipeRender: Handled {
-    func handle(_ d: Daemon) throws -> String {
-        let w = try d.cwd(forWorktree: id)
-        let cfg = d.workspaces.trustedConfig(try d.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
-        var all: [String: String] = ["branch": w.branch, "base": try d.store.repo(w.repoId)?.baseBranch ?? "main"]
+    func handle(_ workspaces: Workspaces) throws -> String {
+        let w = try workspaces.store.worktree(named: id)
+        let cfg = workspaces.trustedConfig(try workspaces.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
+        var all: [String: String] = ["branch": w.branch, "base": try workspaces.store.repo(w.repoId)?.baseBranch ?? "main"]
         all.merge(vars ?? [:]) { $1 }
-        if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path, remotes: d.remotes)) ?? "").prefix(4000)) }
+        if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path, remotes: workspaces.remotes)) ?? "").prefix(4000)) }
         return Recipes.render(name, config: cfg, vars: all)
     }
 }
@@ -174,7 +174,7 @@ extension TaskFromIssue: AsyncHandled {
             while Git.branchExists(r.path, unique, remotes: d.remotes) { unique = "\(branch)-\(n)"; n += 1 }
             return unique
         }
-        let created = try await d.offload { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(d) }
+        let created = try await d.offload { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(d.workspaces) }
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
         let (w, s) = try await d.offload { () throws -> (Worktree, Session) in
             guard let w = try d.store.update(Worktree.self, created.worktree.id, {

@@ -3,7 +3,7 @@ import Core
 import GitKit
 
 /// Remote projects (SSH): added by host and folder, their files read from the host. See `RemoteHost`.
-extension Daemon {
+extension Workspaces {
 
     /// The local folder's name for a path on a host: its last component, or "project" when that isn't a usable name
     /// ("/", "~", "..", "."), so the folder always lands inside the host's folder.
@@ -39,7 +39,7 @@ extension RemoteListFolders: Handled {
 
 /// {host, path, init?} → the project (its local folder stands for the one on the host).
 extension RepoAddRemote: Handled {
-    func handle(_ d: Daemon) throws -> Repo {
+    func handle(_ workspaces: Workspaces) throws -> Repo {
         let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
         guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
         guard path.hasPrefix("/") || path.hasPrefix("~") else { throw RPCError.invalidParams("Enter the folder's full path on \(host).") }
@@ -50,11 +50,11 @@ extension RepoAddRemote: Handled {
         func same(_ m: RemoteHost) -> Bool {
             m.host == host && (m.path == path || m.path == real || (path.hasPrefix("~/") && m.path.hasSuffix(String(path.dropFirst()))))
         }
-        if let r = try d.store.repos().first(where: { d.remotes.of($0.path).map(same) ?? false }) {
+        if let r = try workspaces.store.repos().first(where: { workspaces.remotes.of($0.path).map(same) ?? false }) {
             return r
         }
-        let name = Daemon.remoteFolderName(path)
-        let hostDir = d.root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
+        let name = Workspaces.remoteFolderName(path)
+        let hostDir = workspaces.root.appendingPathComponent("remote").appendingPathComponent(host.replacingOccurrences(of: "/", with: "_"))
         try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
         // A folder of its own, made here: /a/app and /b/app on one host don't share one, and a failure below removes
         // only this folder, never another project's.
@@ -68,18 +68,19 @@ extension RepoAddRemote: Handled {
         try mark(RemoteHost(host: host, path: path))
         // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
         if `init` == true {
-            do { _ = try Git.run(["init", "-q"], cwd: folder.path, remotes: d.remotes) }
+            do { _ = try Git.run(["init", "-q"], cwd: folder.path, remotes: workspaces.remotes) }
             catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
         }
         let top: String
-        do { top = try Git.root(of: folder.path, remotes: d.remotes) }
+        do { top = try Git.root(of: folder.path, remotes: workspaces.remotes) }
         catch let e as GitError {
             try? FileManager.default.removeItem(at: folder)
             throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
         }
         try mark(RemoteHost(host: host, path: top))
-        let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Daemon.remoteFolderName(top), path: folder.path, baseBranch: Git.defaultBranch(repo: folder.path, remotes: d.remotes))
-        try d.store.save(r); try d.workspaces.syncMainWorkspaces(); d.notify(ChangedEvent.repo)
+        let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Workspaces.remoteFolderName(top), path: folder.path,
+                     baseBranch: Git.defaultBranch(repo: folder.path, remotes: workspaces.remotes))
+        try workspaces.store.save(r); try workspaces.syncMainWorkspaces(); workspaces.notify(ChangedEvent.repo)
         return r
     }
 }

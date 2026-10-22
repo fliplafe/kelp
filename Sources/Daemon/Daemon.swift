@@ -41,10 +41,10 @@ public final class Daemon: Sendable {
         self.remotes = Remotes(home: root)
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store, remotes: remotes)
         self.forges = Forges(offloads: offloads)
-        self.workspaces = Workspaces(root: root, store: self.store, remotes: remotes, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
         self.watches = Watches(store: self.store, clients: clients, remotes: remotes)
         self.sessions = Sessions(root: root, socketPath: root.appendingPathComponent("kelp.sock").path, store: self.store, remotes: remotes,
                                  settings: settings, agentUsage: agentUsage, clients: clients, watches: watches, offloads: offloads)
+        self.workspaces = Workspaces(root: root, store: self.store, remotes: remotes, sessions: sessions, clients: clients)
         // Remote projects' shared SSH connections; without it, they fail.
         do { try Paths.ensure(URL(fileURLWithPath: remotes.controlDir)) } catch { Log.start.error("no folder for ssh connections: \(error)") }
         watches.reading.withLock { $0.read = { [weak self] k, fast in await self?.sample(k, fast: fast) ?? (nil, nil) } }
@@ -287,5 +287,5 @@ public final class Daemon: Sendable {
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
-    func cwd(forWorktree id: String) throws -> Worktree { try workspaces.worktree(id) }
+    func cwd(forWorktree id: String) throws -> Worktree { try store.worktree(named: id) }
 }

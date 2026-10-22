@@ -10,18 +10,28 @@ import GitKit
 final class Workspaces: Sendable {
     let root: URL
     let store: Store
-    /// A desk was added (the coarse `event.changed`; its record goes out as it's written anyway).
-    let deskAdded: @Sendable () -> Void
+    let remotes: Remotes
+    let sessions: Sessions   // a desk's agents pause, start and go with it
+    let clients: Clients
     /// Reading the projects' desks and adding the missing first one is one step: two syncs at once added two "Workspace 1".
     let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
     let heads = OSAllocatedUnfairLock<[String: HeadWatch]>(initialState: [:])   // by project: its .git, for desks to follow the branch
     let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
 
-    let remotes: Remotes
+    init(root: URL, store: Store, remotes: Remotes, sessions: Sessions, clients: Clients) {
+        self.root = root; self.store = store; self.remotes = remotes; self.sessions = sessions; self.clients = clients
+    }
 
-    init(root: URL, store: Store, remotes: Remotes, deskAdded: @escaping @Sendable () -> Void) {
-        self.root = root; self.store = store; self.remotes = remotes; self.deskAdded = deskAdded
+    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
+
+    /// The folder of the workspace a client named.
+    func folder(_ worktreeId: String) throws -> String { try store.worktree(named: worktreeId).path }
+
+    /// Where a project's worktrees go: its name made safe for a folder ("../x" can't leave `worktrees/`) and its id, so two
+    /// projects with one name don't share a folder.
+    static func worktreesDir(_ root: URL, _ r: Repo) -> URL {
+        root.appendingPathComponent("worktrees").appendingPathComponent(Git.slug(r.name).replacingOccurrences(of: ".", with: "-") + "-" + r.id.prefix(8))
     }
 
     static let placeholderName = #"^Workspace \d+$"#
@@ -103,7 +113,7 @@ final class Workspaces: Sendable {
             try store.save(w)
             return w
         }
-        deskAdded()
+        notify(ChangedEvent.worktree)   // the coarse `event.changed`; its record went out as it was written
         return w
     }
 
@@ -113,10 +123,5 @@ final class Workspaces: Sendable {
         var n = 2
         while taken.contains("Workspace \(n)") || Git.branchExists(r.path, "ws-\(n)", remotes: remotes) { n += 1 }
         return ("Workspace \(n)", "ws-\(n)")
-    }
-
-    func worktree(_ id: String) throws -> Worktree {
-        guard let w = try store.worktree(id) else { throw RPCError.invalidParams("no worktree \(id)") }
-        return w
     }
 }

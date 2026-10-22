@@ -100,7 +100,7 @@ extension RepoClone: AsyncHandled {
     func handle(_ d: Daemon) async throws -> Repo { try await handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) async throws -> Repo {
         let dest = try await d.clone(url, into: parent, id: id ?? UUID().uuidString, conn: conn)
-        return try await d.offload { try RepoAdd(path: dest).handle(d) }   // runs git: off the cooperative pool
+        return try await d.offload { try RepoAdd(path: dest).handle(d.workspaces) }   // runs git: off the cooperative pool
     }
 }
 extension RepoCloneCancel: AsyncHandled { func handle(_ d: Daemon) async throws -> Done { d.forges.clones.cancel(id); return Done() } }

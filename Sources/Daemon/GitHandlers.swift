@@ -4,163 +4,163 @@ import GitKit
 
 // Source control, files and review comments: everything runs here, off the UI.
 
-extension GitStatus: Handled { func handle(_ d: Daemon) throws -> Result { try Git.status(d.cwd(forWorktree: id).path, limit: FileChange.limit, remotes: d.remotes) } }
-extension GitBranches: Handled { func handle(_ d: Daemon) throws -> Result { try Git.branches(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
-extension GitLineStats: Handled { func handle(_ d: Daemon) throws -> Result { try Git.lineStats(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
+extension GitStatus: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.status(workspaces.folder(id), limit: FileChange.limit, remotes: workspaces.remotes) } }
+extension GitBranches: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.branches(workspaces.folder(id), remotes: workspaces.remotes) } }
+extension GitLineStats: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.lineStats(workspaces.folder(id), remotes: workspaces.remotes) } }
 /// The branch checked out now (a workspace's record can be stale after a switch).
-extension GitPush: Handled { func handle(_ d: Daemon) throws -> Done { try Git.remote(d.cwd(forWorktree: id).path, .push, remotes: d.remotes); return Done() } }
+extension GitPush: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.remote(workspaces.folder(id), .push, remotes: workspaces.remotes); return Done() } }
 
 extension GitDiff: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let w = try d.cwd(forWorktree: id)
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        let w = try workspaces.store.worktree(named: id)
         var dir = w.path
         let src: DiffSource
         switch source ?? "all" {
         case "turn":   // since the agent's last turn started, where it worked then (its own worktree, maybe)
-            guard let s = session, let ls = d.sessions.existing(s), let base = ls.turnBase else {
+            guard let s = session, let ls = workspaces.sessions.existing(s), let base = ls.turnBase else {
                 throw RPCError.invalidParams("That agent hasn't started a turn since Kelp launched.")
             }
             src = .since(tree: base); dir = ls.turnDir ?? dir
         case "unstaged": src = .unstaged
         case "staged": src = .staged
-        case "branch": src = .branch(base: try d.ref(base) ?? (try d.store.repo(w.repoId)?.baseBranch ?? "main"))
+        case "branch": src = .branch(base: try clientRef(base) ?? (try workspaces.store.repo(w.repoId)?.baseBranch ?? "main"))
         case "commit":
             guard let commit else { throw RPCError.invalidParams("missing commit") }
-            src = .commit(try d.ref(commit) ?? "")
+            src = .commit(try clientRef(commit) ?? "")
         default: src = .allUncommitted
         }
-        return try Git.diff(dir, source: src, file: file, remotes: d.remotes)
+        return try Git.diff(dir, source: src, file: file, remotes: workspaces.remotes)
     }
 }
 
 extension GitLog: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let w = try d.cwd(forWorktree: id)
-        let base = all == true ? nil : try d.store.repo(w.repoId)?.baseBranch
-        return try Git.log(w.path, base: base, remotes: d.remotes).map { Entry(hash: $0.hash, subject: $0.subject) }
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        let w = try workspaces.store.worktree(named: id)
+        let base = all == true ? nil : try workspaces.store.repo(w.repoId)?.baseBranch
+        return try Git.log(w.path, base: base, remotes: workspaces.remotes).map { Entry(hash: $0.hash, subject: $0.subject) }
     }
 }
 
-extension GitStage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stage(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
-extension GitUnstage: Handled { func handle(_ d: Daemon) throws -> Done { try Git.unstage(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
+extension GitStage: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.stage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
+extension GitUnstage: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.unstage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
 
 extension GitHunk: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        let w = try d.cwd(forWorktree: id), rev = reverse == true
-        let diff = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file, remotes: d.remotes).first
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        let w = try workspaces.store.worktree(named: id), rev = reverse == true
+        let diff = try Git.diff(w.path, source: rev ? .staged : .unstaged, file: file, remotes: workspaces.remotes).first
         // With its fingerprint, the hunk as shown line for line; with its header, that one; else by number.
         let i = fingerprint.map { f in diff?.hunks.firstIndex { $0.fingerprint == f } ?? -1 }
             ?? header.map { h in diff?.hunks.firstIndex { $0.header == h } ?? -1 } ?? hunk ?? -1
         guard let diff, diff.hunks.indices.contains(i) else {
             throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
         }
-        try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev, remotes: d.remotes)
+        try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev, remotes: workspaces.remotes)
         return Done()
     }
 }
 
 extension GitCommit: Handled {
-    func handle(_ d: Daemon) throws -> String {
-        try Git.commit(d.cwd(forWorktree: id).path, message: message, all: all == true, amend: amend == true, remotes: d.remotes)
+    func handle(_ workspaces: Workspaces) throws -> String {
+        try Git.commit(workspaces.folder(id), message: message, all: all == true, amend: amend == true, remotes: workspaces.remotes)
     }
 }
 
 extension GitMerge: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let w = try d.cwd(forWorktree: id)
-        guard let r = try d.store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
-        if try Git.isDirty(w.path, remotes: d.remotes) { throw RPCError.invalidParams("worktree has uncommitted changes") }
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        let w = try workspaces.store.worktree(named: id)
+        guard let r = try workspaces.store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
+        if try Git.isDirty(w.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("worktree has uncommitted changes") }
         // The main checkout too: a merge (and the abort a conflict brings) must never touch the user's own work there.
-        if Git.isMerging(r.path, remotes: d.remotes) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
-        if try Git.isDirty(r.path, remotes: d.remotes) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
+        if Git.isMerging(r.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
+        if try Git.isDirty(r.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
         // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
-        let branch = (try? Git.currentBranch(w.path, remotes: d.remotes)) ?? w.branch
+        let branch = (try? Git.currentBranch(w.path, remotes: workspaces.remotes)) ?? w.branch
         // Detached: "HEAD" would merge the main checkout into itself ("Already up to date") and report success.
         guard branch != "HEAD" else {
             throw RPCError.invalidParams("This workspace isn't on a branch (detached HEAD). Create a branch for its commits, then merge.")
         }
-        let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: keepConflicts == true, remotes: d.remotes)
+        let res = try Git.merge(branch: branch, into: r.path, onto: r.baseBranch, keepConflicts: keepConflicts == true, remotes: workspaces.remotes)
         return Result(merged: res.merged, conflicts: res.conflicts)
     }
 }
 
 extension GitSwitch: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        try Git.switchBranch(d.cwd(forWorktree: id).path, to: d.ref(branch) ?? "", create: create == true, remote: remote == true, remotes: d.remotes)
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.switchBranch(workspaces.folder(id), to: clientRef(branch) ?? "", create: create == true, remote: remote == true, remotes: workspaces.remotes)
         return Done()
     }
 }
 
 extension GitGraph: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let g = try Git.graph(d.cwd(forWorktree: id).path, limit: max(1, limit ?? 200), remotes: d.remotes)
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        let g = try Git.graph(workspaces.folder(id), limit: max(1, limit ?? 200), remotes: workspaces.remotes)
         return Result(commits: g.commits, more: g.more)
     }
 }
 
 extension GitCommitFiles: Handled {
-    func handle(_ d: Daemon) throws -> Result { try Git.commitFiles(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "", remotes: d.remotes) }
+    func handle(_ workspaces: Workspaces) throws -> Result { try Git.commitFiles(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes) }
 }
 extension GitCommitDetails: Handled {
-    func handle(_ d: Daemon) throws -> Result { try Git.commitDetails(d.cwd(forWorktree: id).path, commit: d.ref(commit) ?? "", remotes: d.remotes) }
+    func handle(_ workspaces: Workspaces) throws -> Result { try Git.commitDetails(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes) }
 }
-extension GitDiscard: Handled { func handle(_ d: Daemon) throws -> Done { try Git.discard(d.cwd(forWorktree: id).path, files: files ?? [], remotes: d.remotes); return Done() } }
+extension GitDiscard: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.discard(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
 
 extension GitRemoteOp: Handled {
-    func handle(_ d: Daemon) throws -> Done {
+    func handle(_ workspaces: Workspaces) throws -> Done {
         guard let o = Git.Remote(rawValue: op) else { throw RPCError.invalidParams("op: pull, push or fetch") }
-        try Git.remote(d.cwd(forWorktree: id).path, o, remotes: d.remotes)
+        try Git.remote(workspaces.folder(id), o, remotes: workspaces.remotes)
         return Done()
     }
 }
-extension GitStash: Handled { func handle(_ d: Daemon) throws -> Done { try Git.stash(d.cwd(forWorktree: id).path, pop: pop == true, remotes: d.remotes); return Done() } }
+extension GitStash: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.stash(workspaces.folder(id), pop: pop == true, remotes: workspaces.remotes); return Done() } }
 
 extension GitWebURL: Handled {
-    func handle(_ d: Daemon) throws -> String {
+    func handle(_ workspaces: Workspaces) throws -> String {
         let last = end ?? start
-        return try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } }, remotes: d.remotes)
+        return try Git.webURL(path: path, lines: start.flatMap { s in last.map { min(s, $0)...max(s, $0) } }, remotes: workspaces.remotes)
     }
 }
 
 extension GitWebPages: Handled {
-    func handle(_ d: Daemon) throws -> Pages? {
-        let path = try d.repoPath(worktreeId: worktreeId, repoId: repoId).1
-        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: d.remotes) else { return nil }   // no origin: nothing to link to
+    func handle(_ workspaces: Workspaces) throws -> Pages? {
+        let path = try workspaces.store.repoPath(worktreeId: worktreeId, repoId: repoId).1
+        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: workspaces.remotes) else { return nil }   // no origin: nothing to link to
         return Git.webPages(remote: origin.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
-extension FilesList: Handled { func handle(_ d: Daemon) throws -> Result { try ProjectFiles.list(d.cwd(forWorktree: id).path, remotes: d.remotes) } }
+extension FilesList: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.list(workspaces.folder(id), remotes: workspaces.remotes) } }
 extension FilesSearch: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        try ProjectFiles.search(d.cwd(forWorktree: id).path, query: query, regex: regex == true, caseSensitive: `case` == true, remotes: d.remotes)
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        try ProjectFiles.search(workspaces.folder(id), query: query, regex: regex == true, caseSensitive: `case` == true, remotes: workspaces.remotes)
     }
 }
 
 extension CommentAdd: Handled {
-    func handle(_ d: Daemon) throws -> DiffComment {
+    func handle(_ workspaces: Workspaces) throws -> DiffComment {
         let c = DiffComment(worktreeId: id, file: file, startLine: start ?? 1, endLine: end ?? start ?? 1, quote: quote ?? "", text: text)
-        try d.store.save(c)
+        try workspaces.store.save(c)
         return c
     }
 }
-extension CommentList: Handled { func handle(_ d: Daemon) throws -> Result { try d.store.comments(worktree: id) } }
+extension CommentList: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try workspaces.store.comments(worktree: id) } }
 extension CommentSetState: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        guard var c = try d.store.db.read({ try DiffComment.fetchOne($0, key: id) }) else { throw RPCError.invalidParams("no comment") }
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        guard var c = try workspaces.store.db.read({ try DiffComment.fetchOne($0, key: id) }) else { throw RPCError.invalidParams("no comment") }
         c.state = DiffComment.State(rawValue: state) ?? .open
-        try d.store.save(c)
+        try workspaces.store.save(c)
         return Done()
     }
 }
 /// All open comments → one message into the agent's terminal.
 extension CommentSend: Handled {
-    func handle(_ d: Daemon) throws -> Int {
-        let w = try d.cwd(forWorktree: id)
-        let open = try d.store.comments(worktree: w.id).filter { $0.state == .open }
+    func handle(_ workspaces: Workspaces) throws -> Int {
+        let w = try workspaces.store.worktree(named: id)
+        let open = try workspaces.store.comments(worktree: w.id).filter { $0.state == .open }
         guard !open.isEmpty else { return 0 }
-        _ = try SessionSend(id: session, text: Self.message(branch: w.branch, comments: open)).handle(d.sessions)
-        for var c in open { c.state = .sent; try d.store.save(c) }
+        _ = try SessionSend(id: session, text: Self.message(branch: w.branch, comments: open)).handle(workspaces.sessions)
+        for var c in open { c.state = .sent; try workspaces.store.save(c) }
         return open.count
     }
 

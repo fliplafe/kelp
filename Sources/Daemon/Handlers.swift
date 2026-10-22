@@ -36,6 +36,7 @@ extension AgentUsage: DaemonService { static func of(_ d: Daemon) -> AgentUsage 
 extension SettingsStore: DaemonService { static func of(_ d: Daemon) -> SettingsStore { d.settings } }
 extension Remotes: DaemonService { static func of(_ d: Daemon) -> Remotes { d.remotes } }
 extension Sessions: DaemonService { static func of(_ d: Daemon) -> Sessions { d.sessions } }
+extension Workspaces: DaemonService { static func of(_ d: Daemon) -> Workspaces { d.workspaces } }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
@@ -110,12 +111,6 @@ extension Daemon {
         do { return try await body() } catch let e as GitError { throw RPCError.internalError(e.message) }
     }
 
-    /// Where a project's worktrees go: its name made safe for a folder ("../x" can't leave `worktrees/`) and its id, so two
-    /// projects with one name don't share a folder.
-    static func worktreesDir(_ root: URL, _ r: Repo) -> URL {
-        root.appendingPathComponent("worktrees").appendingPathComponent(Git.slug(r.name).replacingOccurrences(of: ".", with: "-") + "-" + r.id.prefix(8))
-    }
-
     /// git, gh and ssh hold their thread until they exit, and Swift's cooperative pool has one thread per core: a few slow
     /// ones (the sidebar asks every folder's PR at once) would stall every other request, a terminal's attach included.
     /// A thread of its own, not GCD's pool: that one stops at 64 threads (concurrent queues Kelp makes draw from it too),
@@ -185,36 +180,36 @@ extension DaemonInfo: Handled {
 }
 
 extension GitDiscardHunk: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        let w = try d.cwd(forWorktree: id)
-        guard let diff = try Git.diff(w.path, source: .unstaged, file: file, remotes: d.remotes).first, diff.hunks.indices.contains(hunk),
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        let w = try workspaces.store.worktree(named: id)
+        guard let diff = try Git.diff(w.path, source: .unstaged, file: file, remotes: workspaces.remotes).first, diff.hunks.indices.contains(hunk),
               diff.hunks[hunk].header == header, fingerprint.map({ $0 == diff.hunks[hunk].fingerprint }) ?? true else {
             throw RPCError.invalidParams("The file changed since it was shown; nothing was discarded.")
         }
-        try Git.discardHunk(w.path, diff: diff, hunk: hunk, remotes: d.remotes); return Done()
+        try Git.discardHunk(w.path, diff: diff, hunk: hunk, remotes: workspaces.remotes); return Done()
     }
 }
 
 extension WorktreeNote: Handled {
-    func handle(_ d: Daemon) throws -> Done {
-        guard try d.store.update(Worktree.self, id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
-        d.notify(ChangedEvent.worktree); return Done()
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        guard try workspaces.store.update(Worktree.self, id, { $0.note = note }) != nil else { throw RPCError.invalidParams("no worktree") }
+        workspaces.notify(ChangedEvent.worktree); return Done()
     }
 }
 
 extension RepoWorktreeSizes: Handled {
-    func handle(_ d: Daemon) throws -> [Item] {
-        guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
-        guard d.remotes.of(r.path) == nil else { return [] }   // their disk is on the host
-        let workspaces = try Self.workspaces(d, r)
-        return try Git.linkedWorktrees(r.path, remotes: d.remotes).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
+    func handle(_ workspaces: Workspaces) throws -> [Item] {
+        guard let r = try workspaces.store.repo(id) else { throw RPCError.invalidParams("no repo") }
+        guard workspaces.remotes.of(r.path) == nil else { return [] }   // their disk is on the host
+        let ours = try Self.ours(workspaces.store, r)
+        return try Git.linkedWorktrees(r.path, remotes: workspaces.remotes).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
             Item(path: w.path, bytes: Self.du(w.path),
-                 removable: !w.locked && !workspaces.contains(Self.real(w.path)) && (try? Git.isDirty(w.path, remotes: d.remotes)) == false)
+                 removable: !w.locked && !ours.contains(Self.real(w.path)) && (try? Git.isDirty(w.path, remotes: workspaces.remotes)) == false)
         }.sorted { $0.bytes > $1.bytes }
     }
 
     /// Kelp's own worktree workspaces (from older versions): git prints real paths, the store keeps them as created.
-    static func workspaces(_ d: Daemon, _ r: Repo) throws -> Set<String> { Set(try d.store.worktrees(repo: r.id).map { real($0.path) }) }
+    static func ours(_ store: Store, _ r: Repo) throws -> Set<String> { Set(try store.worktrees(repo: r.id).map { real($0.path) }) }
     static func real(_ p: String) -> String { URL(fileURLWithPath: p).resolvingSymlinksInPath().path }
 
     /// Blocks on disk as `du` counts them (16 GB of build products: about a second); unreadable files leave out only themselves.
@@ -225,17 +220,17 @@ extension RepoWorktreeSizes: Handled {
 }
 
 extension RepoRemoveWorktrees: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        guard let r = try d.store.repo(id) else { throw RPCError.invalidParams("no repo") }
-        let linked = try Git.linkedWorktrees(r.path, remotes: d.remotes), workspaces = try RepoWorktreeSizes.workspaces(d, r)
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        guard let r = try workspaces.store.repo(id) else { throw RPCError.invalidParams("no repo") }
+        let linked = try Git.linkedWorktrees(r.path, remotes: workspaces.remotes), ours = try RepoWorktreeSizes.ours(workspaces.store, r)
         var out = Result(removed: [], kept: [:])
         for p in paths {
-            guard let w = linked.first(where: { $0.path == p }), !workspaces.contains(RepoWorktreeSizes.real(p)) else {
+            guard let w = linked.first(where: { $0.path == p }), !ours.contains(RepoWorktreeSizes.real(p)) else {
                 out.kept[p] = "Not one of the project's other worktrees."; continue
             }
             do {
-                try Git.run(["worktree", "remove", p], cwd: r.path, remotes: d.remotes)   // no --force: git keeps one with changes, untracked files or a lock
-                if let b = w.branch, Git.isRevision(b) { _ = try? Git.run(["branch", "-d", b], cwd: r.path, remotes: d.remotes) }   // -d: only if its commits are on another branch
+                try Git.run(["worktree", "remove", p], cwd: r.path, remotes: workspaces.remotes)   // no --force: git keeps one with changes, untracked files or a lock
+                if let b = w.branch, Git.isRevision(b) { _ = try? Git.run(["branch", "-d", b], cwd: r.path, remotes: workspaces.remotes) }   // -d: only if its commits are on another branch
                 out.removed.append(p)
             } catch let e as GitError { out.kept[p] = e.message }
         }

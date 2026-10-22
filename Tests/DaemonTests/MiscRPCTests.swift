@@ -145,8 +145,8 @@ func trustQuestionStandIn() -> String {
     await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": "/nonexistent/.."])) }
     await #expect(throws: (any Error).self) { _ = try await w.c.call("repo.addRemote", .obj(["host": "box", "path": "/nonexistent/svc"])) }
     #expect(FileManager.default.fileExists(atPath: kept.path + "/" + RemoteHost.marker))   // the project that worked is untouched
-    #expect(Daemon.remoteFolderName("/x/..") == "project" && Daemon.remoteFolderName("/") == "project" && Daemon.remoteFolderName("~") == "project")
-    #expect(Daemon.remoteFolderName("/srv/app/") == "app")
+    #expect(Workspaces.remoteFolderName("/x/..") == "project" && Workspaces.remoteFolderName("/") == "project" && Workspaces.remoteFolderName("~") == "project")
+    #expect(Workspaces.remoteFolderName("/srv/app/") == "app")
 }
 
 @Test func deletingAWorkspaceNeverDropsCommitsWithoutBeingTold() async throws {

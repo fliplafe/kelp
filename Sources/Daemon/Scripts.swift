@@ -37,15 +37,15 @@ extension Workspaces {
 
     /// The project folder whose .kelp.yaml a workspace uses.
     func configRepo(_ worktreeId: String) throws -> (Worktree, String) {
-        let w = try worktree(worktreeId)
+        let w = try store.worktree(named: worktreeId)
         return (w, try store.repo(w.repoId)?.path ?? w.path)
     }
 }
 
 extension ScriptsList: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let (_, repo) = try d.workspaces.configRepo(worktreeId)
-        let read = d.workspaces.configAndTrust(repo), cfg = read.config
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        let (_, repo) = try workspaces.configRepo(worktreeId)
+        let read = workspaces.configAndTrust(repo), cfg = read.config
         // Everything trusting it would allow, and the digest of exactly this text (one read): trust is given to what was shown.
         return Result(scripts: cfg.scripts, setup: cfg.setup, tabs: cfg.tabs, shared: cfg.shared, recipes: cfg.recipes, issueCommand: cfg.issueCommand,
                       digest: Workspaces.digest(read.text), trusted: read.trusted, file: repo + "/.kelp.yaml")
@@ -53,38 +53,38 @@ extension ScriptsList: Handled {
 }
 
 extension ScriptsTrust: Handled {
-    func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
-    func handle(_ d: Daemon, conn: Int) throws -> Done {
-        let (_, repo) = try d.workspaces.configRepo(worktreeId)
-        let now = Workspaces.digest(d.workspaces.configText(repo))
+    func handle(_ workspaces: Workspaces) throws -> Done { try handle(workspaces, conn: -1) }
+    func handle(_ workspaces: Workspaces, conn: Int) throws -> Done {
+        let (_, repo) = try workspaces.configRepo(worktreeId)
+        let now = Workspaces.digest(workspaces.configText(repo))
         // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
         // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
         // program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
         // process of this user can drive the app (synthetic key events) or write trusted-configs.json itself.
-        try d.requireApp(conn, "Only Kelp's window can trust a project's commands: open the project there and run one.")
+        try workspaces.clients.requireApp(conn, "Only Kelp's window can trust a project's commands: open the project there and run one.")
         // The digest from scripts.list: a file changed since it was shown (an agent, a pull) isn't what was trusted.
         guard let digest else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
         guard digest == now else { throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.") }
-        try d.workspaces.trustLock.withLock {
-            var known = d.workspaces.knownDigests()
+        try workspaces.trustLock.withLock {
+            var known = workspaces.knownDigests()
             known[repo] = now
-            try JSONEncoder().encode(known).write(to: d.workspaces.trustFile, options: .atomic)
+            try JSONEncoder().encode(known).write(to: workspaces.trustFile, options: .atomic)
         }
         return Done()
     }
 }
 
 extension ScriptsRun: Handled {
-    func handle(_ d: Daemon) throws -> Session {
-        let (w, repo) = try d.workspaces.configRepo(worktreeId)
-        let read = d.workspaces.configAndTrust(repo)   // the command run is from the text that was checked
+    func handle(_ workspaces: Workspaces) throws -> Session {
+        let (w, repo) = try workspaces.configRepo(worktreeId)
+        let read = workspaces.configAndTrust(repo)   // the command run is from the text that was checked
         guard read.trusted else { throw RPCError.invalidParams("This project's commands aren't trusted yet.") }
         let cfg = read.config
         guard let s = cfg.scripts.first(where: { $0.name == name }) ?? cfg.setup.flatMap({ name == "setup" ? .init(name: name, command: $0) : nil }) else {
             throw RPCError.invalidParams("No “\(name)” command in .kelp.yaml.")
         }
         var o = Sessions.Launch(); o.title = name
-        return try d.sessions.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o)
+        return try workspaces.sessions.spawn(cwd: w.path, manifest: .custom(s.command), worktreeId: w.id, o)
     }
 }
 

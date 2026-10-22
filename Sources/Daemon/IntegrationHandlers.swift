@@ -3,22 +3,32 @@ import Core
 import GitKit
 import Integrations
 
-/// What the forge and tracker methods share: refs and projects as a client names them, remote projects refused, and the
-/// integrations' errors as the app shows them. (GitHub goes through `gh`, with its auth; the trackers' clients: `Forges`.)
-extension Daemon {
-    /// A branch, commit or base from a client, as git will be given it: never one that reads as an option ("--output=…"
-    /// would make `git show` write a file). No real ref starts with "-".
-    func ref(_ v: String?) throws -> String? {
-        guard let v else { return nil }
-        if v.hasPrefix("-") { throw RPCError.invalidParams("“\(v)” isn't a branch or commit.") }
-        return v
-    }
+/// A branch, commit or base from a client, as git will be given it: never one that reads as an option ("--output=…"
+/// would make `git show` write a file). No real ref starts with "-".
+func clientRef(_ v: String?) throws -> String? {
+    guard let v else { return nil }
+    if v.hasPrefix("-") { throw RPCError.invalidParams("“\(v)” isn't a branch or commit.") }
+    return v
+}
 
+extension Store {
+    /// The project and folder a method names: its workspace's (`worktreeId`), else its project's (`repoId`).
     func repoPath(_ p: JSONValue) throws -> (Repo, String) {
-        if let wid = p["worktreeId"]?.string, let w = try store.worktree(wid), let r = try store.repo(w.repoId) { return (r, w.path) }
-        guard let r = try store.repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
+        if let wid = p["worktreeId"]?.string, let w = try worktree(wid), let r = try repo(w.repoId) { return (r, w.path) }
+        guard let r = try repo(p.req("repoId")) else { throw RPCError.invalidParams("no repo") }
         return (r, r.path)
     }
+
+    func repoPath(worktreeId: String?, repoId: String?) throws -> (Repo, String) {
+        try repoPath(.obj(["worktreeId": worktreeId.map { .string($0) } ?? .null, "repoId": repoId.map { .string($0) } ?? .null]))
+    }
+}
+
+/// What the forge and tracker methods share: remote projects refused, and the integrations' errors as the app shows them.
+/// (GitHub goes through `gh`, with its auth; the trackers' clients: `Forges`.)
+extension Daemon {
+    func ref(_ v: String?) throws -> String? { try clientRef(v) }
+    func repoPath(_ p: JSONValue) throws -> (Repo, String) { try store.repoPath(p) }
 
     /// gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up to
     /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all: a `LocalForge`
