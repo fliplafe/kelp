@@ -6,7 +6,8 @@ import Core
 /// changes not committed, the pull request, and the agent that matters most (what it's doing and its last words).
 @MainActor
 final class WorkspaceSwitcher {
-    static let shared = WorkspaceSwitcher()
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     private var panel: NSPanel?
     private var monitor: Any?
     private var items: [Worktree] = []
@@ -23,13 +24,13 @@ final class WorkspaceSwitcher {
     }
 
     private func open() {
-        let m = AppModel.shared, wb = Workbench.shared
-        let live = Workbench.workspacesInOrder
+        let m = app, wb = app.workbench
+        let live = app.workbench.workspacesInOrder
         var order: [String] = []
         for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) { order.append(id) }
         order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
-        guard items.count > 1, let window = Workbench.window?.window else { items = []; NSSound.beep(); return }
+        guard items.count > 1, let window = app.workbench.window?.window else { items = []; NSSound.beep(); return }
         index = 0
 
         let list = NSStackView(); list.orientation = .vertical; list.spacing = 2; list.alignment = .leading
@@ -65,7 +66,7 @@ final class WorkspaceSwitcher {
     private func commit() {
         let pick = items.indices.contains(index) ? items[index].id : nil
         close()
-        if let pick { Workbench.show(workspace: pick) }
+        if let pick { app.workbench.show(workspace: pick) }
     }
 
     private func close() {
@@ -85,7 +86,7 @@ final class WorkspaceSwitcher {
     }
 
     private func row(_ w: Worktree) -> NSView {
-        let m = AppModel.shared
+        let m = app
         let agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }
         let top = AgentStatus.mostUrgent(agents.map(SidebarCell.shownStatus))
         let lead = agents.filter { SidebarCell.shownStatus($0) == top }.max { ($0.statusAt ?? $0.createdAt) < ($1.statusAt ?? $1.createdAt) }
@@ -98,10 +99,10 @@ final class WorkspaceSwitcher {
         let repo = m.repo(w.repoId)
         let place = label([repo?.name, w.path == repo?.path || w.branch == w.displayName ? nil : w.branch].compactMap { $0 }.joined(separator: " · "),
             .systemFont(ofSize: 12), tag: 1)
-        let folder = RowBadges.shared.folder(workspace: w.id) ?? RowBadges.shared.folder(project: w.repoId)
+        let folder = app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)
         let changes = label("", .uiDigits(11), tag: 2), pr = label("", .uiDigits(11), tag: 2)
-        if let c = folder.flatMap({ RowBadges.changes(RowBadges.shared.stats[$0.id]) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
-        if let p = folder.flatMap({ RowBadges.pr(RowBadges.shared.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
+        if let c = folder.flatMap({ RowBadges.changes(app.rowBadges.stats[$0.id]) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
+        if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
         let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), tag: 1)
         let top1 = NSStackView(views: [name, place, NSView(), changes, pr, when, mark]); top1.spacing = 8; top1.alignment = .centerY
         top1.detachesHiddenViews = true
@@ -109,7 +110,7 @@ final class WorkspaceSwitcher {
         // "Claude Code · Needs your input — Which test runner?  +1 more": the agent the mark is for.
         let others = agents.count - 1
         let said = lead.map { s in
-            [AgentCatalog.displayName(s) + " · " + s.statusWords, s.summary].filter { !$0.isEmpty }.joined(separator: " — ")
+            [app.catalog.displayName(s) + " · " + s.statusWords, s.summary].filter { !$0.isEmpty }.joined(separator: " — ")
                 + (others > 0 ? "  " + String(localized: "+\(others) more") : "")
         } ?? String(localized: "No agents")
         let detail = label(said, .systemFont(ofSize: 12), tag: 1)

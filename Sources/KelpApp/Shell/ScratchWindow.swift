@@ -6,7 +6,8 @@ import Core
 /// quick question or a one-off script. Window › Scratch, or ⌃⌥⌘K from any app. It isn't listed with the projects.
 @MainActor
 final class ScratchWindow: NSObject, NSWindowDelegate {
-    static let shared = ScratchWindow()
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init() }
     private var panel: NSPanel?
     private var area: EditorArea?
     private var hotKey: EventHotKeyRef?
@@ -28,9 +29,9 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
         guard !opening else { return }   // ⌃⌥⌘K twice while the first is still setting up: one panel
         opening = true; defer { opening = false }
         if panel == nil {
-            guard let w = await AppModel.shared.call(ScratchEnsure()) else { return }   // the banner says why
-            await AppModel.shared.refresh()
-            let a = EditorArea(app: AppModel.shared, workspaceId: w.id)
+            guard let w = await app.call(ScratchEnsure()) else { return }   // the banner says why
+            await app.refresh()
+            let a = EditorArea(app: app, workspaceId: w.id)
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480), styleMask: [.titled, .closable, .resizable, .utilityWindow],
                             backing: .buffered, defer: false)
             p.title = String(localized: "Scratch"); p.isFloatingPanel = true; p.hidesOnDeactivate = false
@@ -50,10 +51,13 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
     /// ⌃⌥⌘K from anywhere (a Carbon hot key: no Accessibility permission needed).
     func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { ScratchWindow.shared.toggle() }
+        // The handler is a C function: it finds this window through the pointer it's handed (the app keeps the window).
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, me in
+            guard let me else { return noErr }
+            let scratch = Unmanaged<ScratchWindow>.fromOpaque(me).takeUnretainedValue()
+            DispatchQueue.main.async { scratch.toggle() }
             return noErr
-        }, 1, &spec, nil, nil)
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
         let id = EventHotKeyID(signature: OSType(0x4B524C4C), id: 1)   // 'KRLL'
         RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(controlKey | optionKey | cmdKey), id, GetApplicationEventTarget(), 0, &hotKey)
     }

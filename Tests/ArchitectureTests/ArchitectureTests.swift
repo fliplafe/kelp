@@ -252,52 +252,19 @@ private func codeOnly(_ s: String) -> String {
     #expect(gone == [], "a ceiling above its file's count now: lower it (to 0: take it off the list) \(found)")
 }
 
-/// The app's state is handed down from the one `AppModel` (it owns the workbench, the settings and the extensions):
-/// the window to its panels and editor areas, the registry to the built-ins' contributions, and on to their views. A
-/// view that reaches `X.shared` instead can only ever show the one app, and its tests have to take turns
-/// (`SharedAppModel`). Counted: every app singleton's `.shared` and the facades over one (Workbench's statics —
-/// `open`, `editor`, `show`…, only `files` reads nothing but a drag — and `IDEContext.current`). Only the app's start
-/// (main.swift, AppDelegate) and DevAids reach them freely; the rest has a ceiling per folder, one line each.
+/// The app is made once, by its delegate (main.swift makes that), and handed down: the window to its panels and editor
+/// areas, the registry to the built-ins' contributions, and on to their views; what acts on the window is reached as
+/// `app.workbench`. Nothing reaches for it instead: no `static let shared` of the app's own, no static facade over one
+/// (Workbench's statics: `files` alone reads nothing but a drag), no `IDEContext.current`, no `NSApp.delegate`. A view
+/// that reached one could only ever show the one app, and every test that makes its own would share it.
 @Test func theAppIsHandedItsModel() throws {
-    let ceilings: [String: Int] = [
-        "": 99,
-        "Builtins": 38,
-        "Builtins/Activity": 1,
-        "Builtins/Agents": 14,
-        "Builtins/Browser": 1,
-        "Builtins/Files": 20,
-        "Builtins/Git": 10,
-        "Builtins/Issues": 4,
-        "Editor": 10,
-        "Extensions": 27,
-        "Settings": 20,
-        "Shell": 166,
-        "Sidebar": 12
-    ]
-    let starts = ["main.swift", "AppDelegate.swift", "DevAids.swift"]
-    var found: [String: Int] = [:]
-    let declared = try NSRegularExpression(pattern: #"static (?:let|var) shared(?:: (\w+)| = (\w+)\()"#)
-    let singletons = Set(sources(["Sources/KelpApp"]).flatMap { f in
-        declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)).flatMap { m in
-            (1...2).compactMap { Range(m.range(at: $0), in: f.text).map { String(f.text[$0]) } }
-        }
-    })
-    #expect(singletons.contains("AppModel") && singletons.contains("LSPManager"), "\(singletons)")
-    let shared = try NSRegularExpression(pattern: #"\b(?:"# + singletons.sorted().joined(separator: "|")
-        + #")\.shared\b|\bWorkbench\.(?!files\b)[a-z]\w*|\bIDEContext\.current\b"#)
-    for f in sources(["Sources/KelpApp"]) where !starts.contains(where: { f.path == "Sources/KelpApp/" + $0 }) {
+    let made = try matches(#"^\s*(?:@\w+\s+)*(?:private\s+|fileprivate\s+)?static (?:let|var) shared\b"#, in: ["Sources/KelpApp"])
+    #expect(made == [], "a singleton of the app's own: make it the app's (`AppModel`) and hand it down")
+    let starts = ["Sources/KelpApp/main.swift", "Sources/KelpApp/AppDelegate.swift"]
+    let reach = try NSRegularExpression(pattern: #"\bWorkbench\.(?!files\b)[a-z]\w*|\bIDEContext\.current\b|\bNSApp(?:lication\.shared)?\.delegate\b"#)
+    let found = sources(["Sources/KelpApp"]).filter { !starts.contains($0.path) }.flatMap { f in
         let code = codeOnly(f.text)
-        let n = shared.numberOfMatches(in: code, range: NSRange(code.startIndex..., in: code))
-        guard n > 0 else { continue }
-        let parts = f.path.dropFirst("Sources/KelpApp/".count).split(separator: "/").dropLast()
-        found[parts.prefix(parts.first == "Builtins" ? 2 : 1).joined(separator: "/"), default: 0] += n
+        return reach.matches(in: code, range: NSRange(code.startIndex..., in: code)).compactMap { Range($0.range, in: code).map { "\(f.path): \(code[$0])" } }
     }
-    for (folder, n) in found.sorted(by: { $0.key < $1.key }) {
-        #expect(n <= ceilings[folder, default: 0], "X.shared in \(folder.isEmpty ? "KelpApp's root" : folder): \(n), take it from what's handed down")
-    }
-    #expect(ceilings.allSatisfy { found[$0.key, default: 0] >= $0.value },
-            "a folder's ceiling is above its count: lower it to \(found)")
-    // Singletons of the app's own: no new ones (each is one more thing a second app would share).
-    let made = try matches(#"^\s*static let shared = "#, in: ["Sources/KelpApp"])
-    #expect(made.count <= 11, "\(made)")
+    #expect(found == [], "take it from what's handed down (`app`, `app.workbench`)")
 }

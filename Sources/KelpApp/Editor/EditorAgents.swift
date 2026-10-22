@@ -6,7 +6,7 @@ import WorkbenchKit
 extension EditorArea {
     /// `draft`: the prompt is typed for the user to send, not sent.
     func newAgent(_ agent: String? = nil, prompt: String? = nil, draft: Bool = false, split: SplitDirection? = nil) {
-        createSession(SessionCreate(worktreeId: workspaceId, agent: agent ?? AgentCatalog.defaultAgent, prompt: prompt?.isEmpty == false ? prompt : nil,
+        createSession(SessionCreate(worktreeId: workspaceId, agent: agent ?? app.catalog.defaultAgent, prompt: prompt?.isEmpty == false ? prompt : nil,
                                     draft: draft ? true : nil), split: split)
     }
     func newTerminal(split: SplitDirection? = nil) { createSession(SessionCreate(worktreeId: workspaceId, agent: "shell"), split: split) }
@@ -37,7 +37,7 @@ extension EditorArea {
     /// The size the new terminal will have, so the shell's first screen isn't drawn for another width (zsh's stray "%"
     /// line, an agent's banner wrapped twice). A split gets half; a guess on the small side only leaves room.
     private func terminalSize(split: SplitDirection?) -> (Int, Int)? {
-        guard let g = focusedContent?.terminalGrid ?? contents.values.lazy.compactMap(\.terminalGrid).first ?? Workbench.terminalGrid else { return nil }
+        guard let g = focusedContent?.terminalGrid ?? contents.values.lazy.compactMap(\.terminalGrid).first ?? app.workbench.terminalGrid else { return nil }
         switch split {
         case .right?: return (max(20, g.cols / 2 - 1), g.rows)
         case .down?: return (g.cols, max(5, g.rows / 2 - 1))

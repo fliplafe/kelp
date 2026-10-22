@@ -10,26 +10,25 @@ import Daemon
 /// KelpApp code reads `Paths` (scratch, extensions, skills) and agents' folders: the process is isolated (TestIsolation).
 let testHome: String = { _ = TestIsolation.root; return String(cString: getenv("KELP_HOME")) }()
 
-/// Tests that point `AppModel.shared` at a daemon of their own: one at a time, or one would swap the other's client.
-@Suite(.serialized) @MainActor struct SharedAppModel {}
-/// Tests whose views are handed an app of their own (`AppRig(own: true)`): they run alongside the rest.
+/// Tests that touch what the process has once (UserDefaults, the extensions folder, a menu bar): one at a time.
+@Suite(.serialized) @MainActor struct OneAtATime {}
+/// Tests whose views are handed an app of their own (each `AppRig` makes one): they run alongside the rest.
 @MainActor struct AppOfItsOwn {}
 
 /// A daemon of the test's own in a short temp folder (its socket path must fit 104 bytes), a git repository with `files`
-/// committed and added as its project, and an app pointed at both: `AppModel.shared` (`SharedAppModel` tests, one at a
-/// time), or with `own` one of the test's own. `done()` puts back what was there, stops the daemon and removes the folder.
+/// committed and added as its project, and an app of the test's own pointed at both. `done()` stops the daemon and
+/// removes the folder.
 @MainActor
 final class AppRig {
     /// The app the views under test are given.
     let app: AppModel
     let root: URL, daemon: Daemon, client: RPCClient
     let repo: String, project: Repo, workspace: Worktree
-    private let saved: (RPCClient?, [Repo], [Worktree], String?)
     private var windows: [NSWindow] = []
 
-    init(files: [String: String] = ["f.txt": "a\n"], own: Bool = false) async throws {
+    init(files: [String: String] = ["f.txt": "a\n"]) async throws {
         _ = testHome
-        app = own ? AppModel() : AppModel.shared
+        app = AppModel()
         root = URL(fileURLWithPath: "/tmp/kr-\(UUID().uuidString.prefix(6))")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         daemon = try Daemon(root: root); try daemon.start()
@@ -43,7 +42,6 @@ final class AppRig {
         guard let w = try await client.call(WorktreeList(repoId: project.id)).first else { throw RPCError.internalError("no workspace") }
         workspace = w
         let m = app, wb = app.workbench
-        saved = (m.client, m.repos, m.worktrees, wb.workspaceId)
         m.client = client; m.listen(client); m.repos = [project]; m.worktrees = [workspace]; wb.workspaceId = workspace.id
     }
 
@@ -58,8 +56,6 @@ final class AppRig {
     }
 
     func done() {
-        let m = app
-        (m.client, m.repos, m.worktrees, m.workbench.workspaceId) = saved
         daemon.stop()
         try? FileManager.default.removeItem(at: root)
     }

@@ -86,8 +86,8 @@ final class SidebarCell: NSTableCellView {
         case .agent, .section, .needs: nil
         }
     }
-    @objc private func openChanges() { if let w = folder { Workbench.open(TabURI.diff(w.id), workspace: w.id) } }
-    @objc private func openPR() { if let w = folder, let u = app.rowBadges.prs[w.id]?.url { Workbench.open(u, workspace: w.id) } }
+    @objc private func openChanges() { if let w = folder { app.workbench.open(TabURI.diff(w.id), workspace: w.id) } }
+    @objc private func openPR() { if let w = folder, let u = app.rowBadges.prs[w.id]?.url { app.workbench.open(u, workspace: w.id) } }
 
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.
     private func updateBadges() {
@@ -140,8 +140,8 @@ final class SidebarCell: NSTableCellView {
             count.stringValue = "\(node.children.count)"; toolTip = nil
         case .needs(let sid):
             guard let s = m.session(sid) else { return }
-            icon.image = AgentCatalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
-            title.stringValue = AgentCatalog.displayName(s)
+            icon.image = app.catalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
+            title.stringValue = app.catalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             let w = m.worktree(s.worktreeId)
             count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
@@ -165,9 +165,9 @@ final class SidebarCell: NSTableCellView {
             toolTip = nil   // the hover card shows the workspace in full
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
-            icon.image = AgentCatalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
+            icon.image = app.catalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
             icon.alphaValue = s.status == .hibernated ? 0.45 : 1
-            title.stringValue = AgentCatalog.displayName(s)
+            title.stringValue = app.catalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }

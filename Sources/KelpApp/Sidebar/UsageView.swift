@@ -36,7 +36,7 @@ struct UsageView: View {
         .onAppear { app.watch(.limits); load() }
         .onDisappear { app.unwatch(.limits) }
         .onChange(of: app.limits) { load() }
-        .onChange(of: AgentAvailability.shared.ids) { load() }
+        .onChange(of: app.availability.ids) { load() }
     }
 
     private var bars: some View {
@@ -134,7 +134,7 @@ struct UsageView: View {
 
     private func load() {
         guard let u = app.limits else { return }
-        let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
+        let next = app.catalog.installed(app.catalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }
             switch a.id {

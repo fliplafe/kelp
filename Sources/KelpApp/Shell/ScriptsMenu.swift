@@ -7,7 +7,8 @@ import WorkbenchKit
 /// the way to its output. A project's commands run only after you trust its file (and again when the file changes).
 @MainActor
 final class ScriptsMenu: NSObject, NSMenuDelegate {
-    static let shared = ScriptsMenu()
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init() }
     private var cached: [String: [ScriptsList.Script]] = [:]   // workspace → its commands, for the menu
     private var setupCommand: [String: String] = [:]
     private var runs: [String: (workspace: String, name: String)] = [:]   // session → what it runs
@@ -17,7 +18,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// The Run menu's fixed items are commands (scripts.run, .test, .stop, .edit); the project's other commands fill in when it opens.
     func menuNeedsUpdate(_ m: NSMenu) {
-        let wid = Workbench.shared.workspaceId
+        let wid = app.workbench.workspaceId
         // Between the two separators: setup and the commands other than run/test.
         let seps = m.items.indices.filter { m.items[$0].isSeparatorItem }
         if seps.count >= 2 { for i in stride(from: seps[1] - 1, to: seps[0], by: -1) { m.removeItem(at: i) } }
@@ -34,7 +35,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     /// `asked`: for Run, which says why it can't (a banner); the menu's refresh in the background stays quiet.
     @discardableResult private func load(_ wid: String, asked: Bool = false) async -> ScriptsList.Result? {
         let m = ScriptsList(worktreeId: wid)
-        guard let r = asked ? await AppModel.shared.call(m) : await AppModel.shared.quiet(m) else { return nil }
+        guard let r = asked ? await app.call(m) : await app.quiet(m) else { return nil }
         cached[wid] = r.scripts
         setupCommand[wid] = r.setup
         return r
@@ -42,8 +43,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// Something the Run menu started in this workspace is still running (Run › Stop).
     var canStop: Bool {
-        guard let wid = Workbench.shared.workspaceId else { return false }
-        return runs.contains { $0.value.workspace == wid && AppModel.shared.session($0.key)?.status != .exited }
+        guard let wid = app.workbench.workspaceId else { return false }
+        return runs.contains { $0.value.workspace == wid && app.session($0.key)?.status != .exited }
     }
 
     @objc private func runNamed(_ i: NSMenuItem) { (i.representedObject as? String).map(run) }
@@ -51,14 +52,14 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     // MARK: running
 
     func run(_ name: String) {
-        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        guard let wid = app.workbench.workspaceId else { NSSound.beep(); return }
         watch()
         Task { [weak self] in
             guard let self, let info = await load(wid, asked: true) else { return }
             let scripts = cached[wid] ?? []
             guard name == "setup" || scripts.contains(where: { $0.name == name }) else {
                 // No project command: ⌘R runs the focused file, ⌘U its test at the cursor, when its language says how.
-                if let t = Workbench.editor?.focusedContent, ["run", "test"].contains(name), t.language?[command: name] != nil {
+                if let t = app.workbench.editor?.focusedContent, ["run", "test"].contains(name), t.language?[command: name] != nil {
                     runFile(t, name); return
                 }
                 Banner.show(String(localized: "This project has no “\(name)” command. Add one to .kelp.yaml (\(name): the command)."),
@@ -71,7 +72,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
                 guard ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] == nil else { return }
                 guard await askTrust(info) else { return }
                 // The digest of the text shown: a file changed since (an agent, a pull) isn't trusted unseen.
-                guard await AppModel.shared.call(ScriptsTrust(worktreeId: wid, digest: info.digest)) != nil else { return }
+                guard await app.call(ScriptsTrust(worktreeId: wid, digest: info.digest)) != nil else { return }
             }
             await start(wid, name, ScriptsRun(worktreeId: wid, name: name))
         }
@@ -80,7 +81,7 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     /// Run File / Test at Cursor: the file's language's `run` / `test`, run like the project's commands. Languages come
     /// from extensions the user installed, so there's no trust question.
     func runFile(_ t: TabContent, _ name: String) {
-        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        guard let wid = app.workbench.workspaceId else { NSSound.beep(); return }
         watch()
         Task {
             guard let cmd = await t.command(name) else { return }
@@ -93,21 +94,21 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
     private func start<M: RPCMethod>(_ wid: String, _ name: String, _ method: M) async where M.Result == Session {
         for (sid, r) in runs where r.workspace == wid && r.name == name {
             runs[sid] = nil
-            if AppModel.shared.session(sid)?.status != .exited { await AppModel.shared.call(SessionKill(id: sid)) }
-            Workbench.closeTab(uri: TabURI.session(sid))
+            if app.session(sid)?.status != .exited { await app.call(SessionKill(id: sid)) }
+            app.workbench.closeTab(uri: TabURI.session(sid))
         }
-        guard let sid = await AppModel.shared.call(method)?.id else { return }
+        guard let sid = await app.call(method)?.id else { return }
         runs[sid] = (wid, name)
-        await AppModel.shared.refresh()
+        await app.refresh()
         // Below what you're doing, like a console; the keys stay where they were.
-        if wid == Workbench.shared.workspaceId { Workbench.open(TabURI.session(sid), split: .down, workspace: wid, focus: false) }
-        else { Workbench.window?.editors.openInBackground(TabURI.session(sid), workspace: wid) }
+        if wid == app.workbench.workspaceId { app.workbench.open(TabURI.session(sid), split: .down, workspace: wid, focus: false) }
+        else { app.workbench.window?.editors.openInBackground(TabURI.session(sid), workspace: wid) }
     }
 
     func stop() {
-        guard let wid = Workbench.shared.workspaceId else { return }
-        for (sid, r) in runs where r.workspace == wid && AppModel.shared.session(sid)?.status != .exited {
-            Task { await AppModel.shared.call(SessionKill(id: sid)) }
+        guard let wid = app.workbench.workspaceId else { return }
+        for (sid, r) in runs where r.workspace == wid && app.session(sid)?.status != .exited {
+            Task { await app.call(SessionKill(id: sid)) }
         }
     }
 
@@ -143,15 +144,16 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// How a run ended, said once: failed (with its output a click away) or finished.
     private func watch() {
+        let app = self.app
         guard !watching else { return }
         watching = true
-        track(owner: self) { AppModel.shared.sessions.filter { $0.status == .exited } } changed: { [weak self] ended in
+        track(owner: self) { app.sessions.filter { $0.status == .exited } } changed: { [weak self] ended in
             guard let self else { return }
             for s in ended {
                 guard let r = runs.removeValue(forKey: s.id) else { continue }
                 let name = "“\(r.name)”"
                 let id = s.id
-                let show: (String, @MainActor @Sendable () -> Void) = (String(localized: "Show Output"), { Workbench.focus(session: id) })
+                let show: (String, @MainActor @Sendable () -> Void) = (String(localized: "Show Output"), { app.workbench.focus(session: id) })
                 if s.summary.hasPrefix("Ended with an error") {
                     Banner.show(String(localized: "\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))"), style: .error, action: show)
                 } else { Banner.show(String(localized: "\(name) finished"), action: show) }
@@ -161,8 +163,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
 
     /// The project's .kelp.yaml in a tab (started with the keys it knows, if there isn't one).
     func edit() {
-        guard let w = AppModel.shared.worktree(Workbench.shared.workspaceId) else { NSSound.beep(); return }
-        let path = (AppModel.shared.repo(w.repoId)?.path ?? w.path) + "/.kelp.yaml"
+        guard let w = app.worktree(app.workbench.workspaceId) else { NSSound.beep(); return }
+        let path = (app.repo(w.repoId)?.path ?? w.path) + "/.kelp.yaml"
         let keys = """
             # Kelp's Run menu runs these in the workspace's folder (Kelp asks before the first run).
             # run: npm run dev
@@ -174,8 +176,8 @@ final class ScriptsMenu: NSObject, NSMenuDelegate {
             """
         Task {
             // Made only when there's none: one that's there fails to be made, and opens as it is.
-            _ = await AppModel.shared.tryCall(FilesCreate(path: path, text: keys))
-            Workbench.open(TabURI.file(path))
+            _ = await app.tryCall(FilesCreate(path: path, text: keys))
+            app.workbench.open(TabURI.file(path))
         }
     }
 }

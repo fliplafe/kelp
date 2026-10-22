@@ -7,14 +7,32 @@ import Agents
 @MainActor
 @Observable
 final class AppModel {
-    static let shared = AppModel()
     /// What's on screen, settings.json and the extensions: this app's, handed down with it (`app.workbench`…) to the
     /// window, the built-ins' contributions and their views.
-    @ObservationIgnored private(set) lazy var workbench = Workbench(state: uiState)
+    @ObservationIgnored private(set) lazy var workbench = Workbench(app: self)
     @ObservationIgnored private(set) lazy var settings = SettingsStore(app: self)
     @ObservationIgnored private(set) lazy var extensions = ExtensionRegistry(app: self)
     @ObservationIgnored private(set) lazy var rowBadges = RowBadges(app: self)
     @ObservationIgnored private(set) lazy var uiState = UIState(app: self)
+    /// The rest of what the app is made of, each made when first used.
+    @ObservationIgnored private(set) lazy var themes = ThemeManager(app: self)
+    @ObservationIgnored private(set) lazy var availability = AgentAvailability(app: self)
+    @ObservationIgnored private(set) lazy var agentIcons = AgentIcons()
+    @ObservationIgnored private(set) lazy var quickOpen = QuickOpen(app: self)
+    @ObservationIgnored private(set) lazy var scripts = ScriptsMenu(app: self)
+    @ObservationIgnored private(set) lazy var scratch = ScratchWindow(app: self)
+    @ObservationIgnored private(set) lazy var switcher = WorkspaceSwitcher(app: self)
+    /// What a built-in keeps once per app (its windows, what it asked about), made when first asked for: the app holds
+    /// them by type without naming them (see `part`).
+    @ObservationIgnored private var parts: [ObjectIdentifier: AnyObject] = [:]
+    /// Banners and the dock badge: the running app's (its delegate sets it), none in tests.
+    @ObservationIgnored var notifier: Notifier?
+    /// The app's one `T`, made by `make` the first time.
+    func part<T: AnyObject>(_ make: () -> T) -> T {
+        if let p = parts[ObjectIdentifier(T.self)] as? T { return p }
+        let p = make(); parts[ObjectIdentifier(T.self)] = p
+        return p
+    }
 
     @ObservationIgnored var client: RPCClient?
     var connected = false
@@ -90,7 +108,7 @@ final class AppModel {
             "workspace": w.map { .obj(["id": .string($0.id), "name": .string($0.displayName), "path": .string($0.path), "branch": .string($0.branch)]) } ?? .null,
             "focusedSession": workbench.focusedSession.map { .string($0) } ?? .null,
             "focusedFile": workbench.focusedFile.map { .string($0) } ?? .null,
-            "editor": Workbench.editor?.stateForAgents ?? .null,
+            "editor": workbench.editor?.stateForAgents ?? .null,
             "extensions": .array(reg.extensions.map { e in
                 .obj(["id": .string(e.id), "name": .string(e.name), "enabled": .bool(e.enabled), "builtin": .bool(e.builtin),
                       "path": e.path.map { .string($0.path) } ?? .null, "error": e.error.map { .string($0) } ?? .null])
@@ -140,7 +158,7 @@ final class AppModel {
         }
         guard let c = client else {
             // Keeps trying (less and less often); every action meanwhile says why it does nothing.
-            if !failing { failing = true; Banner.show(Self.whyNoService(), style: .error, action: (String(localized: "Try Again"), { Task { await AppModel.shared.connect() } })) }
+            if !failing { failing = true; Banner.show(Self.whyNoService(), style: .error, action: (String(localized: "Try Again"), { Task { await self.connect() } })) }
             reconnectSoon(); return
         }
         retryDelay = 1; failing = false
@@ -269,24 +287,24 @@ final class AppModel {
             let old = sessions.first { $0.id == s.id }
             if s.isOlder(than: old) { return }
             if old != s { upsert(s) }   // views follow `sessions`
-            (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
+            notifier?.statusChanged(s, old)
             if old?.status != s.status { syncContextWatches() }
         case let e as DevServerEvent:
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
             // The keys stay where they are: the page comes while you may be typing.
-            if e.worktree == workbench.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
+            if e.worktree == workbench.workspaceId { workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
         case let r as Repo: record(r)
         case let w as Worktree: record(w)
         case let e as RemovedEvent: removed(e)
         case let e as CloneEvent: CloneSheet.cloneProgress(id: e.id, line: e.line)
         case let e as SettingsEvent: settings.received(e.settings)
-        case let e as UIEvent: UIRequests.handle(e)
+        case let e as UIEvent: UIRequests(self).handle(e)
         default: watched(event)   // event.changed is left: the records themselves follow (event.repo / .worktree / .removed)
         }
     }
 
     /// A session gone for good (deleted, its workspace removed, pruned): its tab and row go with it. One being restarted
-    /// is replaced in its tab by `AgentActions.restart` when the new one comes back.
+    /// is replaced in its tab by `AgentActions(app).restart` when the new one comes back.
     func removed(session id: String) {
         sessionEvents[id, default: 0] += 1
         guard !restarting.contains(id), sessions.contains(where: { $0.id == id }) else { return }

@@ -64,9 +64,10 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     func numberOfRows(in t: NSTableView) -> Int { rows.count }
 
     func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
+        let app = self.app
         let r = rows[row], s = r.session, m = app
-        let icon = NSImageView(image: (s.agent == "shell" ? NSImage.symbol("terminal") : AgentCatalog.icon(s.agent)) ?? NSImage())
-        let name = NSTextField(labelWithString: s.agent == "shell" ? (s.title.isEmpty ? String(localized: "Terminal") : s.title) : AgentCatalog.displayName(s))
+        let icon = NSImageView(image: (s.agent == "shell" ? NSImage.symbol("terminal") : app.catalog.icon(s.agent)) ?? NSImage())
+        let name = NSTextField(labelWithString: s.agent == "shell" ? (s.title.isEmpty ? String(localized: "Terminal") : s.title) : app.catalog.displayName(s))
         name.font = .ui(12, weight: .medium); name.lineBreakMode = .byTruncatingTail
         let place = NSTextField(labelWithString: [m.worktree(s.worktreeId)?.displayName, String(localized: "\(r.processes) processes")]
             .compactMap { $0 }.joined(separator: " · "))
@@ -74,7 +75,7 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
         let text = NSStackView(views: [name, place]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1
         let cost = NSTextField(labelWithString: "\(Self.percent(r.cpu))\n\(Self.bytes(r.memory))")
         cost.font = .uiDigits(11); cost.alignment = .right; cost.textColor = r.cpu > 80 ? .systemOrange : .secondaryLabelColor
-        let stop = ClosureButton(title: "") { AgentActions.stop([s.id]) }
+        let stop = ClosureButton(title: "") { AgentActions(app).stop([s.id]) }
         stop.image = .symbol("stop.circle", String(localized: "Stop")); stop.isBordered = false; stop.contentTintColor = .secondaryLabelColor
         stop.toolTip = String(localized: "Stop \(name.stringValue) (ends its processes)")
         for x in [name, place, text] { x.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
@@ -86,6 +87,6 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
 
     @objc private func open() {
         guard rows.indices.contains(table.clickedRow) else { return }
-        Workbench.focus(session: rows[table.clickedRow].session.id)
+        app.workbench.focus(session: rows[table.clickedRow].session.id)
     }
 }

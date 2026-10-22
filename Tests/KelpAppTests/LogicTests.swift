@@ -23,12 +23,12 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 /// A layout change still waiting out the save's pause is saved when the app quits, not lost with it.
 @MainActor @Test func aLayoutChangedJustBeforeQuittingIsSaved() {
     let id = "quit-\(UUID().uuidString.prefix(6))", key = "layout/\(id)"
-    defer { AppModel.shared.uiState[key] = nil }
-    let area = EditorArea(app: AppModel.shared, workspaceId: id)
+    let app = AppModel()
+    let area = EditorArea(app: app, workspaceId: id)
     area.scheduleSave()
-    #expect(AppModel.shared.uiState[key] == nil)   // waiting
+    #expect(app.uiState[key] == nil)   // waiting
     EditorArea.saveLayouts()
-    #expect(AppModel.shared.uiState[key] != nil)
+    #expect(app.uiState[key] != nil)
 }
 
 /// Scored off the main thread: files by fuzzy path, the rest by title words (a command a little ahead), unmatched left out.
@@ -106,22 +106,22 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 
 /// One way to run a program, through the daemon: its code and output, stdin, a timeout that kills it, a launch that
 /// fails; and none at all without a daemon.
-extension SharedAppModel {
+extension OneAtATime {
 @Test func shellExecRunsAndKills() async throws {
     let rig = try await AppRig(files: [:]); defer { rig.done() }
-    let echo = await Shell.exec(["/bin/cat"], input: "hi")
+    let echo = await Shell.exec(rig.app, ["/bin/cat"], input: "hi")
     #expect(echo.code == 0 && echo.stdout == "hi")
-    #expect(await Shell.exec(["/bin/sh", "-c", "echo e >&2; exit 3"]).code == 3)
-    let t = Date(), slow = await Shell.exec(["/bin/sleep", "5"], timeout: 0.2)
+    #expect(await Shell.exec(rig.app, ["/bin/sh", "-c", "echo e >&2; exit 3"]).code == 3)
+    let t = Date(), slow = await Shell.exec(rig.app, ["/bin/sleep", "5"], timeout: 0.2)
     #expect(slow.code != 0 && Date().timeIntervalSince(t) < 2)
-    #expect(await Shell.exec(["/nonexistent/tool"]).code == -1)
+    #expect(await Shell.exec(rig.app, ["/nonexistent/tool"]).code == -1)
     // Where a tool is comes from the daemon's login-shell PATH: the app doesn't start a shell to read it.
-    let paths = try await AppModel.shared.get(ProcessWhich(commands: ["git", "kelp-no-such-agent"]))
+    let paths = try await rig.app.get(ProcessWhich(commands: ["git", "kelp-no-such-agent"]))
     #expect(paths["git"]?.hasSuffix("/git") == true && paths["kelp-no-such-agent"] == nil)
-    #expect(await AgentAvailability.runs(try #require(paths["git"])) != nil)
-    #expect(await AgentAvailability.runs("/nonexistent/agent") == nil)
-    AppModel.shared.client = nil
-    #expect(await Shell.exec(["/bin/echo", "hi"]).code == -1)   // the app runs nothing itself
+    #expect(await AgentAvailability.runs(try #require(paths["git"]), app: rig.app) != nil)
+    #expect(await AgentAvailability.runs("/nonexistent/agent", app: rig.app) == nil)
+    rig.app.client = nil
+    #expect(await Shell.exec(rig.app, ["/bin/echo", "hi"]).code == -1)   // the app runs nothing itself
 }
 
 /// An agent CLI that answered `--version` in the last day isn't started again until it changes.
@@ -134,13 +134,13 @@ extension SharedAppModel {
     }
     func starts() -> Int { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").count }
     try write("exit 0")
-    let binary = try #require(await AgentAvailability.runs(cli))
+    let binary = try #require(await AgentAvailability.runs(cli, app: rig.app))
     let now = Date().timeIntervalSince1970
-    #expect(await AgentAvailability.runs(cli, ran: [binary: now]) == binary && starts() == 1)   // remembered
-    #expect(await AgentAvailability.runs(cli, ran: [binary: now - 2 * 86400]) == binary && starts() == 2)   // a day on: asked again
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now], app: rig.app) == binary && starts() == 1)   // remembered
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now - 2 * 86400], app: rig.app) == binary && starts() == 2)   // a day on: asked again
     try write("exit 1")   // updated, and broken now
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: cli)
-    #expect(await AgentAvailability.runs(cli, ran: [binary: now]) == nil && starts() == 3)
+    #expect(await AgentAvailability.runs(cli, ran: [binary: now], app: rig.app) == nil && starts() == 3)
 }
 }
 

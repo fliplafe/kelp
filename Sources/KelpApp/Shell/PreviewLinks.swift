@@ -9,19 +9,21 @@ import WorkbenchKit
 @MainActor
 final class PreviewLinks: NSObject, WKNavigationDelegate {
     enum Target: Equatable { case web(String), file(String), mail(URL), refused }
+    private let app: AppModel
+    init(app: AppModel) { self.app = app }
 
     func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         guard a.navigationType == .linkActivated, let u = a.request.url else { decisionHandler(.allow); return }
         if u.fragment != nil, Self.sansFragment(u) == w.url.map(Self.sansFragment) { decisionHandler(.allow); return }
         decisionHandler(.cancel)
-        Self.open(u)
+        Self.open(u, in: app)
     }
 
     /// A clicked link, by `target`: a web page as a browser tab, a file as a tab, mail in Mail, anything else refused.
-    static func open(_ u: URL) {
+    static func open(_ u: URL, in app: AppModel) {
         switch target(u) {
-        case .web(let s): Workbench.open(s)
-        case .file(let p): Workbench.open(TabURI.file(p))
+        case .web(let s): app.workbench.open(s)
+        case .file(let p): app.workbench.open(TabURI.file(p))
         case .mail(let m): NSWorkspace.shared.open(m)
         case .refused: refuse(u)
         }

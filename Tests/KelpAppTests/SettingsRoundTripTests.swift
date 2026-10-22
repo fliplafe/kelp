@@ -7,7 +7,7 @@ import Daemon
 
 /// Settings as the app and everything else share them: a change made in the app lands in settings.json through the
 /// daemon, and one made elsewhere (`kelp settings set`, an agent) shows in the app without a restart.
-extension SharedAppModel {
+extension OneAtATime {
     @Test func settingsGoBothWaysThroughTheDaemon() async throws {
         _ = testHome
         _ = NSApplication.shared   // the theme applies to NSApp
@@ -17,9 +17,7 @@ extension SharedAppModel {
         let d = try Daemon(root: root); try d.start(); defer { d.stop() }
         let app = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
         let cli = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-        let m = AppModel.shared, s = SettingsStore.shared
-        let saved = (m.client, s.values)
-        defer { m.client = saved.0; s.apply(saved.1) }
+        let m = AppModel(), s = m.settings
         m.client = app; m.listen(app)
         await s.load()
 
@@ -37,10 +35,7 @@ extension SharedAppModel {
     /// A stepper held sends 14 then 15: the daemon's answer to 14 arriving after 15 was shown doesn't put 14 back.
     @Test func anOlderSettingsEchoDoesntUndoANewerChange() async throws {
         _ = NSApplication.shared   // the theme applies to NSApp
-        let s = SettingsStore.shared, m = AppModel.shared
-        let saved = (m.client, s.values)
-        defer { m.client = saved.0; s.apply(saved.1) }
-        m.client = nil   // its set fails later, on a task of its own: what matters is what's shown meanwhile
+        let m = AppModel(), s = m.settings   // no daemon: its set fails later, on a task of its own: what matters is what's shown meanwhile
         s.set("terminal.fontSize", .int(15))
         s.received(s.values.merging(["terminal.fontSize": .int(14)]) { $1 })   // the echo of the set before it
         #expect(s.values["terminal.fontSize"] == .int(15))

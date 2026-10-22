@@ -61,6 +61,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     var root: String { worktree?.path ?? "/" }
 
     override func loadView() {
+        let app = self.app
         let col = NSTableColumn(identifier: .init("f")); outline.addTableColumn(col); outline.outlineTableColumn = col
         outline.headerView = nil; outline.style = .sourceList; outline.dataSource = self; outline.delegate = self
         outline.target = self; outline.action = #selector(openSelected)
@@ -121,13 +122,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.bind($0) }
         track(owner: self) { [app] in app.fileLists[app.workbench.workspaceId ?? ""] } changed: { [weak self] in self?.listed($0) }
         track(owner: self) { [app] in app.git[app.workbench.workspaceId ?? ""]?.changes } changed: { [weak self] in self?.badges($0) }
-        track(owner: self) { FileIcon.revision } changed: { [weak self] _ in self?.reloadIcons() }
+        track(owner: self) { app.fileIcons.revision } changed: { [weak self] _ in self?.reloadIcons() }
     }
 
     /// ⇧⌘F (Find in Workspace): straight into this field; pressed again there, back to what you were doing.
     func findInFiles() {
         guard let w = view.window else { return }
-        if w.firstResponder === search.currentEditor() { Workbench.editor?.focusSelected(); return }
+        if w.firstResponder === search.currentEditor() { app.workbench.editor?.focusSelected(); return }
         w.makeFirstResponder(search); search.currentEditor()?.selectAll(nil)
     }
 
@@ -182,7 +183,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         reloadIcons()
     }
 
-    private func openFile(_ rel: String, line: Int? = nil, focus: Bool = true) { Workbench.open(TabURI.file(root + "/" + rel, line: line), focus: focus) }
+    private func openFile(_ rel: String, line: Int? = nil, focus: Bool = true) { app.workbench.open(TabURI.file(root + "/" + rel, line: line), focus: focus) }
 
     // MARK: outline
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? FileNode)?.children?.count ?? (item == nil ? nodes.count : 0) }
@@ -191,7 +192,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? FileNode else { return nil }
         let cell = NSTableCellView(); let tf = NSTextField(labelWithString: n.name); let img = NSImageView()
-        img.image = FileIcon.image(n.name, folder: n.children != nil, expanded: o.isItemExpanded(n))
+        img.image = app.fileIcons.image(n.name, folder: n.children != nil, expanded: o.isItemExpanded(n))
         tf.lineBreakMode = .byTruncatingMiddle; tf.font = .ui(12)
         let badge = NSTextField(labelWithString: "")
         if let s = status[n.path] {
@@ -370,11 +371,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     }
     @objc private func insertPath() {
         guard let p = selectedPath else { NSSound.beep(); return }
-        FileActions.sendToAgent(p)
+        FileActions(app).sendToAgent(p)
     }
     @objc private func copyWebLink() {
         guard let p = selectedPath else { NSSound.beep(); return }
-        FileActions.copyWebLink(p)
+        FileActions(app).copyWebLink(p)
     }
     // MARK: search
     private func showResults(_ on: Bool) {

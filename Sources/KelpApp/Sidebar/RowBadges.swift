@@ -6,8 +6,6 @@ import Core
 /// sidebar lists is watched: the daemon pushes its git when its files change, and its PR (gh, once a minute).
 @MainActor
 final class RowBadges {
-    /// The app's (`AppModel.rowBadges`), for views not handed it yet.
-    static var shared: RowBadges { AppModel.shared.rowBadges }
     private let app: AppModel
     /// Worktree id → changes / its branch's PR (observed through AppModel).
     var stats: [String: LineStats] { app.git.compactMapValues(\.stats) }

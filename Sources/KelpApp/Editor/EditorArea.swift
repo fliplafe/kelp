@@ -35,17 +35,18 @@ final class EditorArea: NSViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
+        let app = self.app
         view = NSView()
         track(owner: self) { [app] in app.extensions.revision } changed: { [weak self] _ in self?.extensionsChanged() }
-        track(owner: self) { FileIcon.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
+        track(owner: self) { app.fileIcons.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
         // The empty workspace lists the agents that work, with their icons; rebuild it when either changes.
-        track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
-        track(owner: self) { AgentIcons.shared.images.count } changed: { [weak self] _ in
+        track(owner: self) { app.availability.ids } changed: { [weak self] _ in self?.rebuildStart() }
+        track(owner: self) { app.agentIcons.images.count } changed: { [weak self] _ in
             self?.rebuildStart()
             for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }   // agent tabs get the real icon
         }
         // The default agent's button beside each "+".
-        track(owner: self) { AgentCatalog.startable } changed: { [weak self] _ in
+        track(owner: self) { app.catalog.startable } changed: { [weak self] _ in
             for gid in self?.layout.root?.sessions ?? [] { self?.refreshGroup(gid) }
         }
     }
@@ -146,7 +147,7 @@ final class EditorArea: NSViewController {
 
     private func groupView(_ gid: String) -> GroupView {
         if let g = groupViews[gid] { g.removeFromSuperview(); return g }
-        let g = GroupView(groupId: gid)
+        let g = GroupView(groupId: gid, themes: app.themes)
         g.strip.onSelect = { [weak self] id in self?.select(id) }
         g.strip.onClose = { [weak self] id in self?.closeTab(id) }
         g.strip.onMenu = { [weak self] id in self?.tabMenu(id) }
@@ -180,7 +181,7 @@ final class EditorArea: NSViewController {
         }
         g.onDropFiles = { [weak self] urls in
             self?.layout.focused = gid
-            Workbench.open(files: urls) { self?.open($0) }
+            self?.app.workbench.open(files: urls) { self?.open($0) }
         }
         groupViews[gid] = g
         return g
@@ -191,8 +192,8 @@ final class EditorArea: NSViewController {
         guard let g = groupViews[gid], let model = layout.groups[gid] else { return }
         g.strip.focused = layout.focused == gid || (layout.focused == nil && layout.root?.sessions.first == gid)
         g.strip.zoomed = zoomed == gid
-        let agent = AgentCatalog.startable
-        g.strip.setNewAgent(icon: agent.flatMap { AgentCatalog.icon($0) }, name: AgentCatalog.name(agent))
+        let agent = app.catalog.startable
+        g.strip.setNewAgent(icon: agent.flatMap { app.catalog.icon($0) }, name: app.catalog.name(agent))
         // Only the visible tab is built: a background agent tab must not wake a paused agent.
         let visible = model.selectedTab.flatMap { content($0) }
         g.strip.set(Self.disambiguated(model.tabs.map { t in
@@ -214,7 +215,7 @@ final class EditorArea: NSViewController {
     /// Unsaved files: the dot in the window's close button (and on their tabs), as in any Mac document app.
     /// In the main window, any loaded workspace's: switching away from one with unsaved files keeps the dot (quitting asks).
     func showEdited() {
-        let all = Workbench.window.flatMap { $0.window === view.window ? $0.editors.editedFiles : nil }
+        let all = app.workbench.window.flatMap { $0.window === view.window ? $0.editors.editedFiles : nil }
         view.window?.isDocumentEdited = !(all ?? editedFiles).isEmpty
     }
 
@@ -239,12 +240,12 @@ final class EditorArea: NSViewController {
         switch TabURI.scheme(t.uri) {
         case "session":
             let s = app.session(body)
-            let title = s.map(AgentCatalog.displayName) ?? String(localized: "Session")
-            return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
+            let title = s.map(app.catalog.displayName) ?? String(localized: "Session")
+            return .init(id: t.id, title: title, icon: app.catalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
                          unread: s?.unread ?? false, toolTip: title)
         case "file":
             let p = TabURI.filePath(t.uri).path
-            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: FileIcon.image((p as NSString).lastPathComponent), status: nil, toolTip: p)
+            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: app.fileIcons.image((p as NSString).lastPathComponent), status: nil, toolTip: p)
         case "diff": return .init(id: t.id, title: String(localized: "Changes"), icon: .symbol("plusminus"), status: nil, toolTip: nil)
         case "http", "https", "about":
             return .init(id: t.id, title: URL(string: t.uri)?.host ?? String(localized: "New Page"), icon: .symbol("safari"), status: nil, toolTip: t.uri)
@@ -303,7 +304,7 @@ final class EditorArea: NSViewController {
     /// The focused tab tells the inspector which agent / file the user is looking at. Only the main window's workspace
     /// on screen says so: a background workspace or the Scratch panel opening a tab must not redirect "send to agent".
     func publishFocus() {
-        guard Workbench.window?.editors.current === self else { return }
+        guard app.workbench.window?.editors.current === self else { return }
         let uri = layout.focusedGroup?.selectedTab?.uri ?? ""
         let wb = app.workbench
         if wb.focusedTab != uri { wb.focusedTab = uri }

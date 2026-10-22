@@ -32,7 +32,7 @@ import Core
 /// a restart is replacing, whose tab the new session takes when the restart comes back.
 @MainActor
 @Test func aRemovedSessionLeavesTheListUnlessARestartReplacesIt() {
-    let m = AppModel.shared
+    let m = AppModel()
     let gone = Session(worktreeId: "w", cwd: "/tmp", command: "zsh", agent: "shell")
     let restarted = Session(worktreeId: "w", cwd: "/tmp", command: "claude", agent: "claude")
     m.upsert(gone); m.upsert(restarted)
@@ -41,7 +41,6 @@ import Core
     m.handle(RemovedEvent(session: gone.id)); m.handle(RemovedEvent(session: restarted.id))
     #expect(m.session(gone.id) == nil)
     #expect(m.session(restarted.id) != nil)
-    m.restarting.remove(restarted.id); m.sessions.removeAll { $0.id == restarted.id }
 }
 
 /// A reply that an event overtook, or a list read before a change, is an older copy: the newer one (by revision) stays.

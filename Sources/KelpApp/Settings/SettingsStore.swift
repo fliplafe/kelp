@@ -7,8 +7,6 @@ import Core
 @MainActor
 @Observable
 final class SettingsStore {
-    /// The app's (`AppModel.settings`), for code not handed it yet.
-    static var shared: SettingsStore { AppModel.shared.settings }
     let app: AppModel
     init(app: AppModel) { self.app = app }
     private(set) var values: [String: JSONValue] = [:]
@@ -33,8 +31,8 @@ final class SettingsStore {
         let skills = { (d: [String: JSONValue]) in d.filter { $0.key.hasPrefix("agents.skills.") } }
         let skillsChanged = values.isEmpty || skills(o) != skills(values)
         values = o
-        ThemeManager.shared.apply()
-        if skillsChanged { AgentSkills.write() }
+        app.themes.apply()
+        if skillsChanged { AgentSkills.write(app) }
         if !app.extensions.extensions.isEmpty, ExtensionRegistry.disabled(o["extensions.disabled"]) != app.extensions.disabledLoaded {
             app.extensions.reload()
         }

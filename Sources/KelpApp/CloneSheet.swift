@@ -14,23 +14,23 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
     private static var shown: CloneSheet?
 
     /// `start`: filled in and begun at once (the snapshot dev aid; a background app's sheet gets no keys).
-    static func show(start text: String? = nil) {
-        let s = CloneSheet()
+    static func show(_ app: AppModel, start text: String? = nil) {
+        let s = CloneSheet(app: app)
         guard s.begin(ended: { shown = nil }) else { return }
         shown = s
         if let text { s.field.stringValue = text; s.start() }
     }
 
-    private init() {
-        super.init(width: 480)
+    private init(app: AppModel) {
+        super.init(app: app, width: 480)
         build()
     }
     required init?(coder: NSCoder) { fatalError() }
 
     /// Where clones go: the last place used, else next to the newest project, else ~/Developer or home.
-    private static var parent: URL {
+    private var parent: URL {
         if let s = UserDefaults.standard.string(forKey: "newProject.parent"), FileManager.default.fileExists(atPath: s) { return URL(fileURLWithPath: s) }
-        if let r = AppModel.shared.repos.last(where: { !$0.path.hasPrefix(Paths.root.path) }) { return URL(fileURLWithPath: r.path).deletingLastPathComponent() }
+        if let r = app.repos.last(where: { !$0.path.hasPrefix(Paths.root.path) }) { return URL(fileURLWithPath: r.path).deletingLastPathComponent() }
         let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer")
         return FileManager.default.fileExists(atPath: dev.path) ? dev : FileManager.default.homeDirectoryForCurrentUser
     }
@@ -40,7 +40,7 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
         title.font = .boldSystemFont(ofSize: 13)
         field.placeholderString = "https://github.com/owner/repo or git@…"
         field.widthAnchor.constraint(equalToConstant: 340).isActive = true
-        place.pathStyle = .popUp; place.url = Self.parent; place.delegate = self; place.allowedTypes = ["public.folder"]
+        place.pathStyle = .popUp; place.url = parent; place.delegate = self; place.allowedTypes = ["public.folder"]
         let grid = NSGridView(views: [[NSTextField(labelWithString: String(localized: "URL:")), field],
                                       [NSTextField(labelWithString: String(localized: "Clone into:")), place]])
         grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 8
@@ -79,14 +79,14 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
     }
 
     @objc private func start() {
-        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), parent = place.url?.path ?? Self.parent.path
+        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), parent = place.url?.path ?? self.parent.path
         guard !text.isEmpty else { NSSound.beep(); return }
         let id = UUID().uuidString
         running = id; busy(true)
         status.isHidden = false; status.textColor = .secondaryLabelColor
         status.stringValue = String(localized: "Connecting…")
         Task {
-            let r = await AppModel.shared.tryCall(RepoClone(url: text, parent: parent, id: id))
+            let r = await app.tryCall(RepoClone(url: text, parent: parent, id: id))
             running = nil; busy(false)
             if let e = r.error {
                 if e == "Clone cancelled." { close(); return }
@@ -94,12 +94,12 @@ final class CloneSheet: SheetController, NSPathControlDelegate {
             }
             UserDefaults.standard.set(parent, forKey: "newProject.parent")
             close()
-            if let path = r.value?.path { Workbench.addProject(path: path) }   // on screen
+            if let path = r.value?.path { app.workbench.addProject(path: path) }   // on screen
         }
     }
 
     @objc private func stop() {
-        if let id = running { status.stringValue = String(localized: "Cancelling…"); Task { await AppModel.shared.call(RepoCloneCancel(id: id)) }; return }
+        if let id = running { status.stringValue = String(localized: "Cancelling…"); Task { await app.call(RepoCloneCancel(id: id)) }; return }
         close()
     }
 }

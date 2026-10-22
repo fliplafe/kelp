@@ -27,13 +27,13 @@ enum Builtins {
         CommandSpec(id: id, title: title, key: key) { _ in run() }
     }
     /// The editor area on screen; a beep when there is none.
-    static var editor: EditorArea? {
-        if Workbench.editor == nil { NSSound.beep() }
-        return Workbench.editor
+    static func editor(_ app: AppModel) -> EditorArea? {
+        if app.workbench.editor == nil { NSSound.beep() }
+        return app.workbench.editor
     }
     /// The file in the focused tab; a beep when it's something else.
-    static var fileTab: FileTab? {
-        let f = Workbench.editor?.focusedContent as? FileTab
+    static func fileTab(_ app: AppModel) -> FileTab? {
+        let f = app.workbench.editor?.focusedContent as? FileTab
         if f == nil { NSSound.beep() }
         return f
     }
@@ -50,7 +50,7 @@ enum Builtins {
         c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab(app: app) })
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", specs: [
-                s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: AgentCatalog.all.map(\.id)),
+                s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: app.catalog.all.map(\.id)),
                 s("agents.skills.extensions", "Skill: write Kelp extensions", "boolean", true,
                   "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
                 s("agents.skills.settings", "Skill: change Kelp settings", "boolean", true,
@@ -80,16 +80,16 @@ enum Builtins {
         ]
         c.commands = [
             CommandSpec(id: "agents.new", title: "New Agent", key: "opt+cmd+t") { args in
-                editor?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string)
+                editor(app)?.newAgent(args["agent"]?.string, prompt: args["prompt"]?.string)
             },
-            cmd("terminal.new", "New Terminal", "cmd+t") { editor?.newTerminal() },
-            cmd("terminal.tmux", "Attach to tmux Session…") { QuickOpen.shared.showTmux() },
-            cmd("terminal.splitRight", "Split Right", "cmd+d") { editor?.splitFocused(.right) },
-            cmd("terminal.splitDown", "Split Down", "shift+cmd+d") { editor?.splitFocused(.down) },
-            cmd("agents.sideBySide", "Agents Side by Side", "ctrl+cmd+t") { editor?.toggleSideBySide() },
-            cmd("agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { Workbench.showNextNeedingAttention() },
-            cmd("agents.usage", "Usage", "opt+cmd+u") { Workbench.open("usage:") },
-            cmd("agents.history", "Session History", "shift+cmd+h") { HistoryWindow.shared.show(app) },
+            cmd("terminal.new", "New Terminal", "cmd+t") { editor(app)?.newTerminal() },
+            cmd("terminal.tmux", "Attach to tmux Session…") { app.quickOpen.showTmux() },
+            cmd("terminal.splitRight", "Split Right", "cmd+d") { editor(app)?.splitFocused(.right) },
+            cmd("terminal.splitDown", "Split Down", "shift+cmd+d") { editor(app)?.splitFocused(.down) },
+            cmd("agents.sideBySide", "Agents Side by Side", "ctrl+cmd+t") { editor(app)?.toggleSideBySide() },
+            cmd("agents.nextNeedingYou", "Show Agent Needing You", "shift+cmd+u") { app.workbench.showNextNeedingAttention() },
+            cmd("agents.usage", "Usage", "opt+cmd+u") { app.workbench.open("usage:") },
+            cmd("agents.history", "Session History", "shift+cmd+h") { app.historyWindow.show() },
             // Like Caffeine: ticked keeps the Mac awake until unticked, which goes back to the setting's default.
             cmd("power.keepAwake", "Keep Mac Awake") {
                 app.settings.set("power.keepAwake", app.settings.string("power.keepAwake") == "always" ? nil : .string("always"))
@@ -100,10 +100,10 @@ enum Builtins {
 
     static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) { app in
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0, app: app) }, menu: FileTab.menu),
+        c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0, app: app) }, menu: { FileTab.menu(app, $0, uri: $1, workspace: $2, openBeside: $3) }),
                   TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0, app: app) }]
         c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel(app: app) }]
-        c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus") { _ in UntitledTab.next() }]
+        c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus") { _ in UntitledTab.next(app) }]
         c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", specs: [
             s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
@@ -127,44 +127,44 @@ enum Builtins {
             LanguageSpec(id: "rust", extensions: ["rs"], server: .init(command: "rust-analyzer", install: "rustup component add rust-analyzer"),
                          test: "cargo test ${symbol}", format: "rustfmt --edition 2021")
         ]
-        c.commands = [cmd("files.quickOpen", "Open Quickly…", "cmd+p") { QuickOpen.shared.show(commandsOnly: false) },
-                      cmd("files.new", "New File", "opt+cmd+n") { Workbench.open(UntitledTab.next()) },
+        c.commands = [cmd("files.quickOpen", "Open Quickly…", "cmd+p") { app.quickOpen.show(commandsOnly: false) },
+                      cmd("files.new", "New File", "opt+cmd+n") { app.workbench.open(UntitledTab.next(app)) },
                       cmd("markdown.cycleView", "Markdown: Source, Split, Preview", "shift+cmd+v") {
-                          guard let md = (Workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
+                          guard let md = (app.workbench.editor?.focusedContent as? FileTab)?.markdown else { NSSound.beep(); return }
                           md.cycleMode()
                       },
                       cmd("editor.save", "Save", "cmd+s") {
-                          guard let t = Workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
+                          guard let t = app.workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
                           Task {
                               if let file = t as? FileTab, app.settings.bool("editor.formatOnSave") == true, file.language?.format != nil { await file.format() }
                               await t.save()
                           }
                       },
                       cmd("editor.saveAll", "Save All", "opt+cmd+s") {
-                          Task { for t in Workbench.editedFiles { await t.save() } }
+                          Task { for t in app.workbench.editedFiles { await t.save() } }
                       },
                       cmd("files.findInWorkspace", "Find in Workspace…", "shift+cmd+f") {
-                          Workbench.window?.showInspector(panel: "files")
-                          DispatchQueue.main.async { (Workbench.window?.inspector.built("files") as? FilesPanel)?.findInFiles() }   // after the panel is built
+                          app.workbench.window?.showInspector(panel: "files")
+                          DispatchQueue.main.async { (app.workbench.window?.inspector.built("files") as? FilesPanel)?.findInFiles() }   // after the panel is built
                       },
                       cmd("editor.goToLine", "Go to Line…", "cmd+l") {
-                          guard let t = fileTab else { return }
+                          guard let t = fileTab(app) else { return }
                           Task { if let s = await prompt(String(localized: "Go to line"), ""), let n = Int(s) { t.goTo(line: n) } }
                       },
-                      cmd("editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab?.jumpToDefinition() },
+                      cmd("editor.jumpToDefinition", "Jump to Definition", "ctrl+cmd+j") { fileTab(app)?.jumpToDefinition() },
                       // ⌥⌘↩: "path:12-30" into the agent's prompt (it reads the file itself), without pressing Return.
                       cmd("editor.sendToAgent", "Send to Agent", "opt+cmd+return") {
-                          if let t = fileTab { FileActions.sendToAgent(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
+                          if let t = fileTab(app) { FileActions(app).sendToAgent(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
                       },
                       cmd("editor.copyReference", "Copy Path and Line", "opt+shift+cmd+c") {
-                          if let t = fileTab { FileActions.copyReference(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
+                          if let t = fileTab(app) { FileActions(app).copyReference(t.path, lines: t.selectedText?.isEmpty == false ? t.selectedLines : nil) }
                       },
-                      cmd("editor.copyWebLink", "Copy Web Link") { if let t = fileTab { FileActions.copyWebLink(t.path, lines: t.selectedLines) } },
+                      cmd("editor.copyWebLink", "Copy Web Link") { if let t = fileTab(app) { FileActions(app).copyWebLink(t.path, lines: t.selectedLines) } },
                       // The language's commands (`contributes.languages`): run, test and format the file.
-                      cmd("editor.runFile", "Run File") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "run") } },
-                      cmd("editor.testAtCursor", "Test at Cursor") { if let t = fileTab { ScriptsMenu.shared.runFile(t, "test") } },
+                      cmd("editor.runFile", "Run File") { if let t = fileTab(app) { app.scripts.runFile(t, "run") } },
+                      cmd("editor.testAtCursor", "Test at Cursor") { if let t = fileTab(app) { app.scripts.runFile(t, "test") } },
                       // ⌃⇧I as in Xcode: an Option-only key like VS Code's ⇧⌥F never reaches the menu from a text view (it types Ï).
-                      cmd("editor.format", "Format Document", "ctrl+shift+i") { if let t = fileTab { Task { await t.format() } } }]
+                      cmd("editor.format", "Format Document", "ctrl+shift+i") { if let t = fileTab(app) { Task { await t.format() } } }]
         return c
     }
 
@@ -181,10 +181,10 @@ enum Builtins {
         ])]
         c.commands = [
             CommandSpec(id: "git.review", title: "Git: Review Changes", key: "shift+cmd+r") { _ in
-                if let w = app.workbench.workspaceId { Workbench.open(DiffTab.uri(w)) }
+                if let w = app.workbench.workspaceId { app.workbench.open(DiffTab.uri(w)) }
             },
             CommandSpec(id: "git.pullRequest", title: "Git: Create Pull Request") { _ in
-                if let w = app.workbench.workspaceId { PRActions.create(worktree: w) }
+                if let w = app.workbench.workspaceId { PRActions(app).create(worktree: w) }
             },
             CommandSpec(id: "git.push", title: "Git: Push") { _ in
                 if let w = app.workbench.workspaceId {
@@ -207,7 +207,7 @@ enum Builtins {
         c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"]) { BrowserTab(uri: $0, app: app) }]
         c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
         c.commands = [CommandSpec(id: "browser.new", title: "New Browser Tab", key: "shift+cmd+b") { args in
-            Workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
+            app.workbench.open(args["url"]?.string ?? "about:blank#\(UUID().uuidString.prefix(6))")
         }]
         return c
     }

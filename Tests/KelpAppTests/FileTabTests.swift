@@ -25,7 +25,7 @@ extension AppOfItsOwn {
     }
 
     @Test func anAgentsChangeShowsWhenNothingIsEditedHere() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
         let tab = await opened(p, in: rig)
         #expect(tab.editor?.text == "one\n")
@@ -35,7 +35,7 @@ extension AppOfItsOwn {
     }
 
     @Test func saveWritesTheEditButNeverOverAnAgentsChange() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
         let tab = await opened(p, in: rig)
         tab.editor?.setText("mine\n")
@@ -50,7 +50,7 @@ extension AppOfItsOwn {
     /// An agent's change to a file edited here, once its version is pushed: the edit stays, and ⌘S asks instead of
     /// writing over it (here, with no window to ask in, it just doesn't write).
     @Test func anAgentsChangeToAnEditedFileKeepsTheEditAndAsks() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
         let tab = await opened(p, in: rig)
         tab.editor?.setText("mine\n"); tab.editor?.onChange?("mine\n")
@@ -66,7 +66,7 @@ extension AppOfItsOwn {
     /// A file only touched (a new modification time, the same text) while edited here asks nothing: ⌘S writes the edit,
     /// whether its new version was pushed before the save or the daemon finds it at the save.
     @Test func aTouchedFileIsSavedWithoutAsking() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
         let tab = await opened(p, in: rig)
         func touch(_ ahead: Int) throws {
@@ -89,7 +89,7 @@ extension AppOfItsOwn {
     /// workspace going away doesn't ask again); without Cancel the second button is Don't Save. Then what's left to wait
     /// for (a remote file's save) is nothing.
     @Test func closingAWorkspaceAsksAboutItsUnsavedFiles() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
         let tab = await opened(p, in: rig), untitled = UntitledTab(uri: "untitled:1", app: rig.app)
         func type(_ t: String) { tab.editor?.setText(t); tab.editor?.onChange?(t) }   // as typing does
@@ -112,7 +112,7 @@ extension AppOfItsOwn {
     /// The shell reaches a file tab only as `TabContent`: what it asks must be the tab's own answer, not the protocol's
     /// "not this one" default (a signature that drifts would fall back to it silently).
     @Test func theShellSeesAFileTabThroughTabContent() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("a\nb\nc\nd\n")
         let file = await opened(p, in: rig)
         let tab: TabContent = file
@@ -127,7 +127,7 @@ extension AppOfItsOwn {
     /// 110 ms for 3 MB, each one); a letter typed over and back still clears the dot, compared off it.
     @Test func typingInABigFileDoesntCompareItAll() async throws {
         let line = "let label = \"größe\" // a line of code\n"
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file(String(repeating: line, count: 3_000_000 / line.utf8.count))
         let tab = await opened(p, in: rig)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
@@ -151,7 +151,7 @@ extension AppOfItsOwn {
     /// A 60 MB log or a pipe isn't read whole on the main thread: the tab says why instead (a pipe used to block forever,
     /// /dev/zero to eat memory). A terminal path that's a pipe isn't a file to preview either.
     @Test func hugeFilesAndPipesAreNotReadIntoTheEditor() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("")
         #expect(truncate(p, 60 << 20) == 0)   // sparse: no 60 MB written
         #expect(await opened(p, in: rig).editor == nil)
@@ -166,7 +166,7 @@ extension AppOfItsOwn {
     /// log a dev server appends to used to read all of it on the main thread. Rewritten in place with the same size and
     /// its old modification time put back, the file looks untouched, so the tab keeps what it read.
     @Test func aFileEventWithTheSameStampReadsNothing() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("aaaa\n")
         let tab = await opened(p, in: rig)
         var st = stat()

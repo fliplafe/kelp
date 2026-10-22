@@ -6,8 +6,8 @@ import Core
 /// Settings › Agents removes it. Nothing is written to the agent's own config.
 @MainActor
 enum AgentSkills {
-    static func write() {
-        let s = SettingsStore.shared
+    static func write(_ app: AppModel) {
+        let s = app.settings
         put("kelp-extensions", on: s.bool("agents.skills.extensions") != false,
             description: "Use when the user wants something added to or changed in Kelp, the IDE this session runs in: a panel, list, tab, command, "
                 + "setting, theme or language server — e.g. “add a Kelp panel with my Docker containers”, “show Android emulators in Kelp”. Kelp extensions are "
@@ -16,7 +16,7 @@ enum AgentSkills {
         put("kelp-settings", on: s.bool("agents.skills.settings") != false,
             description: "Use when the user wants to see or change how Kelp, the IDE this session runs in, is set up: theme, fonts, editor, "
                 + "terminal, agents, turning extensions on or off. Done with the kelp CLI (kelp settings set …), not Claude Code's own settings.",
-            body: settingsGuide())
+            body: settingsGuide(app))
         put("kelp-terminals", on: s.bool("agents.skills.terminals") != false,
             description: "Use when you run tests, a build or a dev server, or work through a long multi-step task, in Kelp, the IDE this session runs "
                 + "in: run the command in a Kelp tab the user can watch, wait for it, read what it printed, and show your progress on your row.",
@@ -81,7 +81,7 @@ enum AgentSkills {
     }
 
     /// Every setting the installed extensions declare, with how to change it.
-    static func settingsGuide() -> String {
+    static func settingsGuide(_ app: AppModel) -> String {
         var out = """
         # Kelp settings
 
@@ -107,7 +107,7 @@ enum AgentSkills {
         | --- | --- | --- | --- |
 
         """
-        for section in ExtensionRegistry.shared.all.settings {
+        for section in app.extensions.all.settings {
             for spec in section.specs {
                 var type = spec.type
                 if let o = spec.options, !o.isEmpty { type += ": " + o.joined(separator: " / ") }
@@ -119,8 +119,8 @@ enum AgentSkills {
                 out += "| `\(spec.key)` | \(type) | \(def) | \(what) |\n"
             }
         }
-        out += "\nThemes for `workbench.theme`: auto, ghostty, " + ThemeManager.shared.themes.map(\.id).joined(separator: ", ") + ".\n"
-        out += "File icon themes for `workbench.iconTheme`: " + FileIcon.themes.map(\.id).joined(separator: ", ") + ".\n"
+        out += "\nThemes for `workbench.theme`: auto, ghostty, " + app.themes.themes.map(\.id).joined(separator: ", ") + ".\n"
+        out += "File icon themes for `workbench.iconTheme`: " + app.fileIcons.themes.map(\.id).joined(separator: ", ") + ".\n"
         return out
     }
 }

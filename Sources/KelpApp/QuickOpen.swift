@@ -8,7 +8,8 @@ import WorkbenchKit
 /// right here, the one in effect ticked; for looks, moving through them tries each on, ↩ keeps it, esc goes back.
 @MainActor
 final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
-    static let shared = QuickOpen()
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init() }
 
     struct Item {
         let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void
@@ -82,10 +83,10 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     /// A setting's choices in the list instead, the one in effect ticked and selected. Looks (Appearance) are tried on
     /// as the selection moves, so you see the theme before keeping it.
     private func pick(_ section: SettingsSection, _ spec: SettingSpec) {
-        let store = SettingsStore.shared, now = store.value(spec.key)
+        let store = app.settings, now = store.value(spec.key)
         choosing = Choosing(key: spec.key, saved: store.values[spec.key], tries: section.id == "appearance", query: field.stringValue)
-        all = Self.choices(spec).map { v, name in
-            let (note, image) = spec.key == "workbench.theme" ? Self.themeLook(v.string ?? "") : ("", nil)
+        all = choices(spec).map { v, name in
+            let (note, image) = spec.key == "workbench.theme" ? self.themeLook(v.string ?? "") : ("", nil)
             return Item(kind: "Choice", icon: v.string == "ghostty" ? "terminal" : "", title: name, detail: note, action: { store.set(spec.key, v) },
                         choice: v, checked: v == now, image: image)
         }
@@ -97,38 +98,38 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     /// Leaves a setting's choices with the value it had: what was tried on goes away.
     private func stopChoosing() {
-        if let c = choosing { SettingsStore.shared.preview(c.key, c.saved) }
+        if let c = choosing { app.settings.preview(c.key, c.saved) }
         choosing = nil
     }
 
     /// The selected choice, on screen while it's selected (looks only).
     private func tryOn() {
         guard let c = choosing, c.tries, rows.indices.contains(table.selectedRow), case .item(let it) = rows[table.selectedRow] else { return }
-        SettingsStore.shared.preview(c.key, it.choice)
+        app.settings.preview(c.key, it.choice)
     }
 
     /// What a setting can be set to: the values and their names.
-    static func choices(_ spec: SettingSpec) -> [(JSONValue, String)] {
+    func choices(_ spec: SettingSpec) -> [(JSONValue, String)] {
         switch spec.type {
         case "boolean": return [(.bool(true), String(localized: "On")), (.bool(false), String(localized: "Off"))]
         case "number":
             return (spec.options ?? []).compactMap(Double.init).map { v -> (JSONValue, String) in
                 let whole = v == v.rounded()
-                return (whole ? .int(Int(v)) : .double(v), SettingRow.label(spec.key, whole ? String(Int(v)) : String(v)))
+                return (whole ? .int(Int(v)) : .double(v), SettingRow.label(spec.key, whole ? String(Int(v)) : String(v), app))
             }
-        default: return SettingRow.options(spec).map { (.string($0), SettingRow.label(spec.key, $0)) }
+        default: return SettingRow.options(spec, app).map { (.string($0), SettingRow.label(spec.key, $0, app)) }
         }
     }
 
     /// A color theme's row: light or dark, and a tile of its colors (Match System shows both of its themes).
-    static func themeLook(_ id: String) -> (String, NSImage?) {
-        let themes = ThemeManager.shared.themes
+    func themeLook(_ id: String) -> (String, NSImage?) {
+        let themes = app.themes.themes
         switch id {
-        case "auto": return (String(localized: "Kelp Light or Dark, as macOS is"), swatch(themes.filter { $0.id == "kelp.light" || $0.id == "kelp.dark" }))
+        case "auto": return (String(localized: "Kelp Light or Dark, as macOS is"), Self.swatch(themes.filter { $0.id == "kelp.light" || $0.id == "kelp.dark" }))
         case "ghostty": return (String(localized: "The terminal keeps your Ghostty colors"), nil)
         default:
             guard let t = themes.first(where: { $0.id == id }) else { return ("", nil) }
-            return (t.appearance == "light" ? String(localized: "Light") : String(localized: "Dark"), swatch([t]))
+            return (t.appearance == "light" ? String(localized: "Light") : String(localized: "Dark"), Self.swatch([t]))
         }
     }
 
@@ -182,37 +183,38 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     }
 
     private func collect() {
+        let app = self.app
         var items: [Item] = []
         if !commandsOnly {
             collectRecents()
-            if let e = Workbench.editor {
+            if let e = app.workbench.editor {
                 for (uri, title) in e.openTabs where TabURI.scheme(uri) != "session" {
                     items.append(Item(kind: "Tab", icon: "square.on.square", title: title, detail: TabURI.scheme(uri) == "file" ? TabURI.filePath(uri).path : uri,
-                                      action: { Workbench.open(uri) }, split: { Workbench.open(uri, split: .right) }))
+                                      action: { app.workbench.open(uri) }, split: { app.workbench.open(uri, split: .right) }))
                 }
             }
-            for w in AppModel.shared.worktrees where !w.archived {
-                let repo = AppModel.shared.repo(w.repoId)?.name ?? ""
+            for w in app.worktrees where !w.archived {
+                let repo = app.repo(w.repoId)?.name ?? ""
                 items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)",
-                                  action: { Workbench.show(workspace: w.id) }))
+                                  action: { app.workbench.show(workspace: w.id) }))
             }
-            for s in AppModel.shared.sessions where s.status != .exited {
-                let wt = AppModel.shared.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: AgentCatalog.displayName(s),
+            for s in app.sessions where s.status != .exited {
+                let wt = app.worktree(s.worktreeId)
+                items.append(Item(kind: "Agent", icon: "terminal", title: app.catalog.displayName(s),
                                   detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
-                                  action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                                  action: { app.workbench.focus(session: s.id) }, split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                                   session: s))
             }
             filesLoad?.cancel()
-            if let wid = Workbench.shared.workspaceId, let root = AppModel.shared.worktree(wid)?.path {
+            if let wid = app.workbench.workspaceId, let root = app.worktree(wid)?.path {
                 filesLoad = Task {
-                    let files = await AppModel.shared.call(FilesList(id: wid)) ?? []   // why there are none, if it failed
+                    let files = await app.call(FilesList(id: wid)) ?? []   // why there are none, if it failed
                     let fuzzy = await Task.detached { files.map(ProjectFiles.FuzzyPath.init) }.value
                     // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
                     guard !Task.isCancelled, choosing == nil else { return }
                     all += zip(files, fuzzy).map { f, z in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
-                                                               action: { Workbench.open(TabURI.file(root + "/" + f)) },
-                                                               split: { Workbench.open(TabURI.file(root + "/" + f), split: .right) }, fuzzy: z) }
+                                                               action: { app.workbench.open(TabURI.file(root + "/" + f)) },
+                                                               split: { app.workbench.open(TabURI.file(root + "/" + f), split: .right) }, fuzzy: z) }
                     filter()
                 }
             }
@@ -232,14 +234,14 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         }
         if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
         // Every setting: one with choices (Color Theme…) lists them here, the others open their page.
-        for section in ExtensionRegistry.shared.all.settings {
+        for section in app.extensions.all.settings {
             for spec in section.specs {
-                let title = "\(loc(section.title)): \(loc(spec.title))", choices = Self.choices(spec)
+                let title = "\(loc(section.title)): \(loc(spec.title))", choices = self.choices(spec)
                 guard !choices.isEmpty else {
-                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(section: section.id) }))
+                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(app, section: section.id) }))
                     continue
                 }
-                let now = SettingsStore.shared.value(spec.key)
+                let now = app.settings.value(spec.key)
                 items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { [weak self] in self?.pick(section, spec) },
                                   value: choices.first { $0.0 == now }?.1 ?? ""))
             }
@@ -250,22 +252,23 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     /// Agents to get back to: asking or failed first, then finished and unseen, then the latest others; then the
     /// workspaces visited last. The first six get ⌘1–⌘6.
     private func collectRecents() {
-        let m = AppModel.shared
-        let queue = AttentionQueue.sessions
+        let app = self.app
+        let m = app
+        let queue = AttentionQueue(app).sessions
         let rest = m.sessions.filter { s in s.agent != "shell" && s.status != .exited && !queue.contains { $0.id == s.id } }
             .sorted { ($0.statusAt ?? $0.createdAt) > ($1.statusAt ?? $1.createdAt) }
         var out = (queue + rest).prefix(6).map { s -> Item in
             let w = m.worktree(s.worktreeId)
-            return Item(kind: s.status.words, icon: "terminal", title: AgentCatalog.displayName(s),
+            return Item(kind: s.status.words, icon: "terminal", title: app.catalog.displayName(s),
                         detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
-                        action: { Workbench.focus(session: s.id) }, split: { Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                        action: { app.workbench.focus(session: s.id) }, split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                         session: s)
         }
         var seen: Set<String> = []   // each workspace once, at its last visit
-        for id in Workbench.shared.history.visits.reversed() where id != Workbench.shared.workspaceId && seen.insert(id).inserted {
+        for id in app.workbench.history.visits.reversed() where id != app.workbench.workspaceId && seen.insert(id).inserted {
             guard let w = m.worktree(id) else { continue }
             out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName,
-                            detail: m.repo(w.repoId)?.name ?? "", action: { Workbench.show(workspace: w.id) }))
+                            detail: m.repo(w.repoId)?.name ?? "", action: { app.workbench.show(workspace: w.id) }))
             if out.count >= 10 { break }
         }
         recents = out
@@ -280,15 +283,16 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
 
     /// "#123" or "#login": the project's open pull requests (gh), opened in the browser tab.
     private func searchPullRequests(_ q: String) {
+        let app = self.app
         prSearch?.cancel()
-        guard let repo = AppModel.shared.worktree(Workbench.shared.workspaceId)?.repoId else { return }
+        guard let repo = app.worktree(app.workbench.workspaceId)?.repoId else { return }
         prSearch = Task { [weak self] in
-            let prs = await AppModel.shared.call(GitHubPRs(repoId: repo, filter: "open")) ?? []   // gh missing or signed out: says so
+            let prs = await app.call(GitHubPRs(repoId: repo, filter: "open")) ?? []   // gh missing or signed out: says so
             guard let self, !Task.isCancelled, field.stringValue == q else { return }
             let term = String(q.dropFirst()).lowercased()
             setRows(prs.filter { p in term.isEmpty || "\(p.number)".hasPrefix(term) || p.title.lowercased().contains(term) }.map { p in
                 Item(kind: "Pull Request", icon: "arrow.triangle.pull", title: "#\(p.number) \(p.title)",
-                     detail: "\(p.author) · \(p.headRefName)", action: { Workbench.open(p.url) })
+                     detail: "\(p.author) · \(p.headRefName)", action: { app.workbench.open(p.url) })
             }, grouped: false)
         }
     }
@@ -420,7 +424,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             return v
         }
         let img = NSImageView(image: it.image ??
-            (it.kind == "File" ? FileIcon.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage()))
+            (it.kind == "File" ? app.fileIcons.image(it.title) : NSImage(systemSymbolName: it.icon, accessibilityDescription: it.kind) ?? NSImage()))
         img.contentTintColor = .secondaryLabelColor
         // An agent: its state while there's something to see (as on its tab), else its own icon.
         let lead: NSView
@@ -431,7 +435,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                                          box.heightAnchor.constraint(equalToConstant: 18)])
             lead = box
         } else {
-            if let s = it.session, let i = AgentCatalog.icon(s.agent, size: 18) { img.image = i }
+            if let s = it.session, let i = app.catalog.icon(s.agent, size: 18) { img.image = i }
             lead = img
         }
         let t1 = NSTextField(labelWithString: ""); t1.attributedStringValue = Self.highlighted(it.title, field.stringValue); t1.lineBreakMode = .byTruncatingTail
@@ -477,7 +481,7 @@ extension QuickOpen {
     /// File › Attach to tmux Session, the "+" menu: the sessions tmux has on this workspace's machine, the last used first.
     /// Typing filters them by name, and a name that isn't one starts that session. Each opens as a terminal attached to it.
     func showTmux() {
-        guard let wid = Workbench.shared.workspaceId else { NSSound.beep(); return }
+        guard let wid = app.workbench.workspaceId else { NSSound.beep(); return }
         if panel == nil { build() }
         stopChoosing(); filesLoad?.cancel(); prSearch?.cancel(); tmuxLoad?.cancel()
         commandsOnly = false; recents = []; all = []; tmux = []
@@ -487,7 +491,7 @@ extension QuickOpen {
         filter()
         present()
         tmuxLoad = Task {
-            let found = await AppModel.shared.call(TmuxList(worktreeId: wid)) ?? []
+            let found = await app.call(TmuxList(worktreeId: wid)) ?? []
             guard !Task.isCancelled, tmux != nil else { return }
             tmux = found; filter()
         }
@@ -496,9 +500,10 @@ extension QuickOpen {
     /// The sessions matching what's typed, that exact name first; then a new session by that name, or by the project's.
     private func tmuxItems(_ sessions: [Tmux.Session], _ q: String) -> [Item] {
         func item(_ name: String, icon: String, detail: String) -> Item {
+            let app = self.app
             var c = URLComponents(); c.scheme = "terminal"; c.queryItems = [URLQueryItem(name: "tmux", value: name)]
             let uri = c.string ?? "terminal:"
-            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { Workbench.open(uri) }, split: { Workbench.open(uri, split: .right) })
+            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { app.workbench.open(uri) }, split: { app.workbench.open(uri, split: .right) })
         }
         // Kelp's own (terminal.tmux) are terminals already, and end with their tab: not offered.
         let found = sessions.filter { !Tmux.isOwn($0.name) }.compactMap { s -> (Item, Int)? in
@@ -509,8 +514,8 @@ extension QuickOpen {
         }.sorted { $0.1 > $1.1 }.map(\.0)
         var new = Tmux.name(q)
         if new.isEmpty {   // the project's name, numbered while tmux has a session by it
-            let w = AppModel.shared.worktree(Workbench.shared.workspaceId)
-            let base = Tmux.name(AppModel.shared.repo(w?.repoId)?.name ?? "kelp").lowercased().replacingOccurrences(of: " ", with: "-")
+            let w = app.worktree(app.workbench.workspaceId)
+            let base = Tmux.name(app.repo(w?.repoId)?.name ?? "kelp").lowercased().replacingOccurrences(of: " ", with: "-")
             new = base
             var n = 2
             while sessions.contains(where: { $0.name == new }) { new = "\(base)-\(n)"; n += 1 }

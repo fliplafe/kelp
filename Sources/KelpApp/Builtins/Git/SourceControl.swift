@@ -79,6 +79,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     // MARK: view
 
     override func loadView() {
+        let app = self.app
         branchButton.isBordered = false; branchButton.imagePosition = .imageLeading; branchButton.imageHugsTitle = true
         branchButton.image = Glyph.image("arrow.triangle.branch", size: 14); branchButton.font = .ui(12, weight: .semibold)
         branchButton.lineBreakMode = .byTruncatingMiddle; branchButton.target = self; branchButton.action = #selector(branchMenu)
@@ -128,7 +129,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.bind($0) }
         track(owner: self) { [weak self, app] in app.git[self?.worktreeId ?? ""] } changed: { [weak self] in self?.apply($0) }
         track(owner: self) { [weak self, app] in app.ci[self?.worktreeId ?? ""] } changed: { [weak self] in self?.applyCI($0) }
-        track(owner: self) { FileIcon.revision } changed: { [weak self] _ in
+        track(owner: self) { app.fileIcons.revision } changed: { [weak self] _ in
             for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
         }
     }
@@ -325,7 +326,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         case .section(let s):
             return SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n))
         case .file(let f, let s):
-            return FileCell(f, letter: Self.letter(f, s), indent: 16, actions: fileActions(f, s))
+            return FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, s), indent: 16, actions: fileActions(f, s))
         case .commit(let i):
             if more, !loadingMore, i >= commits.count - 30 { loadMore() }
             let c = commits[i]
@@ -337,7 +338,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             }
             return cell
         case .commitFile(let h, let f):
-            let cell = FileCell(f, letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
+            let cell = FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
             // The lanes below the commit run on through its expanded files, as in VS Code.
             let g = GraphView(); g.through = Array(Set(commits.first { $0.hash == h }?.bottom.compactMap(\.last) ?? []))
             g.frame = NSRect(x: 6, y: 0, width: graphWidth, height: 22); g.autoresizingMask = [.height]
@@ -362,7 +363,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         case .section(let s): toggle(s)
         case .file(let f, let s): open(f, s)
         case .commit(let i): toggle(commit: commits[i].hash)
-        case .commitFile(let h, let f): if let w = worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) }
+        case .commitFile(let h, let f): if let w = worktreeId { app.workbench.open(DiffTab.uri(w, file: f.path, commit: h)) }
         case .note: break
         }
     }
@@ -370,10 +371,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     func open(_ f: FileChange, _ s: Section) {
         guard let w = worktreeId else { return }
         if s == .merge { openFile(f); return }
-        Workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
+        app.workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
     }
     func openFile(_ f: FileChange) {
-        if let w = app.worktree(worktreeId) { Workbench.open(TabURI.file(w.path + "/" + f.path)) }
+        if let w = app.worktree(worktreeId) { app.workbench.open(TabURI.file(w.path + "/" + f.path)) }
     }
 
     private func toggle(commit hash: String) {

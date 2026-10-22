@@ -60,7 +60,7 @@ extension SidebarController {
             return true
         }
         let folders = Self.folders(info)
-        folders.forEach(Workbench.addProject(path:))
+        folders.forEach(app.workbench.addProject(path:))
         return !folders.isEmpty
     }
 

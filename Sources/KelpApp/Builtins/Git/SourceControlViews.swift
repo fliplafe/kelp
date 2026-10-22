@@ -114,10 +114,10 @@ final class GraphBar: NSView {
 
 final class FileCell: NSTableCellView, Hoverable {
     private let actions: NSStackView
-    init(_ f: FileChange, letter: (String, NSColor), indent: CGFloat, actions a: [RowAction]) {
+    init(_ f: FileChange, icon image: NSImage, letter: (String, NSColor), indent: CGFloat, actions a: [RowAction]) {
         actions = actionButtons(a)
         super.init(frame: .zero)
-        let icon = NSImageView(image: FileIcon.image((f.path as NSString).lastPathComponent))
+        let icon = NSImageView(image: image)
         icon.imageScaling = .scaleProportionallyDown
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let name = NSTextField(labelWithString: (f.path as NSString).lastPathComponent); name.font = .ui(12)

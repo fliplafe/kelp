@@ -100,7 +100,5 @@ final class Watched {
         }
     }
     init(_ topic: WatchTopic, in app: AppModel) { self.topic = topic; self.app = app }
-    /// For a view not handed the app yet.
-    convenience init(_ topic: WatchTopic) { self.init(topic, in: AppModel.shared) }
     isolated deinit { if let k = key { app.unwatch(topic, k) } }
 }

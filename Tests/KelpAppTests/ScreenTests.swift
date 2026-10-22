@@ -26,11 +26,9 @@ import Core
 
 @MainActor private func withSidebar(repos: [Repo], worktrees: [Worktree], sessions: [Session], _ check: (SidebarController, NSOutlineView) throws -> Void) throws {
     _ = testHome
-    let m = AppModel.shared
-    let saved = (m.repos, m.worktrees, m.sessions)
-    defer { (m.repos, m.worktrees, m.sessions) = saved }
+    let m = AppModel()
     m.repos = repos; m.worktrees = worktrees; m.sessions = sessions
-    let vc = SidebarController(app: AppModel.shared)
+    let vc = SidebarController(app: m)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 600), styleMask: [.titled], backing: .buffered, defer: true)   // never shown
     window.contentViewController = vc
     vc.view.frame = NSRect(x: 0, y: 0, width: 280, height: 600)
@@ -44,8 +42,8 @@ private func desk(_ id: String, _ branch: String, note: String = "") -> Worktree
     Worktree(id: id, repoId: "r1", branch: branch, path: "/tmp/kelp-screen-atlas/\(id)", note: note)
 }
 
-// AppModel.shared is shared with the other screen tests: one at a time.
-extension SharedAppModel {
+// Windows keep their panels' state in UserDefaults, the process's: one at a time.
+extension OneAtATime {
 @Test func theSidebarListsTheProjectItsWorkspacesAndTheirAgents() throws {
     let agent = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .working, title: "Fix login bug")
     try withSidebar(repos: [project], worktrees: [desk("w1", "feat/login"), desk("w2", "feat/billing", note: "Billing rewrite")], sessions: [agent]) { _, o in
@@ -106,7 +104,8 @@ extension SharedAppModel {
 /// their columns after.
 @Test func focusModesPanelsFloatOverTheEditorAreaAndComeBack() throws {
     _ = testHome
-    let main = MainWindowController(app: AppModel.shared)
+    let app = AppModel(), main = MainWindowController(app: app)
+    #expect(app.workbench.window === main)   // what acts on the window (open, show, focus) reaches it through the workbench
     let split = try #require(main.window?.contentView?.subviews.first)   // the split's view; the bar and the floaters lie over it
     #expect(main.inspector.view.isDescendant(of: split))
     main.toggleFocusMode()

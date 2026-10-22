@@ -112,7 +112,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         Forge.menu(pages).popUp(positioning: nil, at: NSPoint(x: 0, y: webButton.bounds.height + 4), in: webButton)
     }
 
-    @objc private func runSetup() { if let setup { Forge.run(setup) } }
+    @objc private func runSetup() { if let setup { Forge.run(setup, in: app) } }
 
     private func button(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
         let b = ClosureButton(title: "", action: action); b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip
@@ -208,8 +208,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     private func askAgent() {
         guard let w = worktree, let j = shownJob else { return }
-        guard FileActions.targetAgent != nil else { Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then ask again."), style: .error); return }
-        GitFix.send("fixCI", worktree: w, vars: ["check": j.job.name, "error": shownLog])
+        guard FileActions(app).targetAgent != nil else { Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then ask again."), style: .error); return }
+        GitFix(app).send("fixCI", worktree: w, vars: ["check": j.job.name, "error": shownLog])
     }
 
     private func rerun() { if let w = worktree, let j = shownJob { rerun(w, run: j.run) } }

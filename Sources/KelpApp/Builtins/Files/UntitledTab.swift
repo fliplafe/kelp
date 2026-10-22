@@ -25,12 +25,12 @@ final class UntitledTab: SavableTab {
             guard let self, !discarded, isEdited == text.isEmpty else { return }
             isEdited = !text.isEmpty
         }
-        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor.refreshAppearance() }
+        track(owner: self) { app.themes.editorRevision } changed: { [weak self] _ in self?.editor.refreshAppearance() }
     }
 
     /// The next free number in this workspace: Untitled-1, Untitled-2…
-    static func next() -> String {
-        let open = Set(Workbench.editor?.layout.allTabs.map(\.uri) ?? [])
+    static func next(_ app: AppModel) -> String {
+        let open = Set(app.workbench.editor?.layout.allTabs.map(\.uri) ?? [])
         return (1...).lazy.map { "untitled:\($0)" }.first { !open.contains($0) } ?? "untitled:1"
     }
 
@@ -61,7 +61,7 @@ final class UntitledTab: SavableTab {
         // Over whatever is there: the save panel asked about replacing it.
         let res = await app.tryCall(FilesWrite(path: url.path, text: editor.text, base: nil))
         if let error = res.error { Banner.show(String(localized: "Couldn't save \(url.lastPathComponent): \(error)")); return false }
-        Workbench.editor?.replace(uri, with: TabURI.file(url.path))
+        app.workbench.editor?.replace(uri, with: TabURI.file(url.path))
         return true
     }
 

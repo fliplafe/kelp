@@ -159,7 +159,7 @@ final class CommitMessageTab: TabContent {
         }
     }
 
-    private func dismiss() { Workbench.closeTab(uri: uri) }
+    private func dismiss() { app.workbench.closeTab(uri: uri) }
     func focus() { text.window?.makeFirstResponder(text) }
 }
 
@@ -172,10 +172,10 @@ enum GitCommit {
         guard let changes = await app.call(GitStatus(id: wid)) else { return false }
         let all = !changes.contains { $0.staged && !$0.conflicted }
         let r = await app.tryCall(Core.GitCommit(id: wid, message: message, all: all, amend: amend))   // this enum's namesake
-        if let e = r.error { GitFix.offer(e, recipe: "fixCommit", worktree: wid); return false }
+        if let e = r.error { GitFix(app).offer(e, recipe: "fixCommit", worktree: wid); return false }
         if push {
             let p = await app.tryCall(GitPush(id: wid))
-            if let e = p.error { GitFix.offer(e, recipe: "fixPush", worktree: wid) } else { Banner.show(String(localized: "Pushed")) }
+            if let e = p.error { GitFix(app).offer(e, recipe: "fixPush", worktree: wid) } else { Banner.show(String(localized: "Pushed")) }
         }
         return true
     }

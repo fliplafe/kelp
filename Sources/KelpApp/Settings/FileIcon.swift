@@ -4,22 +4,23 @@ import UniformTypeIdentifiers
 /// The icon beside a file or folder name (Files, Source Control, tabs, Quick Open), from the theme picked in
 /// Settings › Appearance: System (Finder's icons, the default), Colorful, or a VS Code icon theme an extension adds.
 @MainActor
-enum FileIcon {
+struct FileIcon {
+    let app: AppModel
     static let system = "default", colorful = "kelp.colorful"
 
     /// The choices for `workbench.iconTheme`.
-    static var themes: [(id: String, label: String)] {
-        [(system, "System"), (colorful, "Colorful")] + ExtensionRegistry.shared.all.iconThemes.map { ($0.id, $0.label) }
+    var themes: [(id: String, label: String)] {
+        [(Self.system, "System"), (Self.colorful, "Colorful")] + app.extensions.all.iconThemes.map { ($0.id, $0.label) }
     }
 
     /// Changes with the pick and with installed extensions: views showing icons reload when it does.
-    static var revision: String { "\(SettingsStore.shared.string("workbench.iconTheme") ?? system)#\(ExtensionRegistry.shared.revision)" }
+    var revision: String { "\(app.settings.string("workbench.iconTheme") ?? Self.system)#\(app.extensions.revision)" }
 
-    static func image(_ name: String, folder: Bool = false, expanded: Bool = false) -> NSImage {
-        switch SettingsStore.shared.string("workbench.iconTheme") ?? system {
-        case system: systemIcon(name, folder: folder)
-        case colorful: ColorfulIcons.image(name, folder: folder)
-        case let id: contributed(id)?.image(name, folder: folder, expanded: expanded) ?? systemIcon(name, folder: folder)
+    func image(_ name: String, folder: Bool = false, expanded: Bool = false) -> NSImage {
+        switch app.settings.string("workbench.iconTheme") ?? Self.system {
+        case Self.system: Self.systemIcon(name, folder: folder)
+        case Self.colorful: ColorfulIcons.image(name, folder: folder)
+        case let id: contributed(id)?.image(name, folder: folder, expanded: expanded) ?? Self.systemIcon(name, folder: folder)
         }
     }
 
@@ -33,16 +34,21 @@ enum FileIcon {
     }
 
     private static var loaded: (key: String, theme: IconTheme?)?
-    private static func contributed(_ id: String) -> IconTheme? {
-        let key = "\(id)#\(ExtensionRegistry.shared.revision)"
-        if loaded?.key != key {
+    private func contributed(_ id: String) -> IconTheme? {
+        let key = "\(id)#\(app.extensions.revision)"
+        if Self.loaded?.key != key {
             var theme: IconTheme?
-            if let spec = ExtensionRegistry.shared.all.iconThemes.first(where: { $0.id == id }) {
+            if let spec = app.extensions.all.iconThemes.first(where: { $0.id == id }) {
                 do { theme = try IconTheme(contentsOf: spec.file) }
                 catch { Banner.show(String(localized: "File icon theme “\(spec.label)”: \(error.localizedDescription)"), style: .error) }
             }
-            loaded = (key, theme)
+            Self.loaded = (key, theme)
         }
-        return loaded?.theme
+        return Self.loaded?.theme
     }
+}
+
+extension AppModel {
+    /// File icons in the theme it's set to.
+    var fileIcons: FileIcon { FileIcon(app: self) }
 }

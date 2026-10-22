@@ -15,10 +15,11 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func templatesTakeFieldsAndQuoteThem() {
     let item = JSONValue.object(["name": .string("it's"), "n": .int(3), "pr": .object(["id": .int(7)])])
-    #expect(ExtActions.expand("echo ${name}", item: item, quote: false) == "echo it's")
-    #expect(ExtActions.expand("echo ${name}", item: item, quote: true) == #"KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
-    #expect(ExtActions.expand("${pr.id}-${n}-${missing}", item: item, quote: false) == "7-3-")
-    #expect(ExtActions.expand("no placeholders $ {x", item: item, quote: false) == "no placeholders $ {x")
+    let actions = ExtActions(AppModel())
+    #expect(actions.expand("echo ${name}", item: item, quote: false) == "echo it's")
+    #expect(actions.expand("echo ${name}", item: item, quote: true) == #"KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
+    #expect(actions.expand("${pr.id}-${n}-${missing}", item: item, quote: false) == "7-3-")
+    #expect(actions.expand("no placeholders $ {x", item: item, quote: false) == "no placeholders $ {x")
 }
 
 @MainActor @Test func valuesPrintTheWayTheyRead() {
@@ -43,7 +44,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 @MainActor @Test func aManifestFolderBecomesContributions() throws {
     let d = try folder(["extension.json":
         #"{"id":"t.one","name":"One","contributes":{"commands":[{"title":"Hi","terminal":"echo hi"}],"panels":[{"id":"p","title":"P","web":"p.html"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d)
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
     #expect(info.id == "t.one" && info.error == nil && info.unavailable == nil)
     #expect(c.commands.map(\.title) == ["Hi"])
     #expect(c.panels.map(\.id) == ["t.one.p"])
@@ -51,7 +52,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func aBrokenManifestIsReportedNotThrown() throws {
     let d = try folder(["extension.json": #"{"name":"no id"}"#])
-    let (info, c) = DeclarativeExtension.load(d)
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
     #expect(info.error != nil)
     #expect(info.id == d.lastPathComponent)   // still listed, so it can be fixed or removed
     #expect(c.commands.isEmpty && c.panels.isEmpty)
@@ -59,40 +60,41 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func missingRequirementKeepsTheExtensionInactive() throws {
     let d = try folder(["extension.json": #"{"id":"t.req","name":"R","requires":["kelp-no-such-tool"],"contributes":{"commands":[{"title":"X","run":"x"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, tools: ["kelp-no-such-tool": false])
+    let (info, c) = DeclarativeExtension.load(d, tools: ["kelp-no-such-tool": false], app: AppModel())
     #expect(info.unavailable?.contains("kelp-no-such-tool") == true)
     #expect(c.commands.isEmpty)
     // Until the daemon has said (it may still be reading the login shell's PATH), a tool counts as there.
-    #expect(DeclarativeExtension.load(d).info.unavailable == nil)
+    #expect(DeclarativeExtension.load(d, app: AppModel()).info.unavailable == nil)
 }
 
 @MainActor @Test func aVSCodePackageIsReadForItsIconThemes() throws {
     let d = try folder(["package.json": #"{"name":"icons","publisher":"me","displayName":"Icons","contributes":{"iconThemes":[{"id":"i","label":"I","path":"./i.json"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d)
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
     #expect(info.id == "me.icons" && info.name == "Icons")
     #expect(c.iconThemes.map(\.id) == ["i"])
 }
 
 /// An action's command takes item fields as variables: a title with $(…) or a newline never runs (all the quoting
 /// cases are in WorkbenchKitTests.aValueInAShellTemplateNeverRuns).
-extension SharedAppModel {
+extension OneAtATime {
 @Test func aFieldNeverRunsInAnActionsCommand() async throws {
     let rig = try await AppRig(files: [:]); defer { rig.done() }   // the daemon runs it
     let marker = NSTemporaryDirectory() + "kelp-pwned-\(UUID().uuidString.prefix(6))"
     let evil = "a\ntouch \(marker)\n$(touch \(marker)) end"
-    let cmd = ExtActions.expand(#"printf %s "${title}""#, item: .object(["title": .string(evil)]), quote: true)
-    let r = await Shell.run(cmd, cwd: NSTemporaryDirectory())
+    let cmd = ExtActions(rig.app).expand(#"printf %s "${title}""#, item: .object(["title": .string(evil)]), quote: true)
+    let r = await Shell.run(rig.app, cmd, cwd: NSTemporaryDirectory())
     #expect(r.code == 0 && !FileManager.default.fileExists(atPath: marker) && r.stdout == evil)
 }
 }
 
 /// A tab's own items in its context menu come from its provider (an agent's, a file's); a tab whose provider adds none
 /// gets the shell's alone.
-extension SharedAppModel {
+extension OneAtATime {
     @Test func aTabsMenuHasWhatItsProviderAdds() {
         _ = testHome; _ = NSApplication.shared   // reload applies the theme to NSApp
-        ExtensionRegistry.shared.reload()
-        let area = EditorArea(app: AppModel.shared, workspaceId: "menu-test")
+        let app = AppModel()
+        app.extensions.reload()
+        let area = EditorArea(app: app, workspaceId: "menu-test")
         let agent = area.layout.add("session:s1"), page = area.layout.add(TabURI.file("/tmp/a.html")), web = area.layout.add("https://example.com")
         func titles(_ id: String) -> [String] { area.tabMenu(id).items.map { $0.isSeparatorItem ? "-" : $0.title } }
         let around = (["Split Right", "Split Down", "-"], ["Close Tab", "Close Other Tabs"])

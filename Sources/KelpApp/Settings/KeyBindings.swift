@@ -22,14 +22,14 @@ enum KeyBindings {
     private static var defaults: [String: KeySpec?] = [:]
     private static let mask: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
 
-    static var overrides: [String: String] {
-        guard case .object(let o)? = SettingsStore.shared.value("keys") else { return [:] }
+    static func overrides(_ settings: SettingsStore) -> [String: String] {
+        guard case .object(let o)? = settings.value("keys") else { return [:] }
         return o.compactMapValues(\.string)
     }
 
     /// Names every item and applies the overrides. Runs while the titles are English.
-    static func apply(to menu: NSMenu) {
-        let over = overrides
+    static func apply(to menu: NSMenu, _ settings: SettingsStore) {
+        let over = overrides(settings)
         func walk(_ m: NSMenu, _ path: [String]) {
             for i in m.items where !i.isSeparatorItem {
                 if let s = i.submenu { if s !== NSApp.servicesMenu { walk(s, path + [i.title]) }; continue }
@@ -73,12 +73,12 @@ enum KeyBindings {
     }
 
     /// nil: back to Kelp's default; a key with no key text: no shortcut.
-    static func set(_ id: String, _ key: KeySpec?) {
-        var o = overrides
+    static func set(_ id: String, _ key: KeySpec?, in settings: SettingsStore) {
+        var o = overrides(settings)
         if let key { o[id] = key.key.isEmpty ? "" : key.description } else { o[id] = nil }
-        SettingsStore.shared.set("keys", o.isEmpty ? nil : .object(o.mapValues { .string($0) }))
+        settings.set("keys", o.isEmpty ? nil : .object(o.mapValues { .string($0) }))
     }
-    static func resetAll() { SettingsStore.shared.set("keys", nil) }
+    static func resetAll(_ settings: SettingsStore) { settings.set("keys", nil) }
 
     /// "⇧⌘K", as menus show it.
     static func display(_ k: KeySpec) -> String {
@@ -135,6 +135,7 @@ enum KeyBindings {
 /// (`query`), so the page has no second search field.
 struct KeyboardSettings: View {
     var query = ""
+    @Environment(AppModel.self) private var app
     @State private var entries: [KeyBindings.Entry] = []
     @State private var recording: String?
     @State private var warning: [String: String] = [:]
@@ -145,7 +146,7 @@ struct KeyboardSettings: View {
             HStack {
                 Text("Click a shortcut, then press the new keys. ⌫ removes it, Esc keeps it.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Restore Defaults") { KeyBindings.resetAll(); later() }.disabled(KeyBindings.overrides.isEmpty)
+                Button("Restore Defaults") { KeyBindings.resetAll(app.settings); later() }.disabled(KeyBindings.overrides(app.settings).isEmpty)
             }
             ForEach(groups, id: \.0) { menu, items in
                 Text(menu).font(.headline).padding(.top, 6)
@@ -169,7 +170,7 @@ struct KeyboardSettings: View {
                 Text(e.title)
                 Spacer()
                 if e.key != e.defaultKey {
-                    Button("Default") { KeyBindings.set(e.id, nil); warning[e.id] = nil; later() }.buttonStyle(.link).font(.caption)
+                    Button("Default") { KeyBindings.set(e.id, nil, in: app.settings); warning[e.id] = nil; later() }.buttonStyle(.link).font(.caption)
                         .help(e.defaultKey.map { String(localized: "Kelp's default: \(KeyBindings.display($0))") } ?? String(localized: "Kelp's default: none"))
                 }
                 Button { record(e.id) } label: {
@@ -189,13 +190,13 @@ struct KeyboardSettings: View {
             let chars = ev.charactersIgnoringModifiers ?? ""
             switch ev.keyCode {
             case 53 where mods.isEmpty: stop()   // Esc: keep it
-            case 51 where mods.isEmpty: KeyBindings.set(id, .init(key: "", mods: [])); warning[id] = nil; stop(); later()   // ⌫: none
+            case 51 where mods.isEmpty: KeyBindings.set(id, .init(key: "", mods: []), in: app.settings); warning[id] = nil; stop(); later()   // ⌫: none
             default:
                 let fKey = (0xF704...0xF70F).contains(chars.unicodeScalars.first?.value ?? 0)
                 guard !mods.subtracting(.shift).isEmpty || fKey else { NSSound.beep(); return nil }   // a plain letter would type
                 let key = KeySpec(key: mods.contains(.shift) && chars.count == 1 ? chars.uppercased() : chars, mods: .init(mods))
                 warning[id] = KeyBindings.conflict(key, keyCode: ev.keyCode, except: id)
-                KeyBindings.set(id, key); stop(); later()
+                KeyBindings.set(id, key, in: app.settings); stop(); later()
             }
             return nil
         }

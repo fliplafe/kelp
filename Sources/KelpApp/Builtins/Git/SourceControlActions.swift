@@ -18,9 +18,9 @@ extension SourceControlController {
             busy = false; syncing = nil
             if let e = r.error {
                 // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
-                if op == "push" { GitFix.offer(e, recipe: "fixPush", worktree: wid) }
+                if op == "push" { GitFix(app).offer(e, recipe: "fixPush", worktree: wid) }
                 else if op == "pull", e.lowercased().contains("conflict") {
-                    GitFix.offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
+                    GitFix(app).offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
                 } else { Banner.show(e, style: .error) }
             } else if let done { Banner.show(done) }
             reloadAll()
@@ -83,7 +83,7 @@ extension SourceControlController {
         // No message yet: a page to write it on, as in VS Code (amending starts from the last commit's message).
         guard !text.isEmpty else {
             let last = amend ? commits.first { $0.hash.hasPrefix(info?.head ?? "\u{0}") }?.subject : nil
-            Workbench.open(CommitMessageTab.uri(wid, push: push, amend: amend, message: last)); return
+            app.workbench.open(CommitMessageTab.uri(wid, push: push, amend: amend, message: last)); return
         }
         busy = true
         if push { syncing = (String(localized: "Pushing…"), true) }
@@ -132,6 +132,7 @@ extension SourceControlController {
     }
 
     func showMoreMenu() {
+        let app = self.app
         guard let wid = worktreeId else { return }
         let m = NSMenu()
         m.add(String(localized: "Pull")) { [weak self] in self?.run(done: String(localized: "Pulled")) { GitRemoteOp(id: $0, op: "pull") } }
@@ -141,8 +142,8 @@ extension SourceControlController {
         m.add(String(localized: "Stash Changes")) { [weak self] in self?.run(done: String(localized: "Changes stashed")) { GitStash(id: $0) } }
         m.add(String(localized: "Pop Stash")) { [weak self] in self?.run { GitStash(id: $0, pop: true) } }
         m.addItem(.separator())
-        m.add(String(localized: "Open All Changes")) { Workbench.open(DiffTab.uri(wid)) }
-        m.add(String(localized: "Create Pull Request…")) { PRActions.create(worktree: wid) }
+        m.add(String(localized: "Open All Changes")) { app.workbench.open(DiffTab.uri(wid)) }
+        m.add(String(localized: "Create Pull Request…")) { PRActions(app).create(worktree: wid) }
         if let w = app.worktree(wid), let r = app.repo(w.repoId), w.path != r.path {
             m.add(String(localized: "Merge into \(r.baseBranch)…")) { [weak self] in self?.mergeIntoBase() }
         }
@@ -160,9 +161,9 @@ extension SourceControlController {
             let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
             a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
             a.addButton(withTitle: String(localized: "OK"))
-            if FileActions.targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
+            if FileActions(app).targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
             if await runSheet(a) == .alertSecondButtonReturn, let w = app.worktree(wid), let repo = app.repo(w.repoId) {
-                GitFix.send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
+                GitFix(app).send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
             }
         }
     }
@@ -170,6 +171,7 @@ extension SourceControlController {
     // MARK: context menu
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        let app = self.app
         menu.removeAllItems()
         let o = menu === graphOutline.menu ? graphOutline : outline
         guard let n = o.item(atRow: o.clickedRow) as? Node else { return }
@@ -186,7 +188,7 @@ extension SourceControlController {
             menu.add(String(localized: "Copy Commit Hash")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.hash, forType: .string) }
             menu.add(String(localized: "Copy Commit Message")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.subject, forType: .string) }
         case .commitFile(let h, let f):
-            menu.add(String(localized: "Open Changes")) { [weak self] in if let w = self?.worktreeId { Workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
+            menu.add(String(localized: "Open Changes")) { [weak self] in if let w = self?.worktreeId { app.workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
             menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
         default: break
         }

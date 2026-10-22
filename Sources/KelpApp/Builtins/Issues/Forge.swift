@@ -31,13 +31,13 @@ enum Forge {
     }
 
     /// In a terminal tab, where the login asks its questions; from Settings too. No window to run it in: the command is copied.
-    static func run(_ s: Setup) {
-        guard let e = Workbench.editor else {
+    static func run(_ s: Setup, in app: AppModel) {
+        guard let e = app.workbench.editor else {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s.command, forType: .string)
             Banner.show(String(localized: "Copied “\(s.command)”: run it in Terminal")); return
         }
         e.run(command: s.command, title: s.title)
-        Workbench.window?.window?.makeKeyAndOrderFront(nil)
+        app.workbench.window?.window?.makeKeyAndOrderFront(nil)
     }
 
     /// In the default browser, where the user is signed in to the site.

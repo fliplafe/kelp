@@ -16,8 +16,6 @@ struct IDEContext {
         let w = app.worktree(app.workbench.workspaceId)
         return IDEContext(workspace: w, project: app.repo(w?.repoId), focusedFile: app.workbench.focusedFile)
     }
-    /// The app's, for views not handed it yet.
-    static var current: IDEContext { of(AppModel.shared) }
 }
 
 /// A right-inspector panel.
@@ -31,13 +29,10 @@ struct PanelSpec: Identifiable {
 /// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).
 struct EditorSpec: Identifiable {
     let id: String, title: String, icon: String
-    let open: @MainActor (IDEContext) -> Void
+    /// The tab it opens (nil: none here, as for a workspace that has no changes to review).
+    let uri: @MainActor (IDEContext) -> String?
 
-    /// The common case: the entry opens a tab for a URI.
-    init(id: String, title: String, icon: String, uri: @escaping @MainActor (IDEContext) -> String?) {
-        self.id = id; self.title = title; self.icon = icon
-        open = { ctx in if let u = uri(ctx) { Workbench.open(u) } }
-    }
+    @MainActor func open(_ ctx: IDEContext, in app: AppModel) { if let u = uri(ctx) { app.workbench.open(u) } }
 }
 
 /// An action with a stable id, the one thing the menu bar, key bindings (settings.json `keys`), the command palette
@@ -118,8 +113,6 @@ struct ExtensionInfo: Identifiable {
 @MainActor
 @Observable
 final class ExtensionRegistry {
-    /// The app's (`AppModel.extensions`), for code not handed it yet.
-    static var shared: ExtensionRegistry { AppModel.shared.extensions }
     /// The app whose extensions these are: built-ins contribute with it.
     let app: AppModel
     init(app: AppModel) { self.app = app }
@@ -158,15 +151,15 @@ final class ExtensionRegistry {
         }
         for b in Builtins.all { take(b.info, b.contribute(app)) }
         for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where Self.isFolder(folder) {
-            let loaded = DeclarativeExtension.load(folder, tools: Self.tools)
+            let loaded = DeclarativeExtension.load(folder, tools: Self.tools, app: app)
             take(loaded.info, loaded.contributions)
         }
-        merged.tabs.append(DeclarativeExtension.tabProvider)
+        merged.tabs.append(DeclarativeExtension.tabProvider(app))
         extensions = infos.sorted { ($0.builtin ? 0 : 1, $0.name) < ($1.builtin ? 0 : 1, $1.name) }
         all = merged
         revision += 1
-        ThemeManager.shared.apply()
-        AgentSkills.write()
+        app.themes.apply()
+        AgentSkills.write(app)
         app.publishUIState()
         askTools(Set(infos.flatMap(\.requires)))
     }
@@ -202,6 +195,7 @@ final class ExtensionRegistry {
     /// Like VS Code's "Install from VSIX…": a .vsix (a zip with the extension in `extension/`) or an extension folder,
     /// copied into ~/.kelp/extensions. A version already there goes to the Trash.
     func install(_ src: URL) async throws {
+        let app = self.app
         let dir = Self.userDir
         try await Task.detached {
             let fm = FileManager.default
@@ -209,7 +203,7 @@ final class ExtensionRegistry {
             let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: tmp) }
             if src.pathExtension.lowercased() == "vsix" {
-                let unzip = await Shell.exec(["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
+                let unzip = await Shell.exec(app, ["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
                 folder = tmp.appendingPathComponent("extension")
                 guard unzip.code == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
                     throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
@@ -253,4 +247,6 @@ final class ExtensionRegistry {
     }
 
     func command(_ id: String) -> CommandSpec? { all.commands.first { $0.id == id } }
+    /// Runs the command (a menu item's, a key's); one whose extension is off does nothing.
+    func run(_ id: String, _ args: [String: JSONValue] = [:]) { command(id)?.run(args) }
 }

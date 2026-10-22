@@ -23,27 +23,30 @@ func runSheet(_ p: NSSavePanel) async -> NSApplication.ModalResponse {
 
 /// Session-level agent actions shared by tabs and the sidebar.
 @MainActor
-enum AgentActions {
-    static func rename(_ sid: String) {
-        let cur = AppModel.shared.session(sid)?.title ?? ""
+struct AgentActions {
+    let app: AppModel
+    init(_ app: AppModel) { self.app = app }
+
+    func rename(_ sid: String) {
+        let cur = app.session(sid)?.title ?? ""
         Task {
             guard let t = await prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."), initial: cur) else { return }
-            await AppModel.shared.call(SessionRename(id: sid, title: t))
+            await app.call(SessionRename(id: sid, title: t))
         }
     }
 
     /// Same command in the same tab; resumes the conversation when the agent supports it.
-    static func restart(_ sid: String) {
+    func restart(_ sid: String) {
         Task {
-            AppModel.shared.restarting.insert(sid); defer { AppModel.shared.restarting.remove(sid) }   // its tab is kept for the new one
-            guard let s = await AppModel.shared.call(SessionRestart(id: sid)) else { return }
-            AppModel.shared.sessions.removeAll { $0.id == sid }
-            AppModel.shared.upsert(s)
-            Workbench.replace(session: sid, with: s.id, workspace: s.worktreeId)
+            app.restarting.insert(sid); defer { app.restarting.remove(sid) }   // its tab is kept for the new one
+            guard let s = await app.call(SessionRestart(id: sid)) else { return }
+            app.sessions.removeAll { $0.id == sid }
+            app.upsert(s)
+            app.workbench.replace(session: sid, with: s.id, workspace: s.worktreeId)
         }
     }
 
-    static func stop(_ ids: [String]) {
+    func stop(_ ids: [String]) {
         let one = ids.count == 1
         let a = NSAlert(); a.messageText = one ? String(localized: "Stop this agent?") : String(localized: "Stop \(ids.count) agents?")
         a.informativeText = (one ? String(localized: "Its session ends") : String(localized: "Their sessions end"))
@@ -53,35 +56,35 @@ enum AgentActions {
         a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
-            for id in ids { await AppModel.shared.call(SessionKill(id: id)) }
+            for id in ids { await app.call(SessionKill(id: id)) }
         }
     }
 
     /// "Hand Off to ▸ Codex": a new agent in the same workspace gets what this one did (its conversation, or the
     /// terminal's text) as a brief typed into its prompt, not sent. ⌥ hands over the full transcript instead of the latest part.
-    static func handoffMenu(_ sid: String) -> NSMenu {
+    func handoffMenu(_ sid: String) -> NSMenu {
         let m = NSMenu()
-        for a in AgentCatalog.installed(AgentCatalog.all) {
-            m.add(a.name) { handoff(sid, to: a.id, full: false) }.image = AgentCatalog.icon(a.id)
+        for a in app.catalog.installed(app.catalog.all) {
+            m.add(a.name) { handoff(sid, to: a.id, full: false) }.image = app.catalog.icon(a.id)
             let full = m.add(String(localized: "\(a.name) — Full Transcript")) { handoff(sid, to: a.id, full: true) }
-            full.isAlternate = true; full.keyEquivalentModifierMask = .option; full.image = AgentCatalog.icon(a.id)
+            full.isAlternate = true; full.keyEquivalentModifierMask = .option; full.image = app.catalog.icon(a.id)
         }
         return m
     }
 
-    static func handoff(_ sid: String, to agent: String, full: Bool) {
+    func handoff(_ sid: String, to agent: String, full: Bool) {
         Task {
             let p = SessionHandoff(id: sid, agent: agent, full: full, prompt: "Continue the task where the previous agent left off: check what's done, then finish it.",
                                    draft: true)
-            guard let s = await AppModel.shared.call(p) else { return }
-            AppModel.shared.upsert(s)
-            Workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId)
+            guard let s = await app.call(p) else { return }
+            app.upsert(s)
+            app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId)
         }
     }
 
-    static func copyContext(_ sid: String) {
+    func copyContext(_ sid: String) {
         Task {
-            guard let t = await AppModel.shared.call(SessionContext(id: sid)) else { return }
+            guard let t = await app.call(SessionContext(id: sid)) else { return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(t, forType: .string)
             Banner.show(String(localized: "Context copied"))
         }

@@ -88,7 +88,7 @@ struct IntegrationsSettings: View {
             Text(c.status).foregroundStyle(.secondary)
             Spacer()
             if let s = c.setup {
-                Button(s.title) { Forge.run(s) }.help(s.command)
+                Button(s.title) { Forge.run(s, in: app) }.help(s.command)
                 Button("Check Again") { Task { await check() } }
             }
         }

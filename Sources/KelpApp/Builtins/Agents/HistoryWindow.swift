@@ -5,19 +5,18 @@ import WorkbenchKit
 /// Every past Claude / Codex conversation on this Mac: search, resume in place, or copy the resume command.
 @MainActor
 final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
-    static let shared = HistoryWindow()
     private var window: NSWindow?
     private let table = NSTableView()
     private let search = NSSearchField()
     private let fullText = NSButton(checkboxWithTitle: String(localized: "Search inside conversations"), target: nil, action: nil)
     private let status = NSTextField(labelWithString: "")
     private var rows: [AgentSessionInfo] = []
-    /// The app it was last shown for: what it lists and resumes is that app's daemon's.
-    private var app = AppModel.shared
+    /// The app whose conversations it lists and resumes.
+    private let app: AppModel
+    init(app: AppModel) { self.app = app; super.init() }
     private let pending = Debounce()
 
-    func show(_ app: AppModel) {
-        self.app = app
+    func show() {
         if window == nil { build() }
         window?.makeKeyAndOrderFront(nil); load()
     }
@@ -99,9 +98,14 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
             guard let s = await app.call(HistoryResume(session: rows[r])) else { return }
             app.upsert(s)
             // A conversation from a folder that isn't a project opens in the workspace on screen (it keeps its own folder).
-            if let w = s.worktreeId { Workbench.show(workspace: w) }
-            Workbench.open(TabURI.session(s.id))
+            if let w = s.worktreeId { app.workbench.show(workspace: w) }
+            app.workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }
+}
+
+extension AppModel {
+    /// Session History (one window per app).
+    var historyWindow: HistoryWindow { part { HistoryWindow(app: self) } }
 }

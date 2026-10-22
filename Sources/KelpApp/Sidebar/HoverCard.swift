@@ -48,7 +48,7 @@ final class CardModel {
     let agents: [Agent]
     let workspaceId: String
     let agentOnly: Bool
-    private let app: AppModel
+    let app: AppModel
     /// A project's card: the disk its other worktrees take (nil while `du` runs).
     let repo: Repo?
     var worktrees: [RepoWorktreeSizes.Item]?
@@ -62,7 +62,7 @@ final class CardModel {
         self.app = app
         let m = app
         if key.hasPrefix("a:"), let s = m.session(String(key.dropFirst(2))) {
-            title = AgentCatalog.displayName(s)
+            title = app.catalog.displayName(s)
             let w = m.worktree(s.worktreeId)
             subtitle = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
             agents = [Agent(id: s.id, session: s)]; workspaceId = s.worktreeId ?? ""; agentOnly = true; repo = nil
@@ -121,7 +121,7 @@ struct CardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         StatusIcon(status: a.session.markStatus).font(.caption)
-                        Text(model.agentOnly ? a.session.statusWords : AgentCatalog.displayName(a.session)).font(.callout).lineLimit(1)
+                        Text(model.agentOnly ? a.session.statusWords : model.app.catalog.displayName(a.session)).font(.callout).lineLimit(1)
                         if !model.agentOnly { Text(a.session.statusWords).font(.caption).foregroundStyle(.secondary) }
                         Spacer(minLength: 8)
                         Text(shortAgo(a.session.statusAt ?? a.session.createdAt)).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)

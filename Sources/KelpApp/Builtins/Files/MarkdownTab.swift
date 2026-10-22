@@ -9,7 +9,7 @@ final class MarkdownTab: NSViewController {
     let editor: CodeEditor
     let url: URL
     private let web = WKWebView()
-    private let links = PreviewLinks()
+    private let links: PreviewLinks
     private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")],
         trackingMode: .selectOne, target: nil, action: nil)
     private let split = NSSplitView()
@@ -20,7 +20,8 @@ final class MarkdownTab: NSViewController {
     var startInPreview = false
     private var narrow = false
 
-    init(editor: CodeEditor, url: URL) {
+    init(editor: CodeEditor, url: URL, app: AppModel) {
+        links = PreviewLinks(app: app)
         self.editor = editor; self.url = url
         super.init(nibName: nil, bundle: nil)
     }

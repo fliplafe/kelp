@@ -10,12 +10,13 @@ import WorkbenchKit
 /// An extension's HTML page with `window.kelp` (exec, terminal, open, agent, settings, workspace).
 @MainActor
 final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNavigationDelegate {
-    private let page: URL, folder: URL
+    private let page: URL, folder: URL, app: AppModel
     private var web: WKWebView!
-    init(page: URL, folder: URL) { self.page = page; self.folder = folder; super.init(nibName: nil, bundle: nil) }
+    init(page: URL, folder: URL, app: AppModel) { self.page = page; self.folder = folder; self.app = app; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
+        let app = self.app
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(WeakHandler(self), name: "kelp")
         cfg.userContentController.addUserScript(WKUserScript(source: Self.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -24,8 +25,8 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
         web.setValue(false, forKey: "drawsBackground")
         view = web
         web.loadFileURL(page, allowingReadAccessTo: folder)
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.push() }
-        track(owner: self) { SettingsStore.shared.values } changed: { [weak self] _ in self?.push() }
+        track(owner: self) { app.workbench.workspaceId } changed: { [weak self] _ in self?.push() }
+        track(owner: self) { app.settings.values } changed: { [weak self] _ in self?.push() }
     }
 
     /// The window stays on the extension's own pages: the bridge is in every page it shows, and `push` hands it the
@@ -34,7 +35,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
         if let f = a.targetFrame, !f.isMainFrame { decisionHandler(.allow); return }
         guard let u = a.request.url, !Self.isOwn(u, folder) else { decisionHandler(.allow); return }
         decisionHandler(.cancel)
-        if a.navigationType == .linkActivated { PreviewLinks.open(u) }
+        if a.navigationType == .linkActivated { PreviewLinks.open(u, in: app) }
     }
 
     /// A page in the extension's folder; nothing else is (a site, `about:blank`, a file elsewhere).
@@ -44,10 +45,10 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
 
     private func push() {
         guard let u = web.url, Self.isOwn(u, folder) else { return }
-        let ctx = IDEContext.current
+        let ctx = IDEContext.of(app)
         let ws: JSONValue = .obj(["name": .string(ctx.workspace?.displayName ?? ""), "path": .string(ctx.workspace?.path ?? ""),
                                   "branch": .string(ctx.workspace?.branch ?? ""), "project": .string(ctx.project?.name ?? "")])
-        let settings = JSONValue.object(SettingsStore.shared.values)
+        let settings = JSONValue.object(app.settings.values)
         guard let w = try? String(data: JSONEncoder().encode(ws), encoding: .utf8), let s = try? String(data: JSONEncoder().encode(settings), encoding: .utf8) else { return }
         web.evaluateJavaScript("window.kelp && window.kelp.__update(\(w), \(s))")
     }
@@ -57,24 +58,24 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
         guard m.frameInfo.isMainFrame, let u = m.frameInfo.request.url, Self.isOwn(u, folder) else { return }
         guard let d = m.body as? [String: Any], let op = d["op"] as? String else { return }
         let id = d["id"] as? Int ?? 0, arg = d["arg"] as? String ?? ""
-        let ctx = IDEContext.current
+        let ctx = IDEContext.of(app)
         switch op {
         case "exec":
             Task {
-                let r = await Shell.run(arg, cwd: ctx.workspace?.path ?? folder.path, extension: folder.lastPathComponent)
+                let r = await Shell.run(app, arg, cwd: ctx.workspace?.path ?? folder.path, extension: folder.lastPathComponent)
                 reply(id, .obj(["code": .int(Int(r.code)), "stdout": .string(r.stdout), "stderr": .string(r.stderr)]))
             }
-        case "terminal": Workbench.editor?.run(command: arg, title: d["title"] as? String); reply(id, .null)
+        case "terminal": app.workbench.editor?.run(command: arg, title: d["title"] as? String); reply(id, .null)
         // What a page opens or hands an agent is often data it shows (an issue's link, its body): `open` doesn't run
         // commands or agents (kelp.terminal / kelp.agent do, by name), and an agent's prompt is typed for the user to send.
         case "open":
-            if let u = ExtActions.openableURI(TabURI.normalize(arg, cwd: ctx.workspace?.path)) { Workbench.open(u) }
+            if let u = ExtActions.openableURI(TabURI.normalize(arg, cwd: ctx.workspace?.path)) { app.workbench.open(u) }
             reply(id, .null)
-        case "agent": Workbench.editor?.newAgent(nil, prompt: arg, draft: true); reply(id, .null)
-        case "settings.get": reply(id, SettingsStore.shared.value(arg) ?? .null)
+        case "agent": app.workbench.editor?.newAgent(nil, prompt: arg, draft: true); reply(id, .null)
+        case "settings.get": reply(id, app.settings.value(arg) ?? .null)
         case "settings.set":
             let v = (d["value"] as? String).flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
-            SettingsStore.shared.set(arg, v); reply(id, .null)
+            app.settings.set(arg, v); reply(id, .null)
         default: reply(id, .null)
         }
         if op == "ready" { push() }

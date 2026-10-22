@@ -9,8 +9,6 @@ import WorkbenchKit
 @MainActor
 enum SettingsWindow {
     private(set) static var window: NSWindow?
-    /// The app's, for views not handed it yet (Quick Open).
-    static func show(section: String? = nil) { show(AppModel.shared, section: section) }
     static func show(_ app: AppModel, section: String? = nil) {
         if let s = section { UserDefaults.standard.set(s, forKey: "settings.section") }
         let fresh = window == nil
@@ -59,7 +57,7 @@ struct SettingsView: View {
             }
             .navigationTitle(loc(registry.all.settings.first { $0.id == selection }?.title ?? (selection == "extensions" ? "Extensions" : "Settings")))
             .toolbar {
-                Button { Workbench.open(TabURI.file(Paths.root.appendingPathComponent("settings.json").path)) } label: { Label("Open settings.json", systemImage: "curlybraces") }
+                Button { app.workbench.open(TabURI.file(Paths.root.appendingPathComponent("settings.json").path)) } label: { Label("Open settings.json", systemImage: "curlybraces") }
                     .help("Edit settings.json in the editor")
             }
         }
@@ -138,7 +136,7 @@ struct SettingRow: View {
             let values = (spec.options ?? []).compactMap(Double.init)
             Picker(loc(spec.title), selection: Binding(get: { current }, set: { store.set(spec.key, $0 == $0.rounded() ? .int(Int($0)) : .double($0)) })) {
                 ForEach(values.contains(current) ? values : values + [current], id: \.self) { v in
-                    Text(Self.label(spec.key, v == v.rounded() ? String(Int(v)) : String(v))).tag(v)
+                    Text(Self.label(spec.key, v == v.rounded() ? String(Int(v)) : String(v), app)).tag(v)
                 }
             }
         case "number":
@@ -156,7 +154,7 @@ struct SettingRow: View {
             }
         case "enum":
             Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
-                ForEach(Self.options(spec), id: \.self) { Text(Self.label(spec.key, $0)).tag($0) }
+                ForEach(Self.options(spec, app), id: \.self) { Text(Self.label(spec.key, $0, app)).tag($0) }
             }
         case "theme":
             ThemeGallery(selection: Binding(get: { store.string(spec.key) ?? "auto" }, set: { store.set(spec.key, .string($0)) }))
@@ -174,23 +172,23 @@ struct SettingRow: View {
     }
 
     /// Choices that depend on what's installed are computed when shown.
-    static func options(_ spec: SettingSpec) -> [String] {
+    static func options(_ spec: SettingSpec, _ app: AppModel) -> [String] {
         switch spec.key {
-        case "workbench.theme": return ["auto", "ghostty"] + ThemeManager.shared.themes.map(\.id)
-        case "workbench.iconTheme": return FileIcon.themes.map(\.id)
-        case "agents.default": return AgentCatalog.installed(AgentCatalog.all).map(\.id)
+        case "workbench.theme": return ["auto", "ghostty"] + app.themes.themes.map(\.id)
+        case "workbench.iconTheme": return app.fileIcons.themes.map(\.id)
+        case "agents.default": return app.catalog.installed(app.catalog.all).map(\.id)
         default: return spec.options ?? []
         }
     }
 
     /// Option values made readable (agent ids → names, theme ids → names).
-    static func label(_ key: String, _ v: String) -> String {
+    static func label(_ key: String, _ v: String, _ app: AppModel) -> String {
         switch key {
-        case "agents.default": return AgentCatalog.name(v)
+        case "agents.default": return app.catalog.name(v)
         case "workbench.theme":
             return v == "auto" ? String(localized: "Match System") : v == "ghostty" ? String(localized: "Ghostty config")
-                : ThemeManager.shared.themes.first { $0.id == v }?.name ?? v
-        case "workbench.iconTheme": return FileIcon.themes.first { $0.id == v }?.label ?? v
+                : app.themes.themes.first { $0.id == v }?.name ?? v
+        case "workbench.iconTheme": return app.fileIcons.themes.first { $0.id == v }?.label ?? v
         case "power.keepAwake": return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
         case "sessions.hibernateMinutes":
             let m = Int(v) ?? -1
@@ -231,6 +229,7 @@ private struct SettingTextField: View {
 /// Color themes as swatch cards: the terminal's background, a sample, and the ANSI colors.
 private struct ThemeGallery: View {
     @Binding var selection: String
+    @Environment(AppModel.self) private var app
 
     private struct Card: Identifiable { let id: String, name: String, bg: Color, fg: Color, dots: [Color] }
     private var cards: [Card] {
@@ -239,8 +238,8 @@ private struct ThemeGallery: View {
             return Card(id: id ?? t.id, name: name ?? t.name, bg: Color(hex: c?.background ?? "") ?? .black, fg: Color(hex: c?.foreground ?? "") ?? .white,
                         dots: (c?.palette ?? []).dropFirst().prefix(6).compactMap { Color(hex: $0) })
         }
-        let all = ThemeManager.shared.themes
-        let auto = all.first { $0.id == (ThemeManager.shared.isDark ? "kelp.dark" : "kelp.light") }
+        let all = app.themes.themes
+        let auto = all.first { $0.id == (app.themes.isDark ? "kelp.dark" : "kelp.light") }
         return (auto.map { [card($0, id: "auto", name: "Match System")] } ?? [])
             + [Card(id: "ghostty", name: "Ghostty", bg: Color(nsColor: .controlBackgroundColor), fg: .secondary, dots: [])]
             + all.map { card($0) }
@@ -318,7 +317,7 @@ private struct ExtensionsSettings: View {
                         Menu {
                             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
                             let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path) ? "extension.json" : "package.json"
-                            Button("Edit \(manifest)") { Workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
+                            Button("Edit \(manifest)") { app.workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
                             Divider()
                             Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }
                         } label: { Image(systemName: "ellipsis.circle") }
@@ -339,7 +338,7 @@ private struct ExtensionsSettings: View {
                  + String(localized: "It knows how through the extensions skill (Settings › Agents)."))
                 .foregroundStyle(.secondary)
             HStack {
-                Button("How Extensions Work") { Workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
+                Button("How Extensions Work") { app.workbench.open(TabURI.file(ExtensionRegistry.userDir.appendingPathComponent("EXTENSIONS.md").path)) }
                     .buttonStyle(.link)
                 Spacer()
                 Button("Install…") { picking = true }

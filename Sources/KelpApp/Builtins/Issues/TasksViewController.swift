@@ -77,7 +77,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private lazy var showAll = ClosureButton(title: String(localized: "Show All Open")) { [weak self] in self?.filter.selectItem(at: 0); self?.reload() }
     /// gh or glab isn't installed or signed in: runs what fixes it in a terminal tab.
     private var setup: Forge.Setup?
-    private lazy var setupButton = ClosureButton(title: "") { [weak self] in if let s = self?.setup { Forge.run(s) } }
+    private lazy var setupButton = ClosureButton(title: "") { [weak self] in if let self, let s = setup { Forge.run(s, in: app) } }
 
     func show(worktree id: String?) {
         let r = app.worktree(id)?.repoId ?? app.repos.first?.id
@@ -249,6 +249,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func worktreeFor(branch: String) -> Worktree? { app.worktrees.first { $0.branch == branch && !$0.archived } }
 
     private func prDetail(_ r: GitHub.PullRequest) {
+        let app = self.app
         let n = r.number, branch = r.headRefName
         detail.addArrangedSubview(label("#\(n)  \(r.title)", size: 17, weight: .semibold))
         let draft = r.isDraft ? String(localized: " · draft") : ""
@@ -257,7 +258,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         let wt = worktreeFor(branch: branch)
         let actions = NSStackView(); actions.spacing = 8
         if let wt {
-            actions.addArrangedSubview(button(String(localized: "Open Worktree"), "arrow.triangle.branch") { Workbench.show(workspace: wt.id) })
+            actions.addArrangedSubview(button(String(localized: "Open Worktree"), "arrow.triangle.branch") { app.workbench.show(workspace: wt.id) })
             actions.addArrangedSubview(button(String(localized: "Send Review Comments to Agent"), "text.bubble") { [weak self] in self?.sendReview(n, wt) })
         }
         actions.addArrangedSubview(button(String(localized: "Merge (squash)"), "arrow.triangle.merge") { [weak self] in self?.merge(n, wt) })
@@ -325,7 +326,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     /// issue wrote it, so the user reads it before the agent acts on it.
     private func startTask(ref: String, title: String, body: String, url: String) {
         let brief = ["Work on \(ref): \(title)", body, url].filter { !$0.isEmpty }.joined(separator: "\n\n")
-        guard let editor = Workbench.editor else { NSSound.beep(); return }
+        guard let editor = app.workbench.editor else { NSSound.beep(); return }
         editor.newAgent(nil, prompt: brief, draft: true)
     }
 
@@ -334,7 +335,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
     private func sendRecipe(_ name: String, _ wt: Worktree, _ vars: [String: String]) async {
         guard let sid = agentSession(wt) else { status.stringValue = String(localized: "No running agent in \(wt.branch) — start one first"); return }
-        guard await GitFix.type(name, worktree: wt.id, vars: vars, into: sid) else { return }
+        guard await GitFix(app).type(name, worktree: wt.id, vars: vars, into: sid) else { return }
         status.stringValue = String(localized: "Typed into \(app.session(sid)?.displayTitle ?? "agent") — press Return there to send")
     }
     private func fixCheck(_ name: String, _ run: Int, _ wt: Worktree) {

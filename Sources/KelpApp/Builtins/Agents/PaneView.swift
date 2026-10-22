@@ -58,10 +58,10 @@ final class PaneView: NSView {
         g.onSearch = { [weak self] in self?.searchEvent($0) }
         // Paths the agent prints are its folder's: its own worktree once it went into one.
         let cwd = { [app] in app.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
-        let projects = { [app] in app.repos.map(\.path) }
-        g.onOpenURL = { Self.openLink($0, cwd: cwd(), elsewhere: projects()) }
+        let projects = { [app] in app.repos.map(\.path) }, app = app
+        g.onOpenURL = { Self.openLink($0, cwd: cwd(), elsewhere: projects(), in: app) }
         g.onPasteRefused = { Banner.show(String(localized: "Not pasted: a program put these lines on the clipboard, and this terminal would run them as typed. Copy them yourself to paste here.")) }
-        g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), elsewhere: projects(), flags: flags) }
+        g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), elsewhere: projects(), flags: flags, in: app) }
         g.onHoverWord = { [weak self, weak g] tokens, rect in
             guard let self, let g else { return }
             self.preview.show(tokens, rect: rect, in: g, cwd: cwd(), worktree: wid)
@@ -145,10 +145,10 @@ final class PaneView: NSView {
     /// behind any text), and an app, a .command file or another app's scheme would run. A link without a scheme is a
     /// path from `cwd` (or another project's, `TerminalPaths.resolve`): one Ghostty found in the text ("banner/x.html"),
     /// or an agent's Markdown link to its own file.
-    static func openLink(_ url: URL, cwd: String, elsewhere: [String]) {
+    static func openLink(_ url: URL, cwd: String, elsewhere: [String], in app: AppModel) {
         if url.scheme == nil {
             let path = url.path(percentEncoded: false)
-            if !TerminalPaths.open(path, cwd: cwd, elsewhere: elsewhere, flags: NSEvent.modifierFlags) {
+            if !TerminalPaths.open(path, cwd: cwd, elsewhere: elsewhere, flags: NSEvent.modifierFlags, in: app) {
                 Banner.show(String(localized: "No file “\(path)” in \((cwd as NSString).abbreviatingWithTildeInPath) or your other projects."))
             }
             return
@@ -157,8 +157,8 @@ final class PaneView: NSView {
         switch PreviewLinks.target(url) {
         case .web(let s):
             let local = url.host == "localhost" || url.host == "127.0.0.1"
-            if local != option { Workbench.open(s, split: .right) } else { NSWorkspace.shared.open(url) }
-        case .file(let p): Workbench.open(TabURI.file(p), split: .right)
+            if local != option { app.workbench.open(s, split: .right) } else { NSWorkspace.shared.open(url) }
+        case .file(let p): app.workbench.open(TabURI.file(p), split: .right)
         case .mail(let m): NSWorkspace.shared.open(m)
         case .refused: PreviewLinks.refuse(url)
         }
@@ -168,9 +168,9 @@ final class PaneView: NSView {
 
     func focus() { ghostty?.focus() }
 
-    /// Columns × rows now; the last one seen anywhere (`Workbench.terminalGrid`) sizes the next terminal before it's on screen.
+    /// Columns × rows now; the last one seen anywhere (`app.workbench.terminalGrid`) sizes the next terminal before it's on screen.
     var gridSize: (cols: Int, rows: Int)? {
-        if let g = ghostty?.gridSize { Workbench.terminalGrid = g; return g }
+        if let g = ghostty?.gridSize { app.workbench.terminalGrid = g; return g }
         return nil
     }
 
@@ -191,8 +191,8 @@ final class PaneView: NSView {
         m.addItem(.separator())
         m.add(String(localized: "Find…")) { [weak self] in self?.showFind(nil) }
         m.addItem(.separator())
-        m.add(String(localized: "Split Right")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.right) }
-        m.add(String(localized: "Split Down")) { [weak self] in self?.focus(); Workbench.editor?.splitFocused(.down) }
+        m.add(String(localized: "Split Right")) { [weak self] in self?.focus(); self?.app.workbench.editor?.splitFocused(.right) }
+        m.add(String(localized: "Split Down")) { [weak self] in self?.focus(); self?.app.workbench.editor?.splitFocused(.down) }
         return m
     }
 

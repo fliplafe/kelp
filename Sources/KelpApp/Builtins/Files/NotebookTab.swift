@@ -10,10 +10,11 @@ final class NotebookTab: NSViewController {
     let app: AppModel
     let url: URL, path: String, worktreeId: String?
     private let web = WKWebView()
-    private let links = PreviewLinks()
+    private let links: PreviewLinks
     private let status = NSTextField(labelWithString: "")
 
     init(app: AppModel, url: URL, path: String, worktreeId: String?) {
+        links = PreviewLinks(app: app)
         self.app = app; self.url = url; self.path = path; self.worktreeId = worktreeId
         super.init(nibName: nil, bundle: nil)
     }
@@ -59,7 +60,7 @@ final class NotebookTab: NSViewController {
         let file = url
         Task {
             // A notebook may compute for hours: the timeout is only for one that never ends.
-            let r = await Shell.exec([j, "nbconvert", "--to", "notebook", "--execute", "--inplace", file.path], cwd: file.deletingLastPathComponent().path, timeout: 12 * 3600)
+            let r = await Shell.exec(app, [j, "nbconvert", "--to", "notebook", "--execute", "--inplace", file.path], cwd: file.deletingLastPathComponent().path, timeout: 12 * 3600)
             let msg = r.stderr.split(separator: "\n").last.map(String.init) ?? ""
             status.stringValue = r.code == 0 ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)")
             reload()

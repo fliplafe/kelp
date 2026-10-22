@@ -172,7 +172,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         case 2: return GitDiff(id: id, source: "staged")
         case 3: return GitDiff(id: id, source: "branch")
         case 4: return GitDiff(id: id, source: "commit", commit: commitHash ?? "HEAD")
-        case 5: return GitDiff(id: id, source: "turn", session: FileActions.targetAgent?.id ?? "")
+        case 5: return GitDiff(id: id, source: "turn", session: FileActions(app).targetAgent?.id ?? "")
         default: return GitDiff(id: id, source: "all")
         }
     }
@@ -216,7 +216,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             if await runSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
         }
         askCommit = false
-        if single == nil, source.indexOfSelectedItem == 5, FileActions.targetAgent == nil {
+        if single == nil, source.indexOfSelectedItem == 5, FileActions(app).targetAgent == nil {
             builds += 1; diffs = []; rows = []; words = [:]; files.reloadData(); table.reloadData()
             status.stringValue = String(localized: "No agent in this workspace"); return
         }
@@ -267,6 +267,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     func numberOfRows(in t: NSTableView) -> Int { t === files ? diffs.count : rows.count }
 
     func tableView(_ t: NSTableView, viewFor col: NSTableColumn?, row: Int) -> NSView? {
+        let app = self.app
         if t === files {
             let d = diffs[row]
             // The same letters and colours as Source Control and Files; a long path loses its middle, not its counts.
@@ -304,7 +305,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
                 let said = label(first ? String(localized: "\(p) is too large to show here") : "", font: font, color: .secondaryLabelColor)
                 guard first, let uri = alone(p) else { return said }
                 said.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                let open = ClosureButton(title: String(localized: "Open Changes")) { Workbench.open(uri) }
+                let open = ClosureButton(title: String(localized: "Open Changes")) { app.workbench.open(uri) }
                 open.bezelStyle = .push; open.controlSize = .small
                 let stack = NSStackView(views: [said, open]); stack.spacing = 8
                 return stack

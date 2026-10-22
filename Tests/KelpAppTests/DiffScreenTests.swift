@@ -18,7 +18,7 @@ import Daemon
 extension AppOfItsOwn {
     @Test func aHunksStageButtonStagesThatHunk() async throws {
         let lines = (1...40).map { "line \($0)" }
-        let rig = try await AppRig(files: ["f.txt": lines.joined(separator: "\n") + "\n"], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: ["f.txt": lines.joined(separator: "\n") + "\n"]); defer { rig.done() }
         var changed = lines; changed[2] = "top change"; changed[35] = "bottom change"   // two hunks, far apart
         try rig.write("f.txt", changed.joined(separator: "\n") + "\n")
         let wt = rig.workspace, repo = rig.repo
@@ -43,7 +43,7 @@ extension AppOfItsOwn {
 /// an empty tree, the same as an empty folder.
 extension AppOfItsOwn {
     @Test func theFilesPanelSaysWhyItShowsNoFiles() async throws {
-        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: [:]); defer { rig.done() }
         try FileManager.default.removeItem(atPath: rig.repo)   // moved away: nothing can list it now
         let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
@@ -58,7 +58,7 @@ extension AppOfItsOwn {
 /// that moves nothing the diff is read from (a fetch changing ahead/behind) reads nothing.
 extension AppOfItsOwn {
     @Test func gitEventsReadTheReviewOnceAtATimeAndOnlyWhenItsBasisMoved() async throws {
-        let rig = try await AppRig(own: true); defer { rig.done() }
+        let rig = try await AppRig(); defer { rig.done() }
         try rig.write("f.txt", "b\n")
         let wid = rig.workspace.id, vc = DiffViewController(app: rig.app)
         defer { rig.app.git[wid] = nil }
@@ -88,7 +88,7 @@ extension AppOfItsOwn {
     /// A file past one file's share of a review is listed, says it's too large, and opens on its own.
     @Test func aFileTooLargeForTheReviewOffersItsOwnTab() async throws {
         let lock = (0..<40_000).map { "\"package-\($0)\": \"1.0.\($0)\"" }   // regenerated: its diff is ~2.4 MB
-        let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"], own: true); defer { rig.done() }
+        let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"]); defer { rig.done() }
         try rig.write("big.lock", lock.map { $0 + "-2" }.joined(separator: "\n") + "\n")
         try rig.write("f.txt", "b\n")
         let vc = DiffViewController(app: rig.app)

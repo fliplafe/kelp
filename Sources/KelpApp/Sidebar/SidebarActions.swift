@@ -7,7 +7,7 @@ import WorkbenchKit
 extension SidebarController {
     // MARK: actions
 
-    func newWorkspace(_ repo: String) { Workbench.newWorkspace(repo: repo) }
+    func newWorkspace(_ repo: String) { app.workbench.newWorkspace(repo: repo) }
     func refreshCell(_ key: String) {
         guard let n = node(key) else { return }
         let row = outline.row(forItem: n)
@@ -33,6 +33,7 @@ extension SidebarController {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        let app = self.app
         menu.removeAllItems()
         card.close()
         guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
@@ -45,18 +46,18 @@ extension SidebarController {
         case .project(let id):
             guard let r = m.repo(id) else { return }
             if !FileManager.default.fileExists(atPath: r.path) {
-                menu.add(String(localized: "Locate…")) { WorkspaceActions.relocate(r) }
-                menu.add(String(localized: "Remove from Kelp…")) { WorkspaceActions.removeProject(r) }
+                menu.add(String(localized: "Locate…")) { WorkspaceActions(app).relocate(r) }
+                menu.add(String(localized: "Remove from Kelp…")) { WorkspaceActions(app).removeProject(r) }
                 return
             }
             menu.add(String(localized: "New Workspace")) { [weak self] in self?.newWorkspace(id) }
             menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: r.path)]) }
             menu.addItem(.separator())
-            if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions.removeCleanWorktrees(r) } }
-            menu.add(String(localized: "Remove Project…")) { WorkspaceActions.removeProject(r) }
+            if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions(app).removeCleanWorktrees(r) } }
+            menu.add(String(localized: "Remove Project…")) { WorkspaceActions(app).removeProject(r) }
         case .section: return
         case .needs(let sid):
-            menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
+            menu.add(String(localized: "Show")) { app.workbench.focus(session: sid) }
             if m.session(sid)?.unread == true {
                 menu.add(String(localized: "Mark as Read")) { [app] in Task { await app.call(SessionMarkRead(id: sid)) } }
             }
@@ -76,21 +77,21 @@ extension SidebarController {
                 // A desk: archiving pauses its agents and keeps its tabs (Window › Archived Workspaces brings it back);
                 // with ⌥ the item closes it instead, ending its agents. The project's folder is untouched either way.
                 let more = m.worktrees.filter { $0.repoId == w.repoId && $0.path == w.path && !$0.archived }.count > 1
-                let archive = menu.add(String(localized: "Archive")) { WorkspaceActions.archive(w) }
+                let archive = menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
                 archive.isEnabled = more
-                let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions.close(w) }
+                let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions(app).close(w) }
                 close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
             } else {
-                menu.add(String(localized: "Archive")) { WorkspaceActions.archive(w) }
-                menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions.delete(w) }
+                menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
+                menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions(app).delete(w) }
             }
         case .agent(let sid):
-            menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
-            menu.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
-            menu.add(String(localized: "Restart")) { AgentActions.restart(sid) }
+            menu.add(String(localized: "Show")) { app.workbench.focus(session: sid) }
+            menu.add(String(localized: "Rename…")) { AgentActions(app).rename(sid) }
+            menu.add(String(localized: "Restart")) { AgentActions(app).restart(sid) }
             menu.addItem(.separator())
-            menu.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
-            menu.setSubmenu(AgentActions.handoffMenu(sid), for: menu.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
+            menu.add(String(localized: "Copy Context")) { AgentActions(app).copyContext(sid) }
+            menu.setSubmenu(AgentActions(app).handoffMenu(sid), for: menu.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
             if m.session(sid)?.unread == false {
                 menu.add(String(localized: "Mark as Unread")) { [app] in Task { await app.call(SessionMarkUnread(id: sid)) } }
             }

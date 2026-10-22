@@ -52,7 +52,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         set { app.uiState["sidebar.pinned"] = try? .from(newValue) }
     }
     private let noMatch = NSStackView()
-    private let summary = AgentSummary()
+    private lazy var summary = AgentSummary(app: app)
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
@@ -163,11 +163,12 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     override func mouseExited(with e: NSEvent) { card.hover(nil, rect: .zero, in: outline) }
 
     private func buildEmpty() {
+        let app = self.app
         let icon = NSImageView(image: .symbol("folder.badge.plus")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
         icon.contentTintColor = .tertiaryLabelColor
         let t = NSTextField(labelWithString: String(localized: "No Projects")); t.font = .ui(13, weight: .semibold)
         let d = NSTextField(wrappingLabelWithString: String(localized: "Add a project folder to start.")); d.textColor = .secondaryLabelColor; d.alignment = .center
-        let b = ClosureButton(title: String(localized: "Add Project…")) { Workbench.addProject() }; b.bezelStyle = .push
+        let b = ClosureButton(title: String(localized: "Add Project…")) { app.workbench.addProject() }; b.bezelStyle = .push
         [icon, t, d, b].forEach { empty.addArrangedSubview($0) }
         empty.orientation = .vertical; empty.spacing = 8
     }
@@ -178,7 +179,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     private func build() -> [Node] {
         let m = app
-        var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue.sessions)
+        var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue(app).sessions)
         tree.pinned = pinned
         tree.query = query
         tree.filter = filter
@@ -196,9 +197,12 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     /// The ways in, as File shows them: a folder (new or existing), a clone, a project over SSH.
     @objc private func addMenu(_ b: NSButton) {
-        guard let d = NSApp.delegate as? AppDelegate else { return }
-        let m = NSMenu()
-        for id in ["workspace.addProject", "workspace.cloneRepository", "workspace.addRemote"] { if let c = app.extensions.command(id) { m.addItem(d.item(c)) } }
+        let m = NSMenu(), app = app
+        for id in ["workspace.addProject", "workspace.cloneRepository", "workspace.addRemote"] {
+            guard let c = app.extensions.command(id) else { continue }
+            let i = m.add(c.title) { app.extensions.run(id) }
+            if let k = c.key.flatMap(KeySpec.init) { i.keyEquivalent = k.key; i.keyEquivalentModifierMask = k.mods.flags }
+        }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: b.bounds.height + 4), in: b)
     }
 
@@ -331,8 +335,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // Several rows picked: nothing to open, they wait for the menu.
         guard !syncing, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node else { return }
         switch node.kind {
-        case .workspace(let id): Workbench.show(workspace: id)
-        case .agent(let id), .needs(let id): Workbench.focus(session: id)
+        case .workspace(let id): app.workbench.show(workspace: id)
+        case .agent(let id), .needs(let id): app.workbench.focus(session: id)
         case .project, .section: break
         }
     }
@@ -341,6 +345,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 extension SidebarController {
     /// The menu for several selected rows: what applies to all of them.
     func bulkMenu(_ menu: NSMenu, _ nodes: [Node]) {
+        let app = self.app
         let m = app
         let ws = nodes.compactMap { n -> Worktree? in if case .workspace(let id) = n.kind { m.worktree(id) } else { nil } }
         let picked = nodes.compactMap { n -> String? in
@@ -356,10 +361,10 @@ extension SidebarController {
                 for id in agents where m.session(id)?.unread == true { Task { await m.call(SessionMarkRead(id: id)) } }
             }
         }
-        if !ws.isEmpty { menu.add(String(localized: "Close \(ws.count) Workspaces…")) { WorkspaceActions.close(ws) } }
+        if !ws.isEmpty { menu.add(String(localized: "Close \(ws.count) Workspaces…")) { WorkspaceActions(app).close(ws) } }
         if !picked.isEmpty {
             menu.addItem(.separator())
-            menu.add(String(localized: "Stop \(Set(picked).count) Agents…")) { AgentActions.stop(Array(Set(picked))) }
+            menu.add(String(localized: "Stop \(Set(picked).count) Agents…")) { AgentActions(app).stop(Array(Set(picked))) }
         }
     }
 }

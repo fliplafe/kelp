@@ -20,7 +20,7 @@ import Daemon
 
 extension AppOfItsOwn {
 @Test func sourceControlListsStagedAndChangedFilesFromTheDaemon() async throws {
-    let rig = try await AppRig(files: ["kept.txt": "a\n"], own: true); defer { rig.done() }
+    let rig = try await AppRig(files: ["kept.txt": "a\n"]); defer { rig.done() }
     try rig.write("kept.txt", "b\n")                                                          // changed, not staged
     try rig.write("staged.txt", "new\n"); try rig.git("add", "staged.txt")
     let vc = SourceControlController(app: rig.app)

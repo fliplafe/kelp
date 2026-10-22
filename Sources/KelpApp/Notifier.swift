@@ -8,6 +8,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// macOS lets Kelp show banners (false: they're off in System Settings).
     private var allowed = true
     private let center: UNUserNotificationCenter? = Bundle.main.bundleIdentifier != nil ? .current() : nil   // needs an app bundle
+    private let app: AppModel
+    init(app: AppModel) { self.app = app; super.init() }
 
     func start() {
         center?.delegate = self
@@ -17,7 +19,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationAction(identifier: "deny", title: String(localized: "Deny"), options: [.destructive])
         ], intentIdentifiers: [])])
         center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in Task { @MainActor in self.checkAllowed() } }
-        track(owner: self) { AppModel.shared.sessions } changed: { [weak self] _ in self?.updateBadge() }
+        track(owner: self) { [app] in app.sessions } changed: { [weak self] _ in self?.updateBadge() }
     }
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.
@@ -57,7 +59,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func updateBadge() {
-        let n = AppModel.shared.sessions.filter { $0.unread && $0.status != .exited }.count
+        let n = app.sessions.filter { $0.unread && $0.status != .exited }.count
         let label = n > 0 ? "\(n)" : nil
         if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
         clearSeen()
@@ -67,7 +69,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var posted: [String: String] = [:]   // session → request id
     private func clearSeen() {
         let stale = posted.filter { sid, rid in
-            guard let s = AppModel.shared.session(sid) else { return true }
+            guard let s = app.session(sid) else { return true }
             return !s.unread || !rid.hasSuffix(s.status.rawValue)
         }
         guard !stale.isEmpty else { return }
@@ -89,10 +91,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         // Claude Code: its own last reply (the terminal around it — spinners, mode lines — reads as nonsense when summarized).
         // The Stop hook can come a moment before the transcript has the final message.
         try? await Task.sleep(for: .milliseconds(1200))
-        if let reply = await AppModel.shared.quiet(SessionLastReply(id: s.id)) ?? nil {
+        if let reply = await app.quiet(SessionLastReply(id: s.id)) ?? nil {
             let line = Self.firstSentence(reply)
             s.summary = line
-            _ = await AppModel.shared.quiet(SessionAnnotate(id: s.id, summary: line))
+            _ = await app.quiet(SessionAnnotate(id: s.id, summary: line))
         }
         post(s)   // other agents: no summary; the state says enough
     }
@@ -114,18 +116,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func post(_ s: Session) {
+        let app = self.app
         // No banner if the user is already looking at that pane (what it asks stays marked until it's answered).
-        if NSApp.isActive, (NSApp.delegate as? AppDelegate)?.isViewing(session: s.id) == true { return }
-        let m = AppModel.shared, wt = m.worktree(s.worktreeId)
+        if NSApp.isActive, app.workbench.isViewing(session: s.id) { return }
+        let m = app, wt = m.worktree(s.worktreeId)
         let c = UNMutableNotificationContent()
-        c.title = AgentCatalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you")
+        c.title = app.catalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you")
             : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
         c.subtitle = [wt?.displayName, m.repo(wt?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")   // as its Needs You row
         c.body = s.summary.isEmpty ? (s.status == .waiting ? String(localized: "Waiting for your answer") : String(localized: "Ready for review")) : s.summary
         c.sound = .default; c.userInfo = ["session": s.id]
         if Self.asksPermission(s) { c.categoryIdentifier = "permission" }
         if !allowed, NSApp.isActive {   // banners are off: say it inside Kelp instead
-            Banner.show("\(c.title)\(s.summary.isEmpty ? "" : ": " + s.summary)", action: (String(localized: "Show"), { Workbench.focus(session: s.id) }))
+            Banner.show("\(c.title)\(s.summary.isEmpty ? "" : ": " + s.summary)", action: (String(localized: "Show"), { app.workbench.focus(session: s.id) }))
         }
         let rid = "\(s.id)-\(s.status.rawValue)"
         center?.add(UNNotificationRequest(identifier: rid, content: c, trigger: nil))
@@ -143,11 +146,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard let id = r.notification.request.content.userInfo["session"] as? String else { return }
         let action = r.actionIdentifier
         await MainActor.run {
-            guard action == "allow" || action == "deny" else { NSApp.activate(); Workbench.focus(session: id); return }
+            guard action == "allow" || action == "deny" else { NSApp.activate(); app.workbench.focus(session: id); return }
             Task {
                 // Answered without Kelp coming forward; if the menu is gone (answered in the terminal), show the agent.
-                let ok = await AppModel.shared.call(SessionChoose(id: id, answer: action)) ?? false
-                if !ok { NSApp.activate(); Workbench.focus(session: id) }
+                let ok = await app.call(SessionChoose(id: id, answer: action)) ?? false
+                if !ok { NSApp.activate(); app.workbench.focus(session: id) }
             }
         }
     }

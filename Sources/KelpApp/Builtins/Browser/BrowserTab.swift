@@ -184,7 +184,7 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             Banner.show(String(localized: "No agent in this workspace — the element details were copied to the clipboard.")); return
         }
         Task { await app.call(SessionSend(id: sid, text: msg, enter: false)) }
-        Workbench.focus(session: sid)
+        app.workbench.focus(session: sid)
     }
 
     /// A dev server's absolute path as the workspace sees it (`src/App.tsx:12`); others stay as they are.

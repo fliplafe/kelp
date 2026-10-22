@@ -13,20 +13,22 @@ final class WindowBar: NSView {
     let context = NSStackView()
     private let icon = NSImageView(), name = NSTextField(labelWithString: "")
     private let folder = WindowBar.chip(nil), branch = WindowBar.chip("arrow.triangle.branch"), pr = WindowBar.chip("arrow.triangle.pull")
-    private let search = SearchPill()
+    private let search: SearchPill
+    private let app: AppModel
     private let back = NSButton.titlebar("chevron.left", String(localized: "Back"), tip: "")
     private let forward = NSButton.titlebar("chevron.right", String(localized: "Forward"), tip: "")
     private let awake = NSButton.titlebar("cup.and.saucer", String(localized: "Keep Mac Awake"), tip: "")
     private let sideBySide = NSButton.titlebar("rectangle.split.3x1", String(localized: "Agents Side by Side"), tip: "")
     /// The branch chip: the workspace on screen's git, as the daemon pushes it (ChangedFiles watches it).
-    private var info: BranchInfo? { AppModel.shared.git[Workbench.shared.workspaceId ?? ""]?.branches }
+    private var info: BranchInfo? { app.git[app.workbench.workspaceId ?? ""]?.branches }
 
-    private var worktree: Worktree? { AppModel.shared.worktree(Workbench.shared.workspaceId) }
+    private var worktree: Worktree? { app.worktree(app.workbench.workspaceId) }
     /// The folder the sidebar keeps the pull request for: a desk shares its project's.
-    private var badgeFolder: Worktree? { worktree.flatMap { RowBadges.shared.folder(workspace: $0.id) ?? RowBadges.shared.folder(project: $0.repoId) } }
+    private var badgeFolder: Worktree? { worktree.flatMap { app.rowBadges.folder(workspace: $0.id) ?? app.rowBadges.folder(project: $0.repoId) } }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(app: AppModel) {
+        self.app = app; search = SearchPill(app: app)
+        super.init(frame: .zero)
         name.font = .ui(13, weight: .semibold); name.lineBreakMode = .byTruncatingTail
         name.setContentCompressionResistancePriority(.init(600), for: .horizontal)
         folder.lineBreakMode = .byTruncatingMiddle; folder.setContentCompressionResistancePriority(.init(500), for: .horizontal)
@@ -38,7 +40,7 @@ final class WindowBar: NSView {
         awake.target = self; awake.action = #selector(toggleAwake)
         sideBySide.target = self; sideBySide.action = #selector(toggleSideBySide)
         let hide = NSMenu()
-        hide.add(String(localized: "Hide Button")) { SettingsStore.shared.set("workbench.sideBySideButton", .bool(false)) }
+        hide.add(String(localized: "Hide Button")) { app.settings.set("workbench.sideBySideButton", .bool(false)) }
         sideBySide.menu = hide
         back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
         let nav = NSStackView(views: [back, forward]); nav.spacing = 0
@@ -60,16 +62,16 @@ final class WindowBar: NSView {
             sideBySide.widthAnchor.constraint(equalToConstant: 28),
             sideBySide.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
-        track(owner: self) { [-1, 1].map { Workbench.visit($0).flatMap { AppModel.shared.worktree(Workbench.shared.history.visits[$0])?.displayName } } } changed: { [weak self] in
+        track(owner: self) { [-1, 1].map { app.workbench.visit($0).flatMap { app.worktree(app.workbench.history.visits[$0])?.displayName } } } changed: { [weak self] in
             self?.showNav(back: $0[0], forward: $0[1])
         }
-        track(owner: self) { WindowBar.awakeMode } changed: { [weak self] in self?.showAwake($0) }
-        track(owner: self) { Workbench.shared.sideBySide } changed: { [weak self] in self?.showSideBySide($0) }
-        track(owner: self) { SettingsStore.shared.bool("workbench.sideBySideButton") ?? true } changed: { [weak self] in self?.sideBySide.isHidden = !$0 }
-        track(owner: self) { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { [app] in WindowBar.awakeMode(app) } changed: { [weak self] in self?.showAwake($0) }
+        track(owner: self) { app.workbench.sideBySide } changed: { [weak self] in self?.showSideBySide($0) }
+        track(owner: self) { app.settings.bool("workbench.sideBySideButton") ?? true } changed: { [weak self] in self?.sideBySide.isHidden = !$0 }
+        track(owner: self) { app.worktree(app.workbench.workspaceId) } changed: { [weak self] _ in self?.update() }
         // A branch switched anywhere (a terminal too) moves the workspace's refs: the daemon pushes it.
         track(owner: self) { [weak self] in self?.info } changed: { [weak self] _ in self?.update() }
-        track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { app.rowBadges.prs } changed: { [weak self] _ in self?.update() }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -84,7 +86,7 @@ final class WindowBar: NSView {
     private func update() {
         guard let w = worktree else { context.isHidden = true; return }
         context.isHidden = false
-        if let r = AppModel.shared.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) } else { icon.image = nil }
+        if let r = app.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) } else { icon.image = nil }
         name.stringValue = w.displayName
         folder.title = (w.path as NSString).abbreviatingWithTildeInPath
         branch.isHidden = info == nil
@@ -92,7 +94,7 @@ final class WindowBar: NSView {
             let ahead = info.ahead ?? 0, behind = info.behind ?? 0
             branch.title = (info.current ?? info.head ?? "HEAD") + (ahead + behind > 0 ? "  \(behind)↓ \(ahead)↑" : "")
         }
-        let p = badgeFolder.flatMap { RowBadges.pr(RowBadges.shared.prs[$0.id]) }
+        let p = badgeFolder.flatMap { RowBadges.pr(app.rowBadges.prs[$0.id]) }
         pr.isHidden = p == nil
         if let p { pr.attributedTitle = p.0; pr.toolTip = p.1 }
     }
@@ -125,15 +127,15 @@ final class WindowBar: NSView {
 
     private func switchBranch(_ m: GitSwitch) {
         Task {
-            if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
-            AppModel.shared.watchAgain(.git, m.id)   // the chip now, not on the next file event
+            if let e = await app.tryCall(m).error { Banner.show(e, style: .error) }
+            app.watchAgain(.git, m.id)   // the chip now, not on the next file event
         }
     }
 
     /// The setting ("always", "agents", "off"), or "working": agents keep the Mac awake right now (as the daemon counts them).
-    private static var awakeMode: String {
-        let mode = SettingsStore.shared.string("power.keepAwake") ?? "agents"
-        let working = AppModel.shared.sessions.contains { $0.agent != "shell" && $0.status == .working }
+    private static func awakeMode(_ app: AppModel) -> String {
+        let mode = app.settings.string("power.keepAwake") ?? "agents"
+        let working = app.sessions.contains { $0.agent != "shell" && $0.status == .working }
         return mode == "agents" && working ? "working" : mode
     }
 
@@ -141,6 +143,7 @@ final class WindowBar: NSView {
     /// agents keep it awake, orange while it's on for good. A click is Keep Mac Awake (also in the Tools menu); a right-click
     /// picks the mode.
     private func showAwake(_ mode: String) {
+        let app = self.app
         let (symbol, tip) = switch mode {
         case "always": ("cup.and.heat.waves.fill", String(localized: "The Mac stays awake until you click here"))
         case "working": ("cup.and.heat.waves", String(localized: "The Mac stays awake while agents work. Click to keep it awake always"))
@@ -151,7 +154,7 @@ final class WindowBar: NSView {
         awake.toolTip = tip
         let m = NSMenu()
         for (v, title) in [("agents", String(localized: "While agents work")), ("always", String(localized: "Always")), ("off", String(localized: "Never"))] {
-            m.add(title) { SettingsStore.shared.set("power.keepAwake", .string(v)) }.state = (mode == "working" ? "agents" : mode) == v ? .on : .off
+            m.add(title) { app.settings.set("power.keepAwake", .string(v)) }.state = (mode == "working" ? "agents" : mode) == v ? .on : .off
         }
         awake.menu = m
     }
@@ -163,10 +166,10 @@ final class WindowBar: NSView {
             b.toolTip = name.map { "\(title): \($0) (\(key))" } ?? "\(title) (\(key))"
         }
     }
-    @objc private func goBack() { Workbench.goBack(-1) }
-    @objc private func goForward() { Workbench.goBack(1) }
+    @objc private func goBack() { app.workbench.goBack(-1) }
+    @objc private func goForward() { app.workbench.goBack(1) }
 
-    @objc private func toggleAwake() { ExtensionRegistry.shared.command("power.keepAwake")?.run([:]) }
+    @objc private func toggleAwake() { app.extensions.command("power.keepAwake")?.run([:]) }
 
     /// Filled while the workspace puts its agents side by side; a click shows them as tabs in one pane, and back.
     /// A right-click hides it (Settings › Appearance brings it back).
@@ -175,11 +178,11 @@ final class WindowBar: NSView {
         sideBySide.toolTip = on ? String(localized: "Agents side by side. Click to show them as tabs (⌃⌘T)")
                                 : String(localized: "Agents as tabs. Click to put them side by side (⌃⌘T)")
     }
-    @objc private func toggleSideBySide() { ExtensionRegistry.shared.command("agents.sideBySide")?.run([:]) }
+    @objc private func toggleSideBySide() { app.extensions.command("agents.sideBySide")?.run([:]) }
 
     @objc private func openPR() {
-        guard let w = badgeFolder, let u = RowBadges.shared.prs[w.id]?.url else { return }
-        Workbench.open(u, workspace: worktree?.id)
+        guard let w = badgeFolder, let u = app.rowBadges.prs[w.id]?.url else { return }
+        app.workbench.open(u, workspace: worktree?.id)
     }
 }
 
@@ -189,9 +192,11 @@ final class SearchPill: NSControl {
     private let glass = NSImageView(image: .symbol("magnifyingglass", ""))
     private let label = NSTextField(labelWithString: ""), key = NSTextField(labelWithString: "⌘P")
     private let full = String(localized: "Files, agents, commands"), short = String(localized: "Search")
+    private let app: AppModel
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(app: AppModel) {
+        self.app = app
+        super.init(frame: .zero)
         wantsLayer = true
         glass.symbolConfiguration = .init(pointSize: 11, weight: .regular); glass.contentTintColor = .secondaryLabelColor
         label.font = .ui(12); label.textColor = .secondaryLabelColor; label.lineBreakMode = .byTruncatingTail
@@ -217,6 +222,6 @@ final class SearchPill: NSControl {
     /// The whole pill takes the click; in the title bar its label would move the window instead.
     override func hitTest(_ p: NSPoint) -> NSView? { super.hitTest(p) == nil ? nil : self }
     override var mouseDownCanMoveWindow: Bool { false }
-    override func mouseDown(with e: NSEvent) { QuickOpen.shared.show(commandsOnly: false) }
-    override func accessibilityPerformPress() -> Bool { QuickOpen.shared.show(commandsOnly: false); return true }
+    override func mouseDown(with e: NSEvent) { app.quickOpen.show(commandsOnly: false) }
+    override func accessibilityPerformPress() -> Bool { app.quickOpen.show(commandsOnly: false); return true }
 }

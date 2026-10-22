@@ -27,7 +27,8 @@ struct Theme: Codable, Identifiable, Equatable {
 @MainActor
 @Observable
 final class ThemeManager {
-    static let shared = ThemeManager()
+    @ObservationIgnored let app: AppModel
+    init(app: AppModel) { self.app = app }
     @ObservationIgnored private var lastTerminal: TerminalAppearance?
     @ObservationIgnored private var appearanceObserver: NSKeyValueObservation?
     /// Editors' colors and font live in CodeEditor's statics, which Observation can't see: this counts their changes,
@@ -55,7 +56,7 @@ final class ThemeManager {
     ]
 
     /// "auto" follows macOS light/dark; "ghostty" leaves the terminal to ~/.config/ghostty.
-    var themes: [Theme] { Self.builtin + Theme.popular + ExtensionRegistry.shared.all.themes }
+    var themes: [Theme] { Self.builtin + Theme.popular + app.extensions.all.themes }
 
     /// What terminals are painted with now (Ghostty's own config when the theme leaves it to Ghostty).
     var terminalBackground: NSColor {
@@ -66,7 +67,7 @@ final class ThemeManager {
     var isDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 
     func apply() {
-        let s = SettingsStore.shared
+        let s = app.settings
         // One choice, like VS Code: a theme with its own look (Kelp Light, Dracula…) sets the whole window's;
         // Match System and Ghostty follow macOS.
         let want: NSAppearance.Name? = switch themes.first(where: { $0.id == s.string("workbench.theme") })?.appearance {
@@ -77,15 +78,15 @@ final class ThemeManager {
         if NSApp.appearance?.name != want { NSApp.appearance = want.flatMap { NSAppearance(named: $0) } }
         if appearanceObserver == nil {
             // macOS switched light/dark: "auto" themes follow (colors only; setting the appearance here would loop).
-            appearanceObserver = NSApp.observe(\.effectiveAppearance) { _, _ in
-                DispatchQueue.main.async { ThemeManager.shared.applyColors() }
+            appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.applyColors() }
             }
         }
         applyColors()
     }
 
     func applyColors() {
-        let s = SettingsStore.shared
+        let s = app.settings
         let id = s.string("workbench.theme") ?? "auto"
         let theme: Theme? = id == "ghostty" ? nil : themes.first { $0.id == (id == "auto" ? (isDark ? "kelp.dark" : "kelp.light") : id) }
 

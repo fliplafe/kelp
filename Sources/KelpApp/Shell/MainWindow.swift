@@ -27,7 +27,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let leftEdge = EdgeTrigger(), rightEdge = EdgeTrigger()
     /// Where a hiding panel is while it's away, and comes in from.
     private let leftFloat = Floater(width: 260), rightFloat = Floater(width: 300)
-    private let bar = WindowBar()
+    private lazy var bar = WindowBar(app: app)
     /// Fixed in the window bar's corners, whichever panels are open.
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
     private let inspectorToggle = NSButton.titlebar("sidebar.trailing", String(localized: "Inspector"), tip: String(localized: "Show or hide the inspector (⌥⌘0)"))
@@ -40,6 +40,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebar = SidebarController(app: app); inspector = InspectorController(app: app)
         sidebarItem = Self.column(sidebar); inspectorItem = Self.column(inspector)
         super.init(window: w)
+        app.workbench.window = self   // what acts on the window reaches it there
         // The title stays set: the Window menu, Mission Control and VoiceOver read it.
         w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.titlebarSeparatorStyle = .none
         sidebarItem.minimumThickness = 220; sidebarItem.maximumThickness = 400
@@ -49,7 +50,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         inspectorItem.isCollapsed = UserDefaults.standard.bool(forKey: "inspector.collapsed")
         [sidebarItem, content, inspectorItem].forEach(split.addSplitViewItem)
         split.splitView.autosaveName = "main.split"
-        let root = NSViewController(); root.view = DropRoot(); root.addChild(split)
+        let root = NSViewController(); root.view = DropRoot(app: app); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
         root.view.pin(split.view)
@@ -82,14 +83,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         w.contentViewController = root
         w.title = String(localized: "Kelp"); w.setFrameAutosaveName("main"); w.delegate = self
         if w.frame.origin == .zero { w.center() }
-        track { AppModel.shared.worktree(Workbench.shared.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
-        track { SettingsStore.shared.bool("workbench.sidebar.autoHide") == true } changed: { [weak self] in
+        track { app.worktree(app.workbench.workspaceId) } changed: { [weak self] _ in self?.updateTitle() }
+        track { app.settings.bool("workbench.sidebar.autoHide") == true } changed: { [weak self] in
             self?.setAutoHide(sidebar: true, $0)
-            self?.sidebarToggle.menu = Self.autoHideMenu(String(localized: "Auto-Hide Sidebar"), "workbench.sidebar.autoHide", $0)
+            self?.sidebarToggle.menu = self?.autoHideMenu(String(localized: "Auto-Hide Sidebar"), "workbench.sidebar.autoHide", $0)
         }
-        track { SettingsStore.shared.bool("workbench.inspector.autoHide") == true } changed: { [weak self] in
+        track { app.settings.bool("workbench.inspector.autoHide") == true } changed: { [weak self] in
             self?.setAutoHide(sidebar: false, $0)
-            self?.inspectorToggle.menu = Self.autoHideMenu(String(localized: "Auto-Hide Inspector"), "workbench.inspector.autoHide", $0)
+            self?.inspectorToggle.menu = self?.autoHideMenu(String(localized: "Auto-Hide Inspector"), "workbench.inspector.autoHide", $0)
         }
     }
     /// A panel's column. It holds the panel while it's docked; while the panel hides (auto-hide, focus mode) the panel is
@@ -101,9 +102,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return item
     }
     /// The toggles' right-click menu: the panel's auto-hide, as in Settings › Appearance.
-    private static func autoHideMenu(_ title: String, _ key: String, _ on: Bool) -> NSMenu {
-        let m = NSMenu()
-        m.add(title) { SettingsStore.shared.set(key, .bool(!on)) }.state = on ? .on : .off
+    private func autoHideMenu(_ title: String, _ key: String, _ on: Bool) -> NSMenu {
+        let m = NSMenu(), app = app
+        m.add(title) { app.settings.set(key, .bool(!on)) }.state = on ? .on : .off
         return m
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -111,11 +112,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func showWorkspace(_ id: String?) {
         editors.show(id)
         updateTitle()
-        AppModel.shared.publishUIState()
+        app.publishUIState()
     }
 
     private func updateTitle() {
-        window?.title = AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? String(localized: "Kelp")
+        window?.title = app.worktree(app.workbench.workspaceId)?.displayName ?? String(localized: "Kelp")
         editors.current?.showEdited()   // a workspace with unsaved files keeps saying so after a switch
     }
 
@@ -368,7 +369,9 @@ final class EdgeTrigger: NSView {
 /// dropped on the Dock icon.
 @MainActor
 private final class DropRoot: NSVisualEffectView {
-    init() {
+    private let app: AppModel
+    init(app: AppModel) {
+        self.app = app
         super.init(frame: .zero)
         material = .sidebar; blendingMode = .behindWindow; state = .followsWindowActiveState
         registerForDraggedTypes([.fileURL])
@@ -377,7 +380,7 @@ private final class DropRoot: NSVisualEffectView {
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { Workbench.files(s).isEmpty ? [] : .copy }
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
         let files = Workbench.files(s)
-        Workbench.open(files: files); return !files.isEmpty
+        app.workbench.open(files: files); return !files.isEmpty
     }
 }
 
@@ -398,20 +401,21 @@ final class EditorHost: NSViewController {
     private static let keep = 4
 
     override func loadView() {
+        let app = self.app
         view = NSView()
         view.pin(card, inset: NSEdgeInsets(top: WindowBar.height, left: Card.gap, bottom: Card.gap, right: Card.gap))
         showWelcome()
         // Daemon state: workspaces that are gone leave; sessions' tabs come and show their status and context ring.
-        track { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.sessions } changed: { [weak self] _ in self?.refresh() }
-        track { AppModel.shared.contextShare } changed: { [weak self] _ in self?.refresh() }
+        track { app.repos } changed: { [weak self] _ in self?.refresh() }
+        track { app.worktrees } changed: { [weak self] _ in self?.refresh() }
+        track { app.sessions } changed: { [weak self] _ in self?.refresh() }
+        track { app.contextShare } changed: { [weak self] _ in self?.refresh() }
     }
 
     func show(_ id: String?) {
         if let c = current, c.workspaceId == id { return }
         current?.view.removeFromSuperview()
-        guard let id, AppModel.shared.worktree(id) != nil else { current = nil; showWelcome(); return }
+        guard let id, app.worktree(id) != nil else { current = nil; showWelcome(); return }
         welcome?.removeFromSuperview(); welcome = nil
         let area = areas[id] ?? EditorArea(app: app, workspaceId: id)
         if areas[id] == nil { areas[id] = area; addChild(area) }
@@ -441,7 +445,7 @@ final class EditorHost: NSViewController {
     }
 
     private func refresh() {
-        for (id, a) in areas where AppModel.shared.worktree(id) == nil {
+        for (id, a) in areas where app.worktree(id) == nil {
             a.view.removeFromSuperview(); areas[id] = nil; recent.removeAll { $0 == id }
             // Closed from elsewhere (the CLI, an agent): unsaved files still get their question, only without Cancel.
             let edited = a.editedFiles
@@ -458,10 +462,10 @@ final class EditorHost: NSViewController {
     }
 
     private func showWelcome() {
-        let hasRepos = AppModel.shared.repos.contains { !ScratchWindow.isScratch($0) }
+        let hasRepos = app.repos.contains { !ScratchWindow.isScratch($0) }
         if let w = welcome as? WelcomeView, w.hasRepos == hasRepos { return }
         welcome?.removeFromSuperview()
-        let w = WelcomeView(hasRepos: hasRepos)
+        let w = WelcomeView(hasRepos: hasRepos, app: app)
         card.pin(w)
         welcome = w
     }
@@ -471,7 +475,7 @@ final class EditorHost: NSViewController {
 @MainActor
 final class WelcomeView: NSView {
     let hasRepos: Bool
-    init(hasRepos: Bool) {
+    init(hasRepos: Bool, app: AppModel) {
         self.hasRepos = hasRepos
         super.init(frame: .zero)
         let icon = NSImageView(image: .symbol(hasRepos ? "sidebar.left" : "folder.badge.plus"))
@@ -482,8 +486,8 @@ final class WelcomeView: NSView {
             ? String(localized: "Pick a workspace in the sidebar, or press ⌘N for a new one — a clean desk in the project for one task and its agents.")
             : String(localized: "Add a project folder. Each task gets its own workspace: agents, terminals and files side by side."))
         body.alignment = .center; body.textColor = .secondaryLabelColor
-        let button = ClosureButton(title: hasRepos ? String(localized: "New Workspace") : String(localized: "Add Project…")) {
-            hasRepos ? Workbench.newWorkspace() : Workbench.addProject()
+        let button = ClosureButton(title: hasRepos ? String(localized: "New Workspace") : String(localized: "Add Project…")) { [app] in
+            hasRepos ? app.workbench.newWorkspace() : app.workbench.addProject()
         }
         button.bezelStyle = .push; button.keyEquivalent = "\r"; button.controlSize = .large
         let stack = NSStackView(views: [icon, title, body, button])

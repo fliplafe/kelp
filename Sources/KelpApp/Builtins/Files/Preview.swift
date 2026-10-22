@@ -15,10 +15,9 @@ enum Preview {
         let e = url.pathExtension.lowercased(); return pdf.contains(e) || quickLook.contains(e)
     }
 
-    static func view(for url: URL) -> NSView {
+    static func view(for url: URL, app: AppModel) -> NSView {
         if pdf.contains(url.pathExtension.lowercased()), let doc = PDFDocument(url: url) {
-            let v = PDFView(); v.document = doc; v.autoScales = true; v.displayMode = .singlePageContinuous
-            v.delegate = PDFLinks.shared   // without a delegate PDFKit opens any link with its app
+            let v = LinkedPDFView(app: app); v.document = doc; v.autoScales = true; v.displayMode = .singlePageContinuous
             return v
         }
         if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true, let image = NSImage(contentsOf: url) {
@@ -68,6 +67,20 @@ final class ImagePreview: NSImageView {
 /// or to another app's scheme, and PDFKit on its own would open either.
 @MainActor
 final class PDFLinks: NSObject, @MainActor PDFViewDelegate {
-    static let shared = PDFLinks()
-    func pdfViewWillClick(onLink sender: PDFView, with url: URL) { PreviewLinks.open(url) }
+    private let app: AppModel
+    init(app: AppModel) { self.app = app }
+    func pdfViewWillClick(onLink sender: PDFView, with url: URL) { PreviewLinks.open(url, in: app) }
+}
+
+/// A PDF with its links' delegate, which it keeps (PDFView holds its delegate weakly, and asks it what it answers: a
+/// view that were its own delegate would ask itself forever).
+@MainActor
+final class LinkedPDFView: PDFView {
+    let links: PDFLinks
+    init(app: AppModel) {
+        links = PDFLinks(app: app)
+        super.init(frame: .zero)
+        delegate = links   // without a delegate PDFKit opens any link with its app
+    }
+    required init?(coder: NSCoder) { fatalError() }
 }

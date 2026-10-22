@@ -7,11 +7,11 @@ import WorkbenchKit
 @MainActor
 final class MenuBuilder {
     let bar = NSMenu()
-    let reg = ExtensionRegistry.shared
+    let reg: ExtensionRegistry
     /// Commands given a place; the rest go in the menu they name (Tools by default).
     var placed: Set<String> = []
     private let item: (CommandSpec) -> NSMenuItem
-    init(item: @escaping (CommandSpec) -> NSMenuItem) { self.item = item }
+    init(reg: ExtensionRegistry, item: @escaping (CommandSpec) -> NSMenuItem) { self.reg = reg; self.item = item }
 
     func sub(_ title: String) -> NSMenu {
         let mi = bar.addItem(withTitle: title, action: nil, keyEquivalent: "")
@@ -48,12 +48,12 @@ extension AppDelegate {
     /// The menu bar is laid out here by command id, like Zed's app menus; titles, keys and actions come from the
     /// registry. Commands it doesn't place (extensions', the other built-ins') go in the menu they name, Tools by default.
     func buildMenu() {
-        let b = MenuBuilder(item: item)
+        let b = MenuBuilder(reg: app.extensions, item: item)
         appMenu(b); fileMenu(b); editMenu(b); viewMenu(b)
         let tools = b.sub("Tools")   // filled last, with what nothing else placed
         runMenu(b); windowMenu(b); helpMenu(b)
         b.placeTheRest(in: tools)
-        KeyBindings.apply(to: b.bar)   // Settings › Keyboard's changes over the defaults (on the English titles)
+        KeyBindings.apply(to: b.bar, app.settings)   // Settings › Keyboard's changes over the defaults (on the English titles)
         Localize.menu(b.bar)           // shown in the user's language
         NSApp.mainMenu = b.bar
     }
@@ -77,18 +77,19 @@ extension AppDelegate {
 
     /// File: new workspaces, agents and tabs, projects, saving and closing.
     private func fileMenu(_ b: MenuBuilder) {
+        let app = self.app
         let file = b.sub("File")
         b.add(file, "workspace.new", "agents.new", "terminal.new", "terminal.tmux")
         let with = NSMenu()
-        for a in AgentCatalog.installed(AgentCatalog.all) { with.add(a.name) { Self.run("agents.new", ["agent": .string(a.id)]) } }
+        for a in app.catalog.installed(app.catalog.all) { with.add(a.name) { app.extensions.run("agents.new", ["agent": .string(a.id)]) } }
         with.addItem(.separator())
         for e in b.reg.all.editors {
-            with.add(e.title, symbol: e.icon) { e.open(IDEContext.current) }
+            with.add(e.title, symbol: e.icon) { e.open(IDEContext.of(app), in: app) }
         }
         file.setSubmenu(with, for: file.addItem(withTitle: "New Tab", action: nil, keyEquivalent: ""))
         b.add(file, "workspace.addProject", "workspace.cloneRepository", "workspace.addRemote", "-", "workspace.revealInFinder")
         let openIn = NSMenu()
-        WorkspaceActions.addOpenIn(to: openIn, path: { AppModel.shared.worktree(Workbench.shared.workspaceId)?.path }, prefix: "")
+        WorkspaceActions.addOpenIn(to: openIn, path: { app.worktree(app.workbench.workspaceId)?.path }, prefix: "")
         if !openIn.items.isEmpty { file.setSubmenu(openIn, for: file.addItem(withTitle: "Open Workspace In", action: nil, keyEquivalent: "")) }
         b.add(file, "-", "editor.save", "editor.saveAll", "-", "editor.closeTab", "workspace.close")
     }
@@ -119,16 +120,17 @@ extension AppDelegate {
 
     /// View: the sidebar and inspector, panels, text size, panes and tabs.
     private func viewMenu(_ b: MenuBuilder) {
+        let app = self.app
         let view = b.sub("View")
         b.add(view, "workbench.toggleSidebar", "workbench.toggleInspector", "workbench.toggleFocusMode")
         for (i, p) in b.reg.all.panels.prefix(9).enumerated() {
-            let m = view.add("  " + p.title, symbol: p.icon, key: "\(i + 1)") { Self.run("workbench.showPanel", ["panel": .string(p.id)]) }
+            let m = view.add("  " + p.title, symbol: p.icon, key: "\(i + 1)") { app.extensions.run("workbench.showPanel", ["panel": .string(p.id)]) }
             m.keyEquivalentModifierMask = [.command, .option]
         }
         b.placed.insert("workbench.showPanel")
         b.add(view, "-", "view.biggerText")
         // ⌘= enlarges too, as in Ghostty, VS Code and Safari (+ is the shifted =).
-        b.hide(view.add("Bigger Text", key: "=") { Self.run("view.biggerText") })
+        b.hide(view.add("Bigger Text", key: "=") { app.extensions.run("view.biggerText") })
         b.add(view, "view.smallerText", "view.defaultTextSize", "-", "terminal.splitRight", "terminal.splitDown", "agents.sideBySide", "view.maximizePane", "view.equalizePanes")
         let panes = NSMenu(title: "Select Pane")
         b.add(panes, "view.nextPane", "view.previousPane", "-", "view.paneLeft", "view.paneRight", "view.paneAbove", "view.paneBelow")
@@ -143,18 +145,19 @@ extension AppDelegate {
     /// Run: the project's commands (ScriptsMenu fills in the rest) and the editor's run / test / format.
     private func runMenu(_ b: MenuBuilder) {
         let runs = b.sub("Run")
-        runs.delegate = ScriptsMenu.shared   // the project's other commands go between the separators
+        runs.delegate = app.scripts   // the project's other commands go between the separators
         b.add(runs, "scripts.run", "scripts.test", "scripts.stop", "-", "-", "editor.runFile", "editor.testAtCursor", "editor.format", "-", "scripts.edit")
     }
 
     /// Window: workspaces, the agent needing you, archived workspaces.
     private func windowMenu(_ b: MenuBuilder) {
+        let app = self.app
         let win = b.sub("Window")
         win.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         win.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
         win.addItem(.separator())
         b.add(win, "agents.nextNeedingYou", "agents.usage", "workbench.scratch", "workspace.switch")
-        let back = win.add("", key: "\t") { Self.run("workspace.switch", ["by": -1]) }
+        let back = win.add("", key: "\t") { app.extensions.run("workspace.switch", ["by": -1]) }
         back.keyEquivalentModifierMask = [.control, .shift]; b.hide(back)
         b.add(win, "workspace.next", "workspace.previous", "workspace.back", "workspace.forward")
         for n in 1...9 { b.add(win, "workspace.select.\(n)").forEach { $0.isHidden = n > 1; $0.allowsKeyEquivalentWhenHidden = true } }

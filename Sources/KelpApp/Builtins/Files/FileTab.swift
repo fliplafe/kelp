@@ -50,7 +50,7 @@ final class FileTab: SavableTab {
     var uri: String { TabURI.file(path) }
     var fileURL: URL? { url }
     var title: String { url.lastPathComponent }
-    var icon: NSImage? { gone ? .symbol("exclamationmark.triangle", String(localized: "Moved or deleted")) : FileIcon.image(url.lastPathComponent) }
+    var icon: NSImage? { gone ? .symbol("exclamationmark.triangle", String(localized: "Moved or deleted")) : app.fileIcons.image(url.lastPathComponent) }
     var toolTip: String? { gone ? String(localized: "\(path) was moved or deleted. ⌘S asks before writing it there again.") : path }
 
     init(uri: String, app: AppModel) {
@@ -60,7 +60,7 @@ final class FileTab: SavableTab {
         root = app.worktrees.filter { p.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }?.path ?? url.deletingLastPathComponent().path
         let host = RemoteHost.containing(p)?.remote.host
         remote = host != nil
-        if !remote, Preview.canPreview(url) { view = Preview.view(for: url); return }
+        if !remote, Preview.canPreview(url) { view = Preview.view(for: url, app: app); return }
         if !remote, url.pathExtension.lowercased() == "ipynb" {
             let nb = NotebookTab(app: app, url: url, path: p, worktreeId: app.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
             notebook = nb; view = nb.view; return
@@ -88,12 +88,13 @@ final class FileTab: SavableTab {
     /// Its text is here: the editor (Markdown with its preview, or code with a status bar), its language server, and its
     /// version followed from then on.
     private func loaded(_ f: FilesRead.Result, in box: NSView) {
+        let app = self.app
         let text = f.text
         let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
         e.view.clipsToBounds = true
         editor = e; lastSaved = text; known = (f.stamp, text)
         if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
-            let md = MarkdownTab(editor: e, url: url)
+            let md = MarkdownTab(editor: e, url: url, app: app)
             md.startInPreview = path == Help.location.path   // the help is for reading
             markdown = md; box.pin(md.view)
         } else {
@@ -103,7 +104,7 @@ final class FileTab: SavableTab {
             box.pin(stacked(e.view, bar))
         }
         e.onChange = { [weak self] t in self?.edited(t) }
-        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
+        track(owner: self) { app.themes.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
         if focusWhenLoaded { focus() }
         guard !remote else { return }   // a host's file: no events (nothing pushes them), no language server here
         let p = path
@@ -123,7 +124,7 @@ final class FileTab: SavableTab {
             let write = FilesWrite(path: path, text: e.text, base: known?.stamp)
             Task { [app] in await app.call(write) }
         }
-        if lspOpenedOn != nil { LSPManager.shared.close(app, root: root, path: path) }
+        if lspOpenedOn != nil { app.lsp.close(app, root: root, path: path) }
     }
 
     func focus() {
@@ -176,7 +177,7 @@ final class FileTab: SavableTab {
         lspTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            LSPManager.shared.change(app, root: r, path: p, text: t)
+            app.lsp.change(app, root: r, path: p, text: t)
         }
     }
 
@@ -348,14 +349,14 @@ final class FileTab: SavableTab {
 
     private func startLSP() {
         let p = path, r = root, app = app
-        guard LSPManager.shared.language(app, p)?.server != nil,
-              LSPManager.shared.whenTrusted(app, r, { [weak self] in self?.startLSP() }) else { return }   // asked once per project
+        guard app.lsp.language(app, p)?.server != nil,
+              app.lsp.whenTrusted(app, r, { [weak self] in self?.startLSP() }) else { return }   // asked once per project
         Task { [weak self] in
-            guard let text = self?.editor?.text, await LSPManager.shared.open(app, root: r, path: p, text: text, retry: { [weak self] in self?.startLSP() }),
+            guard let text = self?.editor?.text, await app.lsp.open(app, root: r, path: p, text: text, retry: { [weak self] in self?.startLSP() }),
                   let self, let e = editor else { return }
             lspOpenedOn = app.connections
             e.completionProvider = { line, col in
-                await LSPManager.shared.completion(app, root: r, path: p, line: line, column: col).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
+                await app.lsp.completion(app, root: r, path: p, line: line, column: col).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
             }
         }
     }
@@ -365,14 +366,14 @@ final class FileTab: SavableTab {
         guard let e = editor, let (l, c) = e.cursor else { return }
         let p = path, r = root, app = app
         Task {
-            guard let loc = await LSPManager.shared.definition(app, root: r, path: p, line: l, column: c) else { NSSound.beep(); return }
-            Workbench.open(TabURI.file(loc.path, line: loc.line))
+            guard let loc = await app.lsp.definition(app, root: r, path: p, line: l, column: c) else { NSSound.beep(); return }
+            app.workbench.open(TabURI.file(loc.path, line: loc.line))
         }
     }
 
     // MARK: language commands
 
-    var language: LanguageSpec? { LSPManager.shared.language(app, path) }
+    var language: LanguageSpec? { app.lsp.language(app, path) }
 
     /// The language's `run`, `test` or `format` with this file's variables filled in. Nil when there's none (a beep
     /// for a file of no language, else a banner).
@@ -382,7 +383,7 @@ final class FileTab: SavableTab {
         let (line, column) = editor?.cursor ?? (1, 1)
         var symbol = ""
         if template.contains("${symbol}") {
-            symbol = await LSPManager.shared.symbol(app, root: root, path: path, line: line) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
+            symbol = await app.lsp.symbol(app, root: root, path: path, line: line) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
         }
         let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
         let vars = ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path, "line": String(line), "symbol": symbol, "workspace": root]
@@ -394,9 +395,9 @@ final class FileTab: SavableTab {
     func format() async {
         guard !remote else { NSSound.beep(); return }   // its formatter would run here, not on the host
         guard let cmd = await command("format"), let e = editor else { return }
-        guard LSPManager.shared.askTrust(app, root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
+        guard app.lsp.askTrust(app, root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
         let text = e.text, line = e.cursor?.line ?? 1
-        let r = await Shell.run(cmd, cwd: url.deletingLastPathComponent().path, input: text, timeout: 20)
+        let r = await Shell.run(app, cmd, cwd: url.deletingLastPathComponent().path, input: text, timeout: 20)
         guard r.code == 0 else {
             let why = (r.stderr.isEmpty ? r.stdout : r.stderr).split(separator: "\n").prefix(2).joined(separator: "\n")
             Banner.show(String(localized: "Couldn't format \(title): \(why)"), style: .error); return
@@ -417,12 +418,12 @@ final class FileTab: SavableTab {
     }
 
     /// Its items in the tab's context menu.
-    static func menu(_ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
+    static func menu(_ app: AppModel, _ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
         let path = TabURI.filePath(uri).path
         m.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
         m.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
-        m.add(String(localized: "Copy Web Link")) { FileActions.copyWebLink(path) }
-        m.add(String(localized: "Send to Agent")) { FileActions.sendToAgent(path) }
+        m.add(String(localized: "Copy Web Link")) { FileActions(app).copyWebLink(path) }
+        m.add(String(localized: "Send to Agent")) { FileActions(app).sendToAgent(path) }
         if ["html", "htm"].contains((path as NSString).pathExtension.lowercased()) {
             m.add(String(localized: "Open Preview to the Side")) { openBeside("preview:" + path) }
         }

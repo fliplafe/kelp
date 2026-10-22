@@ -40,21 +40,21 @@ extension AppDelegate {
             if let s = env["KELP_SNAPSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), s.count == 2 {
                 main.window?.setContentSize(NSSize(width: s[0], height: s[1]))
             }
-            if let u = env["KELP_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { Workbench.open(String(x)) } }
+            if let u = env["KELP_SNAPSHOT_OPEN"] { for x in u.split(separator: "|") { app.workbench.open(String(x)) } }
             // KELP_SNAPSHOT_SHEET=clone|remote[=text]: the clone and SSH sheets (the open panel itself is another process),
             // with text: filled in and started. extension=<GitHub folder>: downloaded, and what it runs asked about.
             // project=<folder>: added as Add Project does (one without git asks first).
-            if env["KELP_SNAPSHOT_SHEET"] == "onboarding" { OnboardingSheet.show() } else if let s = env["KELP_SNAPSHOT_SHEET"] {
+            if env["KELP_SNAPSHOT_SHEET"] == "onboarding" { OnboardingSheet.show(app) } else if let s = env["KELP_SNAPSHOT_SHEET"] {
                 let p = s.split(separator: "=", maxSplits: 1).map(String.init)
-                if p[0] == "remote" { RemoteSheet.show(start: p.count > 1 ? p[1] : nil) }
-                else if p[0] == "extension", p.count > 1 { Task { await ExtensionRegistry.shared.install(source: p[1]) } }   // the look before installing
-                else if p[0] == "project", p.count > 1 { Workbench.addProject(path: p[1]) }
-                else { CloneSheet.show(start: p.count > 1 ? p[1] : nil) }
+                if p[0] == "remote" { RemoteSheet.show(app, start: p.count > 1 ? p[1] : nil) }
+                else if p[0] == "extension", p.count > 1 { Task { await app.extensions.install(source: p[1]) } }   // the look before installing
+                else if p[0] == "project", p.count > 1 { app.workbench.addProject(path: p[1]) }
+                else { CloneSheet.show(app, start: p.count > 1 ? p[1] : nil) }
             }
             driveInput(env)
             switch env["KELP_SNAPSHOT_WINDOW"] {
-            case "history": ExtensionRegistry.shared.command("agents.history")?.run([:])
-            case "settings": SettingsWindow.show(AppModel.shared, section: env["KELP_SNAPSHOT_SECTION"])
+            case "history": app.extensions.command("agents.history")?.run([:])
+            case "settings": SettingsWindow.show(app, section: env["KELP_SNAPSHOT_SECTION"])
             default: break
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
@@ -65,6 +65,7 @@ extension AppDelegate {
 
     /// KELP_TYPE, KELP_CLICK, KELP_SWITCH: real input events, as a user would make them.
     private func driveInput(_ env: [String: String]) {
+        let app = self.app
         if let keys = env["KELP_TYPE"] { typeKeys(keys) }
         // KELP_CLICK="Workspace 2|calc.py": real mouse clicks (via NSApp.sendEvent) on visible text, 0.8 s apart.
         if let targets = env["KELP_CLICK"]?.split(separator: "|") {
@@ -77,9 +78,9 @@ extension AppDelegate {
         if let names = env["KELP_SWITCH"]?.split(separator: ",") {
             for (i, n) in names.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 + Double(i) * 0.7) {
-                    guard let w = AppModel.shared.worktrees.first(where: { $0.displayName == n || $0.branch == n }) else { print("SWITCH no \(n)"); return }
+                    guard let w = app.worktrees.first(where: { $0.displayName == n || $0.branch == n }) else { print("SWITCH no \(n)"); return }
                     let t0 = Date()
-                    Workbench.show(workspace: w.id)
+                    app.workbench.show(workspace: w.id)
                     self.main.window?.contentView?.layoutSubtreeIfNeeded(); self.main.window?.displayIfNeeded()
                     print(String(format: "SWITCH %@ %.0f ms", String(n), Date().timeIntervalSince(t0) * 1000))
                 }
@@ -174,6 +175,7 @@ extension AppDelegate {
     /// Dev aid: real key events through NSApp (menus, key equivalents, the terminal's keyDown/IME path).
     /// "echo hi\r" types text; "{cmd+t}" / "{cmd+\\}" press shortcuts; "{wait}" pauses a second (async UI).
     func typeKeys(_ spec: String) {
+        let app = self.app
         let codes: [Character: UInt16] = ["a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13,
             "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "o": 31,
             "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46, " ": 49, "\r": 36, "-": 27, "\\": 42, "/": 44, "?": 44,
@@ -194,7 +196,7 @@ extension AppDelegate {
             } else { events.append((String(c), [])); rest = rest.dropFirst() }
         }
         main.window?.makeKeyAndOrderFront(nil)
-        Workbench.editor?.focusSelected()
+        app.workbench.editor?.focusSelected()
         var at = 0.3
         for (ch, mods) in events {
             if ch == "wait", mods.isEmpty { at += 1; continue }
@@ -205,7 +207,7 @@ extension AppDelegate {
                 defer {
                     if !mods.isEmpty {
                         DispatchQueue.main.async {
-                            let shown = AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-"
+                            let shown = app.worktree(app.workbench.workspaceId)?.displayName ?? "-"
                             print("KEY", mods.rawValue, ch.unicodeScalars.map { String($0.value, radix: 16) }, "→", shown)
                         }
                     }
@@ -287,7 +289,7 @@ extension AppDelegate {
             if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                           windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { NSApp.sendEvent(e) }
         }
-        print("CLICK \(text) → workspace \(AppModel.shared.worktree(Workbench.shared.workspaceId)?.displayName ?? "-")")
+        print("CLICK \(text) → workspace \(app.worktree(app.workbench.workspaceId)?.displayName ?? "-")")
     }
 }
 

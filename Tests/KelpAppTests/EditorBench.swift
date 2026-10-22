@@ -7,7 +7,7 @@ import WorkbenchKit
 
 /// What typing, saving and the language server's copy of the text cost the main thread in a file near the editable
 /// limit. Opt-in, it takes seconds: KELP_BENCH=1 swift test --filter editorBench
-extension SharedAppModel {
+extension OneAtATime {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["KELP_BENCH"] != nil)) func editorBench() async throws {
         let rig = try await AppRig(files: [:])
         defer { rig.done() }
@@ -35,7 +35,7 @@ extension SharedAppModel {
         #expect(!tab.isEdited)
         let overtype = time(10) { tv.replaceCharacters(in: NSRange(location: end, length: 1), with: "y") }   // the saved length
         let text = e.text
-        let lsp = time(1) { LSPManager.shared.change(rig.app, root: rig.repo, path: p, text: text) }
+        let lsp = time(1) { rig.app.lsp.change(rig.app, root: rig.repo, path: p, text: text) }
         print(String(format: "BENCH editor %.1f MB on the main thread: keystroke %.2f ms (the editor alone %.2f), same-length edit %.2f ms, lsp.change %.2f ms; save took %.0f ms",
                      Double(text.utf8.count) / 1e6, typed, bare, overtype, lsp, save))
     }

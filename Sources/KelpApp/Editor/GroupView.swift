@@ -29,13 +29,15 @@ final class GroupView: NSView {
     var dimmed = false {
         didSet {
             guard dimmed != oldValue else { return }
-            veil.layer?.backgroundColor = ThemeManager.shared.terminalBackground.withAlphaComponent(0.3).cgColor
+            veil.layer?.backgroundColor = themes.terminalBackground.withAlphaComponent(0.3).cgColor
             veil.isHidden = !dimmed
         }
     }
 
-    init(groupId: String) {
-        self.groupId = groupId
+    private let themes: ThemeManager
+
+    init(groupId: String, themes: ThemeManager) {
+        self.groupId = groupId; self.themes = themes
         super.init(frame: .zero)
         veil.wantsLayer = true; veil.isHidden = true
         ring.wantsLayer = true; ring.isHidden = true; ring.layer?.borderWidth = 2; ring.layer?.cornerRadius = 5

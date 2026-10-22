@@ -6,14 +6,12 @@ import Core
 
 /// Language servers run a project's own code (build scripts, Package.swift, its node_modules' TypeScript): none starts
 /// in a project until the user trusts it, and the tabs that wanted one start it then.
-extension SharedAppModel {
+extension OneAtATime {
     @Test func languageServersWaitForTheUsersTrustInTheProject() async throws {
         _ = testHome
         _ = NSApplication.shared   // the question is a banner in the window
-        let saved = AppModel.shared.uiState[LSPManager.trustKey]
-        defer { AppModel.shared.uiState[LSPManager.trustKey] = saved }
         let root = "/tmp/cloned-\(UUID().uuidString.prefix(6))"
-        let lsp = LSPManager.shared, app = AppModel.shared
+        let app = AppModel(), lsp = app.lsp
         var started = 0
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // asks; nothing starts
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // a second tab of it waits too (asked once)
@@ -33,7 +31,7 @@ extension SharedAppModel {
         let me = ProcessInfo.processInfo.environment["KELP_APP_EXECUTABLE"]   // this test runner stands in for the app…
         setenv("KELP_APP_EXECUTABLE", "/nowhere/KelpApp", 1)                   // …not now: another copy of Kelp is asking
         defer { if let me { setenv("KELP_APP_EXECUTABLE", me, 1) } }
-        let root = "/tmp/refused-\(UUID().uuidString.prefix(6))", lsp = LSPManager.shared, app = rig.app
+        let root = "/tmp/refused-\(UUID().uuidString.prefix(6))", app = rig.app, lsp = app.lsp
         var started = 0
         _ = lsp.whenTrusted(app, root) { started += 1 }
         await lsp.trust(app, root)

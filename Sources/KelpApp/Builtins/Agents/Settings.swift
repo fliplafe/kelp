@@ -70,7 +70,7 @@ struct AgentsSettings: View {
     private func row(_ a: AgentManifest) -> some View {
         let version = versions[a.id]?.version
         return HStack(spacing: 8) {
-            Image(nsImage: AgentCatalog.icon(a.id, size: 18) ?? NSImage()).resizable().frame(width: 18, height: 18)
+            Image(nsImage: app.catalog.icon(a.id, size: 18) ?? NSImage()).resizable().frame(width: 18, height: 18)
                 .opacity(version == nil && !versions.isEmpty ? 0.5 : 1)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
@@ -113,12 +113,12 @@ struct AgentsSettings: View {
 
     /// The agent's own command, in a terminal in the workspace on screen, so what it does is in plain sight.
     private func run(_ cmd: String, _ title: String, in folder: String? = nil) {
-        guard let e = Workbench.editor else {
+        guard let e = app.workbench.editor else {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(cmd, forType: .string)
             Banner.show(String(localized: "Open a workspace to run it there — the command is on the clipboard: \(cmd)")); return
         }
         e.run(command: cmd, title: title, cwd: folder)
-        Workbench.window?.window?.makeKeyAndOrderFront(nil)
+        app.workbench.window?.window?.makeKeyAndOrderFront(nil)
     }
 
     private func loadVersions() async {
@@ -180,6 +180,6 @@ struct AgentsSettings: View {
         }
         reload(); saved = true
         app.agents = AgentManifest.load()
-        AgentAvailability.shared.refresh(force: true)
+        app.availability.refresh(force: true)
     }
 }

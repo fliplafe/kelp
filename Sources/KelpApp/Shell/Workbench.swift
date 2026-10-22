@@ -3,16 +3,16 @@ import Observation
 import Core
 import WorkbenchKit
 
-/// What's on screen: the selected workspace and what has focus in it.
+/// What's on screen: the selected workspace and what has focus in it. The app's (`app.workbench`): what acts on the
+/// window (opening tabs, showing workspaces, focusing agents) is reached through it.
 @MainActor
 @Observable
 final class Workbench {
-    /// The app's (`AppModel.workbench`), for code not handed it yet.
-    static var shared: Workbench { AppModel.shared.workbench }
-    var workspaceId: String? { didSet { state["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
-    /// Where the last workspace is kept (the app's UI state).
-    @ObservationIgnored private let state: UIState
-    init(state: UIState) { self.state = state }
+    @ObservationIgnored let app: AppModel
+    /// The main window, once it's made (it hands itself over).
+    @ObservationIgnored weak var window: MainWindowController?
+    var workspaceId: String? { didSet { app.uiState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
+    init(app: AppModel) { self.app = app }
     var focusedSession: String?
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.
     var focusedTab: String?
@@ -26,7 +26,7 @@ final class Workbench {
     var history = WorkspaceHistory()
     /// Columns × rows of the last terminal seen on screen: sizes the next one before it's shown. Kept across launches:
     /// the window usually opens at the same size.
-    static var terminalGrid: (cols: Int, rows: Int)? = {
+    @ObservationIgnored var terminalGrid: (cols: Int, rows: Int)? = {
         let g = UserDefaults.standard.array(forKey: "terminal.lastGrid") as? [Int] ?? []
         return g.count == 2 ? (g[0], g[1]) : nil
     }() {

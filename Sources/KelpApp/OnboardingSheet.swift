@@ -11,15 +11,15 @@ final class OnboardingSheet: SheetController {
     private let notifyStatus = NSTextField(labelWithString: "")
 
     /// Once, when there's no project yet.
-    static func showIfFirstLaunch() {
+    static func showIfFirstLaunch(_ app: AppModel) {
         let d = UserDefaults.standard
-        guard !d.bool(forKey: "onboarding.done"), AppModel.shared.repos.allSatisfy({ $0.path.hasPrefix(Paths.root.path) }) else { return }
-        show()
+        guard !d.bool(forKey: "onboarding.done"), app.repos.allSatisfy({ $0.path.hasPrefix(Paths.root.path) }) else { return }
+        show(app)
     }
 
-    static func show() {
+    static func show(_ app: AppModel) {
         guard shown == nil else { return }
-        let s = OnboardingSheet(width: 460)
+        let s = OnboardingSheet(app: app, width: 460)
         s.build()
         guard s.begin(ended: { shown = nil; UserDefaults.standard.set(true, forKey: "onboarding.done") }) else { return }
         shown = s
@@ -44,7 +44,7 @@ final class OnboardingSheet: SheetController {
         let notifyRow = NSStackView(views: [test, notifyStatus]); notifyRow.spacing = 8
 
         let later = ClosureButton(title: String(localized: "Later")) { [weak self] in self?.close() }; later.bezelStyle = .push; later.keyEquivalent = "\u{1b}"
-        let add = ClosureButton(title: String(localized: "Add Project…")) { [weak self] in self?.close(); DispatchQueue.main.async { Workbench.addProject() } }
+        let add = ClosureButton(title: String(localized: "Add Project…")) { [weak self, app] in self?.close(); DispatchQueue.main.async { app.workbench.addProject() } }
         add.bezelStyle = .push; add.keyEquivalent = "\r"
         let buttons = NSStackView(views: [NSView(), later, add]); buttons.spacing = 8
 
@@ -54,7 +54,7 @@ final class OnboardingSheet: SheetController {
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 22, bottom: 20, right: 22)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         window?.contentView = stack
-        track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.fillAgents() }
+        track(owner: self) { [app] in app.availability.ids } changed: { [weak self] _ in self?.fillAgents() }
     }
 
     private func section(_ t: String) -> NSTextField {
@@ -63,9 +63,9 @@ final class OnboardingSheet: SheetController {
 
     private func fillAgents() {
         agents.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let found = AgentCatalog.installed(AgentCatalog.all)
+        let found = app.catalog.installed(app.catalog.all)
         let cells: [NSView] = found.map { a in
-            let row = NSStackView(views: [NSImageView(image: AgentCatalog.icon(a.id) ?? NSImage()), NSTextField(labelWithString: a.name)]); row.spacing = 6
+            let row = NSStackView(views: [NSImageView(image: app.catalog.icon(a.id) ?? NSImage()), NSTextField(labelWithString: a.name)]); row.spacing = 6
             return row
         }
         if !cells.isEmpty {   // two columns, like the start page
@@ -83,17 +83,17 @@ final class OnboardingSheet: SheetController {
             agents.addArrangedSubview(none)
         }
         pick.removeAllItems()
-        for a in found { pick.addItem(withTitle: a.name); pick.lastItem?.representedObject = a.id; pick.lastItem?.image = AgentCatalog.icon(a.id) }
+        for a in found { pick.addItem(withTitle: a.name); pick.lastItem?.representedObject = a.id; pick.lastItem?.image = app.catalog.icon(a.id) }
         pick.isEnabled = !found.isEmpty
-        if let i = found.firstIndex(where: { $0.id == AgentCatalog.defaultAgent }) { pick.selectItem(at: i) }
+        if let i = found.firstIndex(where: { $0.id == app.catalog.defaultAgent }) { pick.selectItem(at: i) }
     }
 
     @objc private func picked() {
-        if let id = pick.selectedItem?.representedObject as? String { SettingsStore.shared.set("agents.default", .string(id)) }
+        if let id = pick.selectedItem?.representedObject as? String { app.settings.set("agents.default", .string(id)) }
     }
 
     func testNotification() {
-        (NSApp.delegate as? AppDelegate)?.notifier.sendTest { [weak self] ok in
+        app.notifier?.sendTest { [weak self] ok in
             self?.notifyStatus.stringValue = ok
                 ? String(localized: "Sent. If no banner appeared, check Focus.") : String(localized: "Turned off for Kelp in System Settings › Notifications.")
             self?.notifyStatus.textColor = ok ? .secondaryLabelColor : .systemRed

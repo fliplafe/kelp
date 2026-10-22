@@ -15,15 +15,16 @@ struct ExtListView: View {
     @State private var loading = false   // the spinner, after a second
     @State private var running = false   // the command hasn't answered yet (no "empty" meanwhile)
     @State private var selection: Int?
-    private var bench = Workbench.shared
+    private let app: AppModel
+    private var bench: Workbench { app.workbench }
 
-    init(def: ExtManifest.ListDef, folder: URL) { self.def = def; self.folder = folder }
+    init(def: ExtManifest.ListDef, folder: URL, app: AppModel) { self.def = def; self.folder = folder; self.app = app }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 ForEach(Array((def.toolbar ?? []).enumerated()), id: \.offset) { _, a in
-                    Button { ExtActions.perform(a, item: nil, folder: folder) { reload() } } label: {
+                    Button { ExtActions(app).perform(a, item: nil, folder: folder) { reload() } } label: {
                         Label(a.title, systemImage: a.icon ?? "play")
                     }
                     .buttonStyle(.borderless).help(a.title)
@@ -46,14 +47,14 @@ struct ExtListView: View {
                         row(item).tag(i)
                             .contextMenu {
                                 ForEach(Array((def.actions ?? []).enumerated()), id: \.offset) { _, a in
-                                    Button { ExtActions.perform(a, item: item, folder: folder) { reload() } } label: { Label(a.title, systemImage: a.icon ?? "circle") }
+                                    Button { ExtActions(app).perform(a, item: item, folder: folder) { reload() } } label: { Label(a.title, systemImage: a.icon ?? "circle") }
                                 }
                             }
                     }
                 }
                 .listStyle(.sidebar)
                 .contextMenu(forSelectionType: Int.self) { _ in } primaryAction: { sel in
-                    if let i = sel.first, items.indices.contains(i), let a = def.actions?.first { ExtActions.perform(a, item: items[i], folder: folder) { reload() } }
+                    if let i = sel.first, items.indices.contains(i), let a = def.actions?.first { ExtActions(app).perform(a, item: items[i], folder: folder) { reload() } }
                 }
             }
         }
@@ -68,10 +69,10 @@ struct ExtListView: View {
 
     private func row(_ item: JSONValue) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: def.icon.map { ExtActions.expand($0, item: item, quote: false) } ?? "circle.fill").foregroundStyle(.secondary).frame(width: 16)
+            Image(systemName: def.icon.map { ExtActions(app).expand($0, item: item, quote: false) } ?? "circle.fill").foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(ExtActions.expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
-                if let s = def.subtitle { Text(ExtActions.expand(s, item: item, quote: false)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                Text(ExtActions(app).expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
+                if let s = def.subtitle { Text(ExtActions(app).expand(s, item: item, quote: false)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer(minLength: 4)
             if let st = status(item) { StatusIcon(status: st) }
@@ -90,12 +91,12 @@ struct ExtListView: View {
     }
 
     private func reload() {
-        let cmd = ExtActions.expand(def.command, item: nil, quote: true)
-        let cwd = IDEContext.current.workspace?.path ?? folder.path
+        let cmd = ExtActions(app).expand(def.command, item: nil, quote: true)
+        let cwd = IDEContext.of(app).workspace?.path ?? folder.path
         let slow = whileSlow { loading = true }   // a spinner only for a wait you'd notice
         running = true
         Task {
-            let r = await Shell.run(cmd, cwd: cwd, extension: folder.lastPathComponent)
+            let r = await Shell.run(app, cmd, cwd: cwd, extension: folder.lastPathComponent)
             slow.cancel(); loading = false; running = false
             if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? String(localized: "Exit code \(r.code)") : String(r.stderr.suffix(600)); return }
             error = nil

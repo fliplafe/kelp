@@ -199,15 +199,18 @@ extension Session {
 
 /// Agents waiting for the user, in the order to visit them: questions and failures before finished work, oldest first.
 @MainActor
-enum AttentionQueue {
-    static var sessions: [Session] {
-        AppModel.shared.sessions
+struct AttentionQueue {
+    let app: AppModel
+    init(_ app: AppModel) { self.app = app }
+
+    var sessions: [Session] {
+        app.sessions
             .filter(SidebarCell.wantsYou)   // what the summary counts, a paused agent's unread result too
             .sorted { (SidebarCell.shownStatus($0) == .done ? 1 : 0, $0.statusAt ?? $0.createdAt) < (SidebarCell.shownStatus($1) == .done ? 1 : 0, $1.statusAt ?? $1.createdAt) }
     }
 
     /// The one after `current` (wrapping), so pressing again walks the whole queue.
-    static func next(after current: String?) -> Session? {
+    func next(after current: String?) -> Session? {
         let q = sessions
         guard let i = q.firstIndex(where: { $0.id == current }) else { return q.first }
         return q.count > 1 ? q[(i + 1) % q.count] : nil

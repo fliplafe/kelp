@@ -9,8 +9,10 @@ final class AgentSummary: NSStackView {
     private let working = NSTextField(labelWithString: "")
     private let waiting = NSButton(title: "", target: nil, action: nil)
     private var height: NSLayoutConstraint?
+    private let app: AppModel
 
-    init() {
+    init(app: AppModel) {
+        self.app = app
         super.init(frame: .zero)
         working.font = .ui(11); working.textColor = .secondaryLabelColor
         waiting.isBordered = false; waiting.target = self; waiting.action = #selector(showNext)
@@ -35,5 +37,5 @@ final class AgentSummary: NSStackView {
         height?.constant = isHidden ? 0 : TextSize.of(16)
     }
 
-    @objc private func showNext() { if let s = AttentionQueue.sessions.first { Workbench.focus(session: s.id) } }
+    @objc private func showNext() { if let s = AttentionQueue(app).sessions.first { app.workbench.focus(session: s.id) } }
 }

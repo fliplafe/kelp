@@ -165,21 +165,22 @@ extension EditorArea {
 
     /// "+" menu: agents, terminal, then whatever extensions offer (browser, chat, extension views…).
     func newTabMenu(group: String?) -> NSMenu {
+        let app = self.app
         let m = NSMenu()
-        let agents = AgentCatalog.installed(AgentCatalog.all)
+        let agents = app.catalog.installed(app.catalog.all)
         for a in agents {
             let item = m.add(a.name) { [weak self] in
                 if let group { self?.layout.focused = group }
                 self?.newAgent(a.id)
             }
-            item.image = AgentCatalog.icon(a.id)
+            item.image = app.catalog.icon(a.id)
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
-        if AgentCatalog.hasTmux(app.worktree(workspaceId)) {
+        if app.catalog.hasTmux(app.worktree(workspaceId)) {
             m.add(String(localized: "tmux Session…"), symbol: "rectangle.split.3x1") { [weak self] in
                 if let group { self?.layout.focused = group }
-                QuickOpen.shared.showTmux()
+                app.quickOpen.showTmux()
             }
         }
         let ctx = IDEContext.of(app)
@@ -188,7 +189,7 @@ extension EditorArea {
         for e in editors {
             m.add(e.title, symbol: e.icon) { [weak self] in
                 if let group { self?.layout.focused = group }
-                e.open(ctx)
+                e.open(ctx, in: app)
             }
         }
         return m

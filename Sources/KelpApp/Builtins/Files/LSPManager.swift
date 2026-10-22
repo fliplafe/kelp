@@ -8,7 +8,6 @@ import WorkbenchKit
 /// a project may run one is the user's say, asked here once per project and checked again by the daemon.
 @MainActor
 final class LSPManager {
-    static let shared = LSPManager()
     /// Server commands already reported missing this launch.
     private var reported: Set<String> = []
     func enabled(_ app: AppModel) -> Bool { app.settings.bool("editor.lsp") != false }
@@ -42,7 +41,7 @@ final class LSPManager {
         if first {
             let name = (root as NSString).lastPathComponent
             Banner.show(String(localized: "Language servers and formatters can run code from “\(name)” (its build scripts, plugins, toolchain). Trust this project?"),
-                        action: (String(localized: "Trust"), { Task { await LSPManager.shared.trust(app, root) } }))
+                        action: (String(localized: "Trust"), { Task { await app.lsp.trust(app, root) } }))
         }
         return false
     }
@@ -67,7 +66,7 @@ final class LSPManager {
         } catch {
             switch LSPRefusal(error) {
             case .untrusted?: _ = askTrust(app, root, retry)   // the daemon doesn't have it as trusted (another copy of Kelp recorded it)
-            case .notInstalled?: reportMissing(server)
+            case .notInstalled?: reportMissing(app, server)
             case nil: break   // no daemon now: a reconnect opens it again
             }
             return false
@@ -104,13 +103,18 @@ final class LSPManager {
     }
 
     /// Once per command and launch; the button runs the language's `install` in a terminal tab.
-    private func reportMissing(_ server: LanguageSpec.Server) {
+    private func reportMissing(_ app: AppModel, _ server: LanguageSpec.Server) {
         guard reported.insert(server.command).inserted else { return }
         let name = server.command
         var install: (String, @MainActor @Sendable () -> Void)?
         if let cmd = server.install {
-            install = (String(localized: "Install"), { Workbench.editor?.run(command: cmd, title: String(localized: "Install \(name)")) })
+            install = (String(localized: "Install"), { app.workbench.editor?.run(command: cmd, title: String(localized: "Install \(name)")) })
         }
         Banner.show(String(localized: "Language server \(name) isn't installed."), action: install)
     }
+}
+
+extension AppModel {
+    /// Its language servers' side here (one per app).
+    var lsp: LSPManager { part { LSPManager() } }
 }

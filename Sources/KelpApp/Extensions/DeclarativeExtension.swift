@@ -64,7 +64,7 @@ enum DeclarativeExtension {
     static func forget(_ id: String? = nil) { views = id.map { id in views.filter { $0.value.0.id != id } } ?? [:] }
 
     /// `tools`: required tools known to be there or not (`ExtensionRegistry.tools`); one not in it counts as there.
-    static func load(_ folder: URL, tools: [String: Bool] = [:]) -> (info: ExtensionInfo, contributions: Contributions) {
+    static func load(_ folder: URL, tools: [String: Bool] = [:], app: AppModel) -> (info: ExtensionInfo, contributions: Contributions) {
         let fallbackId = folder.lastPathComponent
         do {
             let own = folder.appendingPathComponent("extension.json"), vscode = folder.appendingPathComponent("package.json")
@@ -79,7 +79,7 @@ enum DeclarativeExtension {
                 info.unavailable = String(localized: "Needs `\(missing)` — not found on this Mac.")
                 return (info, Contributions())
             }
-            return (info, contributions(m, folder))
+            return (info, contributions(m, folder, app))
         } catch {
             let msg = (error as? DecodingError).map(describe) ?? error.localizedDescription
             return (ExtensionInfo(id: fallbackId, name: fallbackId, description: "", version: "", icon: "exclamationmark.triangle", builtin: false,
@@ -87,13 +87,13 @@ enum DeclarativeExtension {
         }
     }
 
-    private static func contributions(_ m: ExtManifest, _ folder: URL) -> Contributions {
+    private static func contributions(_ m: ExtManifest, _ folder: URL, _ app: AppModel) -> Contributions {
         var c = Contributions()
         let x = m.contributes
         for v in x?.panels ?? [] {
             views["\(m.id)/\(v.id)"] = (m, v, folder)
             c.panels.append(PanelSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id) {
-                viewController(m, v, folder)
+                viewController(m, v, folder, app)
             })
         }
         for v in x?.editors ?? [] {
@@ -103,7 +103,7 @@ enum DeclarativeExtension {
         }
         for a in x?.commands ?? [] {
             c.commands.append(CommandSpec(id: a.id ?? "\(m.id).\(a.title)", title: a.title, key: a.key, menu: a.menu) { _ in
-                ExtActions.perform(a, item: nil, folder: folder)
+                ExtActions(app).perform(a, item: nil, folder: folder)
             })
         }
         if let s = x?.settings, !s.isEmpty {
@@ -123,14 +123,16 @@ enum DeclarativeExtension {
     }
 
     /// Opens `ext:<extension>/<view>` tabs.
-    static let tabProvider = TabProvider(schemes: ["ext"]) { uri in
-        guard let (m, v, folder) = views[TabURI.body(uri)] else { return nil }
-        return ExtViewTab(uri: uri, title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", controller: viewController(m, v, folder))
+    static func tabProvider(_ app: AppModel) -> TabProvider {
+        TabProvider(schemes: ["ext"]) { uri in
+            guard let (m, v, folder) = views[TabURI.body(uri)] else { return nil }
+            return ExtViewTab(uri: uri, title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", controller: viewController(m, v, folder, app))
+        }
     }
 
-    private static func viewController(_ m: ExtManifest, _ v: ExtManifest.ViewDef, _ folder: URL) -> NSViewController {
-        if let list = v.list { return hosting(ExtListView(def: list, folder: folder)) }
-        if let web = v.web { return ExtWebController(page: folder.appendingPathComponent(web), folder: folder) }
+    private static func viewController(_ m: ExtManifest, _ v: ExtManifest.ViewDef, _ folder: URL, _ app: AppModel) -> NSViewController {
+        if let list = v.list { return hosting(ExtListView(def: list, folder: folder, app: app)) }
+        if let web = v.web { return ExtWebController(page: folder.appendingPathComponent(web), folder: folder, app: app) }
         let vc = NSViewController(); vc.view = NSTextField(labelWithString: String(localized: "\(m.name): view “\(v.id)” has neither list nor web."))
         return vc
     }
@@ -162,10 +164,13 @@ final class ExtViewTab: TabContent {
 // MARK: running commands and actions
 
 @MainActor
-enum ExtActions {
+struct ExtActions {
+    let app: AppModel
+    init(_ app: AppModel) { self.app = app }
+
     /// `${Field}`, `${a.b}`, `${setting:key}`, `${workspace.path|branch|name}`, `${project.path}`, `${file}`. `quote` shell-quotes values.
-    static func expand(_ template: String, item: JSONValue?, quote: Bool) -> String {
-        let ctx = IDEContext.current
+    func expand(_ template: String, item: JSONValue?, quote: Bool) -> String {
+        let ctx = IDEContext.of(app)
         let value: (String) -> String? = { key in
             switch key {
             case "workspace.path": return ctx.workspace?.path ?? ""
@@ -174,8 +179,8 @@ enum ExtActions {
             case "project.path": return ctx.project?.path ?? ""
             case "file": return ctx.focusedFile ?? ""
             default:
-                if key.hasPrefix("setting:") { return SettingsStore.shared.value(String(key.dropFirst(8))).map(text) ?? "" }
-                return key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(text) ?? ""
+                if key.hasPrefix("setting:") { return app.settings.value(String(key.dropFirst(8))).map(Self.text) ?? "" }
+                return key.split(separator: ".").reduce(item) { $0?[String($1)] }.map(Self.text) ?? ""
             }
         }
         // A command gets the values as shell variables, never as text in it: $(…) or a newline in a title can't run.
@@ -185,9 +190,9 @@ enum ExtActions {
     /// An `open` action's URI: the extension's template with the item's values put in. A URI that runs something
     /// (terminal:, agent:) has to say so in the extension's own words, never through a value (someone else's: an issue's
     /// link field set to terminal://…?cmd=…). nil then.
-    static func openURI(_ template: String, item: JSONValue?) -> String? {
-        let uri = TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.current.workspace?.path)
-        return Self.runs.contains { template.hasPrefix($0 + ":") } ? uri : openableURI(uri)
+    func openURI(_ template: String, item: JSONValue?) -> String? {
+        let uri = TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.of(app).workspace?.path)
+        return ExtActions.runs.contains { template.hasPrefix($0 + ":") } ? uri : Self.openableURI(uri)
     }
     private static let runs = ["terminal", "agent"]
 
@@ -205,25 +210,25 @@ enum ExtActions {
         }
     }
 
-    static func perform(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)? = nil) {
+    func perform(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)? = nil) {
         guard let q = a.confirm else { act(a, item: item, folder: folder, after: after); return }
         let alert = NSAlert(); alert.messageText = expand(q, item: item, quote: false)
         alert.addButton(withTitle: a.title); alert.addButton(withTitle: String(localized: "Cancel"))
         Task { if await runSheet(alert) == .alertFirstButtonReturn { act(a, item: item, folder: folder, after: after) } }
     }
 
-    private static func act(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)?) {
-        if let t = a.terminal { Workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
+    private func act(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)?) {
+        if let t = a.terminal { app.workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
         else if let o = a.open {
-            if let u = openURI(o, item: item) { Workbench.open(u) }
+            if let u = openURI(o, item: item) { app.workbench.open(u) }
             else { Banner.show(String(localized: "“\(a.title)” would run a command or an agent from its data; it opens links and files only.")) }
         }
         // Typed, not sent: `item` is a command's output (an issue's title, a PR's body), someone else's words.
-        else if let p = a.agent { Workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), draft: true) }
+        else if let p = a.agent { app.workbench.editor?.newAgent(nil, prompt: expand(p, item: item, quote: false), draft: true) }
         else if let r = a.run {
             let cmd = expand(r, item: item, quote: true)
             Task {
-                let res = await Shell.run(cmd, cwd: IDEContext.current.workspace?.path ?? folder.path, extension: folder.lastPathComponent)
+                let res = await Shell.run(app, cmd, cwd: IDEContext.of(app).workspace?.path ?? folder.path, extension: folder.lastPathComponent)
                 if res.code != 0 { Banner.show(String(localized: "\(a.title) failed: ") + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error) }
                 after?()
             }
@@ -238,15 +243,15 @@ enum ExtActions {
 /// that extension is off. A failure to reach the daemon or to start the program is code -1 with the reason as stderr.
 enum Shell {
     struct Result: Sendable { var code: Int32; var stdout: String; var stderr: String }
-    static func run(_ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60, extension id: String? = nil) async -> Result {
-        await exec(["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout, extension: id)
+    static func run(_ app: AppModel, _ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60, extension id: String? = nil) async -> Result {
+        await exec(app, ["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout, extension: id)
     }
 
     /// A program by path (`argv[0]`), with the same PATH and a time limit (stopped then, with what it started).
-    static func exec(_ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60,
+    static func exec(_ app: AppModel, _ argv: [String], cwd: String = NSHomeDirectory(), input: String? = nil, timeout: TimeInterval = 60,
                      extension id: String? = nil) async -> Result {
         do {
-            let r = try await AppModel.shared.get(ProcessRun(argv: argv, cwd: cwd, stdin: input, timeLimit: timeout, extensionId: id))
+            let r = try await app.get(ProcessRun(argv: argv, cwd: cwd, stdin: input, timeLimit: timeout, extensionId: id))
             return Result(code: r.code, stdout: r.stdout, stderr: r.stderr)
         } catch {
             return Result(code: -1, stdout: "", stderr: (error as? RPCError)?.message ?? error.localizedDescription)

@@ -64,7 +64,7 @@ struct AccountsSettings: View {
         Task {
             guard let s = await app.call(SessionCreate(worktreeId: wid, agent: p.agent, title: String(localized: "Log in: \(p.name)"),
                                                                    profile: p.name)) else { return }
-            app.upsert(s); Workbench.open(TabURI.session(s.id))
+            app.upsert(s); app.workbench.open(TabURI.session(s.id))
             NSApp.mainWindow?.makeKeyAndOrderFront(nil)
         }
     }

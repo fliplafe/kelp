@@ -21,8 +21,8 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
     private static var shown: RemoteSheet?
 
     /// `start`: "host" or "host:/path", connected to at once (the snapshot dev aid; a background app's sheet gets no keys).
-    static func show(start text: String? = nil) {
-        let s = RemoteSheet()
+    static func show(_ app: AppModel, start text: String? = nil) {
+        let s = RemoteSheet(app: app)
         guard s.begin(ended: { shown = nil }) else { return }
         shown = s
         if let text {
@@ -31,10 +31,10 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
         }
     }
 
-    private init() {
+    private init(app: AppModel) {
         grid = NSGridView(views: [[NSTextField(labelWithString: String(localized: "Host:")), host],
                                   [NSTextField(labelWithString: String(localized: "Folder:")), path]])
-        super.init(width: 480)
+        super.init(app: app, width: 480)
         build()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -109,7 +109,7 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
     private func list(_ h: String, _ p: String) {
         busy(true); say(listed == nil ? String(localized: "Connecting…") : nil)
         Task {
-            let r = await AppModel.shared.tryCall(RemoteListFolders(host: h, path: p))
+            let r = await app.tryCall(RemoteListFolders(host: h, path: p))
             busy(false)
             guard let v = r.value else { say(r.error, error: true); return }
             listed = (h, v.path, v.repo); path.stringValue = v.path; say(nil)
@@ -122,14 +122,14 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
     private func open(_ h: String, _ p: String, init: Bool) {
         busy(true); say(String(localized: "Opening…"))
         Task {
-            let r = await AppModel.shared.tryCall(RepoAddRemote(host: h, path: p, init: `init`))
+            let r = await app.tryCall(RepoAddRemote(host: h, path: p, init: `init`))
             busy(false)
             if let e = r.error { say(e, error: true); return }
             UserDefaults.standard.set(h, forKey: "remote.host")
             close()
-            await AppModel.shared.refresh()
-            if let rid = r.value?.id, let repo = AppModel.shared.repo(rid), let w = AppModel.shared.workspaces(of: repo).first {
-                Workbench.show(workspace: w.id)
+            await app.refresh()
+            if let rid = r.value?.id, let repo = app.repo(rid), let w = app.workspaces(of: repo).first {
+                app.workbench.show(workspace: w.id)
             }
         }
     }

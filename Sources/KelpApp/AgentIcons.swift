@@ -8,7 +8,6 @@ import Core
 @MainActor
 @Observable
 final class AgentIcons {
-    static let shared = AgentIcons()
     private(set) var images: [String: NSImage] = [:]
     @ObservationIgnored private var asked = Set<String>()
 
@@ -43,7 +42,7 @@ final class AgentIcons {
             guard let data = await Self.fetchIcon(site) else { return }
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try? data.write(to: cached)
-            await MainActor.run { AgentIcons.shared.images[id] = Self.tile(data) }
+            await MainActor.run { self.images[id] = Self.tile(data) }
         }
     }
 

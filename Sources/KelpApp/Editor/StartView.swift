@@ -11,11 +11,11 @@ final class StartView: NSView, NSTextFieldDelegate {
     var onPrompt: ((String, String) -> Void)?
     var onOpen: ((String) -> Void)?
     private let prompt = NSTextField()
-    private let def = AgentCatalog.defaultAgent
+    private let def: String
 
     private let app: AppModel
     init(app: AppModel, worktree w: Worktree) {
-        self.app = app
+        self.app = app; def = app.catalog.defaultAgent
         super.init(frame: .zero)
         let repo = app.repo(w.repoId)
         let icon = NSImageView(image: .symbol("folder"))
@@ -30,10 +30,10 @@ final class StartView: NSView, NSTextFieldDelegate {
         folder.isHidden = folder.stringValue.isEmpty
 
         // The default agent first, then the others (two columns when there are many: people often have a dozen).
-        let agents = AgentCatalog.installed(AgentCatalog.all).sorted { ($0.id == def ? 0 : 1, $0.name) < ($1.id == def ? 0 : 1, $1.name) }
+        let agents = app.catalog.installed(app.catalog.all).sorted { ($0.id == def ? 0 : 1, $0.name) < ($1.id == def ? 0 : 1, $1.name) }
         // In two columns there's no room for "Default" beside the name (first place and ⌥⌘T say it); the name always fits.
         let tiles = agents.map { a in
-            StartRow(image: AgentCatalog.icon(a.id, size: 20), title: a.name, detail: a.id == def && agents.count <= 5 ? String(localized: "Default") : nil,
+            StartRow(image: app.catalog.icon(a.id, size: 20), title: a.name, detail: a.id == def && agents.count <= 5 ? String(localized: "Default") : nil,
                      shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
         var rows: [NSView] = []
@@ -51,11 +51,11 @@ final class StartView: NSView, NSTextFieldDelegate {
             rows += tiles
         }
         var others = [StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") }]
-        if AgentCatalog.hasTmux(w) { others.append(StartRow(image: .symbol("rectangle.split.3x1"), title: String(localized: "tmux Session"), shortcut: nil) { QuickOpen.shared.showTmux() }) }
+        if app.catalog.hasTmux(w) { others.append(StartRow(image: .symbol("rectangle.split.3x1"), title: String(localized: "tmux Session"), shortcut: nil) { app.quickOpen.showTmux() }) }
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in app.extensions.all.editors where e.id != "git.review" {
             let key = app.extensions.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
-            others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.of(app)) })
+            others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.of(app), in: app) })
         }
         let card = StartCard(rows: rows, others: others)
 
@@ -91,12 +91,12 @@ final class StartView: NSView, NSTextFieldDelegate {
 
     /// The default agent's icon and a field: Return starts the agent with the text.
     private func promptField() -> NSView {
-        let name = AgentCatalog.all.first { $0.id == def }?.name ?? def
+        let name = app.catalog.all.first { $0.id == def }?.name ?? def
         prompt.placeholderString = String(localized: "What should \(name) do? Return starts it")
         prompt.isBordered = false; prompt.drawsBackground = false; prompt.focusRingType = .none; prompt.font = .systemFont(ofSize: 14)
         prompt.lineBreakMode = .byTruncatingTail; prompt.delegate = self
         prompt.setAccessibilityLabel(String(localized: "First task for \(name)"))
-        let icon = NSImageView(image: AgentCatalog.icon(def, size: 18) ?? NSImage())
+        let icon = NSImageView(image: app.catalog.icon(def, size: 18) ?? NSImage())
         let row = NSStackView(views: [icon, prompt]); row.spacing = 10; row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         let box = StartBox(radius: 10, fill: 0.05)
         row.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(row)
