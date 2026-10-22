@@ -189,3 +189,19 @@ private func codeOnly(_ s: String) -> String {
     let gone = clocks.keys.filter { k in !all.contains { $0.hasPrefix("Sources/KelpApp/" + k + ":") } }
     #expect(gone == [], "listed, but its clock is gone: take it off the list")
 }
+
+/// The daemon is its connections and the services it puts together; what each service keeps is its own, under its own
+/// locks, and a service is given what it uses instead of reaching back into `Daemon`. Counted: `Daemon`'s stored
+/// properties, the extensions that add to it from other files, and state kept outside any instance (a file-scope value
+/// or a static object other than a logger), which every daemon in one process (tests) would share.
+@Test func theDaemonKeepsItsStateInItsServices() throws {
+    let daemon = try #require(sources(["Sources/Daemon"]).first { $0.path == "Sources/Daemon/Daemon.swift" })
+    let stored = try NSRegularExpression(pattern: #"^    (?:public |private )?let "#, options: [.anchorsMatchLines])
+        .numberOfMatches(in: daemon.text, range: NSRange(daemon.text.startIndex..., in: daemon.text))
+    let extensions = try matches(#"^extension Daemon\b"#, in: ["Sources/Daemon"])
+    let shared = try matches(#"^(?:private |fileprivate |public )?(?:let|var) \w+|^\s+(?:private |public )?static let \w+ = (?!Logger\()[A-Z]\w*(?:<[^>]*>)?\("#,
+                             in: ["Sources/Daemon"])
+    #expect(stored <= 25, "Daemon's stored properties: \(stored)")
+    #expect(extensions.count <= 35, "extensions of Daemon: \(extensions)")
+    #expect(shared.count <= 3, "state outside an instance: \(shared)")
+}

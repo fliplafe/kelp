@@ -135,6 +135,18 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     for t in inOrder { #expect(t is any Handled.Type, "\(t.name)") }
 }
 
+/// Each method is answered one of three ways, by its type: in order on the reader thread (everything sent after it waits),
+/// quick on a thread of its own (no slot), or blocking in `offload`. The first two start no program. A new in-order one
+/// holds up the connection's every call, so it's added here on purpose (a quick one usually does instead).
+@Test func theInOrderMethodsAreTheKnownOnes() {
+    let inOrder = Set(Daemon.methods.values.filter { $0.inOrder }.map { $0.name })
+    let known: [any RPCMethod.Type] = [SessionWrite.self, SessionSend.self, SessionResize.self, UIPublish.self, StateSet.self, ClientEvents.self,
+                                       SettingsSet.self, WatchStart.self, WatchStop.self, LSPOpen.self, LSPChange.self, LSPClose.self]
+    #expect(inOrder == Set(known.map { $0.name }))
+    let both = Daemon.methods.values.compactMap { $0 as? any Handled.Type }.filter { $0.inOrder && $0.quick }.map { $0.name }
+    #expect(both == [], "in order or quick, not both")
+}
+
 /// An in-order call is applied on the connection's reader thread, where whatever was sent after it waits: one that would
 /// start a program (git, gh, ssh) fails at once instead of holding the connection up. Off that thread the same one runs.
 @Test func anInOrderCallStartsNoProgram() async throws {

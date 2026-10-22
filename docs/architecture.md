@@ -114,8 +114,9 @@ else a `NotificationCenter` name.
   queues.
 - **Ordering.** Replies to one connection can come back in any order, as in JSON-RPC and LSP; clients match them by id.
   What is only right in the order it was sent says so on its type (`Answered.inOrder`: keystrokes `session.write`,
-  `session.resize`, `state.set`, `ui.publish`, `settings.set`, `session.send`) and runs on the reader thread, one after
-  another, call or notification; a call's reply goes out in that order. A session's status changes run in order on its
+  `session.resize`, `state.set`, `ui.publish`, `settings.set`, `session.send`, `watch.start`, `lsp.change`…; the list is
+  pinned by `theInOrderMethodsAreTheKnownOnes`) and runs on the reader thread, one after another, call or notification; a
+  call's reply goes out in that order. A method is one of three by its type: in order, quick or blocking, never two. A session's status changes run in order on its
   own queue (`LiveSession.inOrder`). `session.stream`, the one method the reader knows by name, turns its connection into
   a raw byte pipe; `session.attach` of a live session answers itself, its history queued under the session's lock, so no
   live output gets ahead of it. Every method is in one registry (`Daemon.methods`); a result is encoded once, straight
