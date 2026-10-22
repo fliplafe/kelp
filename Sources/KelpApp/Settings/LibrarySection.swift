@@ -4,7 +4,8 @@ import Core
 /// Settings › Extensions › Library: what github.com/nikiomori/kelp-extensions holds, read when the pane shows,
 /// to install or bring up to date.
 struct LibrarySection: View {
-    private var registry = ExtensionRegistry.shared
+    @Environment(AppModel.self) private var app
+    private var registry: ExtensionRegistry { app.extensions }
     @State private var entries: [ExtensionLibrary.Entry]?
     @State private var error: String?
     /// The first required command each one lacks on this Mac.
@@ -67,9 +68,9 @@ struct LibrarySection: View {
     private func load() async {
         error = nil
         do {
-            let all = try await AppModel.shared.get(ExtensionLibrary())
+            let all = try await app.get(ExtensionLibrary())
             // Where the daemon finds the tools they need; not said when it can't tell.
-            if let found = await AppModel.shared.quiet(ProcessWhich(commands: Array(Set(all.flatMap { $0.requires ?? [] })))) {
+            if let found = await app.quiet(ProcessWhich(commands: Array(Set(all.flatMap { $0.requires ?? [] })))) {
                 missing = Dictionary(uniqueKeysWithValues: all.compactMap { e in (e.requires ?? []).first { found[$0] == nil }.map { (e.id, $0) } })
             }
             entries = all.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }

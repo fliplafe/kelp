@@ -9,7 +9,9 @@ import WorkbenchKit
 @MainActor
 enum SettingsWindow {
     private(set) static var window: NSWindow?
-    static func show(section: String? = nil) {
+    /// The app's, for views not handed it yet (Quick Open).
+    static func show(section: String? = nil) { show(AppModel.shared, section: section) }
+    static func show(_ app: AppModel, section: String? = nil) {
         if let s = section { UserDefaults.standard.set(s, forKey: "settings.section") }
         let fresh = window == nil
         if fresh {
@@ -17,7 +19,7 @@ enum SettingsWindow {
                              backing: .buffered, defer: false)
             w.title = String(localized: "Settings"); w.isReleasedWhenClosed = false; w.toolbarStyle = .unified
             w.standardWindowButton(.zoomButton)?.isEnabled = false   // ⌘, brings it back, so no minimize or zoom (HIG › Settings)
-            let host = NSHostingController(rootView: SettingsView())
+            let host = NSHostingController(rootView: SettingsView().environment(app))
             host.sizingOptions = [.minSize]
             w.contentViewController = host
             w.setContentSize(NSSize(width: 860, height: 600))
@@ -33,7 +35,8 @@ enum SettingsWindow {
 struct SettingsView: View {
     @AppStorage("settings.section") private var selection = "appearance"
     @State private var query = ""
-    private var registry = ExtensionRegistry.shared
+    @Environment(AppModel.self) private var app
+    private var registry: ExtensionRegistry { app.extensions }
 
     var body: some View {
         NavigationSplitView {
@@ -90,9 +93,10 @@ private struct SectionForm: View {
 
 private struct SearchResults: View {
     let query: String
+    @Environment(AppModel.self) private var app
     var body: some View {
         let q = query.lowercased()
-        let hits = ExtensionRegistry.shared.all.settings.flatMap { s in
+        let hits = app.extensions.all.settings.flatMap { s in
             // In English and as shown (a Russian search finds Russian titles).
             s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " " + loc($0.description ?? "")).lowercased().contains(q) }
                 .map { (s, $0) }
@@ -112,7 +116,8 @@ private struct SearchResults: View {
 /// One row, typed by its spec; reads and writes settings.json through the daemon.
 struct SettingRow: View {
     let spec: SettingSpec
-    private var store = SettingsStore.shared
+    @Environment(AppModel.self) private var app
+    private var store: SettingsStore { app.settings }
     init(spec: SettingSpec) { self.spec = spec }
 
     var body: some View {
@@ -204,7 +209,8 @@ struct SettingRow: View {
 /// a change arriving from elsewhere (the CLI, an agent) shows unless the field is being edited.
 private struct SettingTextField: View {
     let key: String
-    private var store = SettingsStore.shared
+    @Environment(AppModel.self) private var app
+    private var store: SettingsStore { app.settings }
     @State private var draft = ""
     @FocusState private var editing: Bool
     init(key: String) { self.key = key }
@@ -268,7 +274,8 @@ private struct ThemeGallery: View {
 
 /// Installed extensions: turn them on or off, remove, create (by hand or with an agent); or the library's, to install.
 private struct ExtensionsSettings: View {
-    private var registry = ExtensionRegistry.shared
+    @Environment(AppModel.self) private var app
+    private var registry: ExtensionRegistry { app.extensions }
     @State private var picking = false
     @State private var library = false
     var body: some View {

@@ -11,7 +11,7 @@ final class AppModel {
     /// What's on screen, settings.json and the extensions: this app's, handed down with it (`app.workbench`…) to the
     /// window, the built-ins' contributions and their views.
     @ObservationIgnored private(set) lazy var workbench = Workbench(state: uiState)
-    @ObservationIgnored private(set) lazy var settings = SettingsStore()
+    @ObservationIgnored private(set) lazy var settings = SettingsStore(app: self)
     @ObservationIgnored private(set) lazy var extensions = ExtensionRegistry(app: self)
     @ObservationIgnored private(set) lazy var rowBadges = RowBadges(app: self)
     @ObservationIgnored private(set) lazy var uiState = UIState(app: self)

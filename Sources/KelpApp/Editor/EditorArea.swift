@@ -257,7 +257,7 @@ final class EditorArea: NSViewController {
 
     private func content(_ t: TabRef) -> TabContent? {
         if let c = contents[t.id] { return c }
-        let c = app.extensions.tabProvider(for: t.uri)?.make(t.uri) ?? UnavailableTab(uri: t.uri)
+        let c = app.extensions.tabProvider(for: t.uri)?.make(t.uri) ?? UnavailableTab(uri: t.uri, app: app)
         c.onChange = { [weak self, weak c] in
             guard let self, let gid = layout.group(of: t.id) else { return }
             if let c, c.uri != t.uri, var g = layout.groups[gid], let i = g.tabs.firstIndex(where: { $0.id == t.id }) {

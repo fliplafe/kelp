@@ -11,11 +11,13 @@ struct IDEContext {
     var project: Repo?
     var focusedFile: String?
 
-    static var current: IDEContext {
-        let w = AppModel.shared.worktree(Workbench.shared.workspaceId)
-        return IDEContext(workspace: w, project: AppModel.shared.repo(w?.repoId),
-                          focusedFile: Workbench.shared.focusedFile)
+    /// What's on screen in `app`.
+    static func of(_ app: AppModel) -> IDEContext {
+        let w = app.worktree(app.workbench.workspaceId)
+        return IDEContext(workspace: w, project: app.repo(w?.repoId), focusedFile: app.workbench.focusedFile)
     }
+    /// The app's, for views not handed it yet.
+    static var current: IDEContext { of(AppModel.shared) }
 }
 
 /// A right-inspector panel.
@@ -138,7 +140,7 @@ final class ExtensionRegistry {
     /// Built-ins a clean install starts with switched off; once settings.json has its own list, that list decides.
     static let offByDefault: Set<String> = ["kelp.activity"]
     static func disabled(_ v: JSONValue?) -> Set<String> { v?.array.map { Set($0.compactMap(\.string)) } ?? offByDefault }
-    var disabled: Set<String> { Self.disabled(SettingsStore.shared.value("extensions.disabled")) }
+    var disabled: Set<String> { Self.disabled(app.settings.value("extensions.disabled")) }
 
     func reload() {
         var infos: [ExtensionInfo] = []
@@ -165,7 +167,7 @@ final class ExtensionRegistry {
         revision += 1
         ThemeManager.shared.apply()
         AgentSkills.write()
-        AppModel.shared.publishUIState()
+        app.publishUIState()
         askTools(Set(infos.flatMap(\.requires)))
     }
 
@@ -176,7 +178,7 @@ final class ExtensionRegistry {
         askingTools = true
         Task {
             defer { askingTools = false }
-            guard let found = await AppModel.shared.quiet(ProcessWhich(commands: commands.sorted())) else { return }
+            guard let found = await app.quiet(ProcessWhich(commands: commands.sorted())) else { return }
             let now = Dictionary(uniqueKeysWithValues: commands.map { ($0, found[$0] != nil) })
             guard now.contains(where: { Self.tools[$0.key] != $0.value }) else { return }
             Self.tools.merge(now) { _, new in new }
@@ -223,7 +225,7 @@ final class ExtensionRegistry {
     /// From GitHub (the library's `source`, or any GitHub folder): downloaded, then installed once the user has seen what
     /// it runs. False when they said no or it failed (a banner says why).
     func install(source: String) async -> Bool {
-        guard let fetched = await AppModel.shared.call(ExtensionFetch(source: source)) else { return false }
+        guard let fetched = await app.call(ExtensionFetch(source: source)) else { return false }
         let folder = URL(fileURLWithPath: fetched.folder), dir = Self.userDir
         guard await ExtensionReview.approve(folder) else { try? FileManager.default.removeItem(at: folder); return false }
         do { _ = try await Task.detached { try IDE.installExtension(folder, as: folder.lastPathComponent, in: dir, move: true) }.value }
@@ -235,7 +237,7 @@ final class ExtensionRegistry {
     func setEnabled(_ id: String, _ on: Bool) {
         var off = disabled
         if on { off.remove(id) } else { off.insert(id) }
-        SettingsStore.shared.set("extensions.disabled", .array(off.sorted().map { .string($0) }))
+        app.settings.set("extensions.disabled", .array(off.sorted().map { .string($0) }))
     }
 
     func uninstall(_ id: String) {

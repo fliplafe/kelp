@@ -52,7 +52,7 @@ extension AppDelegate {
             driveInput(env)
             switch env["KELP_SNAPSHOT_WINDOW"] {
             case "history": ExtensionRegistry.shared.command("agents.history")?.run([:])
-            case "settings": SettingsWindow.show(section: env["KELP_SNAPSHOT_SECTION"])
+            case "settings": SettingsWindow.show(AppModel.shared, section: env["KELP_SNAPSHOT_SECTION"])
             default: break
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.

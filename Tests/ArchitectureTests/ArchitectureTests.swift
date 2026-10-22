@@ -254,8 +254,8 @@ private func codeOnly(_ s: String) -> String {
     let ceilings: [String: Int] = [
         "": 63,
         "Builtins/Agents": 1,
-        "Extensions": 20,
-        "Settings": 24,
+        "Extensions": 12,
+        "Settings": 11,
         "Shell": 118,
         "Sidebar": 1
     ]

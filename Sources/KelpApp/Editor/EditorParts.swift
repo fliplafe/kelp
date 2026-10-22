@@ -9,14 +9,14 @@ final class UnavailableTab: TabContent {
     let view: NSView
     var title: String { String(localized: "Turned Off") }
     var icon: NSImage? { .symbol("questionmark.square.dashed") }
-    init(uri: String) {
+    init(uri: String, app: AppModel) {
         self.uri = uri
         let icon = NSImageView(image: .symbol("puzzlepiece.extension")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
         icon.contentTintColor = .tertiaryLabelColor
         let t = NSTextField(labelWithString: String(localized: "Extension Turned Off")); t.font = .systemFont(ofSize: 13, weight: .semibold)
         let l = NSTextField(wrappingLabelWithString: String(localized: "The extension that shows “\(uri)” is turned off or was removed."))
         l.alignment = .center; l.textColor = .secondaryLabelColor
-        let b = ClosureButton(title: String(localized: "Extensions…")) { SettingsWindow.show(section: "extensions") }; b.bezelStyle = .push
+        let b = ClosureButton(title: String(localized: "Extensions…")) { SettingsWindow.show(app, section: "extensions") }; b.bezelStyle = .push
         let stack = NSStackView(views: [icon, t, l, b]); stack.orientation = .vertical; stack.spacing = 8
         let v = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(stack)
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: v.centerXAnchor), stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),

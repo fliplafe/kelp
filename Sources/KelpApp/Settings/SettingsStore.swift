@@ -9,13 +9,15 @@ import Core
 final class SettingsStore {
     /// The app's (`AppModel.settings`), for code not handed it yet.
     static var shared: SettingsStore { AppModel.shared.settings }
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     private(set) var values: [String: JSONValue] = [:]
     /// Keys with a set still on its way: the daemon's answer to an older one (a colour dragged, a stepper held) mustn't
     /// put back a value the user already moved past.
     private var inFlight: [String: Int] = [:]
 
     func load() async {
-        if let o = await AppModel.shared.call(SettingsGet()) { received(o) }   // else a banner: what's shown may not be settings.json
+        if let o = await app.call(SettingsGet()) { received(o) }   // else a banner: what's shown may not be settings.json
     }
 
     /// The daemon's settings (its event, or a load): a key still being set here keeps the value set here.
@@ -33,15 +35,15 @@ final class SettingsStore {
         values = o
         ThemeManager.shared.apply()
         if skillsChanged { AgentSkills.write() }
-        if !ExtensionRegistry.shared.extensions.isEmpty, ExtensionRegistry.disabled(o["extensions.disabled"]) != ExtensionRegistry.shared.disabledLoaded {
-            ExtensionRegistry.shared.reload()
+        if !app.extensions.extensions.isEmpty, ExtensionRegistry.disabled(o["extensions.disabled"]) != app.extensions.disabledLoaded {
+            app.extensions.reload()
         }
     }
 
     /// A setting's value, or the default its spec declares.
     func value(_ key: String) -> JSONValue? {
         if let v = values[key] { return v }
-        for s in ExtensionRegistry.shared.all.settings { if let spec = s.specs.first(where: { $0.key == key }) { return spec.default } }
+        for s in app.extensions.all.settings { if let spec = s.specs.first(where: { $0.key == key }) { return spec.default } }
         return nil
     }
     func string(_ key: String) -> String? { value(key)?.string }
@@ -59,7 +61,7 @@ final class SettingsStore {
         apply(next)   // optimistic; the daemon's echo confirms
         inFlight[key, default: 0] += 1
         Task {
-            let error = await AppModel.shared.tryCall(SettingsSet(key: key, value: v)).error
+            let error = await app.tryCall(SettingsSet(key: key, value: v)).error
             inFlight[key] = inFlight[key].flatMap { $0 > 1 ? $0 - 1 : nil }
             // Not saved: say so and show what settings.json really holds again, instead of a value that reverts later.
             if let error {

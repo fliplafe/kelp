@@ -182,7 +182,7 @@ extension EditorArea {
                 QuickOpen.shared.showTmux()
             }
         }
-        let ctx = IDEContext.current
+        let ctx = IDEContext.of(app)
         let editors = app.extensions.all.editors
         if !editors.isEmpty { m.addItem(.separator()) }
         for e in editors {

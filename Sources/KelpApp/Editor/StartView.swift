@@ -55,7 +55,7 @@ final class StartView: NSView, NSTextFieldDelegate {
         // Changes live in Source Control; the rest of what extensions open is offered here.
         for e in app.extensions.all.editors where e.id != "git.review" {
             let key = app.extensions.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
-            others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.current) })
+            others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.of(app)) })
         }
         let card = StartCard(rows: rows, others: others)
 

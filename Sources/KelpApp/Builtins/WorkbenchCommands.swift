@@ -9,8 +9,8 @@ extension Builtins {
                                    icon: "macwindow", essential: true) { app in
         var c = Contributions()
         c.commands = [
-            cmd("workbench.openSettings", "Settings…", "cmd+,") { SettingsWindow.show() },
-            cmd("workbench.openExtensions", "Extensions…") { SettingsWindow.show(section: "extensions") },
+            cmd("workbench.openSettings", "Settings…", "cmd+,") { SettingsWindow.show(app) },
+            cmd("workbench.openExtensions", "Extensions…") { SettingsWindow.show(app, section: "extensions") },
             cmd("workbench.restartService", "Restart Background Service…") { restartService(app) },
             cmd("workbench.toggleSidebar", "Show Sidebar", "cmd+0") { Workbench.window?.toggleSidebarPanel() },
             cmd("workbench.toggleInspector", "Show Inspector", "opt+cmd+0") { Workbench.window?.toggleInspectorPanel() },
