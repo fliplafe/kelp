@@ -1,9 +1,41 @@
+<div align="center">
+
+<img src="docs/kelp-logo.png" alt="Kelp logo" width="120" height="120" />
+
 # Kelp
 
-A native macOS IDE between a classic editor like VS Code and an agent app like Claude Desktop: agents work side by
-side, and the code they touch is one tab away to read, review and edit.
+**A native macOS IDE for coding agents.**<br/>
+Between a classic editor like VS Code and an agent app like Claude Desktop: agents work side by side, and the code
+they touch is one tab away to read, review and edit.
 
-![An agent's finished change next to its diff, Source Control on the right, every workspace's agents in the sidebar](docs/screenshots/agent-and-diff.png)
+[![Latest release](https://img.shields.io/github/v/release/nikiomori/kelp?label=release&color=brightgreen)](https://github.com/nikiomori/kelp/releases/latest)
+[![CI](https://github.com/nikiomori/kelp/actions/workflows/ci.yml/badge.svg)](https://github.com/nikiomori/kelp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform: macOS 14+](https://img.shields.io/badge/platform-macOS%2014%2B%20·%20Apple%20Silicon%20%26%20Intel-lightgrey.svg)](#install)
+
+<p>
+  <a href="#features"><b>Features</b></a> ·
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#cli"><b>CLI</b></a> ·
+  <a href="#extensions"><b>Extensions</b></a> ·
+  <a href="docs/architecture.md"><b>Architecture</b></a>
+</p>
+
+<a href="https://github.com/nikiomori/kelp/releases/latest/download/Kelp.dmg">
+  <img src="https://img.shields.io/badge/Download_for_macOS-Free-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="Download Kelp for macOS" />
+</a>
+
+<br/><br/>
+
+<img src="docs/screenshots/agent-and-diff.png" alt="An agent's finished change next to its diff, Source Control on the right, every workspace's agents in the sidebar" />
+
+<sub>*An agent's change, its diff and Source Control side by side. The sidebar shows every workspace's agents.*</sub>
+
+</div>
+
+---
+
+## Features
 
 - **Code at hand.** Editor with language servers, file tree, diffs, browser; any tab in any split.
 - **Agents first.** Claude Code, Codex, OpenCode, Gemini CLI and 15 more out of the box, or any CLI. Live status,
@@ -13,12 +45,18 @@ side, and the code they touch is one tab away to read, review and edit.
 - **Extensible.** Panels, commands and themes come from extensions; a JSON file is enough.
 - **Native.** Swift + AppKit, terminal on libghostty. No Electron, no cloud, no telemetry.
 
-![An agent waiting on a question; the sidebar counts who needs you](docs/screenshots/agent-asks.png)
+<div align="center">
+
+<img src="docs/screenshots/agent-asks.png" alt="An agent waiting on a question; the sidebar counts who needs you" />
+
+<sub>*An agent asks before it changes anything. The sidebar counts who needs you; <kbd>⇧⌘U</kbd> goes to the next one.*</sub>
+
+</div>
 
 ## Install
 
-Requires macOS 14+. Download `Kelp.dmg` from [Releases](https://github.com/nikiomori/kelp/releases/latest) and drag
-Kelp to Applications; it updates itself (Kelp › Check for Updates…). Kelp's terminals have `kelp` on their PATH; for
+Requires macOS 14+. Download [`Kelp.dmg`](https://github.com/nikiomori/kelp/releases/latest/download/Kelp.dmg) and
+drag Kelp to Applications; it updates itself (Kelp › Check for Updates…). Kelp's terminals have `kelp` on their PATH; for
 other terminals: `ln -s /Applications/Kelp.app/Contents/MacOS/kelp /usr/local/bin/kelp`.
 
 ## Build and run
