@@ -145,7 +145,7 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             let w = m.worktree(s.worktreeId)
             count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
-            mark.status = s.endedWithError ? .error : s.status; mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
+            mark.status = s.endedWithError ? .error : Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt)
             showState(s)
@@ -194,7 +194,7 @@ final class SidebarCell: NSTableCellView {
     static func shownStatus(_ s: Session) -> AgentStatus { s.status == .hibernated && s.unread ? .done : s.markStatus }
 
     /// Something to look at: finished or asking, and not opened since (bold, like unread mail).
-    static func isNews(_ s: Session) -> Bool { s.unread && (s.status == .done || s.status == .waiting || s.status == .error) }
+    static func isNews(_ s: Session) -> Bool { s.unread && [.done, .waiting, .error].contains(shownStatus(s)) }
 
     func beginEditing(delegate: NSTextFieldDelegate) {
         title.isEditable = true; title.isSelectable = true; title.drawsBackground = true; title.delegate = delegate

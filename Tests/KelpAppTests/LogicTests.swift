@@ -66,6 +66,7 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(SidebarCell.wantsYou(session(.hibernated, unread: true)))   // paused, but it finished and you haven't looked
     #expect(!SidebarCell.wantsYou(session(.hibernated)))
     #expect(SidebarCell.isNews(session(.done, unread: true)) && !SidebarCell.isNews(session(.idle, unread: true)) && !SidebarCell.isNews(session(.done)))
+    #expect(SidebarCell.isNews(session(.hibernated, unread: true)))   // bold as long as it's counted
 }
 
 @MainActor @Test func activityNumbersAndPercentagesAreReadable() {
