@@ -16,9 +16,15 @@ daemon.info
 daemon.shutdown
 extension.fetch
 extension.library
+files.copy
+files.create
 files.list
+files.move
+files.read
 files.readRemote
 files.search
+files.trash
+files.write
 files.writeRemote
 git.branches
 git.commit

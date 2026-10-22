@@ -74,13 +74,25 @@ public struct LineBuffer: Sendable {
     private var buf = Data()
     public init() {}
     /// Only the new bytes are searched and the consumed lines dropped once: a multi-MB reply arrives in 8 KB reads,
-    /// and rescanning (and shifting) the whole buffer on each one was quadratic.
+    /// and rescanning (and shifting) the whole buffer on each one was quadratic. Searched with memchr: `firstIndex(of:)`
+    /// went byte by byte through Data's indices, 36 ms for a 5 MB line in a debug build.
     public mutating func append(_ d: Data) -> [Data] {
-        var from = buf.endIndex   // the bytes already here hold no newline
+        let from = buf.count   // the bytes already here hold no newline
         buf.append(d)
-        var out: [Data] = [], start = buf.startIndex
-        while let i = buf[from...].firstIndex(of: 0x0A) { out.append(buf[start..<i]); start = i + 1; from = start }
-        if start != buf.startIndex { buf = Data(buf[start...]) }
+        var ends: [Int] = []
+        buf.withUnsafeBytes { (p: UnsafeRawBufferPointer) in
+            guard let base = p.baseAddress else { return }
+            var at = from
+            while at < p.count, let hit = memchr(base + at, 0x0A, p.count - at) {
+                at = base.distance(to: UnsafeRawPointer(hit)) + 1
+                ends.append(at - 1)
+            }
+        }
+        guard !ends.isEmpty else { return [] }
+        let s = buf.startIndex
+        var out: [Data] = [], start = 0
+        for e in ends { out.append(buf[(s + start)..<(s + e)]); start = e + 1 }
+        buf = Data(buf[(s + start)...])
         return out
     }
     /// Bytes received after the last complete line (a connection switching to a raw stream keeps them).
