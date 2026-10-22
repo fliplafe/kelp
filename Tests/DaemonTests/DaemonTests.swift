@@ -382,13 +382,11 @@ final class NoteBox: @unchecked Sendable {
     await #expect(throws: (any Error).self) { try await c.call("repo.clone", .obj(["url": .string(src), "parent": .string(parent), "id": "b"])) }
     await #expect(throws: (any Error).self) { try await c.call("repo.clone", .obj(["url": .string(src + "-missing"), "parent": .string(parent), "id": "c"])) }
     #expect(!FileManager.default.fileExists(atPath: parent + "/" + name + "-missing"))
-    // Add Project's New Folder: an empty folder becomes a project; one with files and no git stays an error.
+    // Add Project's New Folder: an empty folder is asked about like any other outside git, then made a repository.
     try FileManager.default.createDirectory(atPath: parent + "/empty", withIntermediateDirectories: false)
-    let e = try await c.call("repo.add", .obj(["path": .string(parent + "/empty")]))
+    await #expect(throws: RepoAdd.notARepository) { try await c.call("repo.add", .obj(["path": .string(parent + "/empty")])) }
+    let e = try await c.call("repo.add", .obj(["path": .string(parent + "/empty"), "init": true]))
     #expect(e["name"]?.string == "empty" && FileManager.default.fileExists(atPath: parent + "/empty/.git"))
-    try FileManager.default.createDirectory(atPath: parent + "/loose", withIntermediateDirectories: false)
-    FileManager.default.createFile(atPath: parent + "/loose/a.txt", contents: Data())
-    await #expect(throws: (any Error).self) { try await c.call("repo.add", .obj(["path": .string(parent + "/loose")])) }
 }
 
 /// A busy session's CPU and memory come back as its own, summed over what runs under it.

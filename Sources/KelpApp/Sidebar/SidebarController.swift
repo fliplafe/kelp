@@ -166,7 +166,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let icon = NSImageView(image: .symbol("folder.badge.plus")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
         icon.contentTintColor = .tertiaryLabelColor
         let t = NSTextField(labelWithString: String(localized: "No Projects")); t.font = .ui(13, weight: .semibold)
-        let d = NSTextField(wrappingLabelWithString: String(localized: "Add a git repository to start.")); d.textColor = .secondaryLabelColor; d.alignment = .center
+        let d = NSTextField(wrappingLabelWithString: String(localized: "Add a project folder to start.")); d.textColor = .secondaryLabelColor; d.alignment = .center
         let b = ClosureButton(title: String(localized: "Add Project…")) { Workbench.addProject() }; b.bezelStyle = .push
         [icon, t, d, b].forEach { empty.addArrangedSubview($0) }
         empty.orientation = .vertical; empty.spacing = 8

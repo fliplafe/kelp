@@ -3,9 +3,13 @@ import Foundation
 // Projects (repos), their workspaces (worktrees: desks in the project's folder, or git worktrees of their own) and the
 // sessions in them. Results are the records (Repo, Worktree, Session) or what's noted.
 
+/// A folder in a repository adds the repository. One outside any: `init` true runs `git init` there, false adds the
+/// folder as it is (no git), and without `init` the call fails with `notARepository` (the app asks which).
 public struct RepoAdd: RPCMethod {
-    public static let name = "repo.add"; public typealias Result = Repo; public var path: String, name: String?
-    public init(path: String, name: String? = nil) { self.path = path; self.name = name }
+    public static let name = "repo.add"; public typealias Result = Repo; public var path: String, name: String?, `init`: Bool?
+    public init(path: String, name: String? = nil, `init`: Bool? = nil) { self.path = path; self.name = name; self.`init` = `init` }
+    public static let notARepository = RPCError(
+        code: -32003, message: "Not a Git repository: add it with init true (git init there) or false (as it is, without git); kelp repo add --init or --no-git.")
 }
 public struct RepoList: RPCMethod { public static let name = "repo.list"; public typealias Result = [Repo]; public init() {} }
 /// The scratch project's workspace, made (with a git repo of its own) the first time.

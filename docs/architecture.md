@@ -17,7 +17,7 @@ contributions, the command palette and settings.
 ```
 
 ## Concepts
-- **Project**: a git repository (`repo.*` RPCs).
+- **Project**: a folder, usually a git repository; one added without git still has files, terminals and agents (`repo.*` RPCs).
 - **Workspace**: a desk in the project's folder — its own tabs, splits and agents, nothing on disk
   (`workspace.create`, stored as worktree records whose path is the repo path). "+" opens a new one instantly,
   named "Workspace N" until its first agent prompt names it; several desks share the folder.

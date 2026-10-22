@@ -7,7 +7,7 @@ enum Help {
     # How Kelp works
 
     ## Projects, workspaces, agents
-    - **Project** — a folder with a git repository (the folder button over the sidebar, or File › Add Project…, ⌘O).
+    - **Project** — a folder, usually a git repository (the folder button over the sidebar, or File › Add Project…, ⌘O).
       It's a section in the sidebar.
     - **Workspace** — a clean desk in that folder: its own tabs, splits and agents. **+** next to the project (⌘N) opens one
       at once; it's named after the first thing you ask an agent. Rename with a double-click; close with ⇧⌘W (agents stop,
@@ -60,7 +60,8 @@ enum Help {
 
     ## Adding projects
     File › Add Project… (⌘O), or drop a folder on the sidebar or on Kelp's Dock icon, or run `open -a Kelp .` in a folder.
-    A new empty folder becomes a new project (`git init`). File › Clone Repository… and Open over SSH… are the other ways in.
+    A folder that isn't a Git repository asks first: Initialize Git, or Open Without Git (files, terminals and agents work;
+    Source Control waits for `git init`). File › Clone Repository… and Open over SSH… are the other ways in.
 
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·

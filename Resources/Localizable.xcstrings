@@ -613,12 +613,12 @@
         }
       }
     },
-    "Add a git repository to start.": {
+    "Add a project folder to start.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Добавьте git-репозиторий, чтобы начать."
+            "value": "Добавьте папку проекта, чтобы начать."
           }
         }
       }
@@ -3178,6 +3178,26 @@
         }
       }
     },
+    "Initialize Git": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инициализировать Git"
+          }
+        }
+      }
+    },
+    "Initialize Git to see changes, diffs and branches here, or open the folder without it.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Инициализируйте Git, чтобы видеть здесь изменения, диффы и ветки, или откройте папку без него."
+          }
+        }
+      }
+    },
     "Inline": {
       "localizations": {
         "ru": {
@@ -4926,6 +4946,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открыть настройки"
+          }
+        }
+      }
+    },
+    "Open Without Git": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть без Git"
           }
         }
       }
@@ -8433,6 +8463,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "«%@» в архиве. Вернуть — Окно › Архивные рабочие области."
+          }
+        }
+      }
+    },
+    "“%@” isn't a Git repository": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» — не Git-репозиторий"
           }
         }
       }

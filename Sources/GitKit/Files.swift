@@ -8,7 +8,8 @@ extension ProjectFiles {
     /// checkout's cone ("S", never checked by git) a file is kept only if it's there. The first `limit`.
     public static func list(_ root: String, limit: Int = listLimit) throws -> [String] {
         let a = ["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"]
-        let r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit)
+        let r: (data: Data, truncated: Bool)
+        do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit) } catch where outsideGit(error) { return walk(root, limit: limit) }
         let lines: [Substring] = String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self)
             .split(separator: "\0").filter { $0.count > 2 }
         let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
@@ -18,6 +19,21 @@ extension ProjectFiles {
             return !l.hasPrefix("S ") || remote || FileManager.default.fileExists(atPath: root + "/" + l.dropFirst(2))
         }.prefix(limit).map { String($0.dropFirst(2)) } as [String]
         guard !r.truncated || files.count >= limit else { throw Git.tooMuch(a) }
+        return files
+    }
+
+    /// A project added without git: no repository around `root`.
+    static func outsideGit(_ e: Error) -> Bool { (e as? GitError)?.stderr.contains("not a git repository") == true }
+
+    /// A folder without git, walked here. Limit: hidden files and folders are left out, as there's no .gitignore to say
+    /// what else to skip (.venv, .cache); a folder with more than `limit` files (node_modules) shows the first ones.
+    static func walk(_ root: String, limit: Int) -> [String] {
+        guard let e = FileManager.default.enumerator(atPath: root) else { return [] }
+        var files: [String] = []
+        while files.count < limit, let p = e.nextObject() as? String {
+            if (p as NSString).lastPathComponent.hasPrefix(".") { e.skipDescendants(); continue }
+            if e.fileAttributes?[.type] as? FileAttributeType == .typeRegular { files.append(p) }
+        }
         return files
     }
 
@@ -40,7 +56,10 @@ extension ProjectFiles {
             a = ["grep", "-n", "-z", "--untracked", "-I"]
             if !regex { a.append("-F") }
             if !caseSensitive { a.append("-i") }
-            r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput)
+            do { r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput) } catch where outsideGit(error) {
+                a = a.map { $0 == "--untracked" ? "--no-index" : $0 }   // a folder without git: its files as they are
+                r = try Git.runPart(a + ["-e", query], cwd: root, ok: [0, 1], limit: searchOutput)
+            }
         }
         let found = parseGrep(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0x0A) : r.data, as: UTF8.self), limit: limit)
         // Cut off before `limit` matches: lines that long (git grep has no column limit) are past showing anyway.

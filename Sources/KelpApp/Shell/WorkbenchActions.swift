@@ -80,7 +80,7 @@ extension Workbench {
     }
 
     static func addProject() {
-        // A new folder made here is a new project (repo.add runs `git init` in an empty one). Clone and SSH are their own commands.
+        // A new folder made here is a new project (asked whether to `git init` it). Clone and SSH are their own commands.
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
         p.message = String(localized: "Choose a project folder, or make a new one"); p.prompt = String(localized: "Add Project")
         let chosen = { (r: NSApplication.ModalResponse) in
@@ -97,10 +97,29 @@ extension Workbench {
         Task {
             let m = AppModel.shared
             await m.waitForConnection()   // opened at launch
-            guard let rid = await m.call(RepoAdd(path: path))?.id else { return }
+            guard let rid = await repoAdd(path, m)?.id else { return }
             await m.refresh()
             let ws = m.repo(rid).map(m.workspaces(of:)) ?? []
             if let w = ws.first(where: { $0.id == shared.workspaceId }) ?? ws.first { show(workspace: w.id) }
+        }
+    }
+
+    /// The folder's project; one outside any repository is asked about first: made one (`git init`) or added as it is.
+    private static func repoAdd(_ path: String, _ m: AppModel) async -> Repo? {
+        do { return try await m.get(RepoAdd(path: path)) } catch let e as RPCError where e.code == RepoAdd.notARepository.code {
+            let a = NSAlert()
+            a.messageText = String(localized: "“\((path as NSString).lastPathComponent)” isn't a Git repository")
+            a.informativeText = String(localized: "Initialize Git to see changes, diffs and branches here, or open the folder without it.")
+            a.addButton(withTitle: String(localized: "Initialize Git"))
+            a.addButton(withTitle: String(localized: "Open Without Git"))
+            a.addButton(withTitle: String(localized: "Cancel")).keyEquivalent = "\u{1b}"
+            switch await runSheet(a) {
+            case .alertFirstButtonReturn: return await m.call(RepoAdd(path: path, init: true))
+            case .alertSecondButtonReturn: return await m.call(RepoAdd(path: path, init: false))
+            default: return nil
+            }
+        } catch {
+            Banner.show(AppModel.message(error), style: .error); return nil
         }
     }
 

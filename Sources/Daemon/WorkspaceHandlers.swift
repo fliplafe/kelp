@@ -9,11 +9,16 @@ extension RepoAdd: Handled {
     func handle(_ d: Daemon) throws -> Repo {
         // A remote project's own folder: it is the project (git there would answer with the host's path).
         if let r = try d.store.repos().first(where: { $0.path == path && RemoteHost.of($0.path) != nil }) { return r }
-        // An empty folder outside any repository (New Folder in Add Project's panel) is a new project: `git init` there.
-        if (try? FileManager.default.contentsOfDirectory(atPath: path))?.isEmpty == true, (try? Git.root(of: path)) == nil {
-            try Git.run(["init", "-q"], cwd: path)
+        var dir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &dir), dir.boolValue else { throw RPCError.invalidParams("No folder at \(path).") }
+        let root: String
+        if let top = try? Git.root(of: path) { root = top } else {
+            switch `init` {
+            case true?: try Git.run(["init", "-q"], cwd: path); root = try Git.root(of: path)
+            case false?: root = Paths.real(path) ?? path   // like git's top: symlinks resolved
+            case nil: throw RepoAdd.notARepository
+            }
         }
-        let root = try Git.root(of: path)
         if let r = try d.store.repos().first(where: { $0.path == root }) { return r }
         let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root))
         try d.store.save(r); try d.workspaces.syncMainWorkspaces(); d.notify(ChangedEvent.repo)

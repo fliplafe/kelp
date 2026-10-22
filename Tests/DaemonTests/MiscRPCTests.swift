@@ -528,3 +528,25 @@ func trustQuestionStandIn() -> String {
     try "{}".write(toFile: plain + "/.mcp.json", atomically: true, encoding: .utf8)
     #expect(!AgentUsage.quietFolder(plain, base: nil))
 }
+
+/// A folder outside any repository is asked about (no silent `git init`): added as it is, its files are listed and
+/// searched without git; with init it becomes a repository.
+@Test func aFolderWithoutGitIsAskedAboutThenAddedAsItIsOrInitialized() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let plain = tmp().path
+    try "hello\n".write(toFile: plain + "/a.txt", atomically: true, encoding: .utf8)
+    try FileManager.default.createDirectory(atPath: plain + "/.hidden", withIntermediateDirectories: true)
+    try "x\n".write(toFile: plain + "/.hidden/b.txt", atomically: true, encoding: .utf8)
+    do { _ = try await w.c.call("repo.add", .obj(["path": .string(plain)])); Issue.record("added without asking") }
+    catch let e as RPCError { #expect(e.code == RepoAdd.notARepository.code) }
+    #expect(!FileManager.default.fileExists(atPath: plain + "/.git"))
+    let r = try await w.c.call("repo.add", .obj(["path": .string(plain), "init": false]), as: Repo.self)
+    #expect(!FileManager.default.fileExists(atPath: plain + "/.git"))
+    let desk = try #require(try await w.c.call("worktree.list", .obj(["repoId": .string(r.id)]), as: [Worktree].self).first)
+    #expect(try await w.c.call("files.list", .obj(["id": .string(desk.id)]), as: [String].self) == ["a.txt"])
+    #expect(try ProjectFiles.search(plain, query: "hello").map(\.path) == ["a.txt"])
+    #expect(try await w.c.call("repo.add", .obj(["path": .string(plain), "init": false]), as: Repo.self).id == r.id)   // once
+    let other = tmp().path
+    _ = try await w.c.call("repo.add", .obj(["path": .string(other), "init": true]), as: Repo.self)
+    #expect(FileManager.default.fileExists(atPath: other + "/.git"))
+}

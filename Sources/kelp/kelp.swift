@@ -5,7 +5,8 @@ import Core
 let usage = """
 usage: kelp <command>
   status                               repos, worktrees and sessions at a glance
-  repo add [path] | repo list
+  repo add [path] [--init | --no-git] | repo list
+                                       a folder outside a repository needs one: git init it, or add it without git
   worktree create <branch> [--repo id] [--base b] | list | current | note <text> | remove <id> [--force] [--drop-commits] | archive <id>
   session new [--agent id] [--worktree id] [--cmd "..."] [--split right|down] [--wait] | list
                                        --split opens its tab beside yours; --wait prints its id, then exits with
@@ -189,7 +190,9 @@ func plist() -> String {
                     }
                 }
             }
-        case ("repo", "add"): show(try await c.call(RepoAdd(path: args.first ?? FileManager.default.currentDirectoryPath)))
+        case ("repo", "add"):
+            let git: Bool? = has("--init") ? true : has("--no-git") ? false : nil
+            show(try await c.call(RepoAdd(path: args.first ?? FileManager.default.currentDirectoryPath, init: git)))
         case ("repo", "list"): show(try await c.call(RepoList()))
         case ("worktree", "create"):
             guard let b = args.first, !b.hasPrefix("-") else { fail("worktree create <branch>") }
