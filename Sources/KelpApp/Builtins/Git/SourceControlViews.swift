@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 struct RowAction {
     let symbol: String, title: String, run: @MainActor () -> Void
@@ -146,31 +147,51 @@ final class NoteCell: NSTableCellView {
 final class CommitCell: NSTableCellView {
     private let subject: NSTextField, up = NSImageView()
 
+    /// The commit's line; its branches and tags get a line of their own under it, so they never squeeze the words.
+    static var lineHeight: CGFloat { TextSize.of(22) }
+    static func height(_ c: GraphCommit) -> CGFloat { lineHeight + (labels(c.refs).isEmpty ? 0 : TextSize.of(17)) }
+
     /// `pushed` is nil without a remote; pushed commits recede so the local ones above them stand out.
     /// A commit that just reached the remote (`landsAfter`) starts as it was and lands after that many seconds.
     init(_ c: GraphCommit, graphWidth: CGFloat, isHead: Bool, pushed: Bool?, landsAfter delay: Double? = nil) {
-        subject = NSTextField(labelWithString: c.subject)
+        let s = CommitSubject(c.subject)
+        subject = NSTextField(labelWithString: s.text)
         super.init(frame: .zero)
         let unpushed = pushed == false
-        let g = GraphView(); g.commit = c; g.isHead = isHead
+        let g = GraphView(); g.commit = c; g.isHead = isHead; g.dotY = Self.lineHeight / 2
         g.translatesAutoresizingMaskIntoConstraints = false; addSubview(g)
         subject.font = .ui(12, weight: isHead ? .semibold : .regular)
         subject.textColor = pushed == true && delay == nil ? .secondaryLabelColor : .labelColor
         subject.lineBreakMode = .byTruncatingTail; subject.setContentCompressionResistancePriority(.init(200), for: .horizontal)
-        let badges = Self.badges(c.refs)
+        // A breaking change ("feat!:"): a red "!" before the words.
+        let bang = s.breaking ? NSTextField(labelWithString: "!") : nil
+        bang?.font = .ui(12, weight: .bold); bang?.textColor = .systemRed; bang?.setAccessibilityLabel(String(localized: "Breaking change"))
+        let mark = Self.mark(s, merge: c.parents.count > 1).map { m in
+            let v = NSImageView(image: .symbol(m.symbol, s.type ?? String(localized: "Merge commit")))
+            v.symbolConfiguration = .init(pointSize: 10, weight: .medium); v.contentTintColor = m.color
+            v.widthAnchor.constraint(equalToConstant: 13).isActive = true
+            return v
+        }
+        let scope = NSTextField(labelWithString: s.scope ?? ""); scope.font = .ui(11); scope.textColor = .tertiaryLabelColor
+        scope.lineBreakMode = .byTruncatingTail; scope.setContentCompressionResistancePriority(.init(250), for: .horizontal)
+        scope.widthAnchor.constraint(lessThanOrEqualToConstant: TextSize.of(80)).isActive = true
         let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .tertiaryLabelColor
         // Not on the remote yet: an arrow before the time, as in GitHub Desktop.
         let notPushed = String(localized: "Not pushed yet")
         up.image = .symbol("arrow.up", notPushed); up.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
         up.contentTintColor = .secondaryLabelColor; up.toolTip = notPushed; up.isHidden = !unpushed && delay == nil
         if let delay { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1 + delay) { [weak self] in self?.land() } }
-        let row = NSStackView(views: [subject] + badges + [NSView(), up, date]); row.spacing = 5; row.alignment = .centerY
-        row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
+        let row = NSStackView(views: [mark, bang, subject].compactMap { $0 } + [NSView(), scope, up, date]); row.spacing = 5; row.alignment = .centerY
+        if let bang { row.setCustomSpacing(2, after: bang) }
+        let refs = NSStackView(views: Self.badges(c.refs)); refs.spacing = 4; refs.isHidden = refs.views.isEmpty
+        for v in [row, refs] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         NSLayoutConstraint.activate([
             g.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6), g.topAnchor.constraint(equalTo: topAnchor),
             g.bottomAnchor.constraint(equalTo: bottomAnchor), g.widthAnchor.constraint(equalToConstant: graphWidth),
             row.leadingAnchor.constraint(equalTo: g.trailingAnchor, constant: 2), row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor)
+            row.topAnchor.constraint(equalTo: topAnchor), row.heightAnchor.constraint(equalToConstant: Self.lineHeight),
+            refs.leadingAnchor.constraint(equalTo: subject.leadingAnchor), refs.topAnchor.constraint(equalTo: row.bottomAnchor, constant: -1),
+            refs.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10)
         ])
         let when = Date(timeIntervalSince1970: c.date).formatted(date: .abbreviated, time: .shortened)
         toolTip = "\(c.subject)\n\n\(c.author) · \(when)\n\(c.hash.prefix(10))" + (c.refs.isEmpty ? "" : "\n" + c.refs.joined(separator: ", "))
@@ -198,8 +219,33 @@ final class CommitCell: NSTableCellView {
         subject.layer?.add(settle, forKey: "land"); subject.textColor = .secondaryLabelColor
     }
 
-    /// Local branches and tags (HEAD's branch first); a remote ref shows only when no local branch of that name is here.
+    /// The commit's type as an SF Symbol; the colour repeats the shape, it never stands alone. A merge without a type
+    /// gets git's merge mark; any other subject none.
+    static func mark(_ s: CommitSubject, merge: Bool) -> (symbol: String, color: NSColor)? {
+        switch s.type {
+        case "feat": ("sparkle", .systemGreen)
+        case "fix": ("ladybug", .systemOrange)
+        case "refactor": ("arrow.triangle.2.circlepath", .systemPurple)
+        case "perf": ("bolt", .systemYellow)
+        case "docs": ("doc.text", .systemCyan)
+        case "test": ("flask", .systemIndigo)
+        case "build", "ci": ("hammer", .secondaryLabelColor)
+        case "chore": ("wrench.adjustable", .secondaryLabelColor)
+        case "style": ("paintbrush", .systemPink)
+        case "revert": ("arrow.uturn.backward", .systemRed)
+        default: merge ? ("arrow.triangle.merge", .secondaryLabelColor) : nil
+        }
+    }
+
     static func badges(_ refs: [String]) -> [NSView] {
+        let out = labels(refs)
+        var views: [NSView] = out.prefix(2).map { Badge(text: $0.0, color: $0.1, strong: $0.2) }
+        if out.count > 2 { views.append(Badge(text: "+\(out.count - 2)", color: .secondaryLabelColor, strong: false)) }
+        return views
+    }
+
+    /// Local branches and tags (HEAD's branch first); a remote ref shows only when no local branch of that name is here.
+    static func labels(_ refs: [String]) -> [(String, NSColor, Bool)] {
         var out: [(String, NSColor, Bool)] = []
         let locals = Set(refs.compactMap { r -> String? in
             if r.hasPrefix("HEAD -> ") { return String(r.dropFirst(8)) }
@@ -212,9 +258,7 @@ final class CommitCell: NSTableCellView {
             else if r.contains("/") { if !locals.contains(String(r.drop { $0 != "/" }.dropFirst())) { out.append((r, .secondaryLabelColor, false)) } }
             else { out.append((r, .controlAccentColor, false)) }
         }
-        var views: [NSView] = out.prefix(2).map { Badge(text: $0.0, color: $0.1, strong: $0.2) }
-        if out.count > 2 { views.append(Badge(text: "+\(out.count - 2)", color: .secondaryLabelColor, strong: false)) }
-        return views
+        return out
     }
 
     static func relative(_ t: Double) -> String {
@@ -263,6 +307,8 @@ final class GraphView: NSView {
 
     var commit: GraphCommit?
     var isHead = false
+    /// Where the dot sits: the middle of the commit's first line (a row with branches under it is taller).
+    var dotY: CGFloat?
     /// Under an expanded commit: just these lanes, straight down.
     var through: [Int]?
     override var isFlipped: Bool { true }
@@ -276,7 +322,7 @@ final class GraphView: NSView {
             return
         }
         guard let c = commit else { return }
-        let mid = bounds.height / 2
+        let mid = dotY ?? bounds.height / 2
         func segment(_ l: [Int], from y0: CGFloat, to y1: CGFloat, color: NSColor) {
             guard l.count == 2 else { return }
             let x0 = Self.x(l[0]), x1 = Self.x(l[1]), p = NSBezierPath()

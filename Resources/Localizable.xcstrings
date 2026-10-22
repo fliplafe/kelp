@@ -10609,6 +10609,26 @@
           }
         }
       }
+    },
+    "Merge commit": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Коммит слияния"
+          }
+        }
+      }
+    },
+    "Breaking change": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ломающее изменение"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
