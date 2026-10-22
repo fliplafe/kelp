@@ -47,3 +47,19 @@ private let env = ProcessInfo.processInfo.environment
     let whole = try Subprocess.run(["/bin/sh", "-c", "head -c 1048576 /dev/zero"], cwd: "/tmp", env: env, timeLimit: 30, limit: 1 << 20)
     #expect(whole.stdout.count == 1 << 20 && !whole.truncated)   // exactly the limit is all of it
 }
+
+/// A process is known by its pid and start time: the SIGKILL that follows a SIGTERM (`killLater`) goes only to the same
+/// process, never to one given its pid since.
+@Test func aProcessIsKnownByItsStartTime() throws {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sleep"); p.arguments = ["30"]
+    try p.run()
+    let pid = p.processIdentifier
+    let t = try #require(Subprocess.started(pid))
+    #expect(Subprocess.started(pid) == t)
+    #expect(Subprocess.started(getpid()).map { $0 < t } == true)   // this test started first
+    Subprocess.killLater([pid], after: 0)
+    p.waitUntilExit()
+    #expect(p.terminationReason == .uncaughtSignal && p.terminationStatus == SIGKILL)
+    #expect(Subprocess.started(pid) == nil)
+}

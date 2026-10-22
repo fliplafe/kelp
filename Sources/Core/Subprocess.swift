@@ -83,11 +83,27 @@ public enum Subprocess {
 
     /// SIGTERM to `pid` and everything it started, children first (found before the parent goes, while they're still its),
     /// then SIGKILL to whatever is left after 2 s: one that ignores SIGTERM would hold the pipes for good.
-    /// Limit: a pid could be reused within those 2 s; start times would rule that out.
     public static func stopTree(_ pid: pid_t) {
         let all = tree(pid)
         for p in all.reversed() { kill(p, SIGTERM) }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { for p in all where kill(p, 0) == 0 { kill(p, SIGKILL) } }
+        killLater(all, after: 2)
+    }
+
+    /// SIGKILL after `delay` to those of `pids` still running: the same processes, by their start time, not ones that
+    /// were given a pid of theirs since.
+    public static func killLater(_ pids: [pid_t], after delay: TimeInterval) {
+        let born = pids.map { ($0, started($0)) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+            for (p, t) in born where t != nil && started(p) == t { kill(p, SIGKILL) }
+        }
+    }
+
+    /// When `pid` started (µs since 1970); nil once there's no such process.
+    public static func started(_ pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
     /// `pid` and its descendants, parents before children.

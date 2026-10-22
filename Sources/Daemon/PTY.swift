@@ -216,7 +216,6 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     /// Hangup and SIGTERM to the program and everything it started (a server in a shell's job too), then SIGKILL to
     /// whatever is still there after `grace` seconds (some TUIs ignore SIGTERM, servers treat SIGHUP as "reload").
     /// Returns them all, for `Sessions.waitGone`.
-    /// Limit: a descendant's pid could be reused within `grace`; checking start times would rule that out.
     @discardableResult
     public func terminate(grace: TimeInterval = 2) -> [pid_t] {
         let all = tree()
@@ -224,8 +223,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         for p in all.dropFirst() { Darwin.kill(p, SIGHUP); Darwin.kill(p, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + grace) { [self] in   // keeps the PTY, and so `reaped`, until then
             signal { if Darwin.kill($0, 0) == 0 { Darwin.kill(-$0, SIGKILL); Darwin.kill($0, SIGKILL) } }
-            for p in all.dropFirst() where Darwin.kill(p, 0) == 0 { Darwin.kill(p, SIGKILL) }
         }
+        Subprocess.killLater(Array(all.dropFirst()), after: grace)
         return all
     }
 
