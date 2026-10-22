@@ -116,7 +116,11 @@ struct ExtensionInfo: Identifiable {
 @MainActor
 @Observable
 final class ExtensionRegistry {
-    static let shared = ExtensionRegistry()
+    /// The app's (`AppModel.extensions`), for code not handed it yet.
+    static var shared: ExtensionRegistry { AppModel.shared.extensions }
+    /// The app whose extensions these are: built-ins contribute with it.
+    let app: AppModel
+    init(app: AppModel) { self.app = app }
     private(set) var extensions: [ExtensionInfo] = []
     private(set) var all = Contributions()
     /// Bumped on every reload so views can refresh.
@@ -150,7 +154,7 @@ final class ExtensionRegistry {
             merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
             merged.languages += c.languages
         }
-        for b in Builtins.all { take(b.info, b.contribute()) }
+        for b in Builtins.all { take(b.info, b.contribute(app)) }
         for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where Self.isFolder(folder) {
             let loaded = DeclarativeExtension.load(folder, tools: Self.tools)
             take(loaded.info, loaded.contributions)

@@ -30,7 +30,7 @@ final class ScratchWindow: NSObject, NSWindowDelegate {
         if panel == nil {
             guard let w = await AppModel.shared.call(ScratchEnsure()) else { return }   // the banner says why
             await AppModel.shared.refresh()
-            let a = EditorArea(workspaceId: w.id)
+            let a = EditorArea(app: AppModel.shared, workspaceId: w.id)
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480), styleMask: [.titled, .closable, .resizable, .utilityWindow],
                             backing: .buffered, defer: false)
             p.title = String(localized: "Scratch"); p.isFloatingPanel = true; p.hidesOnDeactivate = false

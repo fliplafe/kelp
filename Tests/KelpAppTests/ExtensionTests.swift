@@ -92,7 +92,7 @@ extension SharedAppModel {
     @Test func aTabsMenuHasWhatItsProviderAdds() {
         _ = testHome; _ = NSApplication.shared   // reload applies the theme to NSApp
         ExtensionRegistry.shared.reload()
-        let area = EditorArea(workspaceId: "menu-test")
+        let area = EditorArea(app: AppModel.shared, workspaceId: "menu-test")
         let agent = area.layout.add("session:s1"), page = area.layout.add(TabURI.file("/tmp/a.html")), web = area.layout.add("https://example.com")
         func titles(_ id: String) -> [String] { area.tabMenu(id).items.map { $0.isSeparatorItem ? "-" : $0.title } }
         let around = (["Split Right", "Split Down", "-"], ["Close Tab", "Close Other Tabs"])

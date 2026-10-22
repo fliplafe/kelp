@@ -9,7 +9,9 @@ import WorkbenchKit
 /// comes in over the card instead, floating clear of the window's edges.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
-    let editors = EditorHost()
+    /// The app this window shows: handed to its panels and editor areas.
+    let app: AppModel
+    let editors: EditorHost
     let inspector: InspectorController
     private let sidebar: SidebarController
     private let split = ShellSplit()
@@ -30,10 +32,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
     private let inspectorToggle = NSButton.titlebar("sidebar.trailing", String(localized: "Inspector"), tip: String(localized: "Show or hide the inspector (⌥⌘0)"))
 
-    init() {
+    init(app: AppModel) {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-        sidebar = SidebarController(); inspector = InspectorController()
+        self.app = app
+        editors = EditorHost(app: app)
+        sidebar = SidebarController(app: app); inspector = InspectorController(app: app)
         sidebarItem = Self.column(sidebar); inspectorItem = Self.column(inspector)
         super.init(window: w)
         // The title stays set: the Window menu, Mission Control and VoiceOver read it.
@@ -380,6 +384,9 @@ private final class DropRoot: NSVisualEffectView {
 /// Holds one editor area per recently used workspace, so switching back is instant (terminals stay attached).
 @MainActor
 final class EditorHost: NSViewController {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     /// The editor area (or the welcome) is in this card, under the window bar, which lies over this view's top.
     private let card = Card()
     private var areas: [String: EditorArea] = [:]
@@ -406,7 +413,7 @@ final class EditorHost: NSViewController {
         current?.view.removeFromSuperview()
         guard let id, AppModel.shared.worktree(id) != nil else { current = nil; showWelcome(); return }
         welcome?.removeFromSuperview(); welcome = nil
-        let area = areas[id] ?? EditorArea(workspaceId: id)
+        let area = areas[id] ?? EditorArea(app: app, workspaceId: id)
         if areas[id] == nil { areas[id] = area; addChild(area) }
         recent.removeAll { $0 == id }; recent.insert(id, at: 0)
         // Their terminals detach; a workspace with unsaved files stays.

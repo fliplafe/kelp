@@ -7,6 +7,7 @@ enum SplitDirection: String { case right, down }
 /// One workspace's editor area: groups of tabs in a split tree. Tabs are made by the providers extensions register.
 @MainActor
 final class EditorArea: NSViewController {
+    let app: AppModel
     let workspaceId: String
     var layout: WorkspaceLayout
     var contents: [String: TabContent] = [:]       // by tab id
@@ -25,7 +26,8 @@ final class EditorArea: NSViewController {
 
     var worktree: Worktree? { AppModel.shared.worktree(workspaceId) }
 
-    init(workspaceId: String) {
+    init(app: AppModel, workspaceId: String) {
+        self.app = app
         self.workspaceId = workspaceId
         layout = WorkspaceLayout.load(workspaceId)
         super.init(nibName: nil, bundle: nil)

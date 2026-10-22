@@ -7,6 +7,9 @@ import WorkbenchKit
 /// Status changes update the visible cells in place; the outline reloads only when the tree's shape changes.
 @MainActor
 final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSTextFieldDelegate, NSSearchFieldDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     final class Node: NSObject {
         let kind: SidebarItem.Kind
         var children: [Node] = []

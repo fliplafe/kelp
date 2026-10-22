@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Self.watchHangs()
         LatinShortcuts.install()
         ExtensionRegistry.shared.reload()
-        main = MainWindowController()
+        main = MainWindowController(app: AppModel.shared)
         main.showWindow(nil)
         ScratchWindow.shared.registerHotKey()
         notifier.start()

@@ -7,7 +7,8 @@ import WorkbenchKit
 @MainActor
 @Observable
 final class Workbench {
-    static let shared = Workbench()
+    /// The app's (`AppModel.workbench`), for code not handed it yet.
+    static var shared: Workbench { AppModel.shared.workbench }
     var workspaceId: String? { didSet { UIState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
     var focusedSession: String?
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.

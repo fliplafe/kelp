@@ -24,7 +24,7 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 @MainActor @Test func aLayoutChangedJustBeforeQuittingIsSaved() {
     let id = "quit-\(UUID().uuidString.prefix(6))", key = "layout/\(id)"
     defer { UIState[key] = nil }
-    let area = EditorArea(workspaceId: id)
+    let area = EditorArea(app: AppModel.shared, workspaceId: id)
     area.scheduleSave()
     #expect(UIState[key] == nil)   // waiting
     EditorArea.saveLayouts()

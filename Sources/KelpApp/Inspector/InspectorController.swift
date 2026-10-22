@@ -7,6 +7,9 @@ import Core
 /// or a bar under the panel. Icons are dragged into order; a right-click on the row hides them and moves the row.
 @MainActor
 final class InspectorController: NSViewController {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     private let selector = CapsuleStack()
     private var buttons: [NSButton] = []
     private var counts: [CountBadge] = []   // one per button

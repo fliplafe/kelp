@@ -8,9 +8,11 @@ import WorkbenchKit
 @MainActor
 struct Builtin {
     let info: ExtensionInfo
-    let contribute: @MainActor () -> Contributions
+    /// What it adds to `app`: its tabs, panels and commands are made with it.
+    let contribute: @MainActor (_ app: AppModel) -> Contributions
 
-    init(_ id: String, _ name: String, _ description: String, icon: String, essential: Bool = false, _ contribute: @escaping @MainActor () -> Contributions) {
+    init(_ id: String, _ name: String, _ description: String, icon: String, essential: Bool = false,
+         _ contribute: @escaping @MainActor (_ app: AppModel) -> Contributions) {
         info = ExtensionInfo(id: id, name: name, description: description, version: "built-in", icon: icon, builtin: true, essential: essential, enabled: true)
         self.contribute = contribute
     }
@@ -40,7 +42,7 @@ enum Builtins {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
     }
 
-    static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) {
+    static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) { _ in
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["session"], make: { SessionTab(uri: $0) },
                               closeUnbuilt: { await SessionTab.close(session: TabURI.body($0)) }, menu: SessionTab.menu)]
@@ -95,7 +97,7 @@ enum Builtins {
         return c
     }
 
-    static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) {
+    static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) { _ in
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0) }, menu: FileTab.menu),
                   TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0) }]
@@ -165,7 +167,7 @@ enum Builtins {
         return c
     }
 
-    static let git = Builtin("kelp.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") {
+    static let git = Builtin("kelp.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") { _ in
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["diff"]) { DiffTab(uri: $0) },
                   TabProvider(schemes: ["commit"]) { CommitMessageTab(uri: $0) }]
@@ -192,13 +194,13 @@ enum Builtins {
     }
 
     /// Off on a clean install (`ExtensionRegistry.offByDefault`): Settings › Extensions turns it on.
-    static let activity = Builtin("kelp.activity", "Activity", "CPU and memory of each agent and terminal, with Stop.", icon: "gauge.with.dots.needle.33percent") {
+    static let activity = Builtin("kelp.activity", "Activity", "CPU and memory of each agent and terminal, with Stop.", icon: "gauge.with.dots.needle.33percent") { _ in
         var c = Contributions()
         c.panels = [PanelSpec(id: "activity", title: "Activity", icon: "gauge.with.dots.needle.33percent", extensionId: "kelp.activity") { ActivityController() }]
         return c
     }
 
-    static let browser = Builtin("kelp.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") {
+    static let browser = Builtin("kelp.browser", "Browser", "Web pages as tabs, dev servers open automatically, Design Mode.", icon: "safari") { _ in
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["http", "https", "about", "preview"]) { BrowserTab(uri: $0) }]
         c.editors = [EditorSpec(id: "browser.new", title: "Browser", icon: "safari", uri: { _ in "about:blank#\(UUID().uuidString.prefix(6))" })]
@@ -208,7 +210,7 @@ enum Builtins {
         return c
     }
 
-    static let issues = Builtin("kelp.issues", "Issues & Pull Requests", "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.", icon: "checklist") {
+    static let issues = Builtin("kelp.issues", "Issues & Pull Requests", "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.", icon: "checklist") { _ in
         var c = Contributions()
         c.panels = [PanelSpec(id: "issues", title: "Issues & PRs", icon: "checklist", extensionId: "kelp.issues") {
             let t = TasksViewController()
@@ -225,7 +227,7 @@ enum Builtins {
         return c
     }
 
-    static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) {
+    static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) { _ in
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", specs: [
             s("workbench.theme", "Color Theme", "theme", "auto",

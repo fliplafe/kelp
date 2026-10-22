@@ -7,7 +7,8 @@ import Core
 @MainActor
 @Observable
 final class SettingsStore {
-    static let shared = SettingsStore()
+    /// The app's (`AppModel.settings`), for code not handed it yet.
+    static var shared: SettingsStore { AppModel.shared.settings }
     private(set) var values: [String: JSONValue] = [:]
     /// Keys with a set still on its way: the daemon's answer to an older one (a colour dragged, a stepper held) mustn't
     /// put back a value the user already moved past.

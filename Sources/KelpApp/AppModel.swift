@@ -8,6 +8,11 @@ import Agents
 @Observable
 final class AppModel {
     static let shared = AppModel()
+    /// What's on screen, settings.json and the extensions: this app's, handed down with it (`app.workbench`…) to the
+    /// window, the built-ins' contributions and their views.
+    @ObservationIgnored private(set) lazy var workbench = Workbench()
+    @ObservationIgnored private(set) lazy var settings = SettingsStore()
+    @ObservationIgnored private(set) lazy var extensions = ExtensionRegistry(app: self)
 
     @ObservationIgnored var client: RPCClient?
     var connected = false

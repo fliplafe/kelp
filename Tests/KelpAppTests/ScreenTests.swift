@@ -30,7 +30,7 @@ import Core
     let saved = (m.repos, m.worktrees, m.sessions)
     defer { (m.repos, m.worktrees, m.sessions) = saved }
     m.repos = repos; m.worktrees = worktrees; m.sessions = sessions
-    let vc = SidebarController()
+    let vc = SidebarController(app: AppModel.shared)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 600), styleMask: [.titled], backing: .buffered, defer: true)   // never shown
     window.contentViewController = vc
     vc.view.frame = NSRect(x: 0, y: 0, width: 280, height: 600)
@@ -105,7 +105,7 @@ extension SharedAppModel {
 /// their columns after.
 @Test func focusModesPanelsFloatOverTheEditorAreaAndComeBack() throws {
     _ = testHome
-    let main = MainWindowController()
+    let main = MainWindowController(app: AppModel.shared)
     let split = try #require(main.window?.contentView?.subviews.first)   // the split's view; the bar and the floaters lie over it
     #expect(main.inspector.view.isDescendant(of: split))
     main.toggleFocusMode()
