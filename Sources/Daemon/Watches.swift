@@ -100,7 +100,8 @@ final class Watches: Sendable {
         switch k.topic {
         case .git, .files:
             guard let w = try? store.worktree(k.key), RemoteHost.of(w.path) == nil else { return nil }
-            return (w.path, k.topic == .git ? Git.touchesStatus : Git.touchesFileList)
+            let touches = k.topic == .git ? Git.touchesStatus : Git.touchesFileList, ignored = IgnoredFolders(root: w.path)
+            return (w.path, { touches(ignored.drop($0)) })
         case .file:
             guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return nil }
             // Its folder, as FSEvents names it (/tmp is /private/tmp): the file itself may not be there to resolve.

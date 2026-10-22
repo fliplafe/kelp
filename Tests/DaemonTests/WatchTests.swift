@@ -26,6 +26,31 @@ private final class Heard: Sendable {
     #expect(heard.events(GitEvent.self).count == seen)
 }
 
+/// A build writing into a folder git ignores (dist/) doesn't read git again; once .gitignore stops ignoring it, it does.
+@Test func whatGitIgnoresDoesntReadGitAgain() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await firstDesk(w)
+    let key = Watches.Key(topic: .git, key: wt.id)
+    func reads() -> Int { w.d.watches.reads.withLock { $0[key] ?? 0 } }
+    let heard = Heard(); heard.listen(w.c)
+    try "dist/\n".write(toFile: wt.path + "/.gitignore", atomically: true, encoding: .utf8)
+    try FileManager.default.createDirectory(atPath: wt.path + "/dist/js", withIntermediateDirectories: true)
+    w.c.notify(WatchStart(.git, wt.id))
+    #expect(try await waitFor(10) { heard.events(GitEvent.self).first?.changes?.map(\.path) == [".gitignore"] })
+    try await Task.sleep(for: .milliseconds(800))
+    let before = reads()
+    for i in 0..<5 { try "\(i)\n".write(toFile: wt.path + "/dist/js/a.js", atomically: true, encoding: .utf8); try await Task.sleep(for: .milliseconds(150)) }
+    try await Task.sleep(for: .milliseconds(1200))
+    #expect(reads() == before)
+    try "\n".write(toFile: wt.path + "/.gitignore", atomically: true, encoding: .utf8)
+    #expect(try await waitFor(10) { heard.events(GitEvent.self).last?.changes?.contains { $0.path.hasPrefix("dist/") } == true })
+}
+
+@Test func aPathIsInTheFoldersAboveIt() {
+    #expect(IgnoredFolders.folders("a/b/c.txt") == ["a/", "a/b/"])
+    #expect(IgnoredFolders.folders("c.txt").isEmpty && IgnoredFolders.folders(".git/index").isEmpty)
+}
+
 /// Two clients watching one topic share one reader; it stops after the last one stops watching or goes away.
 @Test func watchersShareOneReaderThatStopsWithTheLast() async throws {
     let w = try await world(); defer { w.d.stop() }

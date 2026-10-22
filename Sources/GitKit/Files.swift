@@ -85,3 +85,11 @@ extension ProjectFiles {
         return r
     }
 }
+
+extension Git {
+    /// Which of `paths` (relative to `root`; a folder ends with "/") .gitignore and the other exclude files leave out.
+    public static func ignored(_ paths: [String], cwd root: String) throws -> Set<String> {
+        let out = try run(["check-ignore", "-z", "--stdin"], cwd: root, stdin: paths.joined(separator: "\0"), ok: [0, 1])
+        return Set(out.split(separator: "\0").map(String.init))
+    }
+}
