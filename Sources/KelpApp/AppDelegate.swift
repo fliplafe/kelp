@@ -29,11 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.buildMenu() }
         track(owner: self) { SettingsStore.shared.value("keys") } changed: { [weak self] _ in self?.buildMenu() }
         ExtensionRegistry.shared.watch()
-        // Extension commands and requirement checks need the user's PATH; reading it can take seconds.
-        DispatchQueue.global(qos: .utility).async {
-            _ = LoginPath.value
-            DispatchQueue.main.async { ExtensionRegistry.pathReady = true; ExtensionRegistry.shared.reload() }
-        }
         Task {
             await AppModel.shared.connect()
             ExtensionRegistry.shared.reload()   // settings (disabled extensions) are known now
@@ -78,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }   // the daemon keeps sessions alive
     func applicationWillTerminate(_ n: Notification) {
         main?.leaveFocusMode()
+        EditorArea.saveLayouts()   // a tab moved in the last half second
         AppModel.shared.client?.flush()   // writes are queued: the last layout or state set goes out before the process ends
     }
 

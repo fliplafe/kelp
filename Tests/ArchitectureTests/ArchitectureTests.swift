@@ -96,12 +96,17 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 
 /// The daemon starts every program (an extension's command, a formatter, a notebook run, an agent's --version:
 /// `process.run`), with its time limits, its process-tree kill and its trust checks; the app starts none. Two exceptions:
-/// the app launching kelpd itself, and DevAids' `sample` of a stuck main thread (a developer's tool).
+/// the app launching kelpd itself, and DevAids' `sample` of a stuck main thread (a developer's tool). Core's helpers that
+/// start one count too: LoginPath runs the login shell (the app asks the daemon: `process.which`), the library's index and
+/// download run curl and tar.
 @Test func theAppStartsNoPrograms() throws {
     let allowed = ["Sources/KelpApp/AppModel.swift", "Sources/KelpApp/DevAids.swift"]
-    let found = try matches(#"\bProcess\(\)|\bSubprocess\.|posix_spawn|\bNSTask\b"#, in: ["Sources/KelpApp"])
+    let found = try matches(#"\bProcess\(\)|\bSubprocess\.|posix_spawn|\bNSTask\b|\bLoginPath\.|\bfetchExtension\(|\blibrary\(index"#, in: ["Sources/KelpApp"])
         .filter { f in !allowed.contains { f.hasPrefix($0 + ":") } }
     #expect(found == [])
+    // A new Core helper that starts a program: add what the app could call to the pattern above.
+    let starters = Set(try matches(#"\bProcess\(\)|\bSubprocess\.run\("#, in: ["Sources/Core"]).map { String($0.split(separator: ":")[0]) })
+    #expect(starters == ["Sources/Core/Subprocess.swift", "Sources/Core/LoginPath.swift", "Sources/Core/Library.swift"])
 }
 
 /// The app doesn't ask the daemon again and again: views watch (`watch.start`) and the daemon pushes what changed.
@@ -116,11 +121,11 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
         "Builtins/Agents/UsageTab.swift": "a \"still reading\" hint after 3 s",
         "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
         "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
-        "Builtins/Files/LSPManager.swift": "an idle language server is stopped after a minute",
-        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list",
-        "DevAids.swift": "the snapshot and typing aids for tests"
+        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list"
     ]
-    let found = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])
-        .filter { m in !clocks.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
+    let all = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])
+    let found = all.filter { m in !clocks.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
     #expect(found == [], "a clock asking the daemon: watch a topic instead (WatchTopic)")
+    let gone = clocks.keys.filter { k in !all.contains { $0.hasPrefix("Sources/KelpApp/" + k + ":") } }
+    #expect(gone == [], "listed, but its clock is gone: take it off the list")
 }

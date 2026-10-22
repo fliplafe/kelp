@@ -8,9 +8,6 @@ extension FilesPanel: @preconcurrency QLPreviewPanelDataSource, @preconcurrency 
         if p.isVisible { p.orderOut(nil); return }
         p.makeKeyAndOrderFront(nil)
         if p.dataSource == nil { p.dataSource = self; p.delegate = self; p.reloadData() }   // no key window's chain led here
-        if ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] != nil {   // the panel is its own window, not in the PNG
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { print("QUICKLOOK", p.isVisible, p.currentPreviewItem?.previewItemURL?.lastPathComponent ?? "-") }
-        }
     }
     private var previewURL: URL? {
         (outline.item(atRow: outline.selectedRow) as? FileNode).map { URL(fileURLWithPath: root).appendingPathComponent($0.path) }

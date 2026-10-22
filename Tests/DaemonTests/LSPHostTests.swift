@@ -36,7 +36,9 @@ private func fakeServer(in dir: String) throws -> (command: String, args: [Strin
             elif meth == "textDocument/documentSymbol": r = []
             send({"jsonrpc": "2.0", "id": m["id"], "result": r})
         elif meth:
-            log.write("%s %s\n" % (meth, ((m.get("params") or {}).get("textDocument") or {}).get("version", "")))
+            doc = (m.get("params") or {}).get("textDocument") or {}
+            log.write("%s %s\n" % (meth, doc.get("version", "")))
+            if meth == "textDocument/didOpen": log.write("text %s %s\n" % (doc.get("uri"), doc.get("text")))
             if meth == "exit": break
     log.write("gone\n")
     """#.write(toFile: script, atomically: true, encoding: .utf8)
@@ -109,4 +111,28 @@ private func lines(_ log: String) -> [String] {
     #expect(running().count == 1 && lines(server.log).filter { $0.hasPrefix("start") }.count == 2)
     other.close()
     #expect(try await waitFor(5) { running().isEmpty })
+}
+
+/// A server that died starts again on the next open, and gets every file open for it as the app last sent it (unsaved
+/// edits too), not as it is on disk.
+@Test func aRestartedServerGetsTheOpenFilesAsLastSent() async throws {
+    let saved = LSPHost.retryDelay
+    LSPHost.retryDelay = 0; defer { LSPHost.retryDelay = saved }
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let root = tmp().path, a = root + "/a.swift", b = root + "/b.swift", server = try fakeServer(in: root)
+    try "on disk".write(toFile: a, atomically: true, encoding: .utf8)
+    try d.store.setUIState(LSPOpen.trustKey, .array([.string(root)]))
+    func open(_ path: String, _ text: String) async throws {
+        _ = try await c.call(LSPOpen(root: root, path: path, languageId: "swift", command: server.command, args: server.args, text: text))
+    }
+    try await open(a, "on disk")
+    try await open(b, "b")
+    c.notify(LSPChange(root: root, path: a, text: "unsaved"))
+    #expect(try await waitFor(5) { lines(server.log).contains("textDocument/didChange 2") })
+    let first = try #require(lines(server.log).first { $0.hasPrefix("start ") }.flatMap { Int32($0.dropFirst(6)) })
+    kill(first, SIGKILL)
+    #expect(try await waitFor(5) { await d.lsp.client(root, b) == nil })   // its client saw it go
+    try await open(b, "b")
+    let unsaved = "text \(URL(fileURLWithPath: a).absoluteString) unsaved"
+    #expect(try await waitFor(5) { lines(server.log).filter { $0.hasPrefix("start ") }.count == 2 && lines(server.log).contains(unsaved) })
 }

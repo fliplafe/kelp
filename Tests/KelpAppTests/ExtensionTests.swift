@@ -41,7 +41,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 @MainActor @Test func aManifestFolderBecomesContributions() throws {
     let d = try folder(["extension.json":
         #"{"id":"t.one","name":"One","contributes":{"commands":[{"title":"Hi","terminal":"echo hi"}],"panels":[{"id":"p","title":"P","web":"p.html"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, checkRequirements: false)
+    let (info, c) = DeclarativeExtension.load(d)
     #expect(info.id == "t.one" && info.error == nil && info.unavailable == nil)
     #expect(c.commands.map(\.title) == ["Hi"])
     #expect(c.panels.map(\.id) == ["t.one.p"])
@@ -49,7 +49,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func aBrokenManifestIsReportedNotThrown() throws {
     let d = try folder(["extension.json": #"{"name":"no id"}"#])
-    let (info, c) = DeclarativeExtension.load(d, checkRequirements: false)
+    let (info, c) = DeclarativeExtension.load(d)
     #expect(info.error != nil)
     #expect(info.id == d.lastPathComponent)   // still listed, so it can be fixed or removed
     #expect(c.commands.isEmpty && c.panels.isEmpty)
@@ -57,14 +57,16 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func missingRequirementKeepsTheExtensionInactive() throws {
     let d = try folder(["extension.json": #"{"id":"t.req","name":"R","requires":["kelp-no-such-tool"],"contributes":{"commands":[{"title":"X","run":"x"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d)
+    let (info, c) = DeclarativeExtension.load(d, tools: ["kelp-no-such-tool": false])
     #expect(info.unavailable?.contains("kelp-no-such-tool") == true)
     #expect(c.commands.isEmpty)
+    // Until the daemon has said (it may still be reading the login shell's PATH), a tool counts as there.
+    #expect(DeclarativeExtension.load(d).info.unavailable == nil)
 }
 
 @MainActor @Test func aVSCodePackageIsReadForItsIconThemes() throws {
     let d = try folder(["package.json": #"{"name":"icons","publisher":"me","displayName":"Icons","contributes":{"iconThemes":[{"id":"i","label":"I","path":"./i.json"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, checkRequirements: false)
+    let (info, c) = DeclarativeExtension.load(d)
     #expect(info.id == "me.icons" && info.name == "Icons")
     #expect(c.iconThemes.map(\.id) == ["i"])
 }

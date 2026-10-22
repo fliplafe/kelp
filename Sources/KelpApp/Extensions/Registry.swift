@@ -103,6 +103,8 @@ struct ExtensionInfo: Identifiable {
     /// A required tool is missing; shown, but contributes nothing.
     var unavailable: String?
     var enabled: Bool
+    /// The tools it needs (its manifest's `requires`).
+    var requires: [String] = []
 }
 
 /// The IDE is a shell around this: everything visible comes from an extension, built-in or a folder in ~/.kelp/extensions.
@@ -118,8 +120,11 @@ final class ExtensionRegistry {
     @ObservationIgnored private var watcher: FileWatcher?
 
     static var userDir: URL { Paths.root.appendingPathComponent("extensions") }
-    /// Set once LoginPath has been read off the main thread.
-    static var pathReady = false
+    /// Required tools (`requires`) the daemon found on its login-shell PATH, or didn't: command → found. One not asked yet
+    /// counts as there (the daemon may still be reading that PATH, which takes seconds); each reload asks again, so a
+    /// tool installed meanwhile counts, and an answer that changes anything reloads.
+    static var tools: [String: Bool] = [:]
+    @ObservationIgnored private var askingTools = false
 
     /// Built-ins a clean install starts with switched off; once settings.json has its own list, that list decides.
     static let offByDefault: Set<String> = ["kelp.activity"]
@@ -141,9 +146,8 @@ final class ExtensionRegistry {
             merged.languages += c.languages
         }
         for b in Builtins.all { take(b.info, b.contribute()) }
-        // Requirement checks need the login-shell PATH; until it's read (in the background) assume tools are there.
         for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where Self.isFolder(folder) {
-            let loaded = DeclarativeExtension.load(folder, checkRequirements: Self.pathReady)
+            let loaded = DeclarativeExtension.load(folder, tools: Self.tools)
             take(loaded.info, loaded.contributions)
         }
         merged.tabs.append(DeclarativeExtension.tabProvider)
@@ -153,6 +157,22 @@ final class ExtensionRegistry {
         ThemeManager.shared.apply()
         AgentSkills.write()
         AppModel.shared.publishUIState()
+        askTools(Set(infos.flatMap(\.requires)))
+    }
+
+    /// Asks the daemon where `commands` are; reloads when that changes what's missing. Without a daemon, nothing: the
+    /// reload after it connects asks.
+    private func askTools(_ commands: Set<String>) {
+        guard !commands.isEmpty, !askingTools else { return }
+        askingTools = true
+        Task {
+            defer { askingTools = false }
+            guard let found = await AppModel.shared.quiet(ProcessWhich(commands: commands.sorted())) else { return }
+            let now = Dictionary(uniqueKeysWithValues: commands.map { ($0, found[$0] != nil) })
+            guard now.contains(where: { Self.tools[$0.key] != $0.value }) else { return }
+            Self.tools.merge(now) { _, new in new }
+            reload()
+        }
     }
 
     /// Live reload while someone (often an agent) edits an extension.

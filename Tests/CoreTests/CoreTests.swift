@@ -275,3 +275,26 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     #expect(Tmux.isOwn(own) && Tmux.name(own) == own && own != Tmux.own())
     #expect(!Tmux.isOwn("kelp_test") && !Tmux.isOwn("kelp-tab-2") && !Tmux.isOwn("kelp-2"))
 }
+
+/// The login shell's PATH is read once, and an in-order call (`resolveNow`) doesn't wait for that read. Where no program
+/// may start (`Subprocess.quickOnly`) the shell doesn't run, and that non-answer isn't kept: the next caller reads.
+@Test func theLoginPathIsReadOnceAndQuickCallersDontWaitForIt() async throws {
+    let gate = DispatchSemaphore(value: 0)
+    let once = LoginPath.Once { gate.wait(); return "/read" }
+    Thread.detachNewThread { _ = once.value }
+    #expect(once.ifRead == nil)   // still reading: asked now, there's no answer rather than a wait
+    gate.signal()
+    var waited = 0
+    while once.ifRead == nil, waited < 250 { try await Task.sleep(for: .milliseconds(20)); waited += 1 }
+    #expect(once.ifRead == "/read" && once.value == "/read")
+
+    let dir = NSTemporaryDirectory() + "kelp-shell-\(UUID().uuidString.prefix(6))", shell = dir + "/sh", ran = dir + "/ran"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    try "#!/bin/sh\ntouch '\(ran)'\nprintf '__KELP__/from/shell__KELP__'\n".write(toFile: shell, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shell)
+    #expect(Subprocess.quickOnly { LoginPath.shellPath(shell: shell) } == nil)
+    #expect(!FileManager.default.fileExists(atPath: ran))   // refused before it started
+    #expect(LoginPath.shellPath(shell: shell) == "/from/shell")
+    let refused = LoginPath.Once { nil }
+    #expect(refused.value == LoginPath.path("") && refused.ifRead == nil)
+}

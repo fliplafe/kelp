@@ -20,6 +20,27 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(QuickOpen.wordScore("OPEN", "open") == 100)               // case doesn't matter
 }
 
+/// A layout change still waiting out the save's pause is saved when the app quits, not lost with it.
+@MainActor @Test func aLayoutChangedJustBeforeQuittingIsSaved() {
+    let id = "quit-\(UUID().uuidString.prefix(6))", key = "layout/\(id)"
+    defer { UIState[key] = nil }
+    let area = EditorArea(workspaceId: id)
+    area.scheduleSave()
+    #expect(UIState[key] == nil)   // waiting
+    EditorArea.saveLayouts()
+    #expect(UIState[key] != nil)
+}
+
+/// Scored off the main thread: files by fuzzy path, the rest by title words (a command a little ahead), unmatched left out.
+@Test func quickOpenScoresAQueryOffTheMainThread() async {
+    let items = [QuickOpen.Match(fuzzy: nil, title: "Color Theme", command: false),
+                 QuickOpen.Match(fuzzy: ProjectFiles.FuzzyPath("Sources/Settings/SettingsWindow.swift"), title: "SettingsWindow.swift", command: false),
+                 QuickOpen.Match(fuzzy: nil, title: "Open Settings", command: true),
+                 QuickOpen.Match(fuzzy: nil, title: "Settings: Font", command: false)]
+    let best = await Task.detached { QuickOpen.best(items, "sett") }.value
+    #expect(best == [1, 3, 2])
+}
+
 @MainActor @Test func notificationsReadTheFirstSentenceAsAHeadline() {
     #expect(Notifier.firstSentence("I added `mul(a, b)` to `calc.py`. It returns the product.") == "Added mul(a, b) to calc.py")
     #expect(Notifier.firstSentence("I've fixed the login bug!\nMore detail below.") == "Fixed the login bug!")
@@ -93,8 +114,11 @@ extension SharedAppModel {
     let t = Date(), slow = await Shell.exec(["/bin/sleep", "5"], timeout: 0.2)
     #expect(slow.code != 0 && Date().timeIntervalSince(t) < 2)
     #expect(await Shell.exec(["/nonexistent/tool"]).code == -1)
-    #expect(await AgentAvailability.runs("git") != nil)
-    #expect(await AgentAvailability.runs("kelp-no-such-agent") == nil)
+    // Where a tool is comes from the daemon's login-shell PATH: the app doesn't start a shell to read it.
+    let paths = try await AppModel.shared.get(ProcessWhich(commands: ["git", "kelp-no-such-agent"]))
+    #expect(paths["git"]?.hasSuffix("/git") == true && paths["kelp-no-such-agent"] == nil)
+    #expect(await AgentAvailability.runs(try #require(paths["git"])) != nil)
+    #expect(await AgentAvailability.runs("/nonexistent/agent") == nil)
     AppModel.shared.client = nil
     #expect(await Shell.exec(["/bin/echo", "hi"]).code == -1)   // the app runs nothing itself
 }

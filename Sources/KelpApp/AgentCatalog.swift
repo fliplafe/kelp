@@ -81,14 +81,18 @@ final class AgentAvailability {
             guard await MainActor.run(body: { AppModel.shared.connected }) else {
                 await MainActor.run { AgentAvailability.shared.checking = false }; return
             }
+            // Where the daemon finds them on its login-shell PATH ("tmux" too); not knowing, nothing changes.
+            guard let paths = await AppModel.shared.quiet(ProcessWhich(commands: commands.map(\.1) + ["tmux"])) else {
+                await MainActor.run { AgentAvailability.shared.checking = false }; return
+            }
             let found = await withTaskGroup(of: (id: String, binary: String)?.self) { g in
-                for (id, command) in commands { g.addTask { await Self.runs(command, ran: ran).map { (id, $0) } } }
+                for (id, command) in commands { if let path = paths[command] { g.addTask { await Self.runs(path, ran: ran).map { (id, $0) } } } }
                 var all: [(id: String, binary: String)] = []
                 for await r in g { if let r { all.append(r) } }
                 return all
             }
             // Not an agent: "tmux" among the ids only says there's a tmux here to attach to (AgentCatalog.hasTmux).
-            let tmux = (try? LoginPath.resolve("tmux")) != nil
+            let tmux = paths["tmux"] != nil
             let ok = Set(found.map(\.id) + (tmux ? ["tmux"] : [])), now = Date().timeIntervalSince1970
             let keep = Dictionary(found.map { ($0.binary, ran[$0.binary] ?? now) }) { a, _ in a }
             await MainActor.run {
@@ -100,11 +104,11 @@ final class AgentAvailability {
         }
     }
 
-    /// `<command> --version` exits 0 within a few seconds: then the binary (real path and modification time), else nil.
+    /// `<path> --version` exits 0 within a few seconds: then the binary (real path and modification time), else nil.
     /// One that ran in the last day (`ran`: binary → when) and hasn't changed isn't started again: a dozen agent CLIs at
     /// every launch cost seconds of CPU (one took 2 s). Waits without holding a thread (they're asked at once).
-    nonisolated static func runs(_ command: String, ran: [String: Double] = [:]) async -> String? {
-        guard let path = try? LoginPath.resolve(command), let real = Paths.real(path),
+    nonisolated static func runs(_ path: String, ran: [String: Double] = [:]) async -> String? {
+        guard let real = Paths.real(path),
               let mtime = (try? FileManager.default.attributesOfItem(atPath: real)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return nil }
         let binary = "\(real)|\(mtime)"
         if let at = ran[binary], Date().timeIntervalSince1970 - at < 86400 { return binary }

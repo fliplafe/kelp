@@ -40,6 +40,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     private var showingRecents = false
     private var prSearch: Task<Void, Never>?
     private var filesLoad: Task<Void, Never>?
+    /// The typed query's matches being scored; the next keystroke cancels it.
+    private var scoring: Task<Void, Never>?
     private let field = NSSearchField()
     private let table = NSTableView()
     private let keys = NSTextField(labelWithString: "")
@@ -292,7 +294,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     }
 
     /// A title matches when it contains the query, or each query word starts a word of the title.
-    static func wordScore(_ title: String, _ query: String) -> Int? {
+    nonisolated static func wordScore(_ title: String, _ query: String) -> Int? {
         let t = title.lowercased(), q = query.lowercased().trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return 0 }
         if t.hasPrefix(q) { return 100 }
@@ -314,6 +316,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
     func controlTextDidChange(_ obj: Notification) { filter() }
 
     private func filter() {
+        scoring?.cancel()
         let q = field.stringValue
         if let t = tmux { setRows(tmuxItems(t, q), grouped: false); return }
         let pool = commandsOnly && choosing == nil ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
@@ -324,13 +327,25 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
                     grouped: !showingRecents && !commandsOnly && choosing == nil)
         } else {
             showingRecents = false
-            let fq = ProjectFiles.fuzzyQuery(q)
-            setRows(pool.compactMap { it -> (Item, Int)? in
-                // Files: fuzzy paths. Everything else: the words of its title, so "them" finds Color Theme, not random letters.
-                if let f = it.fuzzy { return ProjectFiles.fuzzyScore(f, fq).map { (it, $0) } }
-                return Self.wordScore(it.title, q).map { (it, $0 + (it.kind == "Command" ? 2 : 0)) }
-            }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0), grouped: !commandsOnly && choosing == nil)
+            // Off the main thread: a big project's files take a while to score on every keystroke.
+            let grouped = !commandsOnly && choosing == nil, keys = pool.map { Match(fuzzy: $0.fuzzy, title: $0.title, command: $0.kind == "Command") }
+            scoring = Task { [weak self] in
+                let best = await Task.detached { Self.best(keys, q) }.value
+                guard let self, !Task.isCancelled else { return }
+                setRows(best.map { pool[$0] }, grouped: grouped)
+            }
         }
+    }
+
+    struct Match: Sendable { let fuzzy: ProjectFiles.FuzzyPath?, title: String, command: Bool }
+    /// The 200 best matches for `q`, as indices into `items`, best first. Files: fuzzy paths. Everything else: the words of
+    /// its title, so "them" finds Color Theme, not random letters.
+    nonisolated static func best(_ items: [Match], _ q: String) -> [Int] {
+        let fq = ProjectFiles.fuzzyQuery(q)
+        return items.indices.compactMap { i -> (Int, Int)? in
+            if let f = items[i].fuzzy { return ProjectFiles.fuzzyScore(f, fq).map { (i, $0) } }
+            return wordScore(items[i].title, q).map { (i, $0 + (items[i].command ? 2 : 0)) }
+        }.sorted { $0.1 > $1.1 }.prefix(200).map(\.0)
     }
 
     /// Searching, the results come in groups under a heading, the group with the best match first.
@@ -364,7 +379,11 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         switch sel {
         case #selector(NSResponder.moveDown(_:)): move(1); return true
         case #selector(NSResponder.moveUp(_:)): move(-1); return true
-        case #selector(NSResponder.insertNewline(_:)): choose(split: NSApp.currentEvent?.modifierFlags.contains(.shift) == true); return true
+        case #selector(NSResponder.insertNewline(_:)):
+            let split = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+            // ↩ right after typing picks from what was typed, once it's scored.
+            if let s = scoring { Task { await s.value; choose(split: split) } } else { choose(split: split) }
+            return true
         case #selector(NSResponder.cancelOperation(_:)):
             if let c = choosing { list(query: c.query); return true }   // a setting's choices: back to the list, the old value back
             panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil); return true   // back to the terminal

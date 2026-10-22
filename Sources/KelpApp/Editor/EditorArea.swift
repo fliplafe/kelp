@@ -322,7 +322,15 @@ final class EditorArea: NSViewController {
 
     // MARK: persistence
 
-    func scheduleSave() { saveWork.after(0.5) { [weak self] in self.map { $0.layout.save($0.workspaceId) } } }
+    func scheduleSave() {
+        Self.unsaved.add(self)
+        saveWork.after(0.5) { [weak self] in self?.saveLayout() }
+    }
+    private func saveLayout() { Self.unsaved.remove(self); layout.save(workspaceId) }
+    /// Areas whose layout is waiting out the pause before it's saved (weak: one that's gone has nothing to save).
+    private static let unsaved = NSHashTable<EditorArea>.weakObjects()
+    /// Quitting: layouts still waiting are saved now, before the app's last writes go out.
+    static func saveLayouts() { for a in unsaved.allObjects { a.saveWork.cancel(); a.saveLayout() } }
 
     /// Every open tab (URI and title), for the palette.
     var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? Self.placeholder($0).title) } }

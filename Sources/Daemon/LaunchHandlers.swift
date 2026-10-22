@@ -196,7 +196,13 @@ extension TaskFromIssue: AsyncHandled {
 
 extension Daemon {
     static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
-        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, ProcessRun.self]
+        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, ProcessRun.self, ProcessWhich.self]
+}
+
+extension ProcessWhich: Handled {
+    func handle(_ d: Daemon) throws -> Result {
+        Dictionary(commands.compactMap { c in (try? LoginPath.resolve(c)).map { (c, $0) } }) { a, _ in a }
+    }
 }
 
 extension ProcessRun: Handled {

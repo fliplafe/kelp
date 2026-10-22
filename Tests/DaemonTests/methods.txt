@@ -76,6 +76,7 @@ ping
 ports.list
 ports.stop
 process.run
+process.which
 recipe.render
 remote.listFolders
 repo.add

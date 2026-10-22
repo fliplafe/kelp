@@ -150,6 +150,13 @@ public struct ProcessRun: RPCMethod {
         self.argv = argv; self.cwd = cwd; self.stdin = stdin; self.timeLimit = timeLimit; self.extensionId = extensionId
     }
 }
+/// Where each command is on the login-shell PATH the daemon gives programs (`process.run`, sessions): command → absolute
+/// path, the ones not found left out. The app asks instead of reading that PATH itself, which starts the user's shell.
+public struct ProcessWhich: RPCMethod {
+    public static let name = "process.which"; public typealias Result = [String: String]
+    public var commands: [String]
+    public init(commands: [String]) { self.commands = commands }
+}
 /// "pong".
 public struct Ping: RPCMethod { public static let name = "ping"; public typealias Result = String; public init() {} }
 public struct DaemonShutdown: RPCMethod { public static let name = "daemon.shutdown"; public typealias Result = Done; public init() {} }

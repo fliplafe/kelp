@@ -6,7 +6,8 @@ import LSPKit
 /// Language servers, one per (project, server command), shared by every client: started for the first file a trusted
 /// project opens; one that died starts again on the next open (its open files with it), at most once per `retryDelay`;
 /// one with no file open for `idleDelay` stops. Opens, changes and closes come in order from a connection's reader thread
-/// and stay quick: while a server starts they're queued, and given to it once it's up.
+/// and stay quick: while a server starts they're queued, and given to it once it's up. A restarted server gets each open
+/// file's text as last sent (unsaved edits included), not what's on disk.
 final class LSPHost: Sendable {
     struct Key: Hashable, Sendable { let root: String, argv: [String] }
     private enum DocOp: Sendable { case open(path: String, text: String, languageId: String), change(path: String, text: String), close(path: String) }
@@ -15,8 +16,8 @@ final class LSPHost: Sendable {
         case running(LSPClient)
         case failed
     }
-    /// A file open in some tab: its server, its language, and how many opens it has.
-    private struct Doc: Sendable { let key: Key, path: String, languageId: String; var count: Int }
+    /// A file open in some tab: its server, its language, how many opens it has and its text as last sent.
+    private struct Doc: Sendable { let key: Key, path: String, languageId: String; var count: Int, text: String }
     private struct State {
         var servers: [Key: Server] = [:]
         var docs: [String: Doc] = [:]           // "root|path"
@@ -26,24 +27,25 @@ final class LSPHost: Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     /// A broken server isn't started again on every open.
-    static let retryDelay: TimeInterval = 30
+    nonisolated(unsafe) static var retryDelay: TimeInterval = 30   // tests shorten it
     /// How long a server with no open file keeps running (a tab closed and opened again doesn't restart it).
     nonisolated(unsafe) static var idleDelay: TimeInterval = 60   // tests shorten it
 
     func open(conn: Int, _ o: LSPOpen) {
         let key = Key(root: o.root, argv: [o.command] + (o.args ?? [])), id = o.root + "|" + o.path
         let launch = state.withLock { s -> Bool in
-            s.docs[id, default: Doc(key: key, path: o.path, languageId: o.languageId, count: 0)].count += 1
+            s.docs[id, default: Doc(key: key, path: o.path, languageId: o.languageId, count: 0, text: o.text)].count += 1
+            s.docs[id]?.text = o.text
             s.owners[conn, default: [:]][id, default: 0] += 1
             let op = DocOp.open(path: o.path, text: o.text, languageId: o.languageId)
             switch s.servers[key] {
             case .running(let c)? where c.isRunning: Self.apply(op, to: c); return false
             case .starting(let pending, let ready)?: s.servers[key] = .starting(pending: pending + [op], ready: ready); return false
-            default:   // none yet, or it died: a new one gets every file open for it (from disk; this one as sent)
+            default:   // none yet, or it died: a new one gets every file open for it, as last sent
                 if let at = s.started[key], Date().timeIntervalSince(at) < Self.retryDelay { return false }
                 s.started[key] = Date()
                 let others = s.docs.filter { $0.key != id && $0.value.key == key }.values.flatMap { d in
-                    Array(repeating: DocOp.open(path: d.path, text: (try? String(contentsOfFile: d.path, encoding: .utf8)) ?? "", languageId: d.languageId), count: d.count)
+                    Array(repeating: DocOp.open(path: d.path, text: d.text, languageId: d.languageId), count: d.count)
                 }
                 s.servers[key] = .starting(pending: others + Array(repeating: op, count: s.docs[id]?.count ?? 1), ready: nil)
                 return true
@@ -52,7 +54,14 @@ final class LSPHost: Sendable {
         if launch { start(key) }
     }
 
-    func change(_ root: String, _ path: String, text: String) { send(root + "|" + path, .change(path: path, text: text)) }
+    func change(_ root: String, _ path: String, text: String) {
+        let id = root + "|" + path
+        state.withLock { s in
+            guard let d = s.docs[id] else { return }
+            s.docs[id]?.text = text
+            Self.send(.change(path: path, text: text), to: d.key, in: &s)
+        }
+    }
 
     func close(conn: Int, _ root: String, _ path: String) {
         let id = root + "|" + path
@@ -117,8 +126,6 @@ final class LSPHost: Sendable {
         state.withLock { s in if case .starting(let pending, nil)? = s.servers[key] { s.servers[key] = .starting(pending: pending, ready: ready) } }
     }
 
-    private func send(_ id: String, _ op: DocOp) { state.withLock { s in if let d = s.docs[id] { Self.send(op, to: d.key, in: &s) } } }
-
     private static func send(_ op: DocOp, to key: Key, in s: inout State) {
         switch s.servers[key] {
         case .running(let c)?: apply(op, to: c)
@@ -170,7 +177,9 @@ extension LSPOpen: Handled {
         guard RemoteHost.of(root) == nil else { throw RPCError.invalidParams("No language servers for a project on another machine.") }
         // A project's language servers run its own code: the daemon checks, whoever asks.
         guard d.lspTrusted(root) else { throw LSPRefusal.untrusted.error }
-        guard (try? LoginPath.resolve(command)) != nil else { throw LSPRefusal.notInstalled(command).error }
+        // Not waiting for the login shell's PATH on this thread (seconds, right after the daemon starts): until it's read,
+        // a server that isn't installed fails when it starts, off this thread, and the tab just gets no server.
+        do { _ = try LoginPath.resolveNow(command) } catch { throw LSPRefusal.notInstalled(command).error }
         d.lsp.open(conn: conn, self)
         return Done()
     }

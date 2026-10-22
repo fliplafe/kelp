@@ -68,10 +68,9 @@ struct LibrarySection: View {
         error = nil
         do {
             let all = try await AppModel.shared.get(ExtensionLibrary())
-            if ExtensionRegistry.pathReady {
-                missing = Dictionary(uniqueKeysWithValues: all.compactMap { e in
-                    (e.requires ?? []).first { (try? LoginPath.resolve($0)) == nil }.map { (e.id, $0) }
-                })
+            // Where the daemon finds the tools they need; not said when it can't tell.
+            if let found = await AppModel.shared.quiet(ProcessWhich(commands: Array(Set(all.flatMap { $0.requires ?? [] })))) {
+                missing = Dictionary(uniqueKeysWithValues: all.compactMap { e in (e.requires ?? []).first { found[$0] == nil }.map { (e.id, $0) } })
             }
             entries = all.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         } catch {
