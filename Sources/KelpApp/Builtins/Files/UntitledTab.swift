@@ -1,4 +1,5 @@
 import AppKit
+import Core
 import EditorKit
 import WorkbenchKit
 
@@ -58,8 +59,9 @@ final class UntitledTab: SavableTab {
         p.message = String(localized: "Name it with an extension for code (main.py, App.swift); without one it's a .txt file.")
         guard await runSheet(p) == .OK, var url = p.url else { return false }
         if url.pathExtension.isEmpty { url.appendPathExtension("txt") }
-        do { try editor.text.write(to: url, atomically: true, encoding: .utf8) }
-        catch { Banner.show(String(localized: "Couldn't save \(url.lastPathComponent): \(error.localizedDescription)")); return false }
+        // Over whatever is there: the save panel asked about replacing it.
+        let res = await AppModel.shared.tryCall(FilesWrite(path: url.path, text: editor.text, base: nil))
+        if let error = res.error { Banner.show(String(localized: "Couldn't save \(url.lastPathComponent): \(error)")); return false }
         Workbench.editor?.replace(uri, with: TabURI.file(url.path))
         return true
     }

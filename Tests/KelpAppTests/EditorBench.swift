@@ -39,4 +39,29 @@ extension SharedAppModel {
         print(String(format: "BENCH editor %.1f MB on the main thread: keystroke %.2f ms (the editor alone %.2f), same-length edit %.2f ms, lsp.change %.2f ms; save took %.0f ms",
                      Double(text.utf8.count) / 1e6, typed, bare, overtype, lsp, save))
     }
+
+    /// How long a file takes to open (until its text is in the editor) and to save, through whatever reads and writes it.
+    /// Opt-in: KELP_BENCH=1 swift test --filter fileOpenSaveBench
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["KELP_BENCH"] != nil)) func fileOpenSaveBench() async throws {
+        let rig = try await AppRig(files: [:])
+        defer { rig.done() }
+        let line = "    let value = compute(index: 42, label: \"größe\") // a line of code\n"
+        for (name, size) in [("small.swift", 200_000), ("big.swift", 5_000_000)] {
+            try rig.write(name, String(repeating: line, count: size / line.utf8.count))
+            var opens: [Double] = [], saves: [Double] = []
+            for i in 0..<5 {
+                let t0 = Date()
+                let tab = FileTab(uri: TabURI.file(rig.repo + "/" + name))
+                while tab.editor == nil { try await Task.sleep(for: .milliseconds(1)) }
+                opens.append(Date().timeIntervalSince(t0) * 1000)
+                let e = try #require(tab.editor)
+                e.setText(e.text + "// \(i)\n"); e.onChange?(e.text)
+                let t1 = Date()
+                #expect(await tab.save())
+                saves.append(Date().timeIntervalSince(t1) * 1000)
+            }
+            print(String(format: "BENCH file %@ %.1f MB: open %.1f ms, save %.1f ms (medians of 5)", name, Double(size) / 1e6,
+                         opens.sorted()[2], saves.sorted()[2]))
+        }
+    }
 }

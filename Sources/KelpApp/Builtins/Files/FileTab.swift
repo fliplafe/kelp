@@ -6,7 +6,8 @@ import WorkbenchKit
 /// A file as a tab: code editor with LSP, Markdown with preview, notebooks, or a Quick Look preview.
 /// Like a Mac document: edits show as a dot on the tab and the window's close button, ⌘S saves, closing asks
 /// (Settings › Editor › Save automatically turns autosave on). Agents edit files on disk too: unchanged buffers
-/// follow the disk; conflicting edits ask.
+/// follow the disk; conflicting edits ask. The daemon reads and writes it (here or on a remote project's host) and says
+/// when its version changes (`WatchTopic.file`); the tab touches no file itself.
 @MainActor
 final class FileTab: SavableTab {
     let path: String, url: URL
@@ -27,21 +28,24 @@ final class FileTab: SavableTab {
     /// The connection (`AppModel.connections`) its language server was given this file on; nil when it has none. A new
     /// daemon knows nothing of it: the file is given again.
     private var lspOpenedOn: Int?
-    private var watcher: FileWatcher?
+    /// Its version as the daemon pushes it (`AppModel.fileVersions`), while the tab is open.
+    private let version = Watched(.file)
     private let root: String
+    /// A remote project's file: no language server, formatter, preview or notebook for it here.
+    private let remote: Bool
     private var pendingLine: Int?
     /// Closed with Don't Save: deinit's autosave mustn't write it after all.
     private var discarded = false
     func discard() { discarded = true; comparing?.cancel(); isEdited = false }
     /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
     private var gone = false { didSet { if gone != oldValue { onChange?() } } }
-    /// A remote project's file: read and written on its host.
-    private var isRemote = false
     /// The last save (each waits for the one before) and whether it wrote; `writing` while one is on its way to disk.
     private var saving: Task<Bool, Never>?
     private var writing = false
-    /// Focused while its text was still on the way from the host: focused (and its line shown) once it's here.
+    /// Focused while its text was still on the way: focused (and its line shown) once it's here.
     private var focusWhenLoaded = false
+    /// The first read (tests wait for it).
+    private(set) var loading: Task<Void, Never>?
 
     var uri: String { TabURI.file(path) }
     var fileURL: URL? { url }
@@ -53,79 +57,70 @@ final class FileTab: SavableTab {
         let (p, line) = TabURI.filePath(uri)
         path = p; url = URL(fileURLWithPath: p); pendingLine = line
         root = AppModel.shared.worktrees.filter { p.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }?.path ?? url.deletingLastPathComponent().path
-        let ext = url.pathExtension.lowercased()
-        // A remote project's file: read on its host, saved there (an agent's edit there meanwhile is asked about).
-        if !FileManager.default.fileExists(atPath: p), let r = RemoteHost.containing(p) {
-            isRemote = true
-            let box = NSView(); view = box
-            let wait = Self.message(String(localized: "Reading it from \(r.remote.host)…")); box.pin(wait)
-            Task { [weak self] in
-                let read: Result<String, Error>
-                do { read = .success(try await AppModel.shared.get(FilesReadRemote(path: p))) } catch { read = .failure(error) }
-                guard let self else { return }
-                wait.removeFromSuperview()
-                // The host refuses what a tab here refuses (a pipe, too big, not UTF-8), and says it the same way.
-                guard case .success(let text) = read else {
-                    if case .failure(let e) = read { box.pin(Self.message(Unopenable(e).map(Self.reason) ?? AppModel.message(e))) }
-                    return
-                }
-                let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
-                e.view.clipsToBounds = true
-                e.onChange = { [weak self] t in self?.edited(t) }
-                editor = e; lastSaved = text
-                box.pin(e.view)
-                if focusWhenLoaded { focus() }
-            }
-            return
-        }
-        // Read whole and on the main thread: only a regular file (a pipe or /dev/zero would block or never end), and only
-        // up to `openLimit` (a 300 MB log would hang the window). Limit: synchronous first read; move it off the main
-        // thread if files near the limit feel slow.
-        if let u = Self.unopenable(p) { view = Self.message(Self.reason(u)); return }
-        if Preview.canPreview(url) { view = Preview.view(for: url); return }
-        if ext == "ipynb" {
+        let host = RemoteHost.containing(p)?.remote.host
+        remote = host != nil
+        if !remote, Preview.canPreview(url) { view = Preview.view(for: url); return }
+        if !remote, url.pathExtension.lowercased() == "ipynb" {
             let nb = NotebookTab(url: url, path: p, worktreeId: AppModel.shared.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
             notebook = nb; view = nb.view; return
         }
-        // Moved or deleted (often by an agent) since the tab was opened: say so, never an empty buffer ⌘S would write.
-        guard let data = FileManager.default.contents(atPath: p) else {
-            view = Self.message(FileManager.default.fileExists(atPath: p)
-                ? String(localized: "Couldn't read this file.") : String(localized: "File not found — it was moved or deleted.")); return
+        // Off the main thread, by the daemon: only a regular file (a pipe or /dev/zero would block or never end), up to
+        // `openLimit` (a 300 MB log would hang the window), as UTF-8; a remote project's on its host.
+        let box = NSView(); view = box
+        let wait = host.map { Self.message(String(localized: "Reading it from \($0)…")) }
+        if let wait { box.pin(wait) }
+        loading = Task { [weak self] in
+            let read: Result<FilesRead.Result, Error>
+            do { read = .success(try await AppModel.shared.get(FilesRead(path: p))) } catch { read = .failure(error) }
+            guard let self else { return }
+            wait?.removeFromSuperview()
+            switch read {
+            case .success(let f): loaded(f, in: box)
+            // Moved or deleted (often by an agent) since the tab was opened: say so, never an empty buffer ⌘S would write.
+            case .failure(let e as RPCError) where e.code == RPCError.invalidParams("").code && Unopenable(e) == nil:
+                box.pin(Self.message(String(localized: "File not found — it was moved or deleted.")))
+            case .failure(let e): box.pin(Self.message(Unopenable(e).map(Self.reason) ?? AppModel.message(e)))
+            }
         }
-        guard let text = String(data: data, encoding: .utf8) else { view = Self.message(Self.reason(.binary)); return }
-        let e = CodeEditor(text: text, url: url, editable: data.count <= CodeEditor.readOnlyLimit)
+    }
+
+    /// Its text is here: the editor (Markdown with its preview, or code with a status bar), its language server, and its
+    /// version followed from then on.
+    private func loaded(_ f: FilesRead.Result, in box: NSView) {
+        let text = f.text
+        let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
         e.view.clipsToBounds = true
-        editor = e; lastSaved = text; known = Stamp(p).map { ($0, text) }
-        if ["md", "markdown"].contains(ext) {
+        editor = e; lastSaved = text; known = (f.stamp, text)
+        if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
             let md = MarkdownTab(editor: e, url: url)
-            md.startInPreview = p == Help.location.path   // the help is for reading
-            markdown = md; view = md.view
+            md.startInPreview = path == Help.location.path   // the help is for reading
+            markdown = md; box.pin(md.view)
         } else {
             let bar = EditorStatusBar(url: url, text: text)
             bar.show(cursor: e.cursor)
             e.onSelection = { [weak bar, weak e] in bar?.show(cursor: e?.cursor) }
-            view = stacked(e.view, bar)
+            box.pin(stacked(e.view, bar))
         }
         e.onChange = { [weak self] t in self?.edited(t) }
+        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
+        if focusWhenLoaded { focus() }
+        guard !remote else { return }   // a host's file: no events (nothing pushes them), no language server here
+        let p = path
+        version.key = p
+        track(owner: self) { AppModel.shared.fileVersions[p] } changed: { [weak self] _ in self?.diskChanged() }
         startLSP()
         track(owner: self) { AppModel.shared.connections } changed: { [weak self] now in
             guard let self, let was = lspOpenedOn, was != now else { return }
             lspOpenedOn = nil; startLSP()
         }
-        // FSEvents reports real paths (/private/tmp…): resolve ours once, not for every path of every event.
-        let real = Paths.real(p) ?? p
-        watcher = FileWatcher(root: url.deletingLastPathComponent().path) { [weak self] paths in
-            guard paths.contains(where: { $0 == real || $0 == p }) else { return }
-            MainActor.assumeIsolated { self?.diskChanged() }   // delivered on main
-        }
-        track(owner: self) { ThemeManager.shared.editorRevision } changed: { [weak self] _ in self?.editor?.refreshAppearance() }
     }
     isolated deinit {
-        // Dropped without close() (its workspace went away): autosave writes what's safe to write, never over a conflict.
-        // Here, not later: nothing may hold the tab once it's gone (a save on its way holds it, so none is).
+        // Dropped without close() (its workspace went away): autosave writes what's safe to write, never over a conflict
+        // (the daemon writes only over the version last read or written here). Sent now: nothing may hold the tab once
+        // it's gone (a save on its way holds it, so none is).
         if Self.autosave, !discarded, let e = editor, FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) == .write {
-            do { _ = try Self.writeFile(e.text, to: url.resolvingSymlinksInPath()) }
-            catch { Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error) }
+            let write = FilesWrite(path: path, text: e.text, base: known?.stamp)
+            Task { await AppModel.shared.call(write) }
         }
         if lspOpenedOn != nil { LSPManager.shared.close(root: root, path: path) }
     }
@@ -139,7 +134,10 @@ final class FileTab: SavableTab {
         editor.focus()
         if let l = pendingLine { pendingLine = nil; DispatchQueue.main.async { [weak self] in self?.editor?.goTo(line: l) } }
     }
-    func goTo(line: Int) { editor?.goTo(line: line); editor?.focus() }
+    func goTo(line: Int) {
+        guard let editor else { pendingLine = line; focusWhenLoaded = true; return }   // still being read: once it's here
+        editor.goTo(line: line); editor.focus()
+    }
     var selectedText: String? { editor?.selectedText }
     var selectedLines: ClosedRange<Int>? { editor?.selectedLines }
     /// Asks about unsaved changes in a sheet, like any Mac document: Save, Don't Save, or keep the tab. With autosave
@@ -148,7 +146,7 @@ final class FileTab: SavableTab {
         autosaving.cancel()
         _ = await saving?.value   // a save on its way: what's asked is checked against what it wrote
         guard let e = editor, isEdited else { return true }
-        let action = isRemote ? .write : FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
+        let action = FileSync.save(buffer: e.text, saved: lastSaved, disk: disk)
         if Self.autosave, action == .write, await writeAndClose() { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save the changes you made to “\(title)”?")
         a.informativeText = switch action {
@@ -171,7 +169,7 @@ final class FileTab: SavableTab {
         if Self.autosave { autosaving.after(0.6) { [weak self] in Task { await self?.autosaveNow() } } }
         editedStateMayHaveChanged()
         markdown?.textChanged()
-        guard !isRemote, lspOpenedOn != nil else { return }   // no language server for it (or for a file on another machine)
+        guard lspOpenedOn != nil else { return }   // no language server for it (or for a file on another machine)
         lspTask?.cancel()
         let p = path, r = root
         lspTask = Task {
@@ -181,27 +179,12 @@ final class FileTab: SavableTab {
         }
     }
 
-    /// The file on disk now. Read again only when its stamp changed since the last read or write here: a save's check and
-    /// every file event would otherwise read the whole file, on the main thread.
-    private var disk: FileSync.Disk {
-        guard let now = Stamp(path) else { return .missing }
-        if let known, known.stamp == now { return .present(known.text) }
-        let text = try? String(contentsOf: url, encoding: .utf8)
-        known = (now, text)
-        return .present(text)
-    }
-    /// What was last read from disk or written there, and its stamp.
-    private var known: (stamp: Stamp, text: String?)?
-    /// A file's size, modification time and inode, through symlinks: the same stamp, the same text.
-    private struct Stamp: Equatable {
-        let size: Int64, modified: Double, inode: UInt64
-        init?(_ p: String) {
-            var st = stat()
-            guard stat(p, &st) == 0 else { return nil }
-            size = st.st_size; inode = UInt64(st.st_ino)
-            modified = Double(st.st_mtimespec.tv_sec) + Double(st.st_mtimespec.tv_nsec) / 1e9
-        }
-    }
+    /// The file as the daemon last gave or pushed it: gone, or its text as last read or written here (nil: not UTF-8).
+    /// Kept current by its version (`diskChanged`), so a save's check reads nothing; the daemon then writes only over
+    /// that version, so a change it hasn't heard of yet is still never written over.
+    private var disk: FileSync.Disk { gone ? .missing : .present(known?.text) }
+    /// What was last read or written, and its version.
+    private var known: (stamp: FileStamp, text: String?)?
     private var reading = false, readAgain = false
 
     /// ⌘S. False when it couldn't be written, or the user is asked first (an agent changed the file meanwhile, or it's gone).
@@ -210,26 +193,28 @@ final class FileTab: SavableTab {
         guard editor != nil else { return true }
         return await serially { [self] in
             guard let e = editor else { return true }
-            if isRemote { return await write() }
             switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
-            case .write: return await write()
+            case .write: if await write() { return true }; return gone ? await askToWriteBack() : false
             case .conflict: apply(disk); return false   // don't clobber an agent's edit: ask
-            case .missing:   // moved or deleted (git mv, a rename): writing would bring the old file back beside the new one
-                let a = NSAlert(); a.messageText = String(localized: "“\(title)” was moved or deleted")
-                a.informativeText = String(localized: "Save writes it at its old place again.")
-                a.addButton(withTitle: String(localized: "Save Here")); a.addButton(withTitle: String(localized: "Cancel"))
-                guard await runSheet(a) == .alertFirstButtonReturn else { return false }
-                return await write()
+            case .missing: return await askToWriteBack()
             default: return true
             }
         }
+    }
+
+    /// Moved or deleted (git mv, a rename): writing would bring the old file back beside the new one, so it asks.
+    private func askToWriteBack() async -> Bool {
+        let a = NSAlert(); a.messageText = String(localized: "“\(title)” was moved or deleted")
+        a.informativeText = String(localized: "Save writes it at its old place again.")
+        a.addButton(withTitle: String(localized: "Save Here")); a.addButton(withTitle: String(localized: "Cancel"))
+        guard await runSheet(a) == .alertFirstButtonReturn else { return false }
+        return await write(overAnything: true)
     }
 
     /// Autosave writes only when that's safe; a conflict asks (if the tab is on screen), a missing file waits for ⌘S.
     private func autosaveNow() async {
         _ = await serially { [self] in
             guard let e = editor else { return true }
-            if isRemote { return await write() }
             switch FileSync.save(buffer: e.text, saved: lastSaved, disk: disk) {
             case .write: return await write()
             case .conflict: apply(disk); return false
@@ -247,47 +232,34 @@ final class FileTab: SavableTab {
         return await next.value
     }
 
-    /// The buffer to the file, encoded and written off the main thread (5 MB took 400 ms on it). Only through `serially`.
-    private func write() async -> Bool {
+    /// The buffer to the file, by the daemon (atomically, through a symlink to the file it points at), only over the version
+    /// last read or written here; `overAnything`: whatever is there (Save Here). Changed meanwhile: asked about, unless
+    /// only touched (its text still what this tab last saved), which is written over once. Only through `serially`.
+    private func write(overAnything: Bool = false, touched: Bool = false) async -> Bool {
         guard let e = editor else { return true }
-        if isRemote { return await writeRemote() }
-        // Through a symlink to the file it points at: an atomic write to the link would replace it with a plain file.
-        let text = e.text, at = edits, to = url.resolvingSymlinksInPath()
+        // A Swift string, made off the main thread (5 MB took 400 ms on it): the buffer is compared against it on every
+        // keystroke, fast only with a Swift string on this side (`FileSync.same`).
+        let buffer = e.text, at = edits
+        let text = await Task.detached { String(decoding: Data(buffer.utf8), as: UTF8.self) }.value
         writing = true
-        let done = await Task.detached { Result { try FileTab.writeFile(text, to: to) } }.value
+        let res = await AppModel.shared.tryCall(FilesWrite(path: path, text: text, base: overAnything ? nil : known?.stamp))
         writing = false
-        defer { if readAgain { readAgain = false; diskChanged() } }   // its own file event, or an agent's right after
-        switch done {
-        case .success(let written): gone = false; known = Stamp(path).map { ($0, written) }; saved(written, at: at)
-        case .failure(let error): Banner.show(String(localized: "Couldn't save \(title): \(error.localizedDescription)"), style: .error); return false
-        }
-        return true
+        defer { if readAgain { readAgain = false; diskChanged() } }   // its own version pushed, or an agent's right after
+        if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return false }
+        guard let r = res.value else { return false }
+        if let stamp = r.stamp { gone = false; known = (stamp, text); saved(text, at: at); return true }
+        if r.missing == true { gone = true; return false }
+        guard let c = r.conflict else { return false }
+        known = (c.stamp, c.text)
+        if !touched, let now = c.text, FileSync.same(now, lastSaved) { return await write(touched: true) }
+        apply(.present(c.text))   // an agent's edit: asked about
+        return false
     }
 
-    /// `text` as UTF-8, atomically, and what was written as a Swift string: the buffer is compared against it on every
-    /// keystroke, fast only with a Swift string on this side (`FileSync.same`).
-    nonisolated static func writeFile(_ text: String, to url: URL) throws -> String {
-        let data = Data(text.utf8)
-        try data.write(to: url, options: .atomic)
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    /// Closing with a save: a remote file's tab waits until the host has it, and stays (with its edits) when that failed.
+    /// Closing with a save: the tab waits until the file has it, and stays (with its edits) when that failed.
     private func writeAndClose() async -> Bool { await serially { [self] in await write() } }
 
     var pendingSave: Task<Void, Never>? { saving.map { s in Task { _ = await s.value } } }
-
-    /// To the host, which checks it against what was last read or written there (an agent's edit meanwhile is asked about).
-    private func writeRemote() async -> Bool {
-        guard let e = editor, !FileSync.same(e.text, lastSaved) else { return true }
-        let buffer = e.text, at = edits
-        let text = await Task.detached { String(decoding: Data(buffer.utf8), as: UTF8.self) }.value   // a Swift string, as `write`'s
-        let res = await AppModel.shared.tryCall(FilesWriteRemote(path: path, text: text, base: lastSaved))
-        if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return false }
-        if let now = res.value??.changed { askKeepMine(disk: now); return false }
-        saved(text, at: at)
-        return true
-    }
 
     /// The file is `text` now (written or taken from disk), and the buffer was it `at` that many keystrokes: still is, or
     /// it's compared.
@@ -318,22 +290,26 @@ final class FileTab: SavableTab {
         isEdited = now; onChange?()
     }
 
-    /// A file event: read again only what changed, and off the main thread (a log a dev server appends to sends one every
-    /// quarter second). One read at a time; events meanwhile make one more, as do events while a save writes the file.
+    /// A new version pushed (`WatchTopic.file`): read again only one this tab didn't read or write itself (a log a dev
+    /// server appends to changes every quarter second). One read at a time; versions meanwhile make one more, as do
+    /// versions while a save writes the file.
     private func diskChanged() {
-        guard editor != nil, !isRemote else { return }
+        guard editor != nil, let v = AppModel.shared.fileVersions[path] else { return }
         if reading || writing { readAgain = true; return }
-        guard let now = Stamp(path) else { apply(.missing); return }
-        if let known, known.stamp == now { return }   // touched, not changed (or our own write)
-        guard Self.unopenable(path) == nil else { return }   // grown past the limit (a log) or a pipe now: keep what's shown
+        guard let now = v.stamp else { apply(.missing); return }
+        if let known, known.stamp == now { return }   // our own write
         reading = true
-        let url = url
+        let p = path
         Task { [weak self] in
-            let text = await Task.detached { try? String(contentsOf: url, encoding: .utf8) }.value
+            let read: Result<FilesRead.Result, Error>
+            do { read = .success(try await AppModel.shared.get(FilesRead(path: p))) } catch { read = .failure(error) }
             guard let self else { return }
             reading = false
-            known = (now, text)
-            apply(.present(text))
+            switch read {
+            case .success(let f): known = (f.stamp, f.text); apply(.present(f.text))
+            case .failure(let e) where Unopenable(e) == .binary: known = (now, nil); apply(.present(nil))   // asked about as such
+            case .failure: break   // grown past the limit (a log), a pipe now, or gone (its next version says so): kept as shown
+            }
             if readAgain { readAgain = false; diskChanged() }
         }
     }
@@ -415,7 +391,7 @@ final class FileTab: SavableTab {
     /// Format Document: the text goes to the language's `format` on stdin and comes back formatted, as one undoable
     /// edit with the cursor on its line. A failure shows the command's first lines of error.
     func format() async {
-        guard FileManager.default.isWritableFile(atPath: path) else { NSSound.beep(); return }   // a remote or read-only file
+        guard !remote else { NSSound.beep(); return }   // its formatter would run here, not on the host
         guard let cmd = await command("format"), let e = editor else { return }
         guard LSPManager.shared.askTrust(root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
         let text = e.text, line = e.cursor?.line ?? 1
@@ -429,16 +405,7 @@ final class FileTab: SavableTab {
         e.goTo(line: line)
     }
 
-    /// Why `p` (followed through symlinks) isn't opened; nil when it is, or when it's missing (said elsewhere). Binary is
-    /// known only once it's read. A remote project's host applies the same rule (`files.readRemote`).
-    static func unopenable(_ p: String) -> Unopenable? {
-        var st = stat()
-        guard stat(p, &st) == 0 else { return nil }
-        if st.st_mode & S_IFMT != S_IFREG { return .special }
-        return st.st_size > Unopenable.openLimit ? .tooBig(Int(st.st_size)) : nil
-    }
-
-    /// What the tab says instead of the text, for a file here or on a host.
+    /// What the tab says instead of the text (the daemon refuses it, here or on a host: `files.read`).
     static func reason(_ u: Unopenable) -> String {
         switch u {
         case .special: String(localized: "Kelp opens files, not devices or pipes.")

@@ -32,16 +32,20 @@ final class NotebookTab: NSViewController {
         reload()
     }
 
+    /// Read by the daemon (off the main thread, refused like any file tab's past the size limit), then rendered.
     func reload() {
-        guard let d = FileManager.default.contents(atPath: url.path), let body = NotebookHTML.render(d) else {
-            let why = String(localized: "This notebook can't be read (is it valid nbformat 4 JSON?).")
-            web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>",
-                baseURL: nil)
-            return
+        Task {
+            let d = await AppModel.shared.tryCall(FilesRead(path: path)).value.map { Data($0.text.utf8) }
+            guard let d, let body = NotebookHTML.render(d) else {
+                let why = String(localized: "This notebook can't be read (is it valid nbformat 4 JSON?).")
+                web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>",
+                    baseURL: nil)
+                return
+            }
+            let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            web.loadHTMLString(MarkdownHTML.page(body: body, baseURL: url.deletingLastPathComponent(), dark: dark), baseURL: url.deletingLastPathComponent())
+            if let s = NotebookHTML.summary(d) { status.stringValue = String(localized: "\(s.cells) cells · \(s.language)") }
         }
-        let dark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        web.loadHTMLString(MarkdownHTML.page(body: body, baseURL: url.deletingLastPathComponent(), dark: dark), baseURL: url.deletingLastPathComponent())
-        if let s = NotebookHTML.summary(d) { status.stringValue = String(localized: "\(s.cells) cells · \(s.language)") }
     }
 
     private static func jupyter() -> String? {
