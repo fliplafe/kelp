@@ -3,6 +3,14 @@ import GhosttyKit
 import Testing
 @testable import TerminalKit
 
+/// Tests that start a terminal take turns: two logins started at once can fail, and Ghostty then prints "failed to launch
+/// the requested command" over what the program shows (it did on CI).
+@MainActor private var terminalTaken = false
+@MainActor private func takeTerminal() async throws {
+    while terminalTaken { try await Task.sleep(for: .milliseconds(20)) }
+    terminalTaken = true
+}
+
 @Test func copyLeavesTheTUIBehind() {
     // An agent's gutter and padding to the right edge.
     #expect(TerminalCopy.clean("  func a() {   \n      return 1\n  }  ") == "func a() {\n    return 1\n}")
@@ -57,6 +65,7 @@ let wrappedRows = ["! cd ", "/Users/username/projects/Kelp ", "&& swift build -c
 /// A path and a link a program broke at the right edge itself (no soft wrap Ghostty knows of): ⌘-click on their last
 /// row gets all of them.
 @Test @MainActor func commandClickJoinsRowsAProgramBroke() async throws {
+    try await takeTerminal(); defer { terminalTaken = false }
     let path = "/tmp/" + String(repeating: "a", count: 150) + "/x.txt", link = "https://example.com/" + String(repeating: "b", count: 100) + "?q=1"
     let script = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-wrap-\(UUID().uuidString).sh")
     try #"sleep 0.5; c=$(stty size | cut -d' ' -f2); printf '\033[?1000h\033[?1006h'; for s in '\#(path)' '\#(link)'; do printf '%s\n' "$s" | fold -w "$c"; done; echo DONE; sleep 20"#
@@ -92,6 +101,7 @@ let wrappedRows = ["! cd ", "/Users/username/projects/Kelp ", "&& swift build -c
 
 /// The same command on screen, selected from its first character and copied with ⌘C: Ghostty's selection gives the column.
 @Test @MainActor func copyingAWrappedCommandGivesOneLine() async throws {
+    try await takeTerminal(); defer { terminalTaken = false }
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-rows-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -182,6 +192,7 @@ let wrappedRows = ["! cd ", "/Users/username/projects/Kelp ", "&& swift build -c
 
 /// A program that takes the mouse (as Claude Code does) and prints a link: ⌘-click on it opens its whole target.
 @Test @MainActor func commandClickOpensALinkUnderMouseCapture() async throws {
+    try await takeTerminal(); defer { terminalTaken = false }
     let script = #"printf '\033[?1000h\033[?1006h\033]8;;https://example.com/a?b=c\033\\LINKTEXT\033]8;;\033\\\n'; sleep 20"#
     let v = GhosttyTerminalView(command: script, cwd: NSTemporaryDirectory())
     let surface = try #require(v.surface)
@@ -209,6 +220,7 @@ let wrappedRows = ["! cd ", "/Users/username/projects/Kelp ", "&& swift build -c
 
 /// Dictation apps (MacWhisper) paste only into a focused text area: the terminal is one, its screen the value.
 @Test @MainActor func terminalIsATextAreaToAccessibility() async throws {
+    try await takeTerminal(); defer { terminalTaken = false }
     let v = GhosttyTerminalView(command: "echo SPOKEN; sleep 20", cwd: NSTemporaryDirectory())
     let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
     w.contentView = v; w.orderFront(nil)
