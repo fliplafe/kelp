@@ -96,3 +96,52 @@ private final class Heard: Sendable {
     try await Task.sleep(for: .milliseconds(500))
     #expect(heard.events(ContextEvent.self).map { $0.usage?.used } == [2])
 }
+
+/// A watched file's version is pushed as it changes and when it goes: the stamp `files.read` gives, nil once removed. A
+/// touch is a new version (the app reads the text then, and finds it the same); a file next to it changing says nothing.
+/// Two clients watching it share one watch.
+@Test func aWatchedFilesVersionIsPushedAsItChangesAndGoes() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let dir = tmp().path, path = dir + "/a.txt"
+    try "one".write(toFile: path, atomically: true, encoding: .utf8)
+    let heard = Heard(); heard.listen(c)
+    let other = try client(root), hearsToo = Heard(); hearsToo.listen(other)
+    c.notify(WatchStart(.file, path)); other.notify(WatchStart(.file, path))
+    func stamps() -> [FileStamp?] { heard.events(FileEvent.self).map(\.stamp) }
+    let first = try await c.call(FilesRead(path: path)).stamp
+    #expect(try await waitFor(10) { stamps() == [first] && hearsToo.events(FileEvent.self).map(\.stamp) == [first] })
+    #expect(d.watches.running == 1)
+    try "two".write(toFile: path, atomically: true, encoding: .utf8)
+    let second = try await c.call(FilesRead(path: path)).stamp
+    #expect(try await waitFor(10) { stamps() == [first, second] })
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: path)
+    #expect(try await waitFor(10) { stamps().count == 3 && stamps().last != second })
+    try "b".write(toFile: dir + "/b.txt", atomically: true, encoding: .utf8)   // its neighbour
+    try await Task.sleep(for: .milliseconds(1200))
+    #expect(stamps().count == 3)
+    try FileManager.default.removeItem(atPath: path)
+    #expect(try await waitFor(10) { stamps().count == 4 && stamps().last == .some(nil) })
+}
+
+/// A workspace's files are pushed when the list changes, once; a file's text changing leaves the list as it was.
+@Test func aWorkspacesFilesArePushedWhenTheListChanges() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await firstDesk(w)
+    let heard = Heard(); heard.listen(w.c)
+    w.c.notify(WatchStart(.files, wt.id))
+    let listed = try await w.c.call(FilesList(id: wt.id))
+    #expect(try await waitFor(10) { heard.events(FilesEvent.self).map(\.paths) == [listed] })
+    try "new\n".write(toFile: wt.path + "/added.txt", atomically: true, encoding: .utf8)
+    #expect(try await waitFor(10) { heard.events(FilesEvent.self).last?.paths?.contains("added.txt") == true })
+    try await Task.sleep(for: .milliseconds(1200))
+    #expect(heard.events(FilesEvent.self).count == 2)   // once
+    try "changed\n".write(toFile: wt.path + "/added.txt", atomically: true, encoding: .utf8)
+    try await Task.sleep(for: .milliseconds(1500))
+    #expect(heard.events(FilesEvent.self).count == 2)
+    #expect(w.d.watches.reads.withLock { $0[Watches.Key(topic: .files, key: wt.id)] ?? 0 } >= 3)   // read again, not pushed
+}
+
+@Test func whatChangesAFileList() {
+    #expect(Git.touchesFileList(["/r/src/a.swift"]) && Git.touchesFileList(["/r/.git/index"]) && Git.touchesFileList(["/r/.git/HEAD"]))
+    #expect(!Git.touchesFileList(["/r/.git/objects/ab/cd", "/r/.git/logs/HEAD", "/r/.git"]))
+}

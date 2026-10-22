@@ -25,6 +25,9 @@ final class AppModel {
     var ci: [String: CIEvent] = [:]
     var prs: [String: GitHub.PullRequest] = [:]
     var limits: UsageGet.Result?
+    /// Watched files' versions by path (`WatchTopic.file`; a nil stamp: gone), and workspaces' files (`WatchTopic.files`).
+    var fileVersions: [String: FileEvent] = [:]
+    var fileLists: [String: FilesEvent] = [:]
     /// How many of the app's views watch each topic and key: the daemon is told on the first and after the last.
     @ObservationIgnored var watching: [WatchStart: Int] = [:]
     /// `event.repo` / `event.worktree` / `event.removed` handled so far, per id: a list asked for before one may be older.

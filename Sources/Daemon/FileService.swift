@@ -105,7 +105,7 @@ enum FileService {
     // MARK: here
 
     /// Its size, modification time and inode, through symlinks: the same stamp, the same bytes. Nil when it's gone.
-    private static func stamp(_ path: String) -> FileStamp? {
+    static func stamp(_ path: String) -> FileStamp? {
         var st = stat()
         return stat(path, &st) == 0 ? stamp(st) : nil
     }

@@ -77,15 +77,33 @@ final class Watches: Sendable {
     }
 
     private func begin(_ k: Key, _ d: Daemon) {
-        if k.topic == .git, let w = try? d.store.worktree(k.key), RemoteHost.of(w.path) == nil {
+        if let (root, matters) = Self.folder(k, d) {
             // Debounced: a save is several events, a checkout hundreds.
-            let fw = FileWatcher(root: w.path, deliver: files) { [weak self, weak d] paths in
-                guard let self, let d, Git.touchesStatus(paths) else { return }
+            let fw = FileWatcher(root: root, deliver: files) { [weak self, weak d] paths in
+                guard let self, let d, matters(paths) else { return }
                 soon(k, d)
             }
             entries.withLock { e in e[k]?.files = fw }
         }
         read(k, d)
+    }
+
+    /// The folder whose file events can change a topic, and which of them do; nil: none (a remote project's folder here
+    /// holds only its marker, and the rest go by their clock).
+    private static func folder(_ k: Key, _ d: Daemon) -> (String, @Sendable ([String]) -> Bool)? {
+        switch k.topic {
+        case .git, .files:
+            guard let w = try? d.store.worktree(k.key), RemoteHost.of(w.path) == nil else { return nil }
+            return (w.path, k.topic == .git ? Git.touchesStatus : Git.touchesFileList)
+        case .file:
+            guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return nil }
+            // Its folder, as FSEvents names it (/tmp is /private/tmp): the file itself may not be there to resolve.
+            // Limit: a symlink's target changing elsewhere isn't seen; watch the target's folder if that matters.
+            let dir = (k.key as NSString).deletingLastPathComponent, name = (k.key as NSString).lastPathComponent
+            let names = Set([k.key, ((Paths.real(dir) ?? dir) as NSString).appendingPathComponent(name)])
+            return (dir, { $0.contains(where: names.contains) })
+        default: return nil
+        }
     }
 
     private func soon(_ k: Key, _ d: Daemon) {
@@ -170,6 +188,15 @@ final class Watches: Sendable {
         case .limits:
             // From memory (the probes read the plans on their own clock): cheap.
             return ((try? await d.ask(UsageGet())).flatMap { line(LimitsEvent(usage: $0)) }, 10)
+        case .file:
+            // A stat: what changed is the version, not the text (the app reads that only for a version it doesn't hold).
+            guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return (nil, nil) }
+            return (line(FileEvent(path: k.key, stamp: FileService.stamp(k.key))), nil)
+        case .files:
+            let remote = (try? d.store.worktree(k.key)).flatMap { $0 }.map { RemoteHost.of($0.path) != nil } ?? false
+            var e: FilesEvent
+            do { e = FilesEvent(worktree: k.key, paths: try await d.ask(FilesList(id: k.key))) } catch { e = FilesEvent(worktree: k.key, error: message(error)) }
+            return (line(e), remote ? 10 : nil)   // as git: a remote folder is listed every 10 s while watched
         }
     }
 

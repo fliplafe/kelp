@@ -4,6 +4,8 @@ event.ci
 event.clone
 event.context
 event.devserver
+event.file
+event.files
 event.git
 event.limits
 event.output

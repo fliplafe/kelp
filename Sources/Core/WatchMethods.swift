@@ -19,6 +19,12 @@ public enum WatchTopic: String, Codable, Sendable, CaseIterable {
     case context
     /// The agents' plan limits and token use (`LimitsEvent`). No key.
     case limits
+    /// A file's version (`FileEvent`): read when its folder's files change. Key: its absolute path. A file in a remote
+    /// project isn't watched (nothing is pushed).
+    case file
+    /// A workspace's files (`FilesEvent`, `files.list`'s answer): read when its files change, a remote one's every 10 s.
+    /// Key: worktree id.
+    case files
 }
 
 /// Starts watching for this connection: the last value comes at once (the first when it's read), then each change. Watching
@@ -81,6 +87,21 @@ public struct LimitsEvent: RPCEvent, Equatable {
     public static let name = "event.limits"
     public var usage: UsageGet.Result
     public init(usage: UsageGet.Result) { self.usage = usage }
+}
+
+/// A watched file's version now: the stamp `files.read` and `files.write` give (nil: it's gone, or isn't a file). Only
+/// the stamp: whoever holds that version (the app's own save) has nothing to read. A touch is a new version too.
+public struct FileEvent: RPCEvent, Equatable {
+    public static let name = "event.file"
+    public var path: String, stamp: FileStamp?
+    public init(path: String, stamp: FileStamp?) { self.path = path; self.stamp = stamp }
+}
+
+/// A watched workspace's files as `files.list` gives them, pushed when that changed. `error`: they couldn't be listed.
+public struct FilesEvent: RPCEvent, Equatable {
+    public static let name = "event.files"
+    public var worktree: String, paths: [String]?, error: String?
+    public init(worktree: String, paths: [String]? = nil, error: String? = nil) { self.worktree = worktree; self.paths = paths; self.error = error }
 }
 
 /// A project or workspace record as it is now, after any change (as `event.session` is for sessions).

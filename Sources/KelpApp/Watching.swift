@@ -34,6 +34,8 @@ extension AppModel {
         case .pr: prs[key] = nil
         case .context: contextShare[key] = nil
         case .limits: limits = nil
+        case .file: fileVersions[key] = nil
+        case .files: fileLists[key] = nil
         }
     }
 
@@ -46,6 +48,8 @@ extension AppModel {
         case let e as CIEvent: if ci[e.worktree] != e { ci[e.worktree] = e }
         case let e as PREvent: if prs[e.worktree] != e.pr { prs[e.worktree] = e.pr }
         case let e as LimitsEvent: if limits != e.usage { limits = e.usage }
+        case let e as FileEvent: if fileVersions[e.path] != e { fileVersions[e.path] = e }
+        case let e as FilesEvent: if fileLists[e.worktree] != e { fileLists[e.worktree] = e }
         case let e as ContextEvent:
             // No usage (not Claude Code, ended, just compacted) takes the ring away.
             let share = e.usage.flatMap { $0.window > 0 ? Double($0.used) / Double($0.window) : nil }

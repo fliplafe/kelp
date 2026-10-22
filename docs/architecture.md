@@ -91,7 +91,8 @@ session too) — and the lists are read once, at connect. The client decodes eac
 its type (`RPCClient.onEvent`); the main actor gets the value. Its writes are queued, so the main thread never waits on
 the socket. A new connection hears no broadcast until its first request: it may be `kelp attach`'s byte stream.
 What has no record of its own is a topic a view watches while it's on screen (`watch.start` / `watch.stop`, `WatchTopic`): a workspace's git (read when its files change, FSEvents in the daemon), its
-ports, every session's CPU and memory, the branch's CI runs and pull request, an agent's context, the plan limits. The
+ports, every session's CPU and memory, the branch's CI runs and pull request, an agent's context, the plan limits, a
+file's version (its stamp only: `event.file`) and a workspace's file list (`event.files`). The
 daemon reads a topic once for all its watchers, only while someone watches, and pushes it (`event.git`, `event.ports`…)
 only when it changed; the app counts its watchers (`AppModel.watch`, `Watched`) and keeps what came in observed state
 (`AppModel.git`, `.ports`…). Watching what's watched again (`watchAgain`) reads it now: after a commit or a push.

@@ -14,6 +14,17 @@ public enum Git {
         }
     }
 
+    /// Whether a change at one of `paths` can change a workspace's file list (`files.list`) or what it shows: anything
+    /// outside .git; in it, only the index (`git rm --cached`, staging) and HEAD (a checkout). git's own churn otherwise
+    /// would list the files again several times a second.
+    public static func touchesFileList(_ paths: [String]) -> Bool {
+        paths.contains { p in
+            guard let r = p.range(of: "/.git/") else { return !p.hasSuffix("/.git") }
+            let rest = p[r.upperBound...]
+            return rest == "index" || rest == "HEAD"
+        }
+    }
+
     /// Commits no remote branch has. Topological order lists a commit before its ancestors, so one pass down from the
     /// remote branches' tips marks everything they reach; what's left is local only. No remotes: nothing to mark.
     public static func unpushed(_ commits: [GraphCommit], remotes: Set<String>) -> Set<String> {

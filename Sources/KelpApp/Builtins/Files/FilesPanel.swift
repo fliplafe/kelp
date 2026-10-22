@@ -135,19 +135,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         worktree = next
         matches = []; results.reloadData()
         watcher = worktree.flatMap { w in
-            let real = (Paths.real(w.path) ?? w.path) + "/"
-            return FileWatcher(root: w.path) { [weak self] paths in   // delivered on main
-                if paths.contains(where: { Self.affectsTree(String($0.dropFirst($0.hasPrefix(real) ? real.count : 0))) }) { MainActor.assumeIsolated { self?.scheduleReload() } }
+            FileWatcher(root: w.path) { [weak self] paths in   // delivered on main
+                if Git.touchesFileList(paths) { MainActor.assumeIsolated { self?.scheduleReload() } }   // the tree or its badges
             }
         }
         reloadTree()
-    }
-
-    /// Whether a change at `rel` (relative to the workspace) can change the tree or its git badges: git's own churn
-    /// would reload it several times a second (build output never gets here, FileWatcher drops it).
-    nonisolated static func affectsTree(_ rel: String) -> Bool {
-        guard rel.split(separator: "/").first == ".git" else { return true }
-        return rel == ".git/index" || rel == ".git/HEAD"   // staging, commits, branch switches
     }
 
     private func scheduleReload() { treeReload.after(0.4) { [weak self] in self?.reloadTree() } }
