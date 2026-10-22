@@ -6,9 +6,9 @@ import Core
 
 /// Files moved in the Files panel (by the daemon, `files.move`) come back with ⌘Z and go again with ⇧⌘Z: an agent's
 /// folder isn't left half-moved. A trashed file comes back from the Trash; an operation that did nothing leaves no step.
-extension SharedAppModel {
+extension AppOfItsOwn {
     @Test func aMoveInTheFilesPanelIsUndone() async throws {
-        let rig = try await AppRig(files: [:]); defer { rig.done() }
+        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
         try FileManager.default.createDirectory(atPath: rig.repo + "/sub", withIntermediateDirectories: true)
         try rig.write("a.txt", "x")
         let a = rig.repo + "/a.txt", b = rig.repo + "/sub/a.txt"
@@ -41,7 +41,7 @@ extension SharedAppModel {
     /// back with two ⌘Z, not one. They once shared a step, and one ⌘Z undid both at once (the rename's undo racing the
     /// file back from the Trash).
     @Test func oneUndoIsOneOperation() async throws {
-        let rig = try await AppRig(files: [:]); defer { rig.done() }
+        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
         try rig.write("a.txt", "a"); try rig.write("c.txt", "c")
         let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
@@ -61,7 +61,7 @@ extension SharedAppModel {
     /// A file dropped from Finder is copied in under Finder's "name copy" when the name is taken, and ⌘Z puts the copy in
     /// the Trash; New File makes "untitled", then "untitled 2".
     @Test func filesCopiedInAndMadeTakeFreeNames() async throws {
-        let rig = try await AppRig(); defer { rig.done() }
+        let rig = try await AppRig(own: true); defer { rig.done() }
         let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         let undo = try #require(panel.undoManager)
@@ -80,7 +80,7 @@ extension SharedAppModel {
 
     /// The tree is what the daemon pushes (`WatchTopic.files`): a file an agent adds shows up without the panel asking.
     @Test func theFilesTreeFollowsWhatsPushed() async throws {
-        let rig = try await AppRig(); defer { rig.done() }
+        let rig = try await AppRig(own: true); defer { rig.done() }
         let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         panel.viewWillAppear()   // the window is never on screen: as if it were

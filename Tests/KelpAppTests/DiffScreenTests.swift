@@ -15,10 +15,10 @@ import Daemon
 
 /// The diff of one file as the user sees it, against a real daemon and repository: its Stage buttons stage that hunk
 /// and only that one.
-extension SharedAppModel {
+extension AppOfItsOwn {
     @Test func aHunksStageButtonStagesThatHunk() async throws {
         let lines = (1...40).map { "line \($0)" }
-        let rig = try await AppRig(files: ["f.txt": lines.joined(separator: "\n") + "\n"]); defer { rig.done() }
+        let rig = try await AppRig(files: ["f.txt": lines.joined(separator: "\n") + "\n"], own: true); defer { rig.done() }
         var changed = lines; changed[2] = "top change"; changed[35] = "bottom change"   // two hunks, far apart
         try rig.write("f.txt", changed.joined(separator: "\n") + "\n")
         let wt = rig.workspace, repo = rig.repo
@@ -41,9 +41,9 @@ extension SharedAppModel {
 
 /// A folder Files can't list (moved away under Kelp, git refusing it) says why where the tree would be: it used to be
 /// an empty tree, the same as an empty folder.
-extension SharedAppModel {
+extension AppOfItsOwn {
     @Test func theFilesPanelSaysWhyItShowsNoFiles() async throws {
-        let rig = try await AppRig(files: [:]); defer { rig.done() }
+        let rig = try await AppRig(files: [:], own: true); defer { rig.done() }
         try FileManager.default.removeItem(atPath: rig.repo)   // moved away: nothing can list it now
         let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
@@ -56,17 +56,17 @@ extension SharedAppModel {
 
 /// The review reads its diff once at a time: a burst of git events makes one more read, not one each; and an event
 /// that moves nothing the diff is read from (a fetch changing ahead/behind) reads nothing.
-extension SharedAppModel {
+extension AppOfItsOwn {
     @Test func gitEventsReadTheReviewOnceAtATimeAndOnlyWhenItsBasisMoved() async throws {
-        let rig = try await AppRig(); defer { rig.done() }
+        let rig = try await AppRig(own: true); defer { rig.done() }
         try rig.write("f.txt", "b\n")
         let wid = rig.workspace.id, vc = DiffViewController(app: rig.app)
-        defer { AppModel.shared.git[wid] = nil }
+        defer { rig.app.git[wid] = nil }
         rig.show(vc, 900, 700)
         let head = BranchInfo(current: "main", head: "abc1234", local: ["main"], remote: [], upstream: "origin/main", ahead: 0, behind: 0, merging: false)
         let e = GitEvent(worktree: wid, changes: [FileChange(path: "f.txt", index: ".", worktree: "M")], branches: head,
                          stats: LineStats(added: [.code: 1], removed: [.code: 1]))
-        AppModel.shared.git[wid] = e
+        rig.app.git[wid] = e
         vc.show(worktree: wid)
         await vc.load()
         var reads = vc.reads
@@ -76,11 +76,11 @@ extension SharedAppModel {
 
         reads = vc.reads
         var fetched = e; fetched.branches?.behind = 3
-        AppModel.shared.git[wid] = fetched; vc.gitChanged(fetched)
+        rig.app.git[wid] = fetched; vc.gitChanged(fetched)
         try await Task.sleep(for: .milliseconds(300))
         #expect(vc.reads == reads)
         var edited = fetched; edited.stats = LineStats(added: [.code: 2], removed: [.code: 1])
-        AppModel.shared.git[wid] = edited; vc.gitChanged(edited)
+        rig.app.git[wid] = edited; vc.gitChanged(edited)
         try await Task.sleep(for: .milliseconds(300))
         #expect(vc.reads == reads + 1)
     }
@@ -88,7 +88,7 @@ extension SharedAppModel {
     /// A file past one file's share of a review is listed, says it's too large, and opens on its own.
     @Test func aFileTooLargeForTheReviewOffersItsOwnTab() async throws {
         let lock = (0..<40_000).map { "\"package-\($0)\": \"1.0.\($0)\"" }   // regenerated: its diff is ~2.4 MB
-        let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"]); defer { rig.done() }
+        let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"], own: true); defer { rig.done() }
         try rig.write("big.lock", lock.map { $0 + "-2" }.joined(separator: "\n") + "\n")
         try rig.write("f.txt", "b\n")
         let vc = DiffViewController(app: rig.app)

@@ -23,12 +23,12 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 /// A layout change still waiting out the save's pause is saved when the app quits, not lost with it.
 @MainActor @Test func aLayoutChangedJustBeforeQuittingIsSaved() {
     let id = "quit-\(UUID().uuidString.prefix(6))", key = "layout/\(id)"
-    defer { UIState[key] = nil }
+    defer { AppModel.shared.uiState[key] = nil }
     let area = EditorArea(app: AppModel.shared, workspaceId: id)
     area.scheduleSave()
-    #expect(UIState[key] == nil)   // waiting
+    #expect(AppModel.shared.uiState[key] == nil)   // waiting
     EditorArea.saveLayouts()
-    #expect(UIState[key] != nil)
+    #expect(AppModel.shared.uiState[key] != nil)
 }
 
 /// Scored off the main thread: files by fuzzy path, the rest by title words (a command a little ahead), unmatched left out.

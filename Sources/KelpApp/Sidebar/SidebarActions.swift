@@ -62,9 +62,10 @@ extension SidebarController {
             }
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
-            let pinned = Self.pinned.contains(id)
+            let pinned = self.pinned.contains(id)
             menu.add(pinned ? String(localized: "Unpin") : String(localized: "Pin to Top")) { [weak self] in
-                Self.pinned = pinned ? Self.pinned.filter { $0 != id } : Self.pinned + [id]; self?.refresh()
+                guard let self else { return }
+                self.pinned = pinned ? self.pinned.filter { $0 != id } : self.pinned + [id]; refresh()
             }
             menu.add(String(localized: "Rename")) { [weak self] in self?.startRename(id) }
             menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }

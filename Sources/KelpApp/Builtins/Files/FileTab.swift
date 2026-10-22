@@ -395,7 +395,7 @@ final class FileTab: SavableTab {
     func format() async {
         guard !remote else { NSSound.beep(); return }   // its formatter would run here, not on the host
         guard let cmd = await command("format"), let e = editor else { return }
-        guard LSPManager.shared.askTrust(root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
+        guard LSPManager.shared.askTrust(app, root, { [weak self] in Task { await self?.format() } }) else { return }   // its toolchain may be the repo's
         let text = e.text, line = e.cursor?.line ?? 1
         let r = await Shell.run(cmd, cwd: url.deletingLastPathComponent().path, input: text, timeout: 20)
         guard r.code == 0 else {

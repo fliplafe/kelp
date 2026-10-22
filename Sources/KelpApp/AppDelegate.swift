@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let pick = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_WORKTREE"].flatMap { b in
                 AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b }
             }
-            let last = UIState["workbench.lastWorkspace"]?.string.flatMap { AppModel.shared.worktree($0) }
+            let last = AppModel.shared.uiState["workbench.lastWorkspace"]?.string.flatMap { AppModel.shared.worktree($0) }
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))
             if let w = pick ?? last ?? AppModel.shared.worktrees.first(where: { !$0.archived }) { Workbench.show(workspace: w.id) }

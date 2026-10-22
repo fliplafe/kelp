@@ -428,8 +428,8 @@ final class EditorHost: NSViewController {
     /// A tab for a workspace that isn't on screen: into its editor area if it's loaded, else into its saved layout.
     func openInBackground(_ uri: String, workspace id: String) {
         if let a = areas[id] { a.open(uri, focus: false); return }
-        var l = WorkspaceLayout.load(id)
-        if l.tab(uri: uri) == nil { _ = l.add(uri, to: l.focusedGroup?.id); l.save(id) }
+        var l = WorkspaceLayout.load(id, from: app.uiState)
+        if l.tab(uri: uri) == nil { _ = l.add(uri, to: l.focusedGroup?.id); l.save(id, to: app.uiState) }
     }
 
     private func refresh() {

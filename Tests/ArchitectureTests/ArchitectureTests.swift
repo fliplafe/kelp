@@ -252,7 +252,7 @@ private func codeOnly(_ s: String) -> String {
 /// folder, one line each.
 @Test func theAppIsHandedItsModel() throws {
     let ceilings: [String: Int] = [
-        "": 74,
+        "": 63,
         "Builtins/Agents": 1,
         "Extensions": 20,
         "Settings": 24,

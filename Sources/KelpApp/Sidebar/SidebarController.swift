@@ -36,8 +36,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     var roots: [Node] = []
     private var shape: [String] = []
     private var collapsed: Set<String> {
-        get { Set(UIState.strings("sidebar.collapsed")) }
-        set { UIState["sidebar.collapsed"] = try? .from(newValue.sorted()) }
+        get { Set(app.uiState.strings("sidebar.collapsed")) }
+        set { app.uiState["sidebar.collapsed"] = try? .from(newValue.sorted()) }
     }
     private var syncing = false
     var renaming: String?
@@ -47,9 +47,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     lazy var card = HoverCard(app: app)
     /// The search field's menu (its magnifier): which workspaces to show. The one on screen always stays.
     var filter = SidebarFilter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
-    static var pinned: [String] {
-        get { UIState.strings("sidebar.pinned") }
-        set { UIState["sidebar.pinned"] = try? .from(newValue) }
+    var pinned: [String] {
+        get { app.uiState.strings("sidebar.pinned") }
+        set { app.uiState["sidebar.pinned"] = try? .from(newValue) }
     }
     private let noMatch = NSStackView()
     private let summary = AgentSummary()
@@ -179,7 +179,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private func build() -> [Node] {
         let m = app
         var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue.sessions)
-        tree.pinned = Self.pinned
+        tree.pinned = pinned
         tree.query = query
         tree.filter = filter
         tree.current = app.workbench.workspaceId

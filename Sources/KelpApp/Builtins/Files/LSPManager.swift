@@ -23,34 +23,34 @@ final class LSPManager {
     /// Projects whose language servers may run (the daemon's UI state: one list per KELP_HOME).
     static let trustKey = LSPOpen.trustKey
     /// The scratch desk too is asked about once: something cloned into it is someone else's code like any other.
-    func trusted(_ root: String) -> Bool { UIState.strings(Self.trustKey).contains(root) }
+    func trusted(_ app: AppModel, _ root: String) -> Bool { app.uiState.strings(Self.trustKey).contains(root) }
     /// Roots asked about this run, and what starts once the user trusts them (the tabs that wanted a server).
     private var waiting: [String: [@MainActor () -> Void]] = [:]
 
     /// Language servers on, and `root` trusted; else `start` runs once the user trusts it (`askTrust`).
     func whenTrusted(_ app: AppModel, _ root: String, _ start: @escaping @MainActor () -> Void) -> Bool {
-        enabled(app) && askTrust(root, start)
+        enabled(app) && askTrust(app, root, start)
     }
 
     /// True when `root` is trusted to run its own code; else `then` runs once the user trusts it, asked once per project
     /// per run (a banner with Trust).
-    func askTrust(_ root: String, _ then: @escaping @MainActor () -> Void) -> Bool {
-        if trusted(root) { return true }
+    func askTrust(_ app: AppModel, _ root: String, _ then: @escaping @MainActor () -> Void) -> Bool {
+        if trusted(app, root) { return true }
         let start = then
         let first = waiting[root] == nil
         waiting[root, default: []].append(start)
         if first {
             let name = (root as NSString).lastPathComponent
             Banner.show(String(localized: "Language servers and formatters can run code from “\(name)” (its build scripts, plugins, toolchain). Trust this project?"),
-                        action: (String(localized: "Trust"), { Task { await LSPManager.shared.trust(root) } }))
+                        action: (String(localized: "Trust"), { Task { await LSPManager.shared.trust(app, root) } }))
         }
         return false
     }
 
     /// Recorded by the daemon first (a refusal shows, and nothing starts), then the tabs waiting for it start.
-    func trust(_ root: String) async {
-        if !trusted(root) {
-            guard await UIState.save(Self.trustKey, .array((UIState.strings(Self.trustKey) + [root]).map(JSONValue.string))) else { return }
+    func trust(_ app: AppModel, _ root: String) async {
+        if !trusted(app, root) {
+            guard await app.uiState.save(Self.trustKey, .array((app.uiState.strings(Self.trustKey) + [root]).map(JSONValue.string))) else { return }
         }
         (waiting.removeValue(forKey: root) ?? []).forEach { $0() }
     }
@@ -66,7 +66,7 @@ final class LSPManager {
             return true
         } catch {
             switch LSPRefusal(error) {
-            case .untrusted?: _ = askTrust(root, retry)   // the daemon doesn't have it as trusted (another copy of Kelp recorded it)
+            case .untrusted?: _ = askTrust(app, root, retry)   // the daemon doesn't have it as trusted (another copy of Kelp recorded it)
             case .notInstalled?: reportMissing(server)
             case nil: break   // no daemon now: a reconnect opens it again
             }

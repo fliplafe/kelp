@@ -10,10 +10,11 @@ final class AppModel {
     static let shared = AppModel()
     /// What's on screen, settings.json and the extensions: this app's, handed down with it (`app.workbench`…) to the
     /// window, the built-ins' contributions and their views.
-    @ObservationIgnored private(set) lazy var workbench = Workbench()
+    @ObservationIgnored private(set) lazy var workbench = Workbench(state: uiState)
     @ObservationIgnored private(set) lazy var settings = SettingsStore()
     @ObservationIgnored private(set) lazy var extensions = ExtensionRegistry(app: self)
     @ObservationIgnored private(set) lazy var rowBadges = RowBadges(app: self)
+    @ObservationIgnored private(set) lazy var uiState = UIState(app: self)
 
     @ObservationIgnored var client: RPCClient?
     var connected = false
@@ -58,7 +59,7 @@ final class AppModel {
     var projects: [Repo] { ordered(repos.filter { !ScratchWindow.isScratch($0) }) }
 
     /// Project and workspace ids in the order they were dragged into in the sidebar; ones never moved follow them.
-    var order: [String] = [] { didSet { UIState["sidebar.order"] = try? .from(order) } }
+    var order: [String] = [] { didSet { uiState["sidebar.order"] = try? .from(order) } }
     /// Puts these (siblings) in this order.
     func reorder(_ ids: [String]) { order = ids + order.filter { !ids.contains($0) } }
     private func ordered<T: Identifiable>(_ xs: [T]) -> [T] where T.ID == String {
@@ -82,12 +83,12 @@ final class AppModel {
 
     private func sendUIState() {
         guard let c = client else { return }
-        let w = worktree(Workbench.shared.workspaceId)
-        let reg = ExtensionRegistry.shared
+        let w = worktree(workbench.workspaceId)
+        let reg = extensions
         let state: JSONValue = .obj([
             "workspace": w.map { .obj(["id": .string($0.id), "name": .string($0.displayName), "path": .string($0.path), "branch": .string($0.branch)]) } ?? .null,
-            "focusedSession": Workbench.shared.focusedSession.map { .string($0) } ?? .null,
-            "focusedFile": Workbench.shared.focusedFile.map { .string($0) } ?? .null,
+            "focusedSession": workbench.focusedSession.map { .string($0) } ?? .null,
+            "focusedFile": workbench.focusedFile.map { .string($0) } ?? .null,
             "editor": Workbench.editor?.stateForAgents ?? .null,
             "extensions": .array(reg.extensions.map { e in
                 .obj(["id": .string(e.id), "name": .string(e.name), "enabled": .bool(e.enabled), "builtin": .bool(e.builtin),
@@ -149,9 +150,9 @@ final class AppModel {
             self.client = nil; self.connected = false; self.reconnectSoon()
         } }
         if await checkDaemonVersion(c) { return }
-        await UIState.load()
-        if UIState.strings("sidebar.order") != order { order = UIState.strings("sidebar.order") }
-        await SettingsStore.shared.load()
+        await uiState.load()
+        if uiState.strings("sidebar.order") != order { order = uiState.strings("sidebar.order") }
+        await settings.load()
         await refresh()
         connected = client === c   // after the lists: what waits for the connection finds the projects in
         if connected { connections += 1 }
@@ -268,12 +269,12 @@ final class AppModel {
         case let e as DevServerEvent:
             // A dev server in the workspace on screen printed its URL: the page opens beside it.
             // The keys stay where they are: the page comes while you may be typing.
-            if e.worktree == Workbench.shared.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
+            if e.worktree == workbench.workspaceId { Workbench.open(e.url, split: .right, workspace: e.worktree, focus: false) }
         case let r as Repo: record(r)
         case let w as Worktree: record(w)
         case let e as RemovedEvent: removed(e)
         case let e as CloneEvent: CloneSheet.cloneProgress(id: e.id, line: e.line)
-        case let e as SettingsEvent: SettingsStore.shared.received(e.settings)
+        case let e as SettingsEvent: settings.received(e.settings)
         case let e as UIEvent: UIRequests.handle(e)
         default: watched(event)   // event.changed is left: the records themselves follow (event.repo / .worktree / .removed)
         }

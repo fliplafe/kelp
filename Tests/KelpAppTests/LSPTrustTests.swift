@@ -10,19 +10,19 @@ extension SharedAppModel {
     @Test func languageServersWaitForTheUsersTrustInTheProject() async throws {
         _ = testHome
         _ = NSApplication.shared   // the question is a banner in the window
-        let saved = UIState[LSPManager.trustKey]
-        defer { UIState[LSPManager.trustKey] = saved }
+        let saved = AppModel.shared.uiState[LSPManager.trustKey]
+        defer { AppModel.shared.uiState[LSPManager.trustKey] = saved }
         let root = "/tmp/cloned-\(UUID().uuidString.prefix(6))"
         let lsp = LSPManager.shared, app = AppModel.shared
         var started = 0
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // asks; nothing starts
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // a second tab of it waits too (asked once)
         #expect(await !lsp.open(app, root: root, path: root + "/main.rs", text: "", retry: {}))   // no server is given the file
-        #expect(started == 0 && !lsp.trusted(root))
-        await lsp.trust(root)                                    // the banner's "Trust and Start"
-        #expect(started == 2 && lsp.trusted(root))
+        #expect(started == 0 && !lsp.trusted(app, root))
+        await lsp.trust(app, root)                                    // the banner's "Trust and Start"
+        #expect(started == 2 && lsp.trusted(app, root))
         #expect(lsp.whenTrusted(app, root) { started += 1 } && started == 2)   // trusted from now on: no waiting
-        #expect(!lsp.trusted(Paths.scratch.path))   // the scratch desk is asked about like any project: a clone may land there
+        #expect(!lsp.trusted(app, Paths.scratch.path))   // the scratch desk is asked about like any project: a clone may land there
     }
 
     /// Only Kelp's own window may record trust (the daemon checks who's asking): refused, the project stays untrusted and
@@ -36,7 +36,7 @@ extension SharedAppModel {
         let root = "/tmp/refused-\(UUID().uuidString.prefix(6))", lsp = LSPManager.shared, app = rig.app
         var started = 0
         _ = lsp.whenTrusted(app, root) { started += 1 }
-        await lsp.trust(root)
-        #expect(!lsp.trusted(root) && started == 0)
+        await lsp.trust(app, root)
+        #expect(!lsp.trusted(app, root) && started == 0)
     }
 }

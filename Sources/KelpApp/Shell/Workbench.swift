@@ -9,7 +9,10 @@ import WorkbenchKit
 final class Workbench {
     /// The app's (`AppModel.workbench`), for code not handed it yet.
     static var shared: Workbench { AppModel.shared.workbench }
-    var workspaceId: String? { didSet { UIState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
+    var workspaceId: String? { didSet { state["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
+    /// Where the last workspace is kept (the app's UI state).
+    @ObservationIgnored private let state: UIState
+    init(state: UIState) { self.state = state }
     var focusedSession: String?
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.
     var focusedTab: String?

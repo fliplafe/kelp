@@ -29,7 +29,7 @@ final class EditorArea: NSViewController {
     init(app: AppModel, workspaceId: String) {
         self.app = app
         self.workspaceId = workspaceId
-        layout = WorkspaceLayout.load(workspaceId)
+        layout = WorkspaceLayout.load(workspaceId, from: app.uiState)
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -329,7 +329,7 @@ final class EditorArea: NSViewController {
         Self.unsaved.add(self)
         saveWork.after(0.5) { [weak self] in self?.saveLayout() }
     }
-    private func saveLayout() { Self.unsaved.remove(self); layout.save(workspaceId) }
+    private func saveLayout() { Self.unsaved.remove(self); layout.save(workspaceId, to: app.uiState) }
     /// Areas whose layout is waiting out the pause before it's saved (weak: one that's gone has nothing to save).
     private static let unsaved = NSHashTable<EditorArea>.weakObjects()
     /// Quitting: layouts still waiting are saved now, before the app's last writes go out.
