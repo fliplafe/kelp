@@ -115,6 +115,11 @@ else a `NotificationCenter` name.
   requests by branch, running clones, the trackers' clients and their keychain secrets), `Workspaces` (desks, the
   branches they follow, the `.kelp.yaml` files the user trusts), `Watches` (what clients watch, read through a hook the
   daemon sets), `Sessions` (which run, starting, waking, pausing and deleting them, their tmux, keeping the Mac awake).
+  A method's handler is handed one service (`Handled.Service`: `handle(_ sessions: Sessions)`), never the daemon, so it
+  reaches only what that service holds; each service's projection from the daemon is in one place (`DaemonService`).
+  Its home (`Daemon(root:)`) is all the daemon takes from outside: its paths, which project folders are remote ones
+  (`Remotes`) and how their ssh connections are shared come from it, never from the environment or a static
+  (`theDaemonKeepsNoProcessGlobals`).
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
   files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool; at most
   128 run at once, the rest wait their turn. A quick one (`Handled.quick`: `session.hook`, `session.report`,

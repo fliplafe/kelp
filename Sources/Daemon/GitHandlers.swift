@@ -177,7 +177,7 @@ extension CommentSend: Handled {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let gitMethods: [any Handled.Type] = [GitStatus.self, GitBranches.self, GitLineStats.self, GitPush.self, GitDiff.self, GitLog.self,
         GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self, GitCommitDetails.self,
         GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesSearch.self,

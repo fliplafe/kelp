@@ -186,7 +186,7 @@ extension Workspaces {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let workspaceMethods: [any Handled.Type] = [RepoAdd.self, RepoList.self, ScratchEnsure.self, RepoRelocate.self, RepoRemove.self,
         WorkspaceCreate.self, WorktreeCreate.self, WorktreeList.self, WorktreeArchive.self, WorktreeRemove.self, WorktreeUnarchive.self,
         WorktreeUnmerged.self, WorktreeDirty.self]

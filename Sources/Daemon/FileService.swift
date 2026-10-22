@@ -190,6 +190,6 @@ extension FilesCreate: Handled {
     func handle(_ files: FileService) throws -> String { try files.create(path, folder: folder == true, text: text, unique: unique == true) }
 }
 
-extension Daemon {
+extension Methods {
     static let fileMethods: [any Handled.Type] = [FilesRead.self, FilesWrite.self, FilesMove.self, FilesTrash.self, FilesCopy.self, FilesCreate.self]
 }

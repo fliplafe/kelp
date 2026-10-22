@@ -205,14 +205,22 @@ private func codeOnly(_ s: String) -> String {
     let shared = try matches(#"^(?:private |fileprivate |public )?(?:let|var) \w+|^\s+(?:private |public )?static let \w+ = (?!Logger\()[A-Z]\w*(?:<[^>]*>)?\("#,
                              in: ["Sources/Daemon"])
     #expect(stored <= 14, "Daemon's stored properties: \(stored)")
-    #expect(extensions.count <= 23, "extensions of Daemon: \(extensions)")
+    #expect(extensions.count <= 2, "extensions of Daemon: \(extensions)")
     #expect(shared.count <= 0, "state outside an instance: \(shared)")
-    // A service gets what it uses at init: one that names Daemon reaches back into everything.
-    let services = ["AgentUsage.swift", "UsageProbe.swift", "AgentConfig.swift", "Forges.swift", "Workspaces.swift", "Watches.swift",
-                    "Sessions.swift", "SessionLaunch.swift", "Retention.swift"]
-    let named = sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } && codeOnly(f.text).contains("Daemon") }
-    #expect(named.map(\.path) == [])
-    #expect(sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } }.count == services.count)
+}
+
+/// A method's handler is handed one service (`Handled.Service`), never the daemon, so it reaches only what that service
+/// holds; and a service gets what it uses at init instead of reaching back. So only the daemon's own files name it: the
+/// class, the dispatch with each service's projection (Handlers.swift), and the watch reader, which answers methods as a
+/// client would (WatchHandlers.swift). Everything else (handlers, services, their helpers) doesn't.
+@Test func handlersAreHandedAServiceNotTheDaemon() throws {
+    let own: Set<String> = ["Sources/Daemon/Daemon.swift", "Sources/Daemon/Handlers.swift", "Sources/Daemon/WatchHandlers.swift"]
+    let naming = sources(["Sources/Daemon"]).filter { f in
+        !own.contains(f.path) && codeOnly(f.text).range(of: #"\bDaemon\b"#, options: .regularExpression) != nil
+    }
+    #expect(naming.map(\.path).sorted() == [], "files that reach the daemon")
+    let taking = try matches(#"func handle\(_ \w+: Daemon\b|extension Daemon: DaemonService"#, in: ["Sources/Daemon"])
+    #expect(taking == [], "handlers that take the daemon")
 }
 
 /// What the daemon runs on is handed to it (`Daemon(root:)`, its `Remotes`, `LSPHost`'s delays): nothing in the code it

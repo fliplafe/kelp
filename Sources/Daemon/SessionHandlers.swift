@@ -20,7 +20,7 @@ extension SessionAttach: Handled {
             return Result(history: TerminalReplies.withoutQueries(try sessions.liveSessionOrLog(id, bytes: LiveSession.ringLimit)).base64EncodedString())
         }
         // Showing a tab isn't reading it: the app marks it read once it was looked at (or typed into).
-        guard let history = try sessions.liveSession(id).attach(conn) else { throw Daemon.pausedAsAttached }
+        guard let history = try sessions.liveSession(id).attach(conn) else { throw Sessions.pausedAsAttached }
         return Result(history: history.base64EncodedString())
     }
 }
@@ -116,6 +116,8 @@ extension SessionBusy: Handled {
 }
 
 extension Sessions {
+    static let pausedAsAttached = RPCError.invalidParams("The session was paused as it was opened. Open it again.")
+
     /// The last `bytes` a session printed as text. Lossy on purpose: a byte window can cut a UTF-8 sequence, and the rest
     /// of the text still matters.
     func printed(_ id: String, bytes: Int) throws -> String {
@@ -152,7 +154,7 @@ extension SessionLastReply: Handled {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let sessionMethods: [any Handled.Type] = [SessionList.self, SessionAttach.self, SessionDetach.self, SessionWrite.self, SessionSend.self,
         SessionResize.self, SessionKill.self, SessionChoose.self, AgentSetSecret.self, PortsList.self, PortsStop.self, SessionUsage.self,
         SessionBusy.self, SessionRead.self, SessionContext.self, SessionMarkRead.self, SessionMarkUnread.self, SessionTurn.self, SessionLastReply.self]

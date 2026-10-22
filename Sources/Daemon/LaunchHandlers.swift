@@ -140,9 +140,8 @@ extension DaemonShutdown: Handled {
 }
 
 /// daemon.shutdown's: the daemon's stop, and nothing else of it.
-struct Shutdown: DaemonService {
+struct Shutdown {
     let stop: @Sendable () -> Void
-    static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } }
 }
 
 /// The agents on this Mac, side by side, each through `offload`; latest from npm where they publish there.
@@ -205,7 +204,7 @@ extension TaskFromIssue: AsyncHandled {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
         SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, ProcessRun.self, ProcessWhich.self]
 }

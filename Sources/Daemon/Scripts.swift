@@ -88,7 +88,7 @@ extension ScriptsRun: Handled {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let projectMethods: [any Handled.Type] = [ScriptsList.self, ScriptsTrust.self, ScriptsRun.self, RepoAddRemote.self, FilesReadRemote.self, FilesWriteRemote.self,
         SettingsGet.self, SettingsSet.self, UsageGet.self, UsageReport.self, HistoryList.self] + fileMethods
 }

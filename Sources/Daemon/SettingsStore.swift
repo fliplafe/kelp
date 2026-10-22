@@ -73,13 +73,12 @@ final class SettingsStore: Sendable {
 /// The settings as clients hear of them (`event.settings`): as they are when it's their turn, one change after another,
 /// so two sets close together can't announce themselves the wrong way round (the app takes each event as the whole of
 /// the settings). Keep Mac Awake follows at once.
-final class SettingsEvents: Sendable, DaemonService {
+final class SettingsEvents: Sendable {
     let store: SettingsStore
     private let clients: Clients, sessions: Sessions
     private let queue = DispatchQueue(label: "kelp.settings-events")
 
     init(store: SettingsStore, clients: Clients, sessions: Sessions) { self.store = store; self.clients = clients; self.sessions = sessions }
-    static func of(_ d: Daemon) -> SettingsEvents { d.settingsEvents }
 
     func changed() {
         queue.async { [self] in

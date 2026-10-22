@@ -1,7 +1,7 @@
 import Foundation
 import Core
 
-extension Daemon {
+extension Methods {
     static let extensionMethods: [any Handled.Type] = [ExtensionLibrary.self, ExtensionFetch.self]
 }
 

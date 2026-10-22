@@ -27,7 +27,7 @@ extension UIOpen: Handled {
 
 extension UICommand: Handled { func handle(_ clients: Clients) throws -> Delivered { try clients.relay(UIEvent(self)) } }
 
-extension Daemon {
+extension Methods {
     static let uiMethods: [any Handled.Type] = [UIPublish.self, UIStateGet.self, UIOpen.self, UICommand.self]
 }
 
@@ -42,9 +42,8 @@ extension Clients {
 }
 
 /// What Kelp's window keeps in the daemon (`state.*`), and who may write it.
-struct UIStore: DaemonService {
+struct UIStore {
     let store: Store, clients: Clients
-    static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) }
 }
 
 extension StateGet: Handled {

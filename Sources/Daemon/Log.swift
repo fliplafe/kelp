@@ -12,18 +12,6 @@ enum Log {
     static let session = Logger(subsystem: "dev.kelp.daemon", category: "session")
 }
 
-extension Daemon {
-    /// kelpd couldn't start: the reason goes to the log and to `Paths.daemonError(in:)`, where the app reads it for its
-    /// "background service isn't running" banner (the app starts kelpd with its output thrown away). The file goes once a
-    /// daemon starts. Limit: a KELP_HOME that can't be written can't hold it either; then only the log and stderr have it.
-    public static func startFailed(_ error: Error, root: URL) -> String {
-        let why = (error as? RPCError)?.message ?? "\(error)"
-        Log.start.fault("kelpd didn't start: \(why, privacy: .public)")
-        try? Data((why + "\n").utf8).write(to: Paths.daemonError(in: root))
-        return why
-    }
-}
-
 extension Clients {
     /// KelpApp beside this daemon (one bundle, or one build folder); KELP_APP_EXECUTABLE stands in for it in tests.
     static var appExecutable: String {

@@ -24,29 +24,8 @@ extension Store {
     }
 }
 
-/// What the forge and tracker methods share: remote projects refused, and the integrations' errors as the app shows them.
-/// (GitHub goes through `gh`, with its auth; the trackers' clients: `Forges`.)
-extension Daemon {
-
-    /// gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up to
-    /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all: a `LocalForge`
-    /// method is refused for one, or answers null when the sidebar asked by itself.
-    func refuseRemoteForge(_ t: any Answered.Type, _ p: JSONValue) throws -> Data? {
-        guard let forge = t as? any LocalForge.Type, (try? store.repoPath(p)).map({ remotes.of($0.1) != nil }) == true else { return nil }
-        if forge.quietOnRemote { return Data("null".utf8) }
-        throw RPCError.invalidParams("Pull requests and CI aren't available for remote projects yet.")
-    }
-
-    /// The integrations' own errors, as the app shows them.
-    func integrationErrors<T>(_ body: () async throws -> T) async throws -> T {
-        do { return try await body() }
-        catch let e as GitHubError { throw RPCError.internalError(e.description) }
-        catch let e as IntegrationError { throw RPCError.internalError(e.description) }
-    }
-
-}
-
-/// Runs gh or glab in the project's folder (`refuseRemoteForge`): every GitHub, GitLab and CI method.
+/// Runs gh or glab in the project's folder (`Daemon.refuseRemoteForge`): every GitHub, GitLab and CI method. (GitHub goes
+/// through `gh`, with its auth; the trackers' clients: `Forges`.)
 protocol LocalForge {
     /// Asked by the sidebar on its own: null for a remote project instead of an error.
     static var quietOnRemote: Bool { get }

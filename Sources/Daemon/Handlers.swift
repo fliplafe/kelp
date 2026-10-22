@@ -3,6 +3,7 @@ import os
 import Core
 import GitKit
 import Agents
+import Integrations
 
 extension JSONValue {
     func req(_ k: String) throws -> String {
@@ -39,6 +40,10 @@ extension Workspaces: DaemonService { static func of(_ d: Daemon) -> Workspaces 
 extension Forges: DaemonService { static func of(_ d: Daemon) -> Forges { d.forges } }
 extension Clients: DaemonService { static func of(_ d: Daemon) -> Clients { d.clients } }
 extension LSPHost: DaemonService { static func of(_ d: Daemon) -> LSPHost { d.lsp } }
+extension SettingsEvents: DaemonService { static func of(_ d: Daemon) -> SettingsEvents { d.settingsEvents } }
+extension UIStore: DaemonService { static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) } }
+extension ForgeWork: DaemonService { static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) } }
+extension Shutdown: DaemonService { static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } } }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
@@ -64,6 +69,23 @@ extension Handled {
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload(quick: quick) { try answerNow(p, d, conn: conn) } }
 }
 
+/// A method that waits on a web API (Linear, Jira, Bitbucket): async, with its gh / git calls through `offload`.
+/// `handle(_:conn:)` for one that reports progress to the asking connection (repo.clone).
+protocol AsyncHandled: Answered {
+    associatedtype Service: DaemonService
+    func handle(_ s: Service) async throws -> Result
+    func handle(_ s: Service, conn: Int) async throws -> Result
+}
+
+extension AsyncHandled {
+    static var inOrder: Bool { false }
+    func handle(_ s: Service, conn: Int) async throws -> Result { try await handle(s) }
+
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data {
+        try JSONEncoder().encode(await decoded(p).handle(Service.of(d), conn: conn))
+    }
+}
+
 extension RPCMethod {
     /// The method's params as its type; a bad or missing field is the caller's error.
     static func decoded(_ p: JSONValue) throws -> Self {
@@ -73,14 +95,18 @@ extension RPCMethod {
     }
 }
 
+/// The methods the daemon answers, listed by domain beside their handlers; `Daemon.methods` is the one table of them.
+enum Methods {}
+
 extension Daemon {
     /// Every method the daemon answers, by name: one list, so none is answered twice (a second entry traps at launch).
     static let methods: [String: any Answered.Type] = {
         let sync: [any Handled.Type] = [DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                         WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self, GitDiscardHunk.self,
                                         RemoteListFolders.self, SessionReport.self, ClientEvents.self, WatchStart.self, WatchStop.self]
-            + gitMethods + workspaceMethods + sessionMethods + integrationMethods + projectMethods + launchMethods + uiMethods + lspMethods + extensionMethods
-        let all = sync.map { $0 as any Answered.Type } + (asyncMethods + lspAsyncMethods).map { $0 as any Answered.Type }
+            + Methods.gitMethods + Methods.workspaceMethods + Methods.sessionMethods + Methods.integrationMethods + Methods.projectMethods
+            + Methods.launchMethods + Methods.uiMethods + Methods.lspMethods + Methods.extensionMethods
+        let all = sync.map { $0 as any Answered.Type } + (Methods.asyncMethods + Methods.lspAsyncMethods).map { $0 as any Answered.Type }
         return Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
     }()
 
@@ -111,6 +137,22 @@ extension Daemon {
 
     private func gitErrors<T>(_ body: () async throws -> T) async throws -> T {
         do { return try await body() } catch let e as GitError { throw RPCError.internalError(e.message) }
+    }
+
+    /// The integrations' own errors, as the app shows them.
+    private func integrationErrors<T>(_ body: () async throws -> T) async throws -> T {
+        do { return try await body() }
+        catch let e as GitHubError { throw RPCError.internalError(e.description) }
+        catch let e as IntegrationError { throw RPCError.internalError(e.description) }
+    }
+
+    /// gh / glab run in the folder here; a remote project's is only a marker under ~/.kelp, and their git would walk up to
+    /// whatever repository holds it (a dotfiles home). Until they run on the host, they don't run at all: a `LocalForge`
+    /// method is refused for one, or answers null when the sidebar asked by itself.
+    private func refuseRemoteForge(_ t: any Answered.Type, _ p: JSONValue) throws -> Data? {
+        guard let forge = t as? any LocalForge.Type, (try? store.repoPath(p)).map({ remotes.of($0.1) != nil }) == true else { return nil }
+        if forge.quietOnRemote { return Data("null".utf8) }
+        throw RPCError.invalidParams("Pull requests and CI aren't available for remote projects yet.")
     }
 
     /// git, gh and ssh hold their thread until they exit, and Swift's cooperative pool has one thread per core: a few slow

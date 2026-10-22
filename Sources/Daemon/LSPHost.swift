@@ -174,7 +174,7 @@ extension LSPHost {
     }
 }
 
-extension Daemon {
+extension Methods {
     static let lspMethods: [any Handled.Type] = [LSPOpen.self, LSPChange.self, LSPClose.self]
     static let lspAsyncMethods: [any AsyncHandled.Type] = [LSPDefinition.self, LSPCompletion.self, LSPSymbol.self]
 }

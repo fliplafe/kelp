@@ -3,23 +3,6 @@ import Core
 import GitKit
 import Integrations
 
-/// A method that waits on a web API (Linear, Jira, Bitbucket): async, with its gh / git calls through `offload`.
-/// `handle(_:conn:)` for one that reports progress to the asking connection (repo.clone).
-protocol AsyncHandled: Answered {
-    associatedtype Service: DaemonService
-    func handle(_ s: Service) async throws -> Result
-    func handle(_ s: Service, conn: Int) async throws -> Result
-}
-
-extension AsyncHandled {
-    static var inOrder: Bool { false }
-    func handle(_ s: Service, conn: Int) async throws -> Result { try await handle(s) }
-
-    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data {
-        try JSONEncoder().encode(await decoded(p).handle(Service.of(d), conn: conn))
-    }
-}
-
 extension Forges {
     /// The branch checked out in the folder now (a workspace's record can be stale after a switch).
     func checkedOut(_ w: Worktree) -> String {
@@ -31,9 +14,8 @@ extension Forges {
 
 /// For a method that brings work in from a forge into a project: a clone added as one, an issue made a workspace with
 /// its agent.
-struct ForgeWork: DaemonService {
+struct ForgeWork {
     let forges: Forges, workspaces: Workspaces
-    static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) }
 }
 
 // MARK: gh / glab / git only
@@ -288,7 +270,7 @@ extension BitbucketStatus: AsyncHandled {
     func handle(_ forges: Forges) async throws -> Result { Result(connected: await forges.bitbucketClient() != nil) }
 }
 
-extension Daemon {
+extension Methods {
     static let integrationMethods: [any Handled.Type] = [GitHubBranchPR.self, GitHubForge.self, CIRunsList.self, CIJobs.self, CILog.self,
         CIRerun.self, CIDispatch.self, GitHubStatus.self, GitLabStatus.self, GitHubIssues.self, GitHubChecks.self, GitHubFailedLog.self,
         GitHubReviewComments.self, GitHubProjects.self, GitHubProjectItems.self]

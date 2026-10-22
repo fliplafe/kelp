@@ -63,6 +63,16 @@ public final class Daemon: Sendable {
         }
     }
 
+    /// kelpd couldn't start: the reason goes to the log and to `Paths.daemonError(in:)`, where the app reads it for its
+    /// "background service isn't running" banner (the app starts kelpd with its output thrown away). The file goes once a
+    /// daemon starts. Limit: a KELP_HOME that can't be written can't hold it either; then only the log and stderr have it.
+    public static func startFailed(_ error: Error, root: URL) -> String {
+        let why = (error as? RPCError)?.message ?? "\(error)"
+        Log.start.fault("kelpd didn't start: \(why, privacy: .public)")
+        try? Data((why + "\n").utf8).write(to: Paths.daemonError(in: root))
+        return why
+    }
+
     /// When this binary was built; the app compares it with the kelpd it ships to spot a stale daemon after an update.
     static let binaryMTime: Double = {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
@@ -240,8 +250,6 @@ public final class Daemon: Sendable {
         ls.detach(c.id)
     }
 
-    static let pausedAsAttached = RPCError.invalidParams("The session was paused as it was opened. Open it again.")
-
     private func respond(_ req: Request, conn c: Connection) async {
         let id = req.id ?? .null
         // Attach: the reply with the history is queued in the same step that subscribes, so no live output can reach this
@@ -259,7 +267,7 @@ public final class Daemon: Sendable {
                     if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) { c.send(Self.replyLine(id: id, result: r)) }
                 } != nil
             }
-            if !attached, let d = Self.errorLine(id: id, Self.pausedAsAttached) { c.send(d) }
+            if !attached, let d = Self.errorLine(id: id, Sessions.pausedAsAttached) { c.send(d) }
             return
         }
         do {
