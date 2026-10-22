@@ -13,6 +13,7 @@ final class AppModel {
     @ObservationIgnored private(set) lazy var workbench = Workbench()
     @ObservationIgnored private(set) lazy var settings = SettingsStore()
     @ObservationIgnored private(set) lazy var extensions = ExtensionRegistry(app: self)
+    @ObservationIgnored private(set) lazy var rowBadges = RowBadges(app: self)
 
     @ObservationIgnored var client: RPCClient?
     var connected = false

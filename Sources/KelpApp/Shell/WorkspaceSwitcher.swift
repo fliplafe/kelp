@@ -98,7 +98,7 @@ final class WorkspaceSwitcher {
         let repo = m.repo(w.repoId)
         let place = label([repo?.name, w.path == repo?.path || w.branch == w.displayName ? nil : w.branch].compactMap { $0 }.joined(separator: " · "),
             .systemFont(ofSize: 12), tag: 1)
-        let folder = RowBadges.folder(workspace: w.id) ?? RowBadges.folder(project: w.repoId)
+        let folder = RowBadges.shared.folder(workspace: w.id) ?? RowBadges.shared.folder(project: w.repoId)
         let changes = label("", .uiDigits(11), tag: 2), pr = label("", .uiDigits(11), tag: 2)
         if let c = folder.flatMap({ RowBadges.changes(RowBadges.shared.stats[$0.id]) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
         if let p = folder.flatMap({ RowBadges.pr(RowBadges.shared.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }

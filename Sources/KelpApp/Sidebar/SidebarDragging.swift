@@ -56,7 +56,7 @@ extension SidebarController {
             guard let from = rows.firstIndex(of: m.node) else { return false }
             rows.insert(m.node, at: m.index); rows.remove(at: from < m.index ? from : from + 1)
             let ids = rows.compactMap(\.id)
-            if case .section = m.parent?.kind { Self.pinned = ids + Self.pinned.filter { !ids.contains($0) }; refresh() } else { AppModel.shared.reorder(ids) }
+            if case .section = m.parent?.kind { Self.pinned = ids + Self.pinned.filter { !ids.contains($0) }; refresh() } else { app.reorder(ids) }
             return true
         }
         let folders = Self.folders(info)

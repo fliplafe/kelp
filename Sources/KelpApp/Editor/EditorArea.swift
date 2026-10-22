@@ -24,7 +24,7 @@ final class EditorArea: NSViewController {
     /// The group shown alone (⇧⌘↩), not saved: a relaunch shows every pane.
     var zoomed: String?
 
-    var worktree: Worktree? { AppModel.shared.worktree(workspaceId) }
+    var worktree: Worktree? { app.worktree(workspaceId) }
 
     init(app: AppModel, workspaceId: String) {
         self.app = app
@@ -36,7 +36,7 @@ final class EditorArea: NSViewController {
 
     override func loadView() {
         view = NSView()
-        track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.extensionsChanged() }
+        track(owner: self) { [app] in app.extensions.revision } changed: { [weak self] _ in self?.extensionsChanged() }
         track(owner: self) { FileIcon.revision } changed: { [weak self] _ in self?.groupViews.keys.forEach { self?.refreshGroup($0) } }
         // The empty workspace lists the agents that work, with their icons; rebuild it when either changes.
         track(owner: self) { AgentAvailability.shared.ids } changed: { [weak self] _ in self?.rebuildStart() }
@@ -54,7 +54,7 @@ final class EditorArea: NSViewController {
     /// brings the content back.
     private func extensionsChanged() {
         // A reloaded extension may have changed its view: its tabs are built again from the new definition.
-        let stale = contents.filter { TabURI.scheme($0.value.uri) == "ext" || (ExtensionRegistry.shared.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
+        let stale = contents.filter { TabURI.scheme($0.value.uri) == "ext" || (app.extensions.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
         guard !stale.isEmpty else { return }
         stale.forEach { contents[$0] = nil }
         render()
@@ -201,7 +201,7 @@ final class EditorArea: NSViewController {
                 return TabStrip.Item(id: t.id, title: c.title, icon: c.icon, status: b?.status, unread: b?.unread ?? false, toolTip: c.toolTip,
                     edited: c.isEdited, meter: b?.meter, progress: b?.progress)
             }
-            return Self.placeholder(t)
+            return placeholder(t)
         }, model.tabs), selected: model.selectedTab?.id)
         g.show(visible?.view)
         // Like Ghostty's unfocused splits: with panes side by side, a terminal without focus fades a little.
@@ -233,11 +233,11 @@ final class EditorArea: NSViewController {
         }
     }
 
-    static func placeholder(_ t: TabRef) -> TabStrip.Item {
+    func placeholder(_ t: TabRef) -> TabStrip.Item {
         let body = TabURI.body(t.uri)
         switch TabURI.scheme(t.uri) {
         case "session":
-            let s = AppModel.shared.session(body)
+            let s = app.session(body)
             let title = s.map(AgentCatalog.displayName) ?? String(localized: "Session")
             return .init(id: t.id, title: title, icon: AgentCatalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
                          unread: s?.unread ?? false, toolTip: title)
@@ -257,14 +257,14 @@ final class EditorArea: NSViewController {
 
     private func content(_ t: TabRef) -> TabContent? {
         if let c = contents[t.id] { return c }
-        let c = ExtensionRegistry.shared.tabProvider(for: t.uri)?.make(t.uri) ?? UnavailableTab(uri: t.uri)
+        let c = app.extensions.tabProvider(for: t.uri)?.make(t.uri) ?? UnavailableTab(uri: t.uri)
         c.onChange = { [weak self, weak c] in
             guard let self, let gid = layout.group(of: t.id) else { return }
             if let c, c.uri != t.uri, var g = layout.groups[gid], let i = g.tabs.firstIndex(where: { $0.id == t.id }) {
                 g.tabs[i].uri = c.uri; layout.groups[gid] = g; scheduleSave()   // e.g. the browser navigated
             }
             refreshGroup(gid)
-            AppModel.shared.publishUIState()
+            app.publishUIState()
         }
         contents[t.id] = c
         return c
@@ -277,7 +277,7 @@ final class EditorArea: NSViewController {
 
     private func showStart() {
         guard start == nil, let w = worktree else { return }
-        let s = StartView(worktree: w)
+        let s = StartView(app: app, worktree: w)
         s.onAgent = { [weak self] agent in self?.newAgent(agent) }
         s.onPrompt = { [weak self] agent, text in self?.newAgent(agent, prompt: text) }
         s.onOpen = { [weak self] uri in self?.open(uri) }
@@ -304,7 +304,7 @@ final class EditorArea: NSViewController {
     func publishFocus() {
         guard Workbench.window?.editors.current === self else { return }
         let uri = layout.focusedGroup?.selectedTab?.uri ?? ""
-        let wb = Workbench.shared
+        let wb = app.workbench
         if wb.focusedTab != uri { wb.focusedTab = uri }
         if wb.sideBySide != (layout.manual != true) { wb.sideBySide = layout.manual != true }
         switch TabURI.scheme(uri) {
@@ -312,10 +312,10 @@ final class EditorArea: NSViewController {
         case "file": wb.focusedFile = TabURI.filePath(uri).path
         default: break
         }
-        if wb.focusedSession.flatMap({ AppModel.shared.session($0)?.worktreeId }) != workspaceId {
-            wb.focusedSession = AppModel.shared.sessions.last { $0.worktreeId == workspaceId && $0.status != .exited && $0.agent != "shell" }?.id
+        if wb.focusedSession.flatMap({ app.session($0)?.worktreeId }) != workspaceId {
+            wb.focusedSession = app.sessions.last { $0.worktreeId == workspaceId && $0.status != .exited && $0.agent != "shell" }?.id
         }
-        AppModel.shared.publishUIState()
+        app.publishUIState()
     }
 
     func focusSelected() {
@@ -336,7 +336,7 @@ final class EditorArea: NSViewController {
     static func saveLayouts() { for a in unsaved.allObjects { a.saveWork.cancel(); a.saveLayout() } }
 
     /// Every open tab (URI and title), for the palette.
-    var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? Self.placeholder($0).title) } }
+    var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? placeholder($0).title) } }
 
     /// Open tabs and focus, for `ui.state`.
     var stateForAgents: JSONValue {

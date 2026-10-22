@@ -66,21 +66,21 @@ final class InspectorController: NSViewController {
         v.onShow = { [weak self] in self?.showSelected() }
         view = v
         // Panels are built with the text size of the moment: rebuilt when it changes (first, while none are built).
-        track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in
+        track(owner: self) { [app] in app.settings.string("workbench.textSize") } changed: { [weak self] _ in
             guard let self else { return }
             for (_, vc) in made { vc.view.removeFromSuperview(); vc.removeFromParent() }
             made = [:]; showSelected()
         }
-        track(owner: self) { ExtensionRegistry.shared.revision } changed: { [weak self] _ in self?.forgetFolderPanels(); self?.rebuild() }
-        track(owner: self) { [SettingsStore.shared.value(Self.orderKey), SettingsStore.shared.value(Self.hiddenKey)] } changed: { [weak self] _ in self?.rebuild() }
-        track(owner: self) { SettingsStore.shared.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
+        track(owner: self) { [app] in app.extensions.revision } changed: { [weak self] _ in self?.forgetFolderPanels(); self?.rebuild() }
+        track(owner: self) { [app] in [app.settings.value(Self.orderKey), app.settings.value(Self.hiddenKey)] } changed: { [weak self] _ in self?.rebuild() }
+        track(owner: self) { [app] in app.settings.string("workbench.inspectorIconsPosition") == "bottom" } changed: { [weak self] in
             guard let self else { return }
             NSLayoutConstraint.deactivate($0 ? self.top : self.bottom); NSLayoutConstraint.activate($0 ? self.bottom : self.top)
             self.rowSep.isHidden = !$0; sep.isHidden = $0
         }
-        track(owner: self) { Workbench.shared.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
-        track(owner: self) { ExtensionRegistry.shared.all.panels.map { $0.badge?() ?? 0 } } changed: { [weak self] _ in self?.showCounts() }
-        track(owner: self) { SettingsStore.shared.string("workbench.inspectorIcons") } changed: { [weak self] in
+        track(owner: self) { [app] in app.workbench.inspectorPanel } changed: { [weak self] _ in self?.showSelected() }
+        track(owner: self) { [app] in app.extensions.all.panels.map { $0.badge?() ?? 0 } } changed: { [weak self] _ in self?.showCounts() }
+        track(owner: self) { [app] in app.settings.string("workbench.inspectorIcons") } changed: { [weak self] in
             guard let self else { return }
             let want = self.align[$0 ?? ""] == nil ? "center" : $0 ?? ""
             for (k, c) in self.align { c.isActive = k == want }
@@ -91,7 +91,7 @@ final class InspectorController: NSViewController {
         // In the order the row was dragged into; panels it doesn't name yet follow in the registry's order.
         let order = ids(Self.orderKey), hidden = Set(ids(Self.hiddenKey))
         func rank(_ e: (offset: Int, element: PanelSpec)) -> (Int, Int) { (order.firstIndex(of: e.element.id) ?? .max, e.offset) }
-        panels = ExtensionRegistry.shared.all.panels.enumerated().sorted { rank($0) < rank($1) }.map(\.element)
+        panels = app.extensions.all.panels.enumerated().sorted { rank($0) < rank($1) }.map(\.element)
         let ids = Set(panels.map(\.id))
         for k in made.keys where !ids.contains(k) { made[k]?.view.removeFromSuperview(); made[k]?.removeFromParent(); made[k] = nil }
         buttons.forEach { $0.removeFromSuperview() }
@@ -117,7 +117,7 @@ final class InspectorController: NSViewController {
     /// A reload may have changed what a folder extension's panel shows (an agent edits it, then `kelp ext reload`):
     /// those are made again. Built-in panels stay as they are.
     private func forgetFolderPanels() {
-        let builtin = Set(ExtensionRegistry.shared.extensions.filter(\.builtin).map(\.id))
+        let builtin = Set(app.extensions.extensions.filter(\.builtin).map(\.id))
         for p in panels where !builtin.contains(p.extensionId) { made[p.id]?.view.removeFromSuperview(); made[p.id]?.removeFromParent(); made[p.id] = nil }
     }
 
@@ -131,11 +131,11 @@ final class InspectorController: NSViewController {
 
     @objc private func selected(_ b: NSButton) {
         guard panels.indices.contains(b.tag) else { return }
-        Workbench.shared.inspectorPanel = panels[b.tag].id
+        app.workbench.inspectorPanel = panels[b.tag].id
         showSelected()   // the shown panel's icon again: its state stays on
     }
 
-    private func ids(_ key: String) -> [String] { SettingsStore.shared.value(key)?.array?.compactMap(\.string) ?? [] }
+    private func ids(_ key: String) -> [String] { app.settings.value(key)?.array?.compactMap(\.string) ?? [] }
 
     /// A dragged icon takes the slot under the pointer (`x` in the row); the others slide aside.
     private func move(_ b: NSButton, to x: CGFloat) {
@@ -152,7 +152,7 @@ final class InspectorController: NSViewController {
 
     private func saveOrder() {
         let order = selector.arrangedSubviews.compactMap { v in buttons.firstIndex { $0 === v }.map { panels[$0].id } }
-        SettingsStore.shared.set(Self.orderKey, .array(order.map(JSONValue.string)))
+        app.settings.set(Self.orderKey, .array(order.map(JSONValue.string)))
     }
 
     /// The row's right-click menu (on an icon or the band around it): which icons show, where the row sits, auto-hide.
@@ -160,7 +160,7 @@ final class InspectorController: NSViewController {
         let p = view.convert(e.locationInWindow, from: nil)
         let band = view.bounds.height - WindowBar.height
         guard (band - TabStrip.height...band).contains(p.y) || (selector.frame.minY...selector.frame.maxY).contains(p.y) else { return nil }
-        let s = SettingsStore.shared, hidden = Set(ids(Self.hiddenKey)), m = NSMenu()
+        let s = app.settings, hidden = Set(ids(Self.hiddenKey)), m = NSMenu()
         m.addItem(.sectionHeader(title: String(localized: "Icons")))
         for panel in panels {
             m.addItem(item(loc(panel.title), #selector(toggleIcon(_:)), panel.id, on: !hidden.contains(panel.id)))
@@ -186,29 +186,29 @@ final class InspectorController: NSViewController {
         guard let id = i.representedObject as? String else { return }
         var hidden = ids(Self.hiddenKey)
         if let k = hidden.firstIndex(of: id) { hidden.remove(at: k) } else { hidden.append(id) }
-        SettingsStore.shared.set(Self.hiddenKey, hidden.isEmpty ? nil : .array(hidden.map(JSONValue.string)))
+        app.settings.set(Self.hiddenKey, hidden.isEmpty ? nil : .array(hidden.map(JSONValue.string)))
         // Hiding the shown panel's icon shows the first panel that still has one.
-        let shown = panels.first { $0.id == Workbench.shared.inspectorPanel } ?? panels.first
-        if shown?.id == id, hidden.contains(id), let next = panels.first(where: { !hidden.contains($0.id) }) { Workbench.shared.inspectorPanel = next.id }
+        let shown = panels.first { $0.id == app.workbench.inspectorPanel } ?? panels.first
+        if shown?.id == id, hidden.contains(id), let next = panels.first(where: { !hidden.contains($0.id) }) { app.workbench.inspectorPanel = next.id }
     }
 
     @objc private func setChoice(_ i: NSMenuItem) {
         guard let (key, v) = i.representedObject as? (String, String) else { return }
-        SettingsStore.shared.set(key, .string(v))
+        app.settings.set(key, .string(v))
     }
 
     @objc private func toggleAutoHide() {
-        SettingsStore.shared.set("workbench.inspector.autoHide", .bool(SettingsStore.shared.bool("workbench.inspector.autoHide") != true))
+        app.settings.set("workbench.inspector.autoHide", .bool(app.settings.bool("workbench.inspector.autoHide") != true))
     }
 
     /// Shows a panel by id (menus and commands use this too).
-    func show(panel id: String) { Workbench.shared.inspectorPanel = id }
+    func show(panel id: String) { app.workbench.inspectorPanel = id }
     /// A panel already built (they're built when first shown).
     func built(_ id: String) -> NSViewController? { made[id] }
 
     private func showSelected() {
         guard !panels.isEmpty else { host.subviews.forEach { $0.removeFromSuperview() }; return }
-        let i = panels.firstIndex { $0.id == Workbench.shared.inspectorPanel } ?? 0
+        let i = panels.firstIndex { $0.id == app.workbench.inspectorPanel } ?? 0
         for (j, b) in buttons.enumerated() { b.state = j == i ? .on : .off }
         let p = panels[i]
         panelTitle.stringValue = loc(p.title)

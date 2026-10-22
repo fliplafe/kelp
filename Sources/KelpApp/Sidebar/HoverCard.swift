@@ -6,12 +6,13 @@ import Core
 /// After half a second the card appears; while one is open, moving to another row shows that row's card at once.
 @MainActor
 final class HoverCard {
+    private let app: AppModel
     private let popover = NSPopover()
     private let pending = Debounce()
     private(set) var shownKey: String?
     private var warmUntil = Date.distantPast
 
-    init() { popover.behavior = .applicationDefined; popover.animates = false }
+    init(app: AppModel) { self.app = app; popover.behavior = .applicationDefined; popover.animates = false }
 
     /// The pointer is over a row (`key` "w:…" / "a:…"), or over nothing.
     func hover(_ key: String?, rect: NSRect, in view: NSView) {
@@ -28,7 +29,7 @@ final class HoverCard {
     }
 
     private func show(_ key: String, rect: NSRect, in view: NSView) {
-        guard view.window != nil, let model = CardModel(key) else { close(); return }   // events come only while the window is key
+        guard view.window != nil, let model = CardModel(key, app: app) else { close(); return }   // events come only while the window is key
         shownKey = key
         let host = NSHostingController(rootView: CardView(model: model))
         host.sizingOptions = .preferredContentSize   // else the popover is placed at a pre-layout size and grows down from its top, off the row
@@ -47,6 +48,7 @@ final class CardModel {
     let agents: [Agent]
     let workspaceId: String
     let agentOnly: Bool
+    private let app: AppModel
     /// A project's card: the disk its other worktrees take (nil while `du` runs).
     let repo: Repo?
     var worktrees: [RepoWorktreeSizes.Item]?
@@ -56,8 +58,9 @@ final class CardModel {
     var context: (used: Int, window: Int)?
     var ports: [Int] = []
 
-    init?(_ key: String) {
-        let m = AppModel.shared
+    init?(_ key: String, app: AppModel) {
+        self.app = app
+        let m = app
         if key.hasPrefix("a:"), let s = m.session(String(key.dropFirst(2))) {
             title = AgentCatalog.displayName(s)
             let w = m.worktree(s.worktreeId)
@@ -76,7 +79,7 @@ final class CardModel {
     }
 
     func load() {
-        let m = AppModel.shared
+        let m = app
         Task {
             if let repo { worktrees = await m.quiet(RepoWorktreeSizes(id: repo.id)) ?? []; return }
             if !agentOnly {

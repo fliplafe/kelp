@@ -6,32 +6,37 @@ import Core
 /// sidebar lists is watched: the daemon pushes its git when its files change, and its PR (gh, once a minute).
 @MainActor
 final class RowBadges {
-    static let shared = RowBadges()
+    /// The app's (`AppModel.rowBadges`), for views not handed it yet.
+    static var shared: RowBadges { AppModel.shared.rowBadges }
+    private let app: AppModel
     /// Worktree id → changes / its branch's PR (observed through AppModel).
-    var stats: [String: LineStats] { AppModel.shared.git.compactMapValues(\.stats) }
-    var prs: [String: GitHub.PullRequest] { AppModel.shared.prs }
+    var stats: [String: LineStats] { app.git.compactMapValues(\.stats) }
+    var prs: [String: GitHub.PullRequest] { app.prs }
     private var folders = Set<String>()
 
-    private init() {
-        track { Set(AppModel.shared.repos.compactMap { Self.folder(project: $0.id)?.id } + AppModel.shared.worktrees.compactMap { Self.folder(workspace: $0.id)?.id }) }
-            changed: { [weak self] in self?.follow($0) }
+    init(app: AppModel) {
+        self.app = app
+        track(owner: self) { [weak self] in
+            guard let self else { return Set<String>() }
+            return Set(app.repos.compactMap { self.folder(project: $0.id)?.id } + app.worktrees.compactMap { self.folder(workspace: $0.id)?.id })
+        } changed: { [weak self] in self?.follow($0) }
     }
 
     private func follow(_ now: Set<String>) {
-        let m = AppModel.shared
+        let m = app
         for id in now.subtracting(folders) { m.watch(.git, id); m.watch(.pr, id) }
         for id in folders.subtracting(now) { m.unwatch(.git, id); m.unwatch(.pr, id) }
         folders = now
     }
 
     /// The worktree whose folder a row stands for (nil: the row has none of its own).
-    static func folder(project id: String) -> Worktree? {
-        let m = AppModel.shared
+    func folder(project id: String) -> Worktree? {
+        let m = app
         guard let r = m.repo(id) else { return nil }
         return m.worktrees.first { $0.repoId == id && $0.path == r.path && !$0.archived }
     }
-    static func folder(workspace id: String) -> Worktree? {
-        let m = AppModel.shared
+    func folder(workspace id: String) -> Worktree? {
+        let m = app
         guard let w = m.worktree(id), !w.archived, w.path != m.repo(w.repoId)?.path else { return nil }
         return w
     }

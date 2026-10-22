@@ -13,7 +13,7 @@ extension EditorArea {
     /// A terminal attached to tmux session `name` (started if tmux has none); the tab already attached to it, if there is one.
     func newTmux(_ name: String, split: SplitDirection? = nil) {
         let name = Tmux.name(name)
-        if let s = AppModel.shared.sessions.first(where: { $0.worktreeId == workspaceId && $0.status != .exited && Tmux.session($0.argv) == name }) {
+        if let s = app.sessions.first(where: { $0.worktreeId == workspaceId && $0.status != .exited && Tmux.session($0.argv) == name }) {
             open(TabURI.session(s.id), split: split); return
         }
         createSession(SessionCreate(worktreeId: workspaceId, tmux: name), split: split)
@@ -28,8 +28,8 @@ extension EditorArea {
         var p = p
         if let (cols, rows) = terminalSize(split: split) { p.cols = cols; p.rows = rows }
         Task {
-            guard let s = await AppModel.shared.call(p) else { return }
-            AppModel.shared.upsert(s)
+            guard let s = await app.call(p) else { return }
+            app.upsert(s)
             open(TabURI.session(s.id), split: split)
         }
     }
@@ -47,18 +47,18 @@ extension EditorArea {
 
     /// Daemon state changed: sessions started elsewhere (CLI, agents, scripts) get a tab; deleted ones go.
     func reconcile() {
-        let mine = AppModel.shared.sessions.filter { $0.worktreeId == workspaceId }
-        let known = Set(AppModel.shared.sessions.map(\.id))
+        let mine = app.sessions.filter { $0.worktreeId == workspaceId }
+        let known = Set(app.sessions.map(\.id))
         var changed = false
         for t in layout.allTabs where TabURI.scheme(t.uri) == "session" {
             let sid = TabURI.body(t.uri)
-            let s = AppModel.shared.session(sid)
+            let s = app.session(sid)
             // Ended while Kelp was closed (or deleted): nothing to show. Ended now: keep it, the tab offers Restart.
             if !known.contains(sid) || (!reconciledOnce && s?.status == .exited) { contents[t.id] = nil; layout.remove(t.id); changed = true }
         }
         if layout.allTabs.isEmpty, layout.root != nil { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual; changed = true }
         let shown = Set(layout.allTabs.filter { TabURI.scheme($0.uri) == "session" }.map { TabURI.body($0.uri) })
-        closed = closed.filter { AppModel.shared.session($0).map { $0.status != .exited } ?? false }
+        closed = closed.filter { app.session($0).map { $0.status != .exited } ?? false }
         for s in mine where s.status != .exited && !shown.contains(s.id) && !closed.contains(s.id) {
             layout.add(TabURI.session(s.id)); changed = true
         }

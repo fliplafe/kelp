@@ -44,7 +44,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private let empty = NSStackView()
     private let search = NSSearchField()
     var query = ""
-    let card = HoverCard()
+    lazy var card = HoverCard(app: app)
     /// The search field's menu (its magnifier): which workspaces to show. The one on screen always stays.
     var filter = SidebarFilter(rawValue: UserDefaults.standard.string(forKey: "sidebar.filter") ?? "") ?? .all
     static var pinned: [String] {
@@ -75,7 +75,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             MainActor.assumeIsolated { self?.keepOpenInView() }   // queue: .main
         }
 
-        let footer = NSHostingView(rootView: UsageView())   // agent limits, when any agent reports them
+        let footer = NSHostingView(rootView: UsageView(app: app))   // agent limits, when any agent reports them
         footer.sizingOptions = [.intrinsicContentSize]
         let v = NSView()
         search.placeholderString = String(localized: "Workspace or agent"); search.delegate = self; search.controlSize = .small
@@ -103,15 +103,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         ])
         buildEmpty()
         view = v
-        track(owner: self) { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
-        track(owner: self) { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
-        track(owner: self) { AppModel.shared.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
-        track(owner: self) { AppModel.shared.order } changed: { [weak self] _ in self?.refresh() }
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] _ in self?.syncSelection(); self?.updateCard() }
-        track(owner: self) { Workbench.shared.focusedTab } changed: { [weak self] _ in self?.syncSelection() }
-        track(owner: self) { RowBadges.shared.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
-        track(owner: self) { RowBadges.shared.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
-        track(owner: self) { SettingsStore.shared.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { [app] in app.repos } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { [app] in app.worktrees } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { [app] in app.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
+        track(owner: self) { [app] in app.order } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] _ in self?.syncSelection(); self?.updateCard() }
+        track(owner: self) { [app] in app.workbench.focusedTab } changed: { [weak self] _ in self?.syncSelection() }
+        track(owner: self) { [app] in app.rowBadges.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
+        track(owner: self) { [app] in app.rowBadges.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
+        track(owner: self) { [app] in app.settings.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
         // "now" becomes "1m": the times on the right move on their own (a clock: nothing is asked of the daemon).
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in   // main run loop
             MainActor.assumeIsolated { if self?.view.window?.occlusionState.contains(.visible) == true { self?.updateVisibleCells() } }
@@ -177,14 +177,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     private var needsOrder = StableOrder()
 
     private func build() -> [Node] {
-        let m = AppModel.shared
+        let m = app
         var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue.sessions)
         tree.pinned = Self.pinned
         tree.query = query
         tree.filter = filter
-        tree.current = Workbench.shared.workspaceId
+        tree.current = app.workbench.workspaceId
         tree.statusLabel = { $0.label }
-        tree.hasPR = { w in (RowBadges.folder(workspace: w.id) ?? RowBadges.folder(project: w.repoId)).map { RowBadges.shared.prs[$0.id] != nil } ?? false }
+        tree.hasPR = { [app] w in (app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)).map { [app] in app.rowBadges.prs[$0.id] != nil } ?? false }
         tree.stableOrder = { [unowned self] in needsOrder($0) }
         func node(_ i: SidebarItem) -> Node {
             let n = Node(i.kind)
@@ -198,7 +198,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     @objc private func addMenu(_ b: NSButton) {
         guard let d = NSApp.delegate as? AppDelegate else { return }
         let m = NSMenu()
-        for id in ["workspace.addProject", "workspace.cloneRepository", "workspace.addRemote"] { if let c = ExtensionRegistry.shared.command(id) { m.addItem(d.item(c)) } }
+        for id in ["workspace.addProject", "workspace.cloneRepository", "workspace.addRemote"] { if let c = app.extensions.command(id) { m.addItem(d.item(c)) } }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: b.bounds.height + 4), in: b)
     }
 
@@ -209,7 +209,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let next = build()
         func flat(_ ns: [Node]) -> [String] { ns.flatMap { [$0.key] + flat($0.children) } }
         let nextShape = flat(next)
-        let projects = AppModel.shared.repos.filter { !ScratchWindow.isScratch($0) }
+        let projects = app.repos.filter { !ScratchWindow.isScratch($0) }
         empty.isHidden = !projects.isEmpty
         showNoMatch(!projects.isEmpty && !next.contains { if case .project = $0.kind { true } else { false } })
         search.isHidden = projects.isEmpty
@@ -230,8 +230,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     /// The row of what's on screen: the agent whose tab has focus, else its workspace. Several rows picked stay picked.
     private func syncSelection() {
-        guard let id = Workbench.shared.workspaceId, let w = node("w:" + id), outline.selectedRowIndexes.count <= 1 else { return }
-        let tab = Workbench.shared.focusedTab ?? ""
+        guard let id = app.workbench.workspaceId, let w = node("w:" + id), outline.selectedRowIndexes.count <= 1 else { return }
+        let tab = app.workbench.focusedTab ?? ""
         let agent = TabURI.scheme(tab) == "session" ? w.children.first { $0.key == "a:" + TabURI.body(tab) } : nil
         let row = agent.map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil } ?? outline.row(forItem: w)
         guard row >= 0 else { return }
@@ -241,7 +241,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     /// The workspace on screen stays in view with its agents under it (they can show up after it was selected).
     private func keepOpenInView() {
-        guard let id = Workbench.shared.workspaceId, let n = node("w:" + id) else { return }
+        guard let id = app.workbench.workspaceId, let n = node("w:" + id) else { return }
         let row = outline.row(forItem: n)
         guard row >= 0 else { return }
         if let last = n.children.last, outline.isItemExpanded(n) { outline.scrollRowToVisible(outline.row(forItem: last)) }
@@ -291,7 +291,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     /// The workspace on screen and its agents are drawn as one card, like a tab group in Safari.
     private func cardPlace(_ row: Int) -> (first: Bool, last: Bool)? {
         // A workspace without agents showing is just its pill.
-        guard let id = Workbench.shared.workspaceId, let w = node("w:" + id), outline.isItemExpanded(w) else { return nil }
+        guard let id = app.workbench.workspaceId, let w = node("w:" + id), outline.isItemExpanded(w) else { return nil }
         func inCard(_ r: Int) -> Bool {
             guard let n = outline.item(atRow: r) as? Node else { return false }
             return n === w || outline.parent(forItem: n) as? Node === w
@@ -341,7 +341,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 extension SidebarController {
     /// The menu for several selected rows: what applies to all of them.
     func bulkMenu(_ menu: NSMenu, _ nodes: [Node]) {
-        let m = AppModel.shared
+        let m = app
         let ws = nodes.compactMap { n -> Worktree? in if case .workspace(let id) = n.kind { m.worktree(id) } else { nil } }
         let picked = nodes.compactMap { n -> String? in
             switch n.kind {

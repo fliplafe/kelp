@@ -27,8 +27,8 @@ extension SidebarController {
         renaming = nil
         field.isEditable = false; field.drawsBackground = false
         let name = field.stringValue.trimmingCharacters(in: .whitespaces)
-        if !name.isEmpty, name != AppModel.shared.worktree(id)?.displayName {
-            Task { await AppModel.shared.call(WorktreeNote(id: id, note: name)) }
+        if !name.isEmpty, name != app.worktree(id)?.displayName {
+            Task { await app.call(WorktreeNote(id: id, note: name)) }
         } else { refreshCell("w:" + id) }
     }
 
@@ -36,7 +36,7 @@ extension SidebarController {
         menu.removeAllItems()
         card.close()
         guard let n = outline.item(atRow: outline.clickedRow) as? Node else { return }
-        let m = AppModel.shared
+        let m = app
         let picked = outline.selectedRowIndexes
         if picked.count > 1, picked.contains(outline.clickedRow) {
             bulkMenu(menu, picked.compactMap { outline.item(atRow: $0) as? Node }); return
@@ -58,7 +58,7 @@ extension SidebarController {
         case .needs(let sid):
             menu.add(String(localized: "Show")) { Workbench.focus(session: sid) }
             if m.session(sid)?.unread == true {
-                menu.add(String(localized: "Mark as Read")) { Task { await AppModel.shared.call(SessionMarkRead(id: sid)) } }
+                menu.add(String(localized: "Mark as Read")) { [app] in Task { await app.call(SessionMarkRead(id: sid)) } }
             }
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
@@ -91,10 +91,10 @@ extension SidebarController {
             menu.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
             menu.setSubmenu(AgentActions.handoffMenu(sid), for: menu.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
             if m.session(sid)?.unread == false {
-                menu.add(String(localized: "Mark as Unread")) { Task { await AppModel.shared.call(SessionMarkUnread(id: sid)) } }
+                menu.add(String(localized: "Mark as Unread")) { [app] in Task { await app.call(SessionMarkUnread(id: sid)) } }
             }
             menu.addItem(.separator())
-            menu.add(String(localized: "Stop")) { Task { await AppModel.shared.call(SessionKill(id: sid)) } }
+            menu.add(String(localized: "Stop")) { [app] in Task { await app.call(SessionKill(id: sid)) } }
         }
     }
 }

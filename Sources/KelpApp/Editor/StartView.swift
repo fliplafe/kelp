@@ -13,9 +13,11 @@ final class StartView: NSView, NSTextFieldDelegate {
     private let prompt = NSTextField()
     private let def = AgentCatalog.defaultAgent
 
-    init(worktree w: Worktree) {
+    private let app: AppModel
+    init(app: AppModel, worktree w: Worktree) {
+        self.app = app
         super.init(frame: .zero)
-        let repo = AppModel.shared.repo(w.repoId)
+        let repo = app.repo(w.repoId)
         let icon = NSImageView(image: .symbol("folder"))
         if let repo { ProjectIcon.show(repo.path, in: icon) }
         icon.imageScaling = .scaleProportionallyUpOrDown; icon.symbolConfiguration = .init(pointSize: 40, weight: .light)
@@ -51,8 +53,8 @@ final class StartView: NSView, NSTextFieldDelegate {
         var others = [StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") }]
         if AgentCatalog.hasTmux(w) { others.append(StartRow(image: .symbol("rectangle.split.3x1"), title: String(localized: "tmux Session"), shortcut: nil) { QuickOpen.shared.showTmux() }) }
         // Changes live in Source Control; the rest of what extensions open is offered here.
-        for e in ExtensionRegistry.shared.all.editors where e.id != "git.review" {
-            let key = ExtensionRegistry.shared.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
+        for e in app.extensions.all.editors where e.id != "git.review" {
+            let key = app.extensions.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
             others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.current) })
         }
         let card = StartCard(rows: rows, others: others)

@@ -38,7 +38,7 @@ extension EditorArea {
             if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); arrange(); render() }
             select(t.id, focus: focus); return
         }
-        if TabURI.scheme(uri) != "session", ExtensionRegistry.shared.tabProvider(for: uri) == nil {
+        if TabURI.scheme(uri) != "session", app.extensions.tabProvider(for: uri) == nil {
             if let u = URL(string: uri), u.scheme?.hasPrefix("http") == true { NSWorkspace.shared.open(u); return }   // browser extension off
         }
         var target: String? = layout.focusedGroup?.id
@@ -60,7 +60,7 @@ extension EditorArea {
         // A tab not built yet (in the background since launch) closes all the same: an agent's ends its session.
         if let c = contents[id] {
             guard await c.close() else { return false }
-        } else if let close = ExtensionRegistry.shared.tabProvider(for: uri)?.closeUnbuilt, await !close(uri) { return false }
+        } else if let close = app.extensions.tabProvider(for: uri)?.closeUnbuilt, await !close(uri) { return false }
         guard layout.allTabs.contains(where: { $0.id == id }) else { return true }   // gone while it asked (its workspace closed)
         if let sid { closed.insert(sid) }
         contents[id] = nil
@@ -122,7 +122,7 @@ extension EditorArea {
     func arrange() -> Bool {
         guard layout.manual != true else { return false }
         let agents = layout.allTabs.filter { t in
-            guard TabURI.scheme(t.uri) == "session", let s = AppModel.shared.session(TabURI.body(t.uri)) else { return false }
+            guard TabURI.scheme(t.uri) == "session", let s = app.session(TabURI.body(t.uri)) else { return false }
             return !["shell", "custom"].contains(s.agent) && s.status != .exited && s.status != .hibernated
         }
         let old = layout
@@ -149,7 +149,7 @@ extension EditorArea {
         m.add(String(localized: "Split Right")) { [weak self] in self?.select(id); self?.splitFocused(.right) }
         m.add(String(localized: "Split Down")) { [weak self] in self?.select(id); self?.splitFocused(.down) }
         m.addItem(.separator())
-        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, let items = ExtensionRegistry.shared.tabProvider(for: uri)?.menu {
+        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, let items = app.extensions.tabProvider(for: uri)?.menu {
             let before = m.items.count
             items(m, uri, workspaceId) { [weak self] in self?.open($0, split: .right) }
             if m.items.count > before { m.addItem(.separator()) }
@@ -176,14 +176,14 @@ extension EditorArea {
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
-        if AgentCatalog.hasTmux(AppModel.shared.worktree(workspaceId)) {
+        if AgentCatalog.hasTmux(app.worktree(workspaceId)) {
             m.add(String(localized: "tmux Session…"), symbol: "rectangle.split.3x1") { [weak self] in
                 if let group { self?.layout.focused = group }
                 QuickOpen.shared.showTmux()
             }
         }
         let ctx = IDEContext.current
-        let editors = ExtensionRegistry.shared.all.editors
+        let editors = app.extensions.all.editors
         if !editors.isEmpty { m.addItem(.separator()) }
         for e in editors {
             m.add(e.title, symbol: e.icon) { [weak self] in

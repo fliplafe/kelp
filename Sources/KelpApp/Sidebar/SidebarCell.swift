@@ -7,6 +7,7 @@ import WorkbenchKit
 final class SidebarCell: NSTableCellView {
     private let node: SidebarController.Node
     private weak var owner: SidebarController?
+    private let app: AppModel
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let count = NSTextField(labelWithString: "")
@@ -18,7 +19,7 @@ final class SidebarCell: NSTableCellView {
     private let changes = NSButton(), pr = NSButton()
 
     init(node: SidebarController.Node, owner: SidebarController) {
-        self.node = node; self.owner = owner
+        self.node = node; self.owner = owner; app = owner.app
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
         trailing.font = .uiDigits(11, weight: .regular); trailing.textColor = .secondaryLabelColor
@@ -80,19 +81,19 @@ final class SidebarCell: NSTableCellView {
     /// The folder this row stands for, if any (RowBadges.folder).
     private var folder: Worktree? {
         switch node.kind {
-        case .project(let id): RowBadges.folder(project: id)
-        case .workspace(let id): RowBadges.folder(workspace: id)
+        case .project(let id): app.rowBadges.folder(project: id)
+        case .workspace(let id): app.rowBadges.folder(workspace: id)
         case .agent, .section, .needs: nil
         }
     }
     @objc private func openChanges() { if let w = folder { Workbench.open(TabURI.diff(w.id), workspace: w.id) } }
-    @objc private func openPR() { if let w = folder, let u = RowBadges.shared.prs[w.id]?.url { Workbench.open(u, workspace: w.id) } }
+    @objc private func openPR() { if let w = folder, let u = app.rowBadges.prs[w.id]?.url { Workbench.open(u, workspace: w.id) } }
 
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.
     private func updateBadges() {
         let w = folder
-        let c = w.flatMap { RowBadges.changes(RowBadges.shared.stats[$0.id]) }
-        let p = w.flatMap { RowBadges.pr(RowBadges.shared.prs[$0.id]) }
+        let c = w.flatMap { RowBadges.changes(app.rowBadges.stats[$0.id]) }
+        let p = w.flatMap { RowBadges.pr(app.rowBadges.prs[$0.id]) }
         if let c { changes.attributedTitle = c; changes.toolTip = String(localized: "Not committed yet — click for the changes") }
         if let p { pr.attributedTitle = p.0; pr.toolTip = p.1 }
         hasBadge = (c != nil, p != nil)
@@ -120,7 +121,7 @@ final class SidebarCell: NSTableCellView {
 
     func update() {
         updateBadges()
-        let m = AppModel.shared
+        let m = app
         func live(_ wid: String) -> [Session] { m.sessions.filter { $0.worktreeId == wid && $0.status != .exited && $0.agent != "shell" } }
         switch node.kind {
         case .project(let id):

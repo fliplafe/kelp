@@ -19,6 +19,9 @@ struct UsageView: View {
         /// The fullest of the rest (the week), a thin line under the main bar.
         var other: Line? { lines.filter { $0 != main }.max { $0.used < $1.used } }
     }
+    let app: AppModel
+    /// Limit: the default is for the usage tab (Agents), not handed the app yet.
+    init(app: AppModel = AppModel.shared) { self.app = app }
     @State private var rows: [Row] = []
     @State private var hovered: String?
 
@@ -31,9 +34,9 @@ struct UsageView: View {
             }
         }
         // Watched while shown: the daemon says when a plan read or the token count changed.
-        .onAppear { AppModel.shared.watch(.limits); load() }
-        .onDisappear { AppModel.shared.unwatch(.limits) }
-        .onChange(of: AppModel.shared.limits) { load() }
+        .onAppear { app.watch(.limits); load() }
+        .onDisappear { app.unwatch(.limits) }
+        .onChange(of: app.limits) { load() }
         .onChange(of: AgentAvailability.shared.ids) { load() }
     }
 
@@ -131,7 +134,7 @@ struct UsageView: View {
     static func tint(_ u: Double, quiet: Color = .secondary) -> Color { u >= 0.9 ? .red : u >= 0.7 ? .orange : quiet }
 
     private func load() {
-        guard let u = AppModel.shared.limits else { return }
+        guard let u = app.limits else { return }
         let next = AgentCatalog.installed(AgentCatalog.all).compactMap { a -> Row? in
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }

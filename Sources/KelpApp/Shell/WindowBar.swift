@@ -23,7 +23,7 @@ final class WindowBar: NSView {
 
     private var worktree: Worktree? { AppModel.shared.worktree(Workbench.shared.workspaceId) }
     /// The folder the sidebar keeps the pull request for: a desk shares its project's.
-    private var badgeFolder: Worktree? { worktree.flatMap { RowBadges.folder(workspace: $0.id) ?? RowBadges.folder(project: $0.repoId) } }
+    private var badgeFolder: Worktree? { worktree.flatMap { RowBadges.shared.folder(workspace: $0.id) ?? RowBadges.shared.folder(project: $0.repoId) } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
