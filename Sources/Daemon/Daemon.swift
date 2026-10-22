@@ -29,7 +29,7 @@ public final class Daemon: Sendable {
     let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
     let forges: Forges   // pull requests by branch, running clones, the trackers' clients
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
-    let watches = Watches()   // what clients watch (watch.start), read while anyone does and pushed when it changed
+    let watches: Watches   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
     let workspaces: Workspaces   // desks, the branches they follow, the .kelp.yaml files the user trusts
@@ -44,11 +44,13 @@ public final class Daemon: Sendable {
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store)
         self.forges = Forges(offloads: offloads)
         self.workspaces = Workspaces(root: root, store: self.store, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
+        self.watches = Watches(store: self.store, clients: clients)
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh")
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
         RemoteHost.controlDir = ssh.path
         RemoteHost.trust(root.appendingPathComponent("remote"))   // the only place a .kelp-remote counts
+        watches.reading.withLock { $0.read = { [weak self] k, fast in await self?.sample(k, fast: fast) ?? (nil, nil) } }
         self.store.changed.withLock {
             $0.tell = { [weak self] c in
                 self?.recordChanged(c)   // records go to the clients as they change

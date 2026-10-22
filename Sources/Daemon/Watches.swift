@@ -24,13 +24,19 @@ final class Watches: Sendable {
     /// Reads so far by key: tests see one read for two watchers, and none after the last one left.
     let reads = OSAllocatedUnfairLock<[Key: Int]>(initialState: [:])
     var running: Int { entries.withLock { $0.count } }
-    /// A test's stand-in for reading a topic (to hold one read back while a newer one finishes). In a struct, not bare
-    /// in the lock: see `Store.Listener`.
-    struct StandIn: Sendable { var read: (@Sendable (Key) async -> Data?)? }
-    let standIn = OSAllocatedUnfairLock(initialState: StandIn())
+    /// How a topic is read now: the event as sent (nil: nothing to say) and when to read it again with nothing else
+    /// saying so (nil: only when something does). The daemon's (it answers the topic's methods as a client would), set
+    /// once it's made; a test's stand-in in its place (to hold one read back while a newer one finishes). In a struct, not
+    /// bare in the lock: see `Store.Listener`.
+    struct Reading: Sendable { var read: (@Sendable (Key, _ fast: Bool) async -> (Data?, TimeInterval?))? }
+    let reading = OSAllocatedUnfairLock(initialState: Reading())
     private let files = DispatchQueue(label: "kelp.watches.files")
+    private let store: Store
+    private let clients: Clients
 
-    func start(_ k: Key, conn: Int, _ d: Daemon) {
+    init(store: Store, clients: Clients) { self.store = store; self.clients = clients }
+
+    func start(_ k: Key, conn: Int) {
         let n = numbers.withLock { $0 += 1; return $0 }
         let (new, again, last) = entries.withLock { e -> (Bool, Bool, Data?) in
             guard var x = e[k] else { e[k] = Entry(number: n, watchers: [conn]); return (true, false, nil) }
@@ -39,7 +45,7 @@ final class Watches: Sendable {
             e[k] = x
             return (false, again, x.last)
         }
-        if new { begin(k, d) } else if again { read(k, d) } else if let last { d.clients.targets([conn]).forEach { $0.send(last) } }
+        if new { begin(k) } else if again { read(k) } else if let last { clients.targets([conn]).forEach { $0.send(last) } }
     }
 
     func stop(_ k: Key, conn: Int) {
@@ -68,32 +74,32 @@ final class Watches: Sendable {
     func stopAll() { let all = entries.withLock { e in defer { e = [:] }; return e }; _ = all }
 
     /// Something says it may have changed (a session's status, for its context): read again if it did.
-    func touched(_ k: Key, tag: String, _ d: Daemon) {
+    func touched(_ k: Key, tag: String) {
         let go = entries.withLock { e -> Bool in
             guard var x = e[k], x.tag != tag else { return false }
             x.tag = tag; e[k] = x; return true
         }
-        if go { read(k, d) }
+        if go { read(k) }
     }
 
-    private func begin(_ k: Key, _ d: Daemon) {
-        if let (root, matters) = Self.folder(k, d) {
+    private func begin(_ k: Key) {
+        if let (root, matters) = folder(k) {
             // Debounced: a save is several events, a checkout hundreds.
-            let fw = FileWatcher(root: root, deliver: files) { [weak self, weak d] paths in
-                guard let self, let d, matters(paths) else { return }
-                soon(k, d)
+            let fw = FileWatcher(root: root, deliver: files) { [weak self] paths in
+                guard let self, matters(paths) else { return }
+                soon(k)
             }
             entries.withLock { e in e[k]?.files = fw }
         }
-        read(k, d)
+        read(k)
     }
 
     /// The folder whose file events can change a topic, and which of them do; nil: none (a remote project's folder here
     /// holds only its marker, and the rest go by their clock).
-    private static func folder(_ k: Key, _ d: Daemon) -> (String, @Sendable ([String]) -> Bool)? {
+    private func folder(_ k: Key) -> (String, @Sendable ([String]) -> Bool)? {
         switch k.topic {
         case .git, .files:
-            guard let w = try? d.store.worktree(k.key), RemoteHost.of(w.path) == nil else { return nil }
+            guard let w = try? store.worktree(k.key), RemoteHost.of(w.path) == nil else { return nil }
             return (w.path, k.topic == .git ? Git.touchesStatus : Git.touchesFileList)
         case .file:
             guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return nil }
@@ -106,25 +112,25 @@ final class Watches: Sendable {
         }
     }
 
-    private func soon(_ k: Key, _ d: Daemon) {
+    private func soon(_ k: Key) {
         let pending = entries.withLock { $0[k]?.timer != nil }
-        if !pending { schedule(k, after: 0.4, d) }
+        if !pending { schedule(k, after: 0.4) }
     }
 
-    private func schedule(_ k: Key, after t: TimeInterval, _ d: Daemon) {
+    private func schedule(_ k: Key, after t: TimeInterval) {
         let n = numbers.withLock { $0 += 1; return $0 }
         let ok = entries.withLock { e -> Bool in
             guard var x = e[k] else { return false }
             x.timer = n; e[k] = x; return true
         }
         guard ok else { return }
-        DispatchQueue.global().asyncAfter(deadline: .now() + t) { [weak self, weak d] in
-            guard let self, let d, entries.withLock({ $0[k]?.timer == n }) else { return }   // stopped, or read since
-            read(k, d)
+        DispatchQueue.global().asyncAfter(deadline: .now() + t) { [weak self] in
+            guard let self, entries.withLock({ $0[k]?.timer == n }) else { return }   // stopped, or read since
+            read(k)
         }
     }
 
-    private func read(_ k: Key, _ d: Daemon) {
+    private func read(_ k: Key) {
         let go = entries.withLock { e -> (Date, Int)? in
             guard var x = e[k] else { return nil }
             if x.reading { x.again = true; e[k] = x; return nil }
@@ -133,7 +139,7 @@ final class Watches: Sendable {
         }
         guard let (fastUntil, number) = go else { return }
         Task {
-            let (line, next): (Data?, TimeInterval?) = if let s = standIn.withLock({ $0.read }) { (await s(k), nil) } else { await Self.sample(k, d, fast: fastUntil > Date()) }
+            let (line, next) = await reading.withLock({ $0.read })?(k, fastUntil > Date()) ?? (nil, nil)
             reads.withLock { $0[k, default: 0] += 1 }
             let ours = entries.withLock { e -> (send: Data?, to: Set<Int>, again: Bool)? in
                 // Stopped meanwhile, maybe started again: what it read may be older than the new watch's first value,
@@ -147,95 +153,8 @@ final class Watches: Sendable {
                 return (changed ? line : nil, x.watchers, again)
             }
             guard let (send, to, again) = ours else { return }
-            if let send { d.clients.targets(to).forEach { $0.send(send) } }
-            if again { read(k, d) } else if let next { schedule(k, after: next, d) }
+            if let send { clients.targets(to).forEach { $0.send(send) } }
+            if again { read(k) } else if let next { schedule(k, after: next) }
         }
     }
-
-    /// The topic's event as it is now, as sent (nil: nothing to say, a failure that stays quiet), and when to read it
-    /// again with nothing else saying so (nil: only when something does).
-    private static func sample(_ k: Key, _ d: Daemon, fast: Bool) async -> (Data?, TimeInterval?) {
-        switch k.topic {
-        case .git:
-            // A remote project's folder here holds only its marker: no file events come, so it's read now and then.
-            let remote = (try? d.store.worktree(k.key)).flatMap { $0 }.map { RemoteHost.of($0.path) != nil } ?? false
-            var e: GitEvent
-            do {
-                let changes = try await d.ask(GitStatus(id: k.key))
-                e = GitEvent(worktree: k.key, changes: changes, branches: try await d.ask(GitBranches(id: k.key)))
-                e.stats = changes.isEmpty ? LineStats() : try? await d.ask(GitLineStats(id: k.key))
-            } catch { e = GitEvent(worktree: k.key, error: message(error)) }
-            return (line(e), remote ? 10 : nil)   // Limit: a remote folder is read every 10 s while watched
-        case .ports:
-            return ((try? await d.ask(PortsList(worktreeId: k.key))).flatMap { line(PortsEvent(worktree: k.key, ports: $0)) }, 3)
-        case .activity:
-            do { return (line(ActivityEvent(usage: try await d.ask(SessionUsage()))), 2) }
-            catch { return (line(ActivityEvent(error: message(error))), 2) }
-        case .ci:
-            // gh / glab ask the forge: again only while a run goes on (or just after a push asked, `fast`).
-            do {
-                let r = try await d.ask(CIRunsList(worktreeId: k.key))
-                let running = CIRuns.latest(r.runs).contains { $0.status != "completed" }
-                return (line(CIEvent(worktree: k.key, result: r)), running ? 10 : fast ? 5 : nil)
-            } catch { return (line(CIEvent(worktree: k.key, error: message(error))), nil) }
-        case .pr:
-            return ((try? await d.ask(GitHubBranchPR(worktreeId: k.key))).flatMap { line(PREvent(worktree: k.key, pr: $0)) }, 60)
-        case .context:
-            // A 1 MB transcript tail: while the agent works, and when its status changes (`touched`).
-            let usage = try? await d.ask(SessionContextWindow(id: k.key))
-            let working = d.existing(k.key)?.snapshot.status == .working
-            return (line(ContextEvent(session: k.key, usage: usage ?? nil)), working ? 15 : nil)
-        case .limits:
-            // From memory (the probes read the plans on their own clock): cheap.
-            return ((try? await d.ask(UsageGet())).flatMap { line(LimitsEvent(usage: $0)) }, 10)
-        case .file:
-            // A stat: what changed is the version, not the text (the app reads that only for a version it doesn't hold).
-            guard k.key.hasPrefix("/"), RemoteHost.containing(k.key) == nil else { return (nil, nil) }
-            return (line(FileEvent(path: k.key, stamp: FileService.stamp(k.key))), nil)
-        case .files:
-            let remote = (try? d.store.worktree(k.key)).flatMap { $0 }.map { RemoteHost.of($0.path) != nil } ?? false
-            var e: FilesEvent
-            do { e = FilesEvent(worktree: k.key, paths: try await d.ask(FilesList(id: k.key))) } catch { e = FilesEvent(worktree: k.key, error: message(error)) }
-            return (line(e), remote ? 10 : nil)   // as git: a remote folder is listed every 10 s while watched
-        }
-    }
-
-    private static func line(_ e: some RPCEvent) -> Data? {
-        let enc = JSONEncoder(); enc.outputFormatting = .sortedKeys
-        guard var d = try? enc.encode(RPCNotification(e)) else { return nil }
-        d.append(0x0A)
-        return d
-    }
-
-    private static func message(_ e: Error) -> String { (e as? RPCError)?.message ?? "\(e)" }
-}
-
-extension Daemon {
-    /// A method answered as a client would get it (refusals and error mapping included), its result as its type.
-    func ask<M: Answered>(_ m: M) async throws -> M.Result {
-        try JSONDecoder().decode(M.Result.self, from: await answer(M.name, try m.params() ?? .null, conn: -1))
-    }
-
-    /// A project or workspace record changed, or a record went: it goes to every client (they keep their lists from these).
-    func recordChanged(_ c: Store.Change) {
-        switch c {
-        case .repo(let r): notify(r)
-        case .worktree(let w): notify(w)
-        case .repoRemoved(let id): notify(RemovedEvent(repo: id))
-        case .worktreeRemoved(let id): notify(RemovedEvent(worktree: id))
-        case .sessionRemoved(let id): notify(RemovedEvent(session: id))
-        }
-    }
-}
-
-extension WatchStart: Handled {
-    static var inOrder: Bool { true }   // a start and a stop sent in a row apply in that order
-    func handle(_ d: Daemon) throws -> Done { throw RPCError.internalError("needs its connection") }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.watches.start(.init(topic: topic, key: key), conn: conn, d); return Done() }
-}
-
-extension WatchStop: Handled {
-    static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { throw RPCError.internalError("needs its connection") }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.watches.stop(.init(topic: topic, key: key), conn: conn); return Done() }
 }

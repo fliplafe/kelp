@@ -81,11 +81,11 @@ private final class Heard: Sendable {
     let heard = Heard(); heard.listen(w.c)
     let reads = OSAllocatedUnfairLock(initialState: 0), release = OSAllocatedUnfairLock(initialState: false)
     @Sendable func line(_ used: Int) -> Data? { try? Wire.line(RPCNotification(ContextEvent(session: "s", usage: .init(used: used, window: 9)))) }
-    w.d.watches.standIn.withLock {
-        $0.read = { _ in
-            guard reads.withLock({ $0 += 1; return $0 }) == 1 else { return line(2) }
+    w.d.watches.reading.withLock {
+        $0.read = { _, _ in
+            guard reads.withLock({ $0 += 1; return $0 }) == 1 else { return (line(2), nil) }
             while !release.withLock({ $0 }) { try? await Task.sleep(for: .milliseconds(10)) }
-            return line(1)   // the first read, from before the stop
+            return (line(1), nil)   // the first read, from before the stop
         }
     }
     w.c.notify(WatchStart(.context, "s"))

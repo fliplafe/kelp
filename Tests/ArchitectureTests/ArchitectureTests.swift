@@ -205,7 +205,7 @@ private func codeOnly(_ s: String) -> String {
     #expect(extensions.count <= 30, "extensions of Daemon: \(extensions)")
     #expect(shared.count <= 0, "state outside an instance: \(shared)")
     // A service gets what it uses at init: one that names Daemon reaches back into everything.
-    let services = ["AgentUsage.swift", "UsageProbe.swift", "AgentConfig.swift", "Forges.swift", "Workspaces.swift"]
+    let services = ["AgentUsage.swift", "UsageProbe.swift", "AgentConfig.swift", "Forges.swift", "Workspaces.swift", "Watches.swift"]
     let named = sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } && codeOnly(f.text).contains("Daemon") }
     #expect(named.map(\.path) == [])
     #expect(sources(["Sources/Daemon"]).filter { f in services.contains { f.path.hasSuffix("/" + $0) } }.count == services.count)

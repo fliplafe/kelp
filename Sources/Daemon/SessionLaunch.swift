@@ -199,7 +199,7 @@ extension Daemon {
             return
         }
         notify(s)
-        watches.touched(.init(topic: .context, key: s.id), tag: s.status.rawValue, self)   // a turn ended or began: how full now
+        watches.touched(.init(topic: .context, key: s.id), tag: s.status.rawValue)   // a turn ended or began: how full now
         if s.status == .done || s.status == .waiting, let a = s.agent { agentUsage.planUsed(a) }
     }
 
