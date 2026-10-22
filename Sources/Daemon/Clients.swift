@@ -52,6 +52,12 @@ final class Clients: Sendable {
         }
     }
 
+    /// A JSON event to `targets(only)`, encoded once.
+    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) {
+        guard let d = try? Wire.line(RPCNotification(e)) else { return }
+        targets(only).forEach { $0.send(d) }
+    }
+
     func setMuted(_ id: Int, _ muted: Bool) { state.withLock { if muted { $0.muted.insert(id) } else { $0.muted.remove(id) } } }
 
     func publishUI(_ ui: JSONValue, from id: Int) { state.withLock { $0.uiState = ui; $0.app.insert(id) } }

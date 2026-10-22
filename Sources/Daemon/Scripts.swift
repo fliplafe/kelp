@@ -4,7 +4,7 @@ import Core
 
 /// A project's commands from `.kelp.yaml` (setup, run, test…) run only after the user trusts that file: a clone
 /// mustn't run anything just by being opened. Trust is for the file's exact contents; editing it asks again.
-extension Daemon {
+extension Workspaces {
     var trustFile: URL { root.appendingPathComponent("trusted-configs.json") }
 
     func configText(_ repoPath: String) -> String { (try? String(contentsOfFile: repoPath + "/.kelp.yaml", encoding: .utf8)) ?? "" }
@@ -35,37 +35,28 @@ extension Daemon {
         return c.trusted ? c.config : RepoConfig()
     }
 
-    /// KelpApp beside this daemon (one bundle, or one build folder); KELP_APP_EXECUTABLE stands in for it in tests.
-    static var appExecutable: String {
-        #if DEBUG   // tests stand in for the app; a release build takes no word for it from whoever started kelpd
-        if let e = ProcessInfo.processInfo.environment["KELP_APP_EXECUTABLE"] { return URL(fileURLWithPath: e).resolvingSymlinksInPath().path }
-        #endif
-        let me = Bundle.main.executableURL?.resolvingSymlinksInPath() ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        return me.deletingLastPathComponent().appendingPathComponent("KelpApp").resolvingSymlinksInPath().path
-    }
-
     /// The project folder whose .kelp.yaml a workspace uses.
     func configRepo(_ worktreeId: String) throws -> (Worktree, String) {
-        let w = try cwd(forWorktree: worktreeId)
+        let w = try worktree(worktreeId)
         return (w, try store.repo(w.repoId)?.path ?? w.path)
     }
 }
 
 extension ScriptsList: Handled {
     func handle(_ d: Daemon) throws -> Result {
-        let (_, repo) = try d.configRepo(worktreeId)
-        let read = d.configAndTrust(repo), cfg = read.config
+        let (_, repo) = try d.workspaces.configRepo(worktreeId)
+        let read = d.workspaces.configAndTrust(repo), cfg = read.config
         // Everything trusting it would allow, and the digest of exactly this text (one read): trust is given to what was shown.
         return Result(scripts: cfg.scripts, setup: cfg.setup, tabs: cfg.tabs, shared: cfg.shared, recipes: cfg.recipes, issueCommand: cfg.issueCommand,
-                      digest: Daemon.digest(read.text), trusted: read.trusted, file: repo + "/.kelp.yaml")
+                      digest: Workspaces.digest(read.text), trusted: read.trusted, file: repo + "/.kelp.yaml")
     }
 }
 
 extension ScriptsTrust: Handled {
     func handle(_ d: Daemon) throws -> Done { try handle(d, conn: -1) }
     func handle(_ d: Daemon, conn: Int) throws -> Done {
-        let (_, repo) = try d.configRepo(worktreeId)
-        let now = Daemon.digest(d.configText(repo))
+        let (_, repo) = try d.workspaces.configRepo(worktreeId)
+        let now = Workspaces.digest(d.workspaces.configText(repo))
         // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
         // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
         // program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
@@ -74,10 +65,10 @@ extension ScriptsTrust: Handled {
         // The digest from scripts.list: a file changed since it was shown (an agent, a pull) isn't what was trusted.
         guard let digest else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
         guard digest == now else { throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.") }
-        try d.trustLock.withLock {
-            var known = d.knownDigests()
+        try d.workspaces.trustLock.withLock {
+            var known = d.workspaces.knownDigests()
             known[repo] = now
-            try JSONEncoder().encode(known).write(to: d.trustFile, options: .atomic)
+            try JSONEncoder().encode(known).write(to: d.workspaces.trustFile, options: .atomic)
         }
         return Done()
     }
@@ -85,8 +76,8 @@ extension ScriptsTrust: Handled {
 
 extension ScriptsRun: Handled {
     func handle(_ d: Daemon) throws -> Session {
-        let (w, repo) = try d.configRepo(worktreeId)
-        let read = d.configAndTrust(repo)   // the command run is from the text that was checked
+        let (w, repo) = try d.workspaces.configRepo(worktreeId)
+        let read = d.workspaces.configAndTrust(repo)   // the command run is from the text that was checked
         guard read.trusted else { throw RPCError.invalidParams("This project's commands aren't trusted yet.") }
         let cfg = read.config
         guard let s = cfg.scripts.first(where: { $0.name == name }) ?? cfg.setup.flatMap({ name == "setup" ? .init(name: name, command: $0) : nil }) else {

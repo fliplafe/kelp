@@ -109,7 +109,8 @@ else a `NotificationCenter` name.
 - **Parts.** `Daemon` is the connections, the method registry (`Daemon.methods`) and the services it puts together,
   each keeping its own state under its own locks and given what it uses at init (none names `Daemon`):
   `AgentUsage` (what agents leave on disk: conversations, token usage, context windows, plan limits), `Forges` (pull
-  requests by branch, running clones, the trackers' clients and their keychain secrets).
+  requests by branch, running clones, the trackers' clients and their keychain secrets), `Workspaces` (desks, the
+  branches they follow, the `.kelp.yaml` files the user trusts).
 - **Threads.** Each connection has a reader thread. A request runs in a task of its own; one that blocks (git, gh, ssh,
   files) moves to a thread of its own through `offload`, so a slow host never holds Swift's cooperative pool; at most
   128 run at once, the rest wait their turn. A quick one (`Handled.quick`: `session.hook`, `session.report`,
@@ -133,8 +134,8 @@ else a `NotificationCenter` name.
   `Clients` → a session's own lock → a `Connection`'s. A session's lock is never held while another session's is taken.
   Everything about a session that changes is one struct (`LiveSession.State`) under that lock, touched only inside
   `withLock`, so the compiler checks it; what it tells the daemon (`LiveSession.Callbacks`) is fixed at launch.
-  `deskLock` makes listing desks and adding a missing one a single step (taken once, never again inside), and
-  `trustLock` guards trusted-configs.json.
+  `Workspaces.deskLock` makes listing desks and adding a missing one a single step (taken once, never again inside),
+  and its `trustLock` guards trusted-configs.json.
 - **Deadlines.** Every git, gh and ssh run has a time limit (300 s by default) and is stopped with its children
   (`Subprocess`). A call waits for its reply as long as its method says (`RPCMethod.timeout`: 330 s, just past that;
   `repo.clone` waits for good, its Cancel stops it), so a reply that never comes fails the call instead of hanging it.

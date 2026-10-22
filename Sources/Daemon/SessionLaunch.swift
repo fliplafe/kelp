@@ -213,7 +213,7 @@ extension Daemon {
         guard let wid = s.worktreeId else { return }
         do {
             let renamed = try store.update(Worktree.self, wid) { w in
-                if w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = title }
+                if w.note.range(of: Workspaces.placeholderName, options: .regularExpression) != nil { w.note = title }
             }
             if renamed?.note == title { notify(ChangedEvent.worktree) }
             try nameBranch(wid, prompt: prompt, title: title)
@@ -245,7 +245,7 @@ extension Daemon {
         let s = ls.update { if !$0.titleManual { $0.title = topic } }
         publish(ls)
         let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
-            if (!old.isEmpty && w.note == old) || w.note.range(of: Self.placeholderName, options: .regularExpression) != nil { w.note = topic }
+            if (!old.isEmpty && w.note == old) || w.note.range(of: Workspaces.placeholderName, options: .regularExpression) != nil { w.note = topic }
         }
         if renamed?.note == topic { notify(ChangedEvent.worktree) }
     }
@@ -262,8 +262,39 @@ extension Daemon {
         return m
     }
 
-    func cwd(forWorktree id: String) throws -> Worktree {
-        guard let w = try store.worktree(id) else { throw RPCError.invalidParams("no worktree \(id)") }
-        return w
+    func cwd(forWorktree id: String) throws -> Worktree { try workspaces.worktree(id) }
+
+    /// Closing a desk ends its agents and forgets its layout; the folder is untouched. The last one stays.
+    /// Out of sight, nothing lost: its agents pause (they resume their conversations when it comes back), its tabs stay.
+    /// A workspace going out of sight: agents that can resume their conversation pause (they come back with it), the
+    /// rest stop. Returns once their programs are gone, so nothing writes into the folder after this.
+    func pauseSessions(of wid: String) throws {
+        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        var pids: [pid_t] = []
+        // Under their wake locks, as idle pausing is: a wake that comes meanwhile waits until the programs are gone instead
+        // of starting a second one (on the same log, in a folder about to be removed).
+        let sessions = try store.sessions().filter { $0.worktreeId == wid }
+        try wakeLocks.withLocks(sessions.map(\.id)) {
+            for s in sessions { if let ls = live.remove(s.id) { pids += pause(ls, manifests) } }
+            Self.waitGone(pids)
+        }
+    }
+
+    /// A session already out of `live`: recorded as paused (a resumable agent) or ended — said here and saved now, since
+    /// nothing records its exit any more — then stopped with all it started. Its pids, for `waitGone`.
+    func pause(_ ls: LiveSession, _ manifests: [AgentManifest]) -> [pid_t] {
+        hangUpStreams(ls)
+        if Self.resumable(ls.snapshot, manifests) {
+            publish(ls.markHibernated())
+        } else {
+            ls.overrideStatus(.exited); publish(ls.snapshot)
+        }
+        return ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
+    }
+
+    /// Until these processes have exited (or 3 s, for one that ignores the hangup).
+    static func waitGone(_ pids: [pid_t]) {
+        let end = Date().addingTimeInterval(3)
+        while Date() < end, pids.contains(where: { kill($0, 0) == 0 }) { usleep(20_000) }
     }
 }

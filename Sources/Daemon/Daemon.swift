@@ -31,11 +31,8 @@ public final class Daemon: Sendable {
     let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
     let watches = Watches()   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
-    let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
-    /// Reading the projects' desks and adding the missing first one is one step: two syncs at once added two "Workspace 1".
-    let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
-    let heads = OSAllocatedUnfairLock<[String: HeadWatch]>(initialState: [:])   // by project: its .git, for desks to follow the branch
+    let workspaces: Workspaces   // desks, the branches they follow, the .kelp.yaml files the user trusts
 
     public init(root: URL = Paths.root, store: Store? = nil) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
@@ -46,6 +43,7 @@ public final class Daemon: Sendable {
         self.settings = SettingsStore(root: root)
         self.agentUsage = AgentUsage(root: root, settings: settings, store: self.store)
         self.forges = Forges(offloads: offloads)
+        self.workspaces = Workspaces(root: root, store: self.store, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
         // Shared SSH connections for remote projects (short: a Unix socket path has to fit in 104 bytes).
         let ssh = root.appendingPathComponent("ssh")
         do { try Paths.ensure(ssh) } catch { Log.start.error("no folder for ssh connections: \(error)") }   // remote projects fail
@@ -55,7 +53,7 @@ public final class Daemon: Sendable {
             $0.tell = { [weak self] c in
                 self?.recordChanged(c)   // records go to the clients as they change
                 switch c {   // and a project added, moved or removed is followed (watchHeads) from then on
-                case .repo, .repoRemoved: self?.watchHeads()
+                case .repo, .repoRemoved: self?.workspaces.watchHeads()
                 default: break
                 }
             }
@@ -124,7 +122,7 @@ public final class Daemon: Sendable {
         prune.setEventHandler { [self] in pruneEnded() }
         running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t; $0.prune = prune }
         src.resume(); t.resume(); prune.resume()
-        Self.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.followHeads() } }   // not once stopped
+        workspaces.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.workspaces.followHeads() } }   // not once stopped
         try? FileManager.default.removeItem(at: Paths.daemonError(in: root))   // an earlier failure is over
         Log.start.info("kelpd \(getpid()) serves \(self.socketPath, privacy: .public)")
     }
@@ -140,8 +138,7 @@ public final class Daemon: Sendable {
         Self.waitGone(pids)
         lsp.stopAll()
         watches.stopAll()
-        let h = heads.withLock { h in defer { h = [:] }; return h }
-        _ = h   // the streams stop here, out of the lock
+        workspaces.stopWatching()
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }
@@ -293,10 +290,7 @@ public final class Daemon: Sendable {
         try? Wire.line(Reply(id: id, result: nil, error: (error as? RPCError) ?? .internalError("\(error)")))
     }
 
-    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) {
-        guard let d = try? Wire.line(RPCNotification(e)) else { return }
-        clients.targets(only).forEach { $0.send(d) }
-    }
+    func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
     // MARK: sessions
 

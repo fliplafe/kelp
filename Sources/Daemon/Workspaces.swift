@@ -1,13 +1,27 @@
 import Foundation
 import os
 import Core
-import Agents
 import GitKit
 
 /// Workspaces are worktree records. A workspace is a desk in the project's folder (its path is the repo path): a set of
 /// tabs and agents, nothing on disk. Several desks can share the folder. Workspaces from older versions may still be
-/// git worktrees on their own branches.
-extension Daemon {
+/// git worktrees on their own branches. This keeps the desks, the branches they follow, and which projects' `.kelp.yaml`
+/// the user trusts (Scripts.swift).
+final class Workspaces: Sendable {
+    let root: URL
+    let store: Store
+    /// A desk was added (the coarse `event.changed`; its record goes out as it's written anyway).
+    let deskAdded: @Sendable () -> Void
+    /// Reading the projects' desks and adding the missing first one is one step: two syncs at once added two "Workspace 1".
+    let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
+    let heads = OSAllocatedUnfairLock<[String: HeadWatch]>(initialState: [:])   // by project: its .git, for desks to follow the branch
+    let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
+    let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
+
+    init(root: URL, store: Store, deskAdded: @escaping @Sendable () -> Void) {
+        self.root = root; self.store = store; self.deskAdded = deskAdded
+    }
+
     static let placeholderName = #"^Workspace \d+$"#
 
     func isMain(_ w: Worktree, _ r: Repo) -> Bool { w.path == r.path }
@@ -36,7 +50,6 @@ extension Daemon {
 
     /// One local project's .git, watched for its HEAD.
     struct HeadWatch: Sendable { let dir: String, watcher: FileWatcher }
-    static let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
 
     /// At start: desks catch up with branches switched while no daemon ran, and from then on follow them.
     func followHeads() {
@@ -56,7 +69,7 @@ extension Daemon {
         for (id, dir) in want where have[id] != dir {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
-            let fw = FileWatcher(root: dir, deliver: Self.headQueue) { [weak self] paths in
+            let fw = FileWatcher(root: dir, deliver: headQueue) { [weak self] paths in
                 guard paths.contains(where: { $0.hasSuffix("/HEAD") && !$0.contains("/logs/") }) else { return }
                 do { try self?.syncMainWorkspaces() } catch { Log.store.error("desks didn't follow their branch: \(error)") }
             }
@@ -68,6 +81,12 @@ extension Daemon {
             return gone
         }
         _ = gone   // their streams stop as they go, out of the lock
+    }
+
+    /// The daemon stops: the folders aren't followed any more.
+    func stopWatching() {
+        let h = heads.withLock { h in defer { h = [:] }; return h }
+        _ = h   // the streams stop here, out of the lock
     }
 
     /// A new desk in the project's folder: instant, named "Workspace N" until its first prompt names it (see autoTitle).
@@ -82,62 +101,8 @@ extension Daemon {
             try store.save(w)
             return w
         }
-        notify(ChangedEvent.worktree)
+        deskAdded()
         return w
-    }
-
-    /// Closing a desk ends its agents and forgets its layout; the folder is untouched. The last one stays.
-    /// Out of sight, nothing lost: its agents pause (they resume their conversations when it comes back), its tabs stay.
-    /// A workspace going out of sight: agents that can resume their conversation pause (they come back with it), the
-    /// rest stop. Returns once their programs are gone, so nothing writes into the folder after this.
-    func pauseSessions(of wid: String) throws {
-        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        var pids: [pid_t] = []
-        // Under their wake locks, as idle pausing is: a wake that comes meanwhile waits until the programs are gone instead
-        // of starting a second one (on the same log, in a folder about to be removed).
-        let sessions = try store.sessions().filter { $0.worktreeId == wid }
-        try wakeLocks.withLocks(sessions.map(\.id)) {
-            for s in sessions { if let ls = live.remove(s.id) { pids += pause(ls, manifests) } }
-            Self.waitGone(pids)
-        }
-    }
-
-    /// A session already out of `live`: recorded as paused (a resumable agent) or ended — said here and saved now, since
-    /// nothing records its exit any more — then stopped with all it started. Its pids, for `waitGone`.
-    func pause(_ ls: LiveSession, _ manifests: [AgentManifest]) -> [pid_t] {
-        hangUpStreams(ls)
-        if Self.resumable(ls.snapshot, manifests) {
-            publish(ls.markHibernated())
-        } else {
-            ls.overrideStatus(.exited); publish(ls.snapshot)
-        }
-        return ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
-    }
-
-    /// Until these processes have exited (or 3 s, for one that ignores the hangup).
-    static func waitGone(_ pids: [pid_t]) {
-        let end = Date().addingTimeInterval(3)
-        while Date() < end, pids.contains(where: { kill($0, 0) == 0 }) { usleep(20_000) }
-    }
-
-    /// Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and unarchiving
-    /// finds everything where it was. A project keeps at least one desk.
-    func archive(_ w: Worktree, _ r: Repo) throws {
-        if isMain(w, r), try store.worktrees(repo: r.id).filter({ isMain($0, r) && !$0.archived }).count < 2 {
-            throw RPCError.invalidParams("A project keeps at least one workspace.")
-        }
-        try pauseSessions(of: w.id)
-        try store.update(Worktree.self, w.id) { $0.archived = true }
-        notify(ChangedEvent.worktree)
-    }
-
-    func removeDesk(_ w: Worktree, _ r: Repo) throws {
-        guard try store.worktrees(repo: r.id).filter({ isMain($0, r) }).count > 1 else {
-            throw RPCError.invalidParams("A project keeps at least one workspace; remove the project instead.")
-        }
-        for s in try store.sessions() where s.worktreeId == w.id { discard(s) }
-        try store.delete(w)
-        notify(ChangedEvent.worktree)
     }
 
     /// "Workspace 3" on branch "ws-3": instant, and renamed from the first prompt later (see autoTitle).
@@ -146,5 +111,10 @@ extension Daemon {
         var n = 2
         while taken.contains("Workspace \(n)") || Git.branchExists(r.path, "ws-\(n)") { n += 1 }
         return ("Workspace \(n)", "ws-\(n)")
+    }
+
+    func worktree(_ id: String) throws -> Worktree {
+        guard let w = try store.worktree(id) else { throw RPCError.invalidParams("no worktree \(id)") }
+        return w
     }
 }

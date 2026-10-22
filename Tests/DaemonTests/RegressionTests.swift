@@ -310,7 +310,7 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let path = try makeRepo()
     let r = Repo(name: "fresh", path: path, baseBranch: "main")
     try w.d.store.save(r)   // as an older daemon left it: a project, no desk
-    DispatchQueue.concurrentPerform(iterations: 16) { _ in try? w.d.syncMainWorkspaces() }
+    DispatchQueue.concurrentPerform(iterations: 16) { _ in try? w.d.workspaces.syncMainWorkspaces() }
     #expect(try w.d.store.worktrees(repo: r.id).count == 1)
 }
 

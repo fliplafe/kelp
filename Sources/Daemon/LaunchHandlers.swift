@@ -120,7 +120,7 @@ extension SessionAnnotate: Handled {
 extension RecipeRender: Handled {
     func handle(_ d: Daemon) throws -> String {
         let w = try d.cwd(forWorktree: id)
-        let cfg = d.trustedConfig(try d.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
+        let cfg = d.workspaces.trustedConfig(try d.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
         var all: [String: String] = ["branch": w.branch, "base": try d.store.repo(w.repoId)?.baseBranch ?? "main"]
         all.merge(vars ?? [:]) { $1 }
         if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path)) ?? "").prefix(4000)) }
@@ -180,7 +180,7 @@ extension TaskFromIssue: AsyncHandled {
             guard let w = try d.store.update(Worktree.self, created.worktree.id, {
                 $0.issue = ref; $0.issueURL = url; $0.linearIssueId = linearId ?? ""
             }) else { throw RPCError.internalError("worktree vanished") }
-            let cfg = d.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
+            let cfg = d.workspaces.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
             let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
             var text = cfg.issueCommand.map { Recipes.fill($0, vars) } ?? Recipes.render("issue", config: cfg, vars: vars)
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
