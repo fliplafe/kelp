@@ -97,11 +97,11 @@ enum Builtins {
         return c
     }
 
-    static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) { _ in
+    static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) { app in
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0) }, menu: FileTab.menu),
-                  TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0) }]
-        c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel() }]
+        c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0, app: app) }, menu: FileTab.menu),
+                  TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0, app: app) }]
+        c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel(app: app) }]
         c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus") { _ in UntitledTab.next() }]
         c.settings = [SettingsSection(id: "editor", title: "Editor", icon: "doc.text", specs: [
             s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
@@ -135,7 +135,7 @@ enum Builtins {
                       cmd("editor.save", "Save", "cmd+s") {
                           guard let t = Workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
                           Task {
-                              if let file = t as? FileTab, SettingsStore.shared.bool("editor.formatOnSave") == true, file.language?.format != nil { await file.format() }
+                              if let file = t as? FileTab, app.settings.bool("editor.formatOnSave") == true, file.language?.format != nil { await file.format() }
                               await t.save()
                           }
                       },
@@ -167,26 +167,27 @@ enum Builtins {
         return c
     }
 
-    static let git = Builtin("kelp.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") { _ in
+    static let git = Builtin("kelp.git", "Git", "Source Control: changes and staging, commits, branches, the history graph and diffs.", icon: "arrow.triangle.branch") { app in
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["diff"]) { DiffTab(uri: $0) },
-                  TabProvider(schemes: ["commit"]) { CommitMessageTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["diff"]) { DiffTab(uri: $0, app: app) },
+                  TabProvider(schemes: ["commit"]) { CommitMessageTab(uri: $0, app: app) }]
+        let changed = ChangedFiles(app: app)
         c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "kelp.git",
-                              badge: { ChangedFiles.shared.count }) { SourceControlController() }]
+                              badge: { changed.count }) { SourceControlController(app: app) }]
         c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Kelp names, e.g. “niko/”.")
         ])]
         c.commands = [
             CommandSpec(id: "git.review", title: "Git: Review Changes", key: "shift+cmd+r") { _ in
-                if let w = Workbench.shared.workspaceId { Workbench.open(DiffTab.uri(w)) }
+                if let w = app.workbench.workspaceId { Workbench.open(DiffTab.uri(w)) }
             },
             CommandSpec(id: "git.pullRequest", title: "Git: Create Pull Request") { _ in
-                if let w = Workbench.shared.workspaceId { PRActions.create(worktree: w) }
+                if let w = app.workbench.workspaceId { PRActions.create(worktree: w) }
             },
             CommandSpec(id: "git.push", title: "Git: Push") { _ in
-                if let w = Workbench.shared.workspaceId {
-                    Task { if await AppModel.shared.call(GitPush(id: w)) != nil { Banner.show(String(localized: "Pushed")) } }
+                if let w = app.workbench.workspaceId {
+                    Task { if await app.call(GitPush(id: w)) != nil { Banner.show(String(localized: "Pushed")) } }
                 }
             }
         ]

@@ -14,7 +14,7 @@ extension SharedAppModel {
         let line = "    let value = compute(index: 42, label: \"größe\") // a line of code\n"
         try rig.write("big.swift", String(repeating: line, count: 4_700_000 / line.utf8.count))
         let p = rig.repo + "/big.swift"
-        let tab = FileTab(uri: TabURI.file(p))
+        let tab = FileTab(uri: TabURI.file(p), app: rig.app)
         let e = try #require(tab.editor), tv = try #require(e.controller.textView)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
         window.contentView = tab.view
@@ -35,7 +35,7 @@ extension SharedAppModel {
         #expect(!tab.isEdited)
         let overtype = time(10) { tv.replaceCharacters(in: NSRange(location: end, length: 1), with: "y") }   // the saved length
         let text = e.text
-        let lsp = time(1) { LSPManager.shared.change(root: rig.repo, path: p, text: text) }
+        let lsp = time(1) { LSPManager.shared.change(rig.app, root: rig.repo, path: p, text: text) }
         print(String(format: "BENCH editor %.1f MB on the main thread: keystroke %.2f ms (the editor alone %.2f), same-length edit %.2f ms, lsp.change %.2f ms; save took %.0f ms",
                      Double(text.utf8.count) / 1e6, typed, bare, overtype, lsp, save))
     }
@@ -51,7 +51,7 @@ extension SharedAppModel {
             var opens: [Double] = [], saves: [Double] = []
             for i in 0..<5 {
                 let t0 = Date()
-                let tab = FileTab(uri: TabURI.file(rig.repo + "/" + name))
+                let tab = FileTab(uri: TabURI.file(rig.repo + "/" + name), app: rig.app)
                 while tab.editor == nil { try await Task.sleep(for: .milliseconds(1)) }
                 opens.append(Date().timeIntervalSince(t0) * 1000)
                 let e = try #require(tab.editor)

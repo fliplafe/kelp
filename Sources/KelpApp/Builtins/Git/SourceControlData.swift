@@ -11,7 +11,7 @@ extension SourceControlController {
         message.string = ""; messageChanged()
         rebuild()
         followWatches()
-        apply(AppModel.shared.git[wid ?? ""])
+        apply(app.git[wid ?? ""])
     }
 
     /// Watched only while on screen: swapped out of the inspector, it reads no git.
@@ -24,7 +24,7 @@ extension SourceControlController {
     override func viewDidDisappear() { super.viewDidDisappear(); followWatches() }
 
     /// Refresh, and after an action: read git again now rather than on the next file event.
-    func reloadAll() { if let wid = worktreeId { AppModel.shared.watchAgain(.git, wid) } }
+    func reloadAll() { if let wid = worktreeId { app.watchAgain(.git, wid) } }
 
     /// What the daemon read: the lists, the header, and the graph when the branches moved.
     func apply(_ e: GitEvent?) {
@@ -44,7 +44,7 @@ extension SourceControlController {
         updateHeader(); updateCommitButton()
         showStats(ch.isEmpty ? nil : e.stats)   // the "+6 −2" beside the header
         followWatches()
-        if pushed { AppModel.shared.watchAgain(.ci, e.worktree) }
+        if pushed { app.watchAgain(.ci, e.worktree) }
         if graphStale || commits.isEmpty { Task { await loadGraph() } } else if changed { rebuildChanges() }
     }
 
@@ -91,21 +91,21 @@ extension SourceControlController {
 
     /// "test › Run swift test": the first failed job and its failed step.
     private func failurePlace(_ wid: String, run: Int) async -> String? {
-        let r = await AppModel.shared.tryCall(CIJobs(worktreeId: wid, run: run))
+        let r = await app.tryCall(CIJobs(worktreeId: wid, run: run))
         guard let job = r.value?.first(where: \.failed) else { return nil }
         return ([job.name] + (job.steps.first(where: \.failed).map { [$0.name] } ?? [])).joined(separator: " › ")
     }
 
     /// The details live in the CI Runs panel (it opens the failed job's log by itself); without it, the run's page.
     func openCI() {
-        if ExtensionRegistry.shared.all.panels.contains(where: { $0.id == "ci" }) { Workbench.window?.showInspector(panel: "ci") }
+        if app.extensions.all.panels.contains(where: { $0.id == "ci" }) { Workbench.window?.showInspector(panel: "ci") }
         else if let run = CIRuns.latest(ciRuns).first(where: \.failed) ?? ciRuns.first { Workbench.open(run.url) }
     }
 
     func loadGraph() async {
         guard let wid = worktreeId else { return }
         // Quiet: git failing shows in the panel from the status read before this; a graph that failed alone keeps the last one.
-        let r = await AppModel.shared.quiet(GitGraph(id: wid, limit: limit), timeout: 60)
+        let r = await app.quiet(GitGraph(id: wid, limit: limit), timeout: 60)
         guard wid == worktreeId else { return }
         if let r {
             let list = r.commits

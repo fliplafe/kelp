@@ -16,9 +16,9 @@ extension DiffViewController {
         guard let wid = worktreeId, let (path, i, h) = hunk(b) else { return }
         let staged = single?.source == "staged" || (single == nil && source.indexOfSelectedItem == 2)
         Task {
-            await AppModel.shared.call(GitHunk(id: wid, file: path, hunk: i, reverse: staged, header: h.header, fingerprint: h.fingerprint))
+            await app.call(GitHunk(id: wid, file: path, hunk: i, reverse: staged, header: h.header, fingerprint: h.fingerprint))
             await load()
-            AppModel.shared.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
+            app.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
         }
     }
     /// Throwing a hunk away can't be taken back, so a sheet says what goes (an alert of the window, not of the app).
@@ -36,9 +36,9 @@ extension DiffViewController {
             Task {
                 // The lines shown, not only the header: a line an agent rewrote in place since is never thrown away unseen.
                 let m = GitDiscardHunk(id: wid, file: path, hunk: h, header: header, fingerprint: print)
-                if let e = await AppModel.shared.tryCall(m).error { Banner.show(e, style: .error) }
+                if let e = await app.tryCall(m).error { Banner.show(e, style: .error) }
                 await self.load()
-                AppModel.shared.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
+                app.watchAgain(.git, wid)   // Source Control and the badges now, not on the next file event
             }
         }
     }
@@ -52,7 +52,7 @@ extension DiffViewController {
     private func fileOp<M: RPCMethod>(_ make: (String, String) -> M) {
         guard let wid = worktreeId, let p = selectedFilePath() else { return }
         let m = make(wid, p)
-        Task { await AppModel.shared.call(m); await load() }
+        Task { await app.call(m); await load() }
     }
 
     @objc func addComment() {
@@ -70,7 +70,7 @@ extension DiffViewController {
         Task {
             guard let text = await prompt(String(localized: "Comment on \(file):\(first.0)\(first.0 == last.0 ? "" : "-\(last.0)")"),
                                           String(localized: "Goes to the agent with the code quote.")), !text.isEmpty else { return }
-            await AppModel.shared.call(CommentAdd(id: wid, file: file, start: first.0, end: last.0, quote: lines.map(\.1).joined(separator: "\n"), text: text))
+            await app.call(CommentAdd(id: wid, file: file, start: first.0, end: last.0, quote: lines.map(\.1).joined(separator: "\n"), text: text))
             await load()
         }
     }
@@ -78,7 +78,7 @@ extension DiffViewController {
     @objc func setCommentState(_ m: NSMenuItem) {
         guard table.clickedRow >= 0, case .comment(let c) = rows[table.clickedRow] else { NSSound.beep(); return }
         let set = CommentSetState(id: c.id, state: m.representedObject as? String ?? "")
-        Task { await AppModel.shared.call(set); await load() }
+        Task { await app.call(set); await load() }
     }
 
     @objc func sendComments() {
@@ -86,15 +86,15 @@ extension DiffViewController {
         guard comments.contains(where: { $0.state == .open }) else { status.stringValue = String(localized: "No open comments"); return }
         Task {
             guard let sid = await pickAgentSession(wid) else { return }
-            let n = await AppModel.shared.call(CommentSend(id: wid, session: sid)) ?? 0
+            let n = await app.call(CommentSend(id: wid, session: sid)) ?? 0
             status.stringValue = String(localized: "Sent \(n) comments to agent"); await load()
         }
     }
 
     /// The focused session if it is in this worktree, else ask.
     private func pickAgentSession(_ wid: String) async -> String? {
-        let live = AppModel.shared.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
-        if let cur = Workbench.shared.focusedSession, live.contains(where: { $0.id == cur }) { return cur }
+        let live = app.sessions.filter { $0.worktreeId == wid && $0.status != .exited }
+        if let cur = app.workbench.focusedSession, live.contains(where: { $0.id == cur }) { return cur }
         if live.count == 1 { return live[0].id }
         guard !live.isEmpty else { status.stringValue = String(localized: "No running agent in this worktree"); return nil }
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))

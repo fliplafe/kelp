@@ -13,15 +13,15 @@ extension SharedAppModel {
         let saved = UIState[LSPManager.trustKey]
         defer { UIState[LSPManager.trustKey] = saved }
         let root = "/tmp/cloned-\(UUID().uuidString.prefix(6))"
-        let lsp = LSPManager.shared
+        let lsp = LSPManager.shared, app = AppModel.shared
         var started = 0
-        #expect(!lsp.whenTrusted(root) { started += 1 })        // asks; nothing starts
-        #expect(!lsp.whenTrusted(root) { started += 1 })        // a second tab of it waits too (asked once)
-        #expect(await !lsp.open(root: root, path: root + "/main.rs", text: "", retry: {}))   // no server is given the file
+        #expect(!lsp.whenTrusted(app, root) { started += 1 })        // asks; nothing starts
+        #expect(!lsp.whenTrusted(app, root) { started += 1 })        // a second tab of it waits too (asked once)
+        #expect(await !lsp.open(app, root: root, path: root + "/main.rs", text: "", retry: {}))   // no server is given the file
         #expect(started == 0 && !lsp.trusted(root))
         await lsp.trust(root)                                    // the banner's "Trust and Start"
         #expect(started == 2 && lsp.trusted(root))
-        #expect(lsp.whenTrusted(root) { started += 1 } && started == 2)   // trusted from now on: no waiting
+        #expect(lsp.whenTrusted(app, root) { started += 1 } && started == 2)   // trusted from now on: no waiting
         #expect(!lsp.trusted(Paths.scratch.path))   // the scratch desk is asked about like any project: a clone may land there
     }
 
@@ -33,9 +33,9 @@ extension SharedAppModel {
         let me = ProcessInfo.processInfo.environment["KELP_APP_EXECUTABLE"]   // this test runner stands in for the app…
         setenv("KELP_APP_EXECUTABLE", "/nowhere/KelpApp", 1)                   // …not now: another copy of Kelp is asking
         defer { if let me { setenv("KELP_APP_EXECUTABLE", me, 1) } }
-        let root = "/tmp/refused-\(UUID().uuidString.prefix(6))", lsp = LSPManager.shared
+        let root = "/tmp/refused-\(UUID().uuidString.prefix(6))", lsp = LSPManager.shared, app = rig.app
         var started = 0
-        _ = lsp.whenTrusted(root) { started += 1 }
+        _ = lsp.whenTrusted(app, root) { started += 1 }
         await lsp.trust(root)
         #expect(!lsp.trusted(root) && started == 0)
     }

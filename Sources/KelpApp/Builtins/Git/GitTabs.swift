@@ -6,8 +6,8 @@ import WorkbenchKit
 /// like VS Code's diff editor: "name (Working Tree)", "name (Index)", "name (abc1234)").
 @MainActor
 final class DiffTab: TabContent {
-    let worktreeId: String
-    private let controller = DiffViewController()
+    let worktreeId: String, app: AppModel
+    private let controller: DiffViewController
     private let file: String?, source: String?, commit: String?
     var onChange: (() -> Void)?
     private(set) var uri: String
@@ -21,8 +21,9 @@ final class DiffTab: TabContent {
     var icon: NSImage? { .symbol("plusminus") }
     var toolTip: String? { file }
 
-    init(uri: String) {
-        self.uri = uri
+    init(uri: String, app: AppModel) {
+        self.uri = uri; self.app = app
+        controller = DiffViewController(app: app); gitWatch = Watched(.git, in: app)
         let c = URLComponents(string: uri)
         worktreeId = c?.path ?? ""
         func item(_ n: String) -> String? { c?.queryItems?.first { $0.name == n }?.value }
@@ -35,12 +36,12 @@ final class DiffTab: TabContent {
         guard commit == nil else { return }
         gitWatch.key = worktreeId
         var shown = false   // the first value is what was just loaded
-        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] e in
+        track(owner: self) { [weak self, app] in app.git[self?.worktreeId ?? ""] } changed: { [weak self] e in
             guard let self, shown else { shown = true; return }
             controller.gitChanged(e)
         }
     }
-    private let gitWatch = Watched(.git)
+    private let gitWatch: Watched
 
     func focus() { controller.view.window?.makeFirstResponder(controller.view) }
 
@@ -72,7 +73,7 @@ extension GitDiff {
 /// Commit with an empty message box opens it. Lines starting with "#" are left out; ⌘↩ or Commit commits, closing cancels.
 @MainActor
 final class CommitMessageTab: TabContent {
-    let uri: String
+    let uri: String, app: AppModel
     private let worktreeId: String, push: Bool, amend: Bool
     private let text = CommitTextView()
     private let root = NSView()
@@ -82,8 +83,8 @@ final class CommitMessageTab: TabContent {
     var title: String { amend ? String(localized: "Amend Commit") : String(localized: "Commit Message") }
     var icon: NSImage? { .symbol("square.and.pencil") }
 
-    init(uri: String) {
-        self.uri = uri
+    init(uri: String, app: AppModel) {
+        self.uri = uri; self.app = app
         let c = URLComponents(string: uri), q = c?.queryItems ?? []
         worktreeId = c?.path ?? ""
         push = q.contains { $0.name == "push" }; amend = q.contains { $0.name == "amend" }
@@ -124,8 +125,8 @@ final class CommitMessageTab: TabContent {
     /// The message (the last commit's, when amending), then what goes into the commit as "#" lines, as git's own template does.
     private func fill(_ message: String) async {
         // The "#" lines only describe the commit; without them the message is still the message.
-        let changes = await AppModel.shared.quiet(GitStatus(id: worktreeId)) ?? []
-        let branch = await AppModel.shared.quiet(GitBranches(id: worktreeId))?.current
+        let changes = await app.quiet(GitStatus(id: worktreeId)) ?? []
+        let branch = await app.quiet(GitBranches(id: worktreeId))?.current
         let staged = changes.filter { $0.staged && !$0.conflicted }
         let files = staged.isEmpty ? changes.filter { !$0.conflicted } : staged
         var lines = [message, ""]
@@ -155,7 +156,7 @@ final class CommitMessageTab: TabContent {
         guard !message.isEmpty, commitButton.isEnabled else { NSSound.beep(); return }
         commitButton.isEnabled = false
         Task {
-            if await GitCommit.run(worktreeId, message: message, push: push, amend: amend) { dismiss() }
+            if await GitCommit.run(app, worktreeId, message: message, push: push, amend: amend) { dismiss() }
             commitButton.isEnabled = true
         }
     }
@@ -168,14 +169,14 @@ final class CommitMessageTab: TabContent {
 /// Failures go to the banner, where an agent can be asked to fix them.
 @MainActor
 enum GitCommit {
-    static func run(_ wid: String, message: String, push: Bool, amend: Bool) async -> Bool {
+    static func run(_ app: AppModel, _ wid: String, message: String, push: Bool, amend: Bool) async -> Bool {
         // Unread, nothing would look staged and every change would go in: stop with the banner instead.
-        guard let changes = await AppModel.shared.call(GitStatus(id: wid)) else { return false }
+        guard let changes = await app.call(GitStatus(id: wid)) else { return false }
         let all = !changes.contains { $0.staged && !$0.conflicted }
-        let r = await AppModel.shared.tryCall(Core.GitCommit(id: wid, message: message, all: all, amend: amend))   // this enum's namesake
+        let r = await app.tryCall(Core.GitCommit(id: wid, message: message, all: all, amend: amend))   // this enum's namesake
         if let e = r.error { GitFix.offer(e, recipe: "fixCommit", worktree: wid); return false }
         if push {
-            let p = await AppModel.shared.tryCall(GitPush(id: wid))
+            let p = await app.tryCall(GitPush(id: wid))
             if let e = p.error { GitFix.offer(e, recipe: "fixPush", worktree: wid) } else { Banner.show(String(localized: "Pushed")) }
         }
         return true

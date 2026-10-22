@@ -11,9 +11,9 @@ final class LSPManager {
     static let shared = LSPManager()
     /// Server commands already reported missing this launch.
     private var reported: Set<String> = []
-    var enabled: Bool { SettingsStore.shared.bool("editor.lsp") != false }
+    func enabled(_ app: AppModel) -> Bool { app.settings.bool("editor.lsp") != false }
 
-    func language(_ path: String) -> LanguageSpec? { LanguageSpec.find(path, in: ExtensionRegistry.shared.all.languages) }
+    func language(_ app: AppModel, _ path: String) -> LanguageSpec? { LanguageSpec.find(path, in: app.extensions.all.languages) }
 
     // Language servers run the project's own code — build scripts and proc macros (rust-analyzer), Package.swift
     // (sourcekit-lsp), the TypeScript in its node_modules — and formatters can (rustup takes the toolchain a repo's
@@ -28,8 +28,8 @@ final class LSPManager {
     private var waiting: [String: [@MainActor () -> Void]] = [:]
 
     /// Language servers on, and `root` trusted; else `start` runs once the user trusts it (`askTrust`).
-    func whenTrusted(_ root: String, _ start: @escaping @MainActor () -> Void) -> Bool {
-        enabled && askTrust(root, start)
+    func whenTrusted(_ app: AppModel, _ root: String, _ start: @escaping @MainActor () -> Void) -> Bool {
+        enabled(app) && askTrust(root, start)
     }
 
     /// True when `root` is trusted to run its own code; else `then` runs once the user trusts it, asked once per project
@@ -58,11 +58,11 @@ final class LSPManager {
     /// Gives a file a tab shows to its server, which the daemon starts when it isn't running. False when there's none: no
     /// server for its language, servers off, or refused — the daemon's reason shows (trust the project, install the server;
     /// `retry` runs once the user trusts it).
-    func open(root: String, path: String, text: String, retry: @escaping @MainActor () -> Void) async -> Bool {
-        guard enabled, let lang = language(path), let server = lang.server else { return false }
+    func open(_ app: AppModel, root: String, path: String, text: String, retry: @escaping @MainActor () -> Void) async -> Bool {
+        guard enabled(app), let lang = language(app, path), let server = lang.server else { return false }
         await sent()   // after the file's close from a tab just closed, never before it
         do {
-            _ = try await AppModel.shared.get(LSPOpen(root: root, path: path, languageId: lang.id, command: server.command, args: server.args, text: text))
+            _ = try await app.get(LSPOpen(root: root, path: path, languageId: lang.id, command: server.command, args: server.args, text: text))
             return true
         } catch {
             switch LSPRefusal(error) {
@@ -76,15 +76,15 @@ final class LSPManager {
 
     /// The file's whole text, as typed. Encoded and sent off the main thread (5 MB took 140 ms to encode on it), from one
     /// queue, so they stay in order with each other and with the close; one still waiting takes the newer text instead.
-    func change(root: String, path: String, text: String) {
-        guard let c = AppModel.shared.client else { return }
+    func change(_ app: AppModel, root: String, path: String, text: String) {
+        guard let c = app.client else { return }
         let key = root + "\n" + path
         let waiting = changes.withLock { q in defer { q[key] = LSPChange(root: root, path: path, text: text) }; return q[key] != nil }
         guard !waiting else { return }
         outbox.async { [changes] in if let m = changes.withLock({ $0.removeValue(forKey: key) }) { c.notify(m) } }
     }
-    func close(root: String, path: String) {
-        guard let c = AppModel.shared.client else { return }
+    func close(_ app: AppModel, root: String, path: String) {
+        guard let c = app.client else { return }
         outbox.async { c.notify(LSPClose(root: root, path: path)) }
     }
     private let outbox = DispatchQueue(label: "dev.kelp.lsp-changes")
@@ -93,14 +93,14 @@ final class LSPManager {
     private func sent() async { await withCheckedContinuation { c in outbox.async { c.resume() } } }
 
     /// Completions at a 1-based position; none when the server can't say (quietly: they're offered while typing).
-    func completion(root: String, path: String, line: Int, column: Int) async -> [CodeCompletion] {
-        await AppModel.shared.quiet(LSPCompletion(root: root, path: path, line: line, column: column)) ?? []
+    func completion(_ app: AppModel, root: String, path: String, line: Int, column: Int) async -> [CodeCompletion] {
+        await app.quiet(LSPCompletion(root: root, path: path, line: line, column: column)) ?? []
     }
-    func definition(root: String, path: String, line: Int, column: Int) async -> CodeLocation? {
-        await AppModel.shared.quiet(LSPDefinition(root: root, path: path, line: line, column: column)) ?? nil
+    func definition(_ app: AppModel, root: String, path: String, line: Int, column: Int) async -> CodeLocation? {
+        await app.quiet(LSPDefinition(root: root, path: path, line: line, column: column)) ?? nil
     }
-    func symbol(root: String, path: String, line: Int) async -> String? {
-        await AppModel.shared.quiet(LSPSymbol(root: root, path: path, line: line)) ?? nil
+    func symbol(_ app: AppModel, root: String, path: String, line: Int) async -> String? {
+        await app.quiet(LSPSymbol(root: root, path: path, line: line)) ?? nil
     }
 
     /// Once per command and launch; the button runs the language's `install` in a terminal tab.

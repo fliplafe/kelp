@@ -7,13 +7,14 @@ import Core
 /// and shows it in the built-in browser, so the kernel stays alive next to your agents.
 @MainActor
 final class NotebookTab: NSViewController {
+    let app: AppModel
     let url: URL, path: String, worktreeId: String?
     private let web = WKWebView()
     private let links = PreviewLinks()
     private let status = NSTextField(labelWithString: "")
 
-    init(url: URL, path: String, worktreeId: String?) {
-        self.url = url; self.path = path; self.worktreeId = worktreeId
+    init(app: AppModel, url: URL, path: String, worktreeId: String?) {
+        self.app = app; self.url = url; self.path = path; self.worktreeId = worktreeId
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -35,7 +36,7 @@ final class NotebookTab: NSViewController {
     /// Read by the daemon (off the main thread, refused like any file tab's past the size limit), then rendered.
     func reload() {
         Task {
-            let d = await AppModel.shared.tryCall(FilesRead(path: path)).value.map { Data($0.text.utf8) }
+            let d = await app.tryCall(FilesRead(path: path)).value.map { Data($0.text.utf8) }
             guard let d, let body = NotebookHTML.render(d) else {
                 let why = String(localized: "This notebook can't be read (is it valid nbformat 4 JSON?).")
                 web.loadHTMLString("<meta name='color-scheme' content='light dark'><p style='font:13px -apple-system;color:-apple-system-secondary-label;padding:20px'>\(why)</p>",
@@ -69,16 +70,16 @@ final class NotebookTab: NSViewController {
         guard let wid = worktreeId else { return }
         guard Self.jupyter() != nil else { status.stringValue = String(localized: "Jupyter not found — pip install jupyter"); return }
         Task {
-            guard let s = await AppModel.shared.call(SessionCreate(worktreeId: wid, command: "jupyter lab --no-browser " + IDE.shellWord(path),
+            guard let s = await app.call(SessionCreate(worktreeId: wid, command: "jupyter lab --no-browser " + IDE.shellWord(path),
                                                                    title: "Jupyter", openURLs: true)) else { return }
-            AppModel.shared.sessions.append(s)
+            app.sessions.append(s)
             // Jupyter's URL arrives as a dev-server URL and opens in a browser tab
             status.stringValue = String(localized: "Starting Jupyter Lab… it opens in the Browser tab")
         }
     }
 
     @objc private func askAgent() {
-        guard let sid = Workbench.shared.focusedSession else { NSSound.beep(); return }
-        Task { await AppModel.shared.call(SessionSend(id: sid, text: "Look at the notebook \(path) (cells and outputs). ", enter: false)) }
+        guard let sid = app.workbench.focusedSession else { NSSound.beep(); return }
+        Task { await app.call(SessionSend(id: sid, text: "Look at the notebook \(path) (cells and outputs). ", enter: false)) }
     }
 }

@@ -90,14 +90,16 @@ extension AppModel {
 /// One key of a topic watched at a time (the workspace a panel shows): set `key`, nil lets go; so does the owner going.
 @MainActor
 final class Watched {
-    let topic: WatchTopic
+    let topic: WatchTopic, app: AppModel
     var key: String? {
         didSet {
             guard key != oldValue else { return }
-            if let o = oldValue { AppModel.shared.unwatch(topic, o) }
-            if let k = key { AppModel.shared.watch(topic, k) }
+            if let o = oldValue { app.unwatch(topic, o) }
+            if let k = key { app.watch(topic, k) }
         }
     }
-    init(_ topic: WatchTopic) { self.topic = topic }
-    isolated deinit { if let k = key { AppModel.shared.unwatch(topic, k) } }
+    init(_ topic: WatchTopic, in app: AppModel) { self.topic = topic; self.app = app }
+    /// For a view not handed the app yet.
+    convenience init(_ topic: WatchTopic) { self.init(topic, in: AppModel.shared) }
+    isolated deinit { if let k = key { app.unwatch(topic, k) } }
 }

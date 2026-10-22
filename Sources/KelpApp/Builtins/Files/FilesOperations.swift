@@ -12,7 +12,7 @@ extension FilesPanel {
     func move(_ pairs: @escaping @MainActor () async -> [FileMove], unique: Bool = false, undo name: String) -> Task<[FileMove], Never> {
         let t = Task {
             let p = await pairs()
-            guard !p.isEmpty, let r = await AppModel.shared.call(FilesMove(pairs: p, unique: unique)) else { return [FileMove]() }
+            guard !p.isEmpty, let r = await app.call(FilesMove(pairs: p, unique: unique)) else { return [FileMove]() }
             return done(r)
         }
         undoable(name, t) { $0.move({ await t.value.reversed().map(\.back) }, undo: name) }
@@ -24,7 +24,7 @@ extension FilesPanel {
     func trash(_ paths: @escaping @MainActor () async -> [String], undo name: String) -> Task<[FileMove], Never> {
         let t = Task {
             let p = await paths()
-            guard !p.isEmpty, let r = await AppModel.shared.call(FilesTrash(paths: p)) else { return [FileMove]() }
+            guard !p.isEmpty, let r = await app.call(FilesTrash(paths: p)) else { return [FileMove]() }
             return done(r)
         }
         undoable(name, t) { $0.move({ await t.value.reversed().map(\.back) }, undo: name) }
@@ -34,7 +34,7 @@ extension FilesPanel {
     /// Copies into `dir` (Finder's "name copy" when the name is taken); ⌘Z puts the copies in the Trash.
     func copy(_ paths: [String], into dir: String, undo name: String) {
         let t = Task {
-            guard let r = await AppModel.shared.call(FilesCopy(paths: paths, into: dir)) else { return [String]() }
+            guard let r = await app.call(FilesCopy(paths: paths, into: dir)) else { return [String]() }
             if let e = r.error { Banner.show(e, style: .error) }
             reloadTree()
             return r.made
@@ -44,7 +44,7 @@ extension FilesPanel {
 
     /// A new file in `dir` ("untitled", "untitled 2"…); ⌘Z puts it in the Trash.
     func create(in dir: String, undo name: String) -> Task<String?, Never> {
-        let t = Task { await AppModel.shared.call(FilesCreate(path: dir + "/untitled", unique: true)).map { [$0] } ?? [] }
+        let t = Task { await app.call(FilesCreate(path: dir + "/untitled", unique: true)).map { [$0] } ?? [] }
         undoable(name, t) { $0.trash({ await t.value }, undo: name) }
         return Task { await t.value.first }
     }

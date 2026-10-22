@@ -12,7 +12,7 @@ extension SharedAppModel {
         try FileManager.default.createDirectory(atPath: rig.repo + "/sub", withIntermediateDirectories: true)
         try rig.write("a.txt", "x")
         let a = rig.repo + "/a.txt", b = rig.repo + "/sub/a.txt"
-        let panel = FilesPanel()
+        let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         let undo = try #require(panel.undoManager)
         func there(_ p: String) -> Bool { FileManager.default.fileExists(atPath: p) }
@@ -43,7 +43,7 @@ extension SharedAppModel {
     @Test func oneUndoIsOneOperation() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         try rig.write("a.txt", "a"); try rig.write("c.txt", "c")
-        let panel = FilesPanel()
+        let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         let undo = try #require(panel.undoManager)
         func there(_ name: String) -> Bool { FileManager.default.fileExists(atPath: rig.repo + "/" + name) }
@@ -62,7 +62,7 @@ extension SharedAppModel {
     /// the Trash; New File makes "untitled", then "untitled 2".
     @Test func filesCopiedInAndMadeTakeFreeNames() async throws {
         let rig = try await AppRig(); defer { rig.done() }
-        let panel = FilesPanel()
+        let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         let undo = try #require(panel.undoManager)
         let outside = rig.root.appendingPathComponent("f.txt").path
@@ -81,7 +81,7 @@ extension SharedAppModel {
     /// The tree is what the daemon pushes (`WatchTopic.files`): a file an agent adds shows up without the panel asking.
     @Test func theFilesTreeFollowsWhatsPushed() async throws {
         let rig = try await AppRig(); defer { rig.done() }
-        let panel = FilesPanel()
+        let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         panel.viewWillAppear()   // the window is never on screen: as if it were
         @MainActor func names() -> [String] { (0..<panel.outline.numberOfRows).compactMap { (panel.outline.item(atRow: $0) as? FileNode)?.name } }

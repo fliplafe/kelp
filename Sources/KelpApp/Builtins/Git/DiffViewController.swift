@@ -11,6 +11,9 @@ final class DiffTable: NSTableView {
 /// hatching where one side has no line. One file (from Source Control) or every change with review comments for the agent.
 @MainActor
 final class DiffViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     let source = NSPopUpButton()
     private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", String(localized: "Side by Side")), .symbol("rectangle", String(localized: "Inline"))],
                                                   trackingMode: .selectOne, target: nil, action: nil)
@@ -201,7 +204,7 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         guard let wid = worktreeId else { builds += 1; diffs = []; rows = []; table.reloadData(); files.reloadData(); return }
         if single == nil, source.indexOfSelectedItem == 4, askCommit {
             askCommit = false   // before asking: a load that starts while the question is up doesn't ask again
-            let log = await AppModel.shared.call(GitLog(id: wid, all: true)) ?? []   // the user picked "a commit": a banner if git can't list them
+            let log = await app.call(GitLog(id: wid, all: true)) ?? []   // the user picked "a commit": a banner if git can't list them
             let menu = NSMenu()
             for c in log.prefix(30) {
                 let m = menu.addItem(withTitle: "\(c.hash)  \(c.subject)", action: nil, keyEquivalent: "")
@@ -218,14 +221,14 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             status.stringValue = String(localized: "No agent in this workspace"); return
         }
         let asked = asking, request = diffRequest()
-        basis = request.basis(AppModel.shared.git[wid])
-        let r = await AppModel.shared.tryCall(request)
+        basis = request.basis(app.git[wid])
+        let r = await app.tryCall(request)
         let d = r.value ?? []
         var ch: [FileChange] = [], cm: [DiffComment] = []
         if single == nil, r.error == nil {   // the files' letters and the comments: the diff above already said what failed
             // The letters as pushed for this workspace (a review tab watches it), else asked.
-            if let pushed = AppModel.shared.git[wid]?.changes { ch = pushed } else { ch = await AppModel.shared.quiet(GitStatus(id: wid)) ?? [] }
-            cm = await AppModel.shared.quiet(CommentList(id: wid)) ?? []
+            if let pushed = app.git[wid]?.changes { ch = pushed } else { ch = await app.quiet(GitStatus(id: wid)) ?? [] }
+            cm = await app.quiet(CommentList(id: wid)) ?? []
         }
         let layout = sideBySide, built = await buildRows(d, cm, sideBySide: layout)
         // Rows, cell tags and the hunk buttons index `diffs`: they change together, once every answer is in.

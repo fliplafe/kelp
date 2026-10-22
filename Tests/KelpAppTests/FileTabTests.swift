@@ -15,8 +15,8 @@ extension SharedAppModel {
         return p
     }
     /// A tab on `p` once the daemon has read it (each test here has a daemon of its own: `AppRig`).
-    private func opened(_ p: String) async -> FileTab {
-        let tab = FileTab(uri: TabURI.file(p))
+    private func opened(_ p: String, in rig: AppRig) async -> FileTab {
+        let tab = FileTab(uri: TabURI.file(p), app: rig.app)
         await tab.loading?.value
         return tab
     }
@@ -27,7 +27,7 @@ extension SharedAppModel {
     @Test func anAgentsChangeShowsWhenNothingIsEditedHere() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         #expect(tab.editor?.text == "one\n")
         try "two\n".write(toFile: p, atomically: true, encoding: .utf8)   // the agent
         for _ in 0..<100 where tab.editor?.text != "two\n" { try await Task.sleep(for: .milliseconds(50)) }
@@ -37,7 +37,7 @@ extension SharedAppModel {
     @Test func saveWritesTheEditButNeverOverAnAgentsChange() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         tab.editor?.setText("mine\n")
         #expect(await tab.save())
         #expect(try String(contentsOfFile: p, encoding: .utf8) == "mine\n")
@@ -52,7 +52,7 @@ extension SharedAppModel {
     @Test func anAgentsChangeToAnEditedFileKeepsTheEditAndAsks() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         tab.editor?.setText("mine\n"); tab.editor?.onChange?("mine\n")
         let was = AppModel.shared.fileVersions[p]?.stamp
         try "theirs\n".write(toFile: p, atomically: true, encoding: .utf8)
@@ -68,7 +68,7 @@ extension SharedAppModel {
     @Test func aTouchedFileIsSavedWithoutAsking() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         func touch(_ ahead: Int) throws {
             var times = [timespec(tv_sec: 0, tv_nsec: Int(UTIME_NOW)), timespec(tv_sec: Int(Date().timeIntervalSince1970) + ahead, tv_nsec: 0)]
             #expect(utimensat(AT_FDCWD, p, &times, 0) == 0)
@@ -91,7 +91,7 @@ extension SharedAppModel {
     @Test func closingAWorkspaceAsksAboutItsUnsavedFiles() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("one\n")
-        let tab = await opened(p), untitled = UntitledTab(uri: "untitled:1")
+        let tab = await opened(p, in: rig), untitled = UntitledTab(uri: "untitled:1", app: rig.app)
         func type(_ t: String) { tab.editor?.setText(t); tab.editor?.onChange?(t) }   // as typing does
         type("mine\n")
         #expect(await !UnsavedChanges.settle([tab], .alertSecondButtonReturn))   // Cancel
@@ -114,7 +114,7 @@ extension SharedAppModel {
     @Test func theShellSeesAFileTabThroughTabContent() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("a\nb\nc\nd\n")
-        let file = await opened(p)
+        let file = await opened(p, in: rig)
         let tab: TabContent = file
         #expect(tab.fileURL == URL(fileURLWithPath: p))
         #expect(tab.badge == nil && tab.terminalGrid == nil)
@@ -129,7 +129,7 @@ extension SharedAppModel {
         let line = "let label = \"größe\" // a line of code\n"
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file(String(repeating: line, count: 3_000_000 / line.utf8.count))
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
         window.contentView = tab.view
         let tv = try #require(tab.editor?.controller.textView)
@@ -154,10 +154,10 @@ extension SharedAppModel {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("")
         #expect(truncate(p, 60 << 20) == 0)   // sparse: no 60 MB written
-        #expect(await opened(p).editor == nil)
+        #expect(await opened(p, in: rig).editor == nil)
         let fifo = (p as NSString).deletingLastPathComponent + "/out.log"
         #expect(mkfifo(fifo, 0o600) == 0)
-        #expect(await opened(fifo).editor == nil)
+        #expect(await opened(fifo, in: rig).editor == nil)
         #expect(TerminalPaths.resolve("out.log", cwd: (fifo as NSString).deletingLastPathComponent) == nil)
         #expect(TerminalPaths.resolve("notes.txt", cwd: (fifo as NSString).deletingLastPathComponent) != nil)
     }
@@ -168,7 +168,7 @@ extension SharedAppModel {
     @Test func aFileEventWithTheSameStampReadsNothing() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         let p = try file("aaaa\n")
-        let tab = await opened(p)
+        let tab = await opened(p, in: rig)
         var st = stat()
         #expect(stat(p, &st) == 0)
         let h = try FileHandle(forWritingTo: URL(fileURLWithPath: p))

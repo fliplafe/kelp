@@ -22,7 +22,7 @@ extension SharedAppModel {
         var changed = lines; changed[2] = "top change"; changed[35] = "bottom change"   // two hunks, far apart
         try rig.write("f.txt", changed.joined(separator: "\n") + "\n")
         let wt = rig.workspace, repo = rig.repo
-        let vc = DiffViewController()
+        let vc = DiffViewController(app: rig.app)
         rig.show(vc, 900, 700)
         vc.showFile("f.txt", source: "unstaged", commit: nil)
         vc.show(worktree: wt.id)
@@ -45,7 +45,7 @@ extension SharedAppModel {
     @Test func theFilesPanelSaysWhyItShowsNoFiles() async throws {
         let rig = try await AppRig(files: [:]); defer { rig.done() }
         try FileManager.default.removeItem(atPath: rig.repo)   // moved away: nothing can list it now
-        let panel = FilesPanel()
+        let panel = FilesPanel(app: rig.app)
         rig.show(panel, 300, 500)
         await withCheckedContinuation { k in panel.reloadTree { k.resume() } }
         @MainActor func labels(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(labels) }
@@ -60,7 +60,7 @@ extension SharedAppModel {
     @Test func gitEventsReadTheReviewOnceAtATimeAndOnlyWhenItsBasisMoved() async throws {
         let rig = try await AppRig(); defer { rig.done() }
         try rig.write("f.txt", "b\n")
-        let wid = rig.workspace.id, vc = DiffViewController()
+        let wid = rig.workspace.id, vc = DiffViewController(app: rig.app)
         defer { AppModel.shared.git[wid] = nil }
         rig.show(vc, 900, 700)
         let head = BranchInfo(current: "main", head: "abc1234", local: ["main"], remote: [], upstream: "origin/main", ahead: 0, behind: 0, merging: false)
@@ -91,7 +91,7 @@ extension SharedAppModel {
         let rig = try await AppRig(files: ["f.txt": "a\n", "big.lock": lock.joined(separator: "\n") + "\n"]); defer { rig.done() }
         try rig.write("big.lock", lock.map { $0 + "-2" }.joined(separator: "\n") + "\n")
         try rig.write("f.txt", "b\n")
-        let vc = DiffViewController()
+        let vc = DiffViewController(app: rig.app)
         rig.show(vc, 900, 700)
         vc.show(worktree: rig.workspace.id)
         await vc.load()

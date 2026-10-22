@@ -23,7 +23,7 @@ extension SharedAppModel {
     let rig = try await AppRig(files: ["kept.txt": "a\n"]); defer { rig.done() }
     try rig.write("kept.txt", "b\n")                                                          // changed, not staged
     try rig.write("staged.txt", "new\n"); try rig.git("add", "staged.txt")
-    let vc = SourceControlController()
+    let vc = SourceControlController(app: rig.app)
     rig.show(vc, 320, 700)
     vc.view.layoutSubtreeIfNeeded()
     #expect(vc.worktreeId == rig.workspace.id)   // it follows the workspace on screen by itself

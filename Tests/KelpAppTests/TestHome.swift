@@ -18,6 +18,8 @@ let testHome: String = { _ = TestIsolation.root; return String(cString: getenv("
 /// what was there, stops the daemon and removes the folder.
 @MainActor
 final class AppRig {
+    /// The app the views under test are given.
+    let app = AppModel.shared
     let root: URL, daemon: Daemon, client: RPCClient
     let repo: String, project: Repo, workspace: Worktree
     private let saved: (RPCClient?, [Repo], [Worktree], String?)

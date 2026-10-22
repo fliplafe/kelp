@@ -36,6 +36,9 @@ final class FileNode: NSObject {
 /// The workspace's files: tree with git status (click opens a tab), file operations, and project search.
 @MainActor
 final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     let outline = FilesOutline()
     /// The row whose name is being edited in place (a rename, or a new file).
     private var renaming: (field: NSTextField, url: URL, open: Bool)?
@@ -51,7 +54,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private var matches: [SearchMatch] = []
     /// Its files and their git status, pushed by the daemon while the panel is on screen (`WatchTopic.files`, `.git`):
     /// a hidden one costs no listing on every change, and the list comes again when it shows.
-    private let filesWatch = Watched(.files), gitWatch = Watched(.git)
+    private lazy var filesWatch = Watched(.files, in: app)
+    private lazy var gitWatch = Watched(.git, in: app)
     private var shown = false
     private var worktree: Worktree?
     var root: String { worktree?.path ?? "/" }
@@ -114,9 +118,9 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
             resultsScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), resultsScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor)
         ])
         view = v
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
-        track(owner: self) { AppModel.shared.fileLists[Workbench.shared.workspaceId ?? ""] } changed: { [weak self] in self?.listed($0) }
-        track(owner: self) { AppModel.shared.git[Workbench.shared.workspaceId ?? ""]?.changes } changed: { [weak self] in self?.badges($0) }
+        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track(owner: self) { [app] in app.fileLists[app.workbench.workspaceId ?? ""] } changed: { [weak self] in self?.listed($0) }
+        track(owner: self) { [app] in app.git[app.workbench.workspaceId ?? ""]?.changes } changed: { [weak self] in self?.badges($0) }
         track(owner: self) { FileIcon.revision } changed: { [weak self] _ in self?.reloadIcons() }
     }
 
@@ -131,13 +135,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
 
     private func bind(_ wid: String?) {
         guard wid != worktree?.id else { return }
-        let next = AppModel.shared.worktree(wid)
+        let next = app.worktree(wid)
         // Another folder: drop the old tree now, or a click before the reload would act on its paths under the new root.
         if next?.path != worktree?.path { nodes = []; status = [:]; shownPaths = nil; outline.reloadData() }
         worktree = next
         matches = []; results.reloadData()
         watchShown()
-        if let next { badges(AppModel.shared.git[next.id]?.changes); listed(AppModel.shared.fileLists[next.id]) }
+        if let next { badges(app.git[next.id]?.changes); listed(app.fileLists[next.id]) }
     }
 
     override func viewWillAppear() { super.viewWillAppear(); shown = true; watchShown() }
@@ -149,7 +153,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     func reloadTree(then done: (() -> Void)? = nil) {
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
-            let r = await AppModel.shared.tryCall(FilesList(id: w.id))
+            let r = await app.tryCall(FilesList(id: w.id))
             listed(FilesEvent(worktree: w.id, paths: r.value, error: r.error))
             done?()
         }
@@ -310,7 +314,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     }
     /// Markdown templates from <repo>/.kelp/templates and ~/.kelp/templates with {{date}}, {{branch}}, {{title}}…
     @objc private func newFromTemplate() {
-        let repo = AppModel.shared.repo(worktree?.repoId)
+        let repo = app.repo(worktree?.repoId)
         let dirs = [URL(fileURLWithPath: root).appendingPathComponent(".kelp/templates"), Paths.root.appendingPathComponent("templates")]
         let all = dirs.flatMap { Templates.list(in: $0) }
         guard !all.isEmpty else {
@@ -326,13 +330,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty,
-                let text = await AppModel.shared.call(FilesRead(path: all[pop.indexOfSelectedItem].path))?.text else { return }
+                let text = await app.call(FilesRead(path: all[pop.indexOfSelectedItem].path))?.text else { return }
             var file = name.stringValue; if (file as NSString).pathExtension.isEmpty { file += ".md" }
             let title = (file as NSString).deletingPathExtension.replacingOccurrences(of: "-", with: " ")
             let body = Templates.expand(text, vars: ["branch": worktree?.branch ?? "", "title": title, "repo": repo?.name ?? ""])
             let rel = selectedDir.isEmpty ? file : selectedDir + "/" + file
             // Its folders made too; a name that's taken fails rather than being written over.
-            guard await AppModel.shared.call(FilesCreate(path: root + "/" + rel, text: body)) != nil else { return }
+            guard await app.call(FilesCreate(path: root + "/" + rel, text: body)) != nil else { return }
             reloadTree(); openFile(rel)
         }
     }
@@ -342,7 +346,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let dir = selectedDir
         guard let name = await prompt(String(localized: "New folder"), String(localized: "In /\(dir)")), !name.isEmpty else { return }
         let path = URL(fileURLWithPath: root).appendingPathComponent(dir).appendingPathComponent(name).path
-        guard await AppModel.shared.call(FilesCreate(path: path, folder: true)) != nil else { return }
+        guard await app.call(FilesCreate(path: path, folder: true)) != nil else { return }
         reloadTree()   // empty folders are invisible to git; it appears once it has a file
     }
     @objc private func rename() {
@@ -407,7 +411,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         showResults(!q.isEmpty)
         guard !q.isEmpty else { return }
         Task {
-            let found = await AppModel.shared.tryCall(FilesSearch(id: w.id, query: q))
+            let found = await app.tryCall(FilesSearch(id: w.id, query: q))
             guard worktree?.id == w.id, search.stringValue.trimmingCharacters(in: .whitespaces) == q else { return }   // a newer search or workspace
             matches = found.value ?? []
             results.reloadData()

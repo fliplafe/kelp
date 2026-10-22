@@ -14,7 +14,7 @@ extension SourceControlController {
             syncing = (op == "push" ? String(localized: "Pushing…") : op == "pull" ? String(localized: "Pulling…") : String(localized: "Fetching…"), op == "push")
         }
         Task {
-            let r = await AppModel.shared.tryCall(m)
+            let r = await app.tryCall(m)
             busy = false; syncing = nil
             if let e = r.error {
                 // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
@@ -88,7 +88,7 @@ extension SourceControlController {
         busy = true
         if push { syncing = (String(localized: "Pushing…"), true) }
         Task {
-            if await GitCommit.run(wid, message: text, push: push, amend: amend) { message.string = ""; messageChanged() }
+            if await GitCommit.run(app, wid, message: text, push: push, amend: amend) { message.string = ""; messageChanged() }
             busy = false; syncing = nil
             reloadAll()
         }
@@ -100,8 +100,8 @@ extension SourceControlController {
         guard let wid = worktreeId else { return }
         busy = true; syncing = (String(localized: "Syncing…"), (info.ahead ?? 0) > 0)
         Task {
-            if await AppModel.shared.call(GitRemoteOp(id: wid, op: "pull")) != nil {
-                if (info.ahead ?? 0) > 0 { _ = await AppModel.shared.call(GitRemoteOp(id: wid, op: "push")) }
+            if await app.call(GitRemoteOp(id: wid, op: "pull")) != nil {
+                if (info.ahead ?? 0) > 0 { _ = await app.call(GitRemoteOp(id: wid, op: "push")) }
             }
             busy = false; syncing = nil; reloadAll()
         }
@@ -143,7 +143,7 @@ extension SourceControlController {
         m.addItem(.separator())
         m.add(String(localized: "Open All Changes")) { Workbench.open(DiffTab.uri(wid)) }
         m.add(String(localized: "Create Pull Request…")) { PRActions.create(worktree: wid) }
-        if let w = AppModel.shared.worktree(wid), let r = AppModel.shared.repo(w.repoId), w.path != r.path {
+        if let w = app.worktree(wid), let r = app.repo(w.repoId), w.path != r.path {
             m.add(String(localized: "Merge into \(r.baseBranch)…")) { [weak self] in self?.mergeIntoBase() }
         }
         let anchor: NSView = moreButton ?? view
@@ -154,14 +154,14 @@ extension SourceControlController {
     private func mergeIntoBase() {
         guard let wid = worktreeId else { return }
         Task {
-            guard let r = await AppModel.shared.call(GitMerge(id: wid)) else { return }
-            if r.merged { Banner.show(String(localized: "Merged")); await AppModel.shared.refresh(); return }
+            guard let r = await app.call(GitMerge(id: wid)) else { return }
+            if r.merged { Banner.show(String(localized: "Merged")); await app.refresh(); return }
             let files = r.conflicts
             let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
             a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
             a.addButton(withTitle: String(localized: "OK"))
             if FileActions.targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }
-            if await runSheet(a) == .alertSecondButtonReturn, let w = AppModel.shared.worktree(wid), let repo = AppModel.shared.repo(w.repoId) {
+            if await runSheet(a) == .alertSecondButtonReturn, let w = app.worktree(wid), let repo = app.repo(w.repoId) {
                 GitFix.send("resolveConflicts", worktree: wid, vars: ["base": repo.baseBranch, "files": files.joined(separator: ", ")])
             }
         }

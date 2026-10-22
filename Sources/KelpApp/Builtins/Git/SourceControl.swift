@@ -6,6 +6,9 @@ import WorkbenchKit
 /// changes (click → diff), and the history graph. All git work happens in the daemon; this only lays out the answers.
 @MainActor
 final class SourceControlController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+    let app: AppModel
+    init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
     enum Section: String { case merge = "Merge Changes", staged = "Staged Changes", changes = "Changes", graph = "Graph" }
 
     final class Node: NSObject {
@@ -51,7 +54,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private var roots: [Node] = [], graphRoots: [Node] = []
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
     /// The workspace's git and its branch's CI, watched while the panel is on screen (the daemon pushes changes).
-    let gitWatch = Watched(.git), ciWatch = Watched(.ci)
+    lazy var gitWatch = Watched(.git, in: app)
+    lazy var ciWatch = Watched(.ci, in: app)
     var busy = false { didSet { updateCommitButton() } }
     let stats = NSTextField(labelWithString: "")
     let ciRow = CIStatusRow()
@@ -108,9 +112,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         ])
         view = v
         updateHeader()   // NSButton's own "Button" title must not show while the branch loads
-        track(owner: self) { Workbench.shared.workspaceId } changed: { [weak self] in self?.bind($0) }
-        track(owner: self) { [weak self] in AppModel.shared.git[self?.worktreeId ?? ""] } changed: { [weak self] in self?.apply($0) }
-        track(owner: self) { [weak self] in AppModel.shared.ci[self?.worktreeId ?? ""] } changed: { [weak self] in self?.applyCI($0) }
+        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.bind($0) }
+        track(owner: self) { [weak self, app] in app.git[self?.worktreeId ?? ""] } changed: { [weak self] in self?.apply($0) }
+        track(owner: self) { [weak self, app] in app.ci[self?.worktreeId ?? ""] } changed: { [weak self] in self?.applyCI($0) }
         track(owner: self) { FileIcon.revision } changed: { [weak self] _ in
             for o in [self?.outline, self?.graphOutline].compactMap({ $0 }) { o.reloadData(forRowIndexes: IndexSet(0..<o.numberOfRows), columnIndexes: [0]) }
         }
@@ -350,7 +354,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         Workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
     }
     func openFile(_ f: FileChange) {
-        if let w = AppModel.shared.worktree(worktreeId) { Workbench.open(TabURI.file(w.path + "/" + f.path)) }
+        if let w = app.worktree(worktreeId) { Workbench.open(TabURI.file(w.path + "/" + f.path)) }
     }
 
     private func toggle(commit hash: String) {
@@ -359,7 +363,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
             // Unfolded by a click: a banner says why it can't, and it folds back to be asked again.
-            guard let files = await AppModel.shared.call(GitCommitFiles(id: wid, commit: hash)) else { openCommits.remove(hash); rebuildGraph(); return }
+            guard let files = await app.call(GitCommitFiles(id: wid, commit: hash)) else { openCommits.remove(hash); rebuildGraph(); return }
             guard wid == worktreeId else { return }
             commitFiles[hash] = files
             rebuildGraph()

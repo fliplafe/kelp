@@ -7,7 +7,7 @@ import WorkbenchKit
 /// asks where and under what name (the extension makes it code; none makes it .txt), then the tab is that file's.
 @MainActor
 final class UntitledTab: SavableTab {
-    let uri: String
+    let uri: String, app: AppModel
     let editor = CodeEditor(text: "", url: URL(fileURLWithPath: "/Untitled.txt"))
     private var wasEdited = false
     var onChange: (() -> Void)?
@@ -18,8 +18,8 @@ final class UntitledTab: SavableTab {
     private var discarded = false
     func discard() { discarded = true }
 
-    init(uri: String) {
-        self.uri = uri
+    init(uri: String, app: AppModel) {
+        self.uri = uri; self.app = app
         title = String(localized: "Untitled-\(TabURI.body(uri))")
         editor.view.clipsToBounds = true
         editor.onChange = { [weak self] _ in
@@ -54,13 +54,13 @@ final class UntitledTab: SavableTab {
     func save() async -> Bool {
         let p = NSSavePanel()
         p.nameFieldStringValue = Self.suggestedName(editor.text) ?? title
-        p.directoryURL = AppModel.shared.worktree(Workbench.shared.workspaceId).map { URL(fileURLWithPath: $0.path) }
+        p.directoryURL = app.worktree(app.workbench.workspaceId).map { URL(fileURLWithPath: $0.path) }
         p.canCreateDirectories = true; p.isExtensionHidden = false
         p.message = String(localized: "Name it with an extension for code (main.py, App.swift); without one it's a .txt file.")
         guard await runSheet(p) == .OK, var url = p.url else { return false }
         if url.pathExtension.isEmpty { url.appendPathExtension("txt") }
         // Over whatever is there: the save panel asked about replacing it.
-        let res = await AppModel.shared.tryCall(FilesWrite(path: url.path, text: editor.text, base: nil))
+        let res = await app.tryCall(FilesWrite(path: url.path, text: editor.text, base: nil))
         if let error = res.error { Banner.show(String(localized: "Couldn't save \(url.lastPathComponent): \(error)")); return false }
         Workbench.editor?.replace(uri, with: TabURI.file(url.path))
         return true

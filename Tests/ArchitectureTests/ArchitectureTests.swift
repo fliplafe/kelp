@@ -252,13 +252,11 @@ private func codeOnly(_ s: String) -> String {
 /// folder, one line each.
 @Test func theAppIsHandedItsModel() throws {
     let ceilings: [String: Int] = [
-        "": 76,
-        "Builtins": 10,
+        "": 74,
+        "Builtins": 5,
         "Builtins/Activity": 4,
         "Builtins/Agents": 30,
         "Builtins/Browser": 9,
-        "Builtins/Files": 45,
-        "Builtins/Git": 45,
         "Builtins/Issues": 36,
         "Editor": 26,
         "Extensions": 20,
@@ -284,5 +282,5 @@ private func codeOnly(_ s: String) -> String {
             "a folder's ceiling is above its count: lower it to \(found)")
     // Singletons of the app's own: no new ones (each is one more thing a second app would share).
     let singletons = try matches(#"^\s*static let shared = "#, in: ["Sources/KelpApp"])
-    #expect(singletons.count <= 13, "\(singletons)")
+    #expect(singletons.count <= 12, "\(singletons)")
 }
