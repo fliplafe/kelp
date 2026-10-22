@@ -80,7 +80,8 @@ extension SharedAppModel {
     try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { _, o in
         let r = rows(of: o)
         #expect(r.first?.contains { $0.localizedCaseInsensitiveContains("needs you") } == true)   // the section comes first
-        #expect(r.flatMap { $0 }.filter { $0 == "Allow rm?" }.count == 2)                          // under the section, and under its workspace
+        let asks = r.flatMap { $0 }.filter { $0 == "Allow rm?" }
+        #expect(asks.count == 2)                                                                      // under the section, and under its workspace
     }
 }
 
