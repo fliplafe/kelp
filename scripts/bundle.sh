@@ -28,6 +28,11 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # from AppIcon.svg: scrip
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
 for b in "$BIN"/*.bundle(N); do cp -R "$b" "$APP/Contents/Resources/"; done
 scripts/strings.sh install "$APP/Contents/Resources"   # English and Russian
+# The About panel shows Credits.html: the licenses of the code shipped inside, which they ask every copy to carry.
+{ print '<pre style="font: 10px Menlo; white-space: pre-wrap">'
+  for d in Vendor/GhosttyKit.xcframework .build/checkouts/${^${(f)"$(sed -nE 's|.*"location" : ".*/([^/]+)".*|\1|p' Package.resolved)"}%.git}; do
+    for f in $d/LICENSE*(N[1]); do print "<b>${d:t:r}</b>"; sed 's/&/\&amp;/g; s/</\&lt;/g' "$f"; print; done
+  done; print '</pre>'; } > "$APP/Contents/Resources/Credits.html"
 if [ -n "${SIGN_ID:-}" ]; then
   SIGN=(codesign --force --options runtime --timestamp --sign "$SIGN_ID")
   # Sparkle ships its helpers ad-hoc signed; notarization needs every nested binary signed by us, inside out.

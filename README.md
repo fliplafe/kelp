@@ -11,6 +11,12 @@ Swift + AppKit: no Electron, no cloud, no telemetry.
 
 Requires macOS 14+.
 
+## Install
+
+Download `Kelp.dmg` from [Releases](https://github.com/nikiomori/kelp/releases/latest) and drag Kelp to Applications;
+it updates itself (Kelp › Check for Updates…). Kelp's terminals have `kelp` on their PATH; for other terminals:
+`ln -s /Applications/Kelp.app/Contents/MacOS/kelp /usr/local/bin/kelp`.
+
 ## Build and run
 
 ```sh
@@ -19,6 +25,7 @@ swift build                      # everything
 swift test                       # all tests
 scripts/bundle.sh                # dist/Kelp.app + dist/Kelp.dmg (universal, release)
 SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=kelp scripts/bundle.sh   # signed + notarized
+scripts/publish.sh               # GitHub release + update feed for that DMG (bump the version in Resources/Info.plist first)
 ```
 
 For quick iteration: `swift build && .build/debug/KelpApp` (the app starts `kelpd` next to it if needed).

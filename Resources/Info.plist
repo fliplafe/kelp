@@ -33,10 +33,10 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>KelpApp</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.kelp.app</string>
 	<key>CFBundleLocalizations</key>
@@ -76,6 +76,8 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/kelp-app/kelp/main/appcast.xml</string>
+	<string>https://github.com/nikiomori/kelp/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>CgxxFy+OxfBtdkuVSeR/blTbb/Cx1byNZhGvYewiYPQ=</string>
 </dict>
 </plist>
