@@ -139,7 +139,7 @@ extension Sessions {
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows, callbacks: callbacks(for: rec))
         if rec.tmux != nil { ls.attachedToRunning() }
         do { try live.add(ls) } catch { ls.discard(); ls.start(); throw error }   // its record stays paused
-        publish(ls.snapshot)
+        publish(ls)
         ls.start()
         return ls
     }
@@ -185,10 +185,11 @@ extension Sessions {
 
     /// A running session's record as it is when written, in order with its status changes (see LiveSession.emit): a copy
     /// taken on a request's thread could otherwise land after a newer status and put an old one back.
+    /// Holds the session until it ran: one that just ended and left `live` still gets its last record saved.
     func publish(_ ls: LiveSession) {
-        ls.inOrder { [weak self, weak ls] in
-            guard let self, let ls, !ls.isDiscarded else { return }
-            self.publish(ls.snapshot)
+        ls.inOrder { [weak self] in
+            guard let self, !ls.isDiscarded else { return }
+            save(ls.snapshot)
         }
     }
 
@@ -196,16 +197,28 @@ extension Sessions {
     /// before would otherwise write "working" over it, and a paused agent would never wake.
     func publishLast(_ ls: LiveSession) {
         let done = DispatchSemaphore(value: 0)
-        ls.inOrder { [self] in publish(ls.snapshot); done.signal() }
+        ls.inOrder { [self] in save(ls.snapshot); done.signal() }
         done.wait()
     }
 
-    func publish(_ s: Session) {
-        do { try store.update(s) } catch {
+    /// A session that isn't running, changed in the store and said. A running one changes in its LiveSession and is
+    /// published from there (`publish(ls)`): these are the only ways a session's record is written and sent.
+    func change(_ id: String, _ body: (inout Session) -> Void) throws {
+        if let s = try store.update(Session.self, id, body) { said(s) }
+    }
+
+    /// Only on the session's status queue (`publish(ls)`, `publishLast`), where the snapshot is the latest.
+    private func save(_ snapshot: Session) {
+        let s: Session
+        do { s = try store.update(snapshot) } catch {
             // Deleted meanwhile (closed, its project removed): not brought back. Anything else (a full disk) is logged.
-            if !(error is RecordError) { Log.store.error("couldn't save session \(s.id, privacy: .public): \(error)") }
+            if !(error is RecordError) { Log.store.error("couldn't save session \(snapshot.id, privacy: .public): \(error)") }
             return
         }
+        said(s)
+    }
+
+    private func said(_ s: Session) {
         notify(s)
         watches.touched(.init(topic: .context, key: s.id), tag: s.status.rawValue)   // a turn ended or began: how full now
         if s.status == .done || s.status == .waiting, let a = s.agent { agentUsage.planUsed(a) }

@@ -117,7 +117,7 @@ import Agents
     let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
     let ls = try #require(w.d.sessions.live[s.id])
     let gate = DispatchSemaphore(value: 0)
-    ls.inOrder { let old = ls.snapshot; gate.wait(); w.d.sessions.publish(old) }   // held until the pause had its say
+    ls.inOrder { let old = ls.snapshot; gate.wait(); _ = try? w.d.store.update(old) }   // held until the pause had its say
     let paused = OSAllocatedUnfairLock(initialState: false)
     Thread.detachNewThread { try? w.d.sessions.pauseSessions(of: wt.id); paused.withLock { $0 = true } }
     try await Task.sleep(for: .milliseconds(500))

@@ -67,8 +67,9 @@ final class AppModel {
         return xs.enumerated().sorted { (rank[$0.1.id] ?? .max, $0.0) < (rank[$1.1.id] ?? .max, $1.0) }.map(\.1)
     }
 
+    /// A session as a reply or an event has it; an older copy than the one here (a reply that an event overtook) is dropped.
     func upsert(_ s: Session) {
-        if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i] = s } else { sessions.append(s) }
+        if let i = sessions.firstIndex(where: { $0.id == s.id }) { if !s.isOlder(than: sessions[i]) { sessions[i] = s } } else { sessions.append(s) }
     }
 
     /// Tells the daemon what's on screen, so agents can ask (`kelp ui state`). Every tab and focus change calls it:
@@ -249,10 +250,13 @@ final class AppModel {
 
     /// The daemon's list, except records in `newer`: an event about them came while the list was on its way (on the
     /// same connection, so after the list was read, or as it was), and what it said stays; one removed meanwhile stays out.
-    static func merge<T: Identifiable & Equatable>(list: [T], local: [T], newer: Set<T.ID>) -> [T] {
-        let kept = Dictionary(local.filter { newer.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    /// Of a record in both, the newer by revision.
+    static func merge<T: Revised & Equatable>(list: [T], local: [T], newer: Set<T.ID>) -> [T] {
+        let here = Dictionary(local.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let kept = here.filter { newer.contains($0.key) }
         let listed = Set(list.map(\.id))
-        return list.compactMap { newer.contains($0.id) ? kept[$0.id] : $0 } + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
+        return list.compactMap { x in newer.contains(x.id) ? kept[x.id] : x.isOlder(than: here[x.id]) ? here[x.id] : x }
+            + local.filter { kept[$0.id] != nil && !listed.contains($0.id) }
     }
 
     /// The daemon's events, decoded as their types on the client's reader thread, handled on the main actor.
@@ -263,6 +267,7 @@ final class AppModel {
         case let s as Session:
             sessionEvents[s.id, default: 0] += 1
             let old = sessions.first { $0.id == s.id }
+            if s.isOlder(than: old) { return }
             if old != s { upsert(s) }   // views follow `sessions`
             (NSApp.delegate as? AppDelegate)?.notifier.statusChanged(s, old)
             if old?.status != s.status { syncContextWatches() }

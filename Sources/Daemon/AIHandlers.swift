@@ -40,7 +40,7 @@ extension SessionRename: Handled {
         // Under its wake lock: a paused record read here and saved back must not land over a wake that started meanwhile.
         try d.sessions.wakeLocks.withLock(id) {
             if let ls = d.sessions.existing(id) { _ = ls.update { $0.title = title; $0.titleManual = !title.isEmpty }; d.sessions.publish(ls) }
-            else if var s = try d.store.session(id) { s.title = title; s.titleManual = !title.isEmpty; d.sessions.publish(s) }
+            else { try d.sessions.change(id) { $0.title = title; $0.titleManual = !title.isEmpty } }
         }
         return Done()
     }

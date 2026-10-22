@@ -30,6 +30,10 @@ public final class Store: Sendable {
         // WAL: every status, summary and UI-state change is a write, and the rollback journal fsynced each one twice.
         var config = Configuration(); config.journalMode = .wal
         if let path { db = try DatabaseQueue(path: path, configuration: config) } else { db = try DatabaseQueue() }
+        try Self.migrator.migrate(db)
+    }
+
+    private static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
         m.registerMigration("v1") { db in
             try db.create(table: "repo") { t in
@@ -108,7 +112,10 @@ public final class Store: Sendable {
         m.registerMigration("v12") { db in
             try db.alter(table: "session") { t in t.add(column: "tmux", .text) }
         }
-        try m.migrate(db)
+        m.registerMigration("v13") { db in
+            for table in ["repo", "worktree", "session"] { try db.alter(table: table) { t in t.add(column: "revision", .integer) } }
+        }
+        return m
     }
 
     public func repos() throws -> [Repo] { try db.read { try Repo.order(Column("name")).fetchAll($0) } }
@@ -123,7 +130,10 @@ public final class Store: Sendable {
     public func worktree(_ id: String) throws -> Worktree? { try db.read { try Worktree.fetchOne($0, key: id) } }
     public func sessions() throws -> [Session] { try db.read { try Session.order(Column("createdAt")).fetchAll($0) } }
     public func session(_ id: String) throws -> Session? { try db.read { try Session.fetchOne($0, key: id) } }
-    public func save<R: PersistableRecord>(_ r: R) throws { try ordered.withLock { try db.write { try r.save($0) }; report(r) } }
+    @discardableResult
+    public func save<R: PersistableRecord>(_ r: R) throws -> R {
+        try ordered.withLock { let r = try db.write { d in try Self.revised(r, d).saved(d) }; report(r); return r }
+    }
     /// Changes a record (a workspace, a session) in one write: read, change, save with nothing in between. Saving a copy
     /// read earlier would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
     @discardableResult
@@ -131,14 +141,25 @@ public final class Store: Sendable {
         try ordered.withLock {
             let r: R? = try db.write { d in
                 guard var r = try R.fetchOne(d, key: id) else { return nil }
-                try change(&r); try r.save(d); return r
+                try change(&r); return try Self.revised(r, d).saved(d)
             }
             if let r { report(r) }
             return r
         }
     }
     /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).
-    public func update<R: PersistableRecord>(_ r: R) throws { try ordered.withLock { try db.write { try r.update($0) }; report(r) } }
+    @discardableResult
+    public func update<R: PersistableRecord>(_ r: R) throws -> R {
+        try ordered.withLock { let r = try db.write { d in let x = try Self.revised(r, d); try x.update(d); return x }; report(r); return r }
+    }
+
+    /// The record with the next revision, read in the write that saves it: what a client gets later is newer.
+    private static func revised<R: PersistableRecord>(_ r: R, _ d: Database) throws -> R {
+        guard var x = r as? any Revised else { return r }
+        let now = try Int.fetchOne(d, sql: "SELECT revision FROM \(R.databaseTableName) WHERE id = ?", arguments: [x.id]) ?? 0
+        x.revision = now + 1
+        return x as? R ?? r
+    }
     public func delete<R: PersistableRecord>(_ r: R) throws { try ordered.withLock { try db.write { _ = try r.delete($0) }; report(r, removed: true) } }
     public func comments(worktree: String) throws -> [DiffComment] {
         try db.read { try DiffComment.filter(Column("worktreeId") == worktree).fetchAll($0) }

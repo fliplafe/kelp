@@ -1,7 +1,19 @@
 import Foundation
 
-public struct Repo: Codable, Sendable, Equatable, Identifiable {
+/// A record the daemon keeps (a project, a workspace, a session): each write gives it the next revision, so of two copies
+/// (a reply and an event that passed each other, a list read before a change) the one with the higher is the newer.
+public protocol Revised: Identifiable where ID == String {
+    var revision: Int? { get set }
+}
+
+extension Revised {
+    /// Older than `other`: it says less than what's already there. nil (from a daemon before revisions) counts as 0.
+    public func isOlder(than other: Self?) -> Bool { (revision ?? 0) < (other?.revision ?? 0) }
+}
+
+public struct Repo: Codable, Sendable, Equatable, Revised {
     public var id: String
+    public var revision: Int?
     public var name: String
     public var path: String
     public var baseBranch: String
@@ -12,8 +24,9 @@ public struct Repo: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-public struct Worktree: Codable, Sendable, Equatable, Identifiable {
+public struct Worktree: Codable, Sendable, Equatable, Revised {
     public var id: String
+    public var revision: Int?
     public var repoId: String
     public var branch: String
     public var path: String
@@ -56,8 +69,9 @@ public enum AgentStatus: String, Codable, Sendable {
     }
 }
 
-public struct Session: Codable, Sendable, Equatable, Identifiable {
+public struct Session: Codable, Sendable, Equatable, Revised {
     public var id: String
+    public var revision: Int?
     public var worktreeId: String?
     public var cwd: String
     public var command: String

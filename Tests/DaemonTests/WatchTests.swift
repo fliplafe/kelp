@@ -46,6 +46,20 @@ private final class Heard: Sendable {
     #expect(try await waitFor(10) { heard.events(GitEvent.self).last?.changes?.contains { $0.path.hasPrefix("dist/") } == true })
 }
 
+/// A session's records come with rising revisions, and the reply that created it is older than all of them: an app that
+/// gets the reply after an event keeps what the event said.
+@Test func aSessionsRecordsComeWithRisingRevisions() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let wt = try await firstDesk(w)
+    let heard = Heard(); heard.listen(w.c)
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "echo hi; exec sleep 30"))
+    _ = try await w.c.call(SessionRename(id: s.id, title: "named"))
+    #expect(try await waitFor(10) { heard.events(Session.self).contains { $0.id == s.id && $0.title == "named" } })
+    let revisions = heard.events(Session.self).filter { $0.id == s.id }.compactMap(\.revision)
+    #expect(revisions == revisions.sorted() && Set(revisions).count == revisions.count)
+    #expect((s.revision ?? 0) >= 1 && revisions.allSatisfy { $0 > s.revision ?? 0 })
+}
+
 @Test func aPathIsInTheFoldersAboveIt() {
     #expect(IgnoredFolders.folders("a/b/c.txt") == ["a/", "a/b/"])
     #expect(IgnoredFolders.folders("c.txt").isEmpty && IgnoredFolders.folders(".git/index").isEmpty)

@@ -43,3 +43,19 @@ import Core
     #expect(m.session(restarted.id) != nil)
     m.restarting.remove(restarted.id); m.sessions.removeAll { $0.id == restarted.id }
 }
+
+/// A reply that an event overtook, or a list read before a change, is an older copy: the newer one (by revision) stays.
+@MainActor
+@Test func anOlderCopyOfASessionIsDropped() {
+    let m = AppModel()
+    var s = Session(worktreeId: "w", cwd: "/tmp", command: "claude", agent: "claude"); s.status = .done; s.revision = 3
+    var old = s; old.status = .working; old.revision = 2
+    m.upsert(s); m.upsert(old)
+    #expect(m.session(s.id)?.status == .done)
+    m.handle(old)
+    #expect(m.session(s.id)?.status == .done)
+    #expect(AppModel.merge(list: [old], local: [s], newer: []) == [s])
+    var newer = s; newer.status = .working; newer.revision = 4
+    m.upsert(newer)
+    #expect(m.session(s.id)?.status == .working)
+}

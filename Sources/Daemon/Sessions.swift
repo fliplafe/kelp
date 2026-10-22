@@ -111,14 +111,14 @@ final class Sessions: Sendable {
         rec = ls.snapshot
         let sid = rec.id
         // The record first: a program nobody has a record of could be neither seen nor stopped.
-        do { try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
+        do { rec = try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
         do { try live.add(ls) } catch { ls.discard(); ls.start(); try? store.delete(rec); throw error }
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
         }
         ls.start()   // after the record is saved: its first status must not be overwritten
-        notify(rec)
+        publish(ls)
         return rec
     }
 
@@ -148,7 +148,7 @@ final class Sessions: Sendable {
             guard let self, !ls.isDiscarded else { return }
             // The record as it is now, not the snapshot from when this change was queued: a title set meanwhile stays.
             // The turn bookkeeping gets each change, in order.
-            publish(ls.snapshot); ls.noteTurn(s.status)
+            publish(ls); ls.noteTurn(s.status)
             if s.status == .exited { _ = live.remove(ls) }
         }
         if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }

@@ -104,9 +104,11 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let w = try await world(); defer { w.d.stop() }
     let wt = try await desk(w, "deleted")
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "sleep 30"]), as: Session.self)
-    let last = try #require(w.d.sessions.existing(s.id)?.snapshot)
+    let ls = try #require(w.d.sessions.existing(s.id))
     w.d.sessions.discard(s)
-    w.d.sessions.publish(last)   // late: a title or status change that looked the session up before it went
+    // Late: a title or status change that looked the session up before it went, running or not.
+    w.d.sessions.publish(ls); try w.d.sessions.change(s.id) { $0.title = "late" }
+    await withCheckedContinuation { c in ls.inOrder { c.resume() } }
     #expect(try w.d.store.session(s.id) == nil)
 }
 

@@ -6,14 +6,24 @@ import Core
 
 @Test func storeRoundTrip() throws {
     let s = try Store()
-    let r = Repo(name: "demo", path: "/tmp/demo")
-    try s.save(r)
+    let r = try s.save(Repo(name: "demo", path: "/tmp/demo"))
     let w = Worktree(repoId: r.id, branch: "feat", path: "/tmp/w", note: "hi")
     try s.save(w)
     #expect(try s.repos() == [r])
     #expect(try s.worktree(w.id)?.note == "hi")
     try s.delete(r)
     #expect(try s.worktrees().isEmpty) // cascade
+}
+
+/// Each write gives a record the next revision, however it's written: of two copies, the newer is the one with the higher.
+@Test func eachWriteGivesARecordTheNextRevision() throws {
+    let s = try Store()
+    let r = try s.save(Repo(name: "demo", path: "/tmp/demo"))
+    #expect(r.revision == 1)
+    #expect(try s.update(Repo.self, r.id) { $0.name = "d" }?.revision == 2)
+    var old = r; old.name = "x"
+    #expect(try s.update(old).revision == 3)   // a copy read earlier comes out newer than what was there
+    #expect(try s.repo(r.id)?.revision == 3)
 }
 
 /// Two changes to one workspace at once (a rename and a PR link) both stay: neither saves back a copy read before the other.

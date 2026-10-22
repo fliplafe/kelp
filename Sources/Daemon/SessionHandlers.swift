@@ -69,7 +69,7 @@ extension SessionKill: Handled {
     func handle(_ d: Daemon) throws -> Done {
         try d.sessions.wakeLocks.withLock(id) {
             if let ls = d.sessions.existing(id) { ls.pty.terminate() }
-            else if var s = try d.store.session(id), s.status == .hibernated { s.status = .exited; d.sessions.publish(s) }   // don't wake just to kill
+            else if try d.store.session(id)?.status == .hibernated { try d.sessions.change(id) { $0.status = .exited } }   // don't wake just to kill
         }
         if let s = try d.store.session(id) { d.sessions.endOwnTmux(s) }
         return Done()

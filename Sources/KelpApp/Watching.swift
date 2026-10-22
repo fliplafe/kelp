@@ -61,11 +61,12 @@ extension AppModel {
     /// A project or workspace as it is now: the lists follow the daemon's records without reading them again.
     func record(_ r: Repo) {
         recordEvents[r.id, default: 0] += 1
-        if let i = repos.firstIndex(where: { $0.id == r.id }) { if repos[i] != r { repos[i] = r } } else { repos.append(r) }
+        if let i = repos.firstIndex(where: { $0.id == r.id }) { if repos[i] != r, !r.isOlder(than: repos[i]) { repos[i] = r } } else { repos.append(r) }
     }
     func record(_ w: Worktree) {
         recordEvents[w.id, default: 0] += 1
-        if let i = worktrees.firstIndex(where: { $0.id == w.id }) { if worktrees[i] != w { worktrees[i] = w } } else { worktrees.append(w) }
+        if let i = worktrees.firstIndex(where: { $0.id == w.id }) { if worktrees[i] != w, !w.isOlder(than: worktrees[i]) { worktrees[i] = w } }
+        else { worktrees.append(w) }
     }
 
     /// A project, workspace or session that's gone.
