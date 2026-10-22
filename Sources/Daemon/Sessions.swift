@@ -22,11 +22,12 @@ final class Sessions: Sendable {
     let watches: Watches
 
     let remotes: Remotes
+    let offloads: Slots   // the daemon's, for what waits on programs (`AgentsVersions`)
 
     init(root: URL, socketPath: String, store: Store, remotes: Remotes, settings: SettingsStore, agentUsage: AgentUsage, clients: Clients,
-         watches: Watches) {
+         watches: Watches, offloads: Slots) {
         self.root = root; self.socketPath = socketPath; self.store = store; self.remotes = remotes; self.settings = settings
-        self.agentUsage = agentUsage; self.clients = clients; self.watches = watches
+        self.agentUsage = agentUsage; self.clients = clients; self.watches = watches; self.offloads = offloads
     }
 
     /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.

@@ -81,12 +81,12 @@ extension Daemon {
 
 extension WatchStart: Handled {
     static var inOrder: Bool { true }   // a start and a stop sent in a row apply in that order
-    func handle(_ d: Daemon) throws -> Done { throw RPCError.internalError("needs its connection") }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.watches.start(.init(topic: topic, key: key), conn: conn); return Done() }
+    func handle(_ watches: Watches) throws -> Done { throw RPCError.internalError("needs its connection") }
+    func handle(_ watches: Watches, conn: Int) throws -> Done { watches.start(.init(topic: topic, key: key), conn: conn); return Done() }
 }
 
 extension WatchStop: Handled {
     static var inOrder: Bool { true }
-    func handle(_ d: Daemon) throws -> Done { throw RPCError.internalError("needs its connection") }
-    func handle(_ d: Daemon, conn: Int) throws -> Done { d.watches.stop(.init(topic: topic, key: key), conn: conn); return Done() }
+    func handle(_ watches: Watches) throws -> Done { throw RPCError.internalError("needs its connection") }
+    func handle(_ watches: Watches, conn: Int) throws -> Done { watches.stop(.init(topic: topic, key: key), conn: conn); return Done() }
 }

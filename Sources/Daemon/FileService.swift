@@ -181,13 +181,13 @@ struct FileService: Sendable {
     }
 }
 
-extension FilesRead: Handled { func handle(_ d: Daemon) throws -> Result { try d.files.read(path) } }
-extension FilesWrite: Handled { func handle(_ d: Daemon) throws -> Result { try d.files.write(path, text, base: base) } }
-extension FilesMove: Handled { func handle(_ d: Daemon) throws -> Result { d.files.move(pairs, unique: unique == true) } }
-extension FilesTrash: Handled { func handle(_ d: Daemon) throws -> Result { d.files.trash(paths) } }
-extension FilesCopy: Handled { func handle(_ d: Daemon) throws -> Result { d.files.copy(paths, into: into) } }
+extension FilesRead: Handled { func handle(_ files: FileService) throws -> Result { try files.read(path) } }
+extension FilesWrite: Handled { func handle(_ files: FileService) throws -> Result { try files.write(path, text, base: base) } }
+extension FilesMove: Handled { func handle(_ files: FileService) throws -> Result { files.move(pairs, unique: unique == true) } }
+extension FilesTrash: Handled { func handle(_ files: FileService) throws -> Result { files.trash(paths) } }
+extension FilesCopy: Handled { func handle(_ files: FileService) throws -> Result { files.copy(paths, into: into) } }
 extension FilesCreate: Handled {
-    func handle(_ d: Daemon) throws -> String { try d.files.create(path, folder: folder == true, text: text, unique: unique == true) }
+    func handle(_ files: FileService) throws -> String { try files.create(path, folder: folder == true, text: text, unique: unique == true) }
 }
 
 extension Daemon {

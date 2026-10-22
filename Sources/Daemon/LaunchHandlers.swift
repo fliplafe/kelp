@@ -15,10 +15,10 @@ extension Sessions.Launch {
 }
 
 extension SessionCreate: Handled {
-    func handle(_ d: Daemon) throws -> Session {
+    func handle(_ sessions: Sessions) throws -> Session {
         // cwd wins when both are given (e.g. an agent building an extension, shown in the current workspace).
         var dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-        if let worktreeId, dir == nil { dir = try d.cwd(forWorktree: worktreeId).path }
+        if let worktreeId, dir == nil { dir = try sessions.store.worktree(named: worktreeId).path }
         guard let dir else { throw RPCError.invalidParams("cwd or worktreeId required") }
         var o = Sessions.Launch(self)
         if let tmux {   // a terminal running tmux: the record keeps the argv that attaches again (Tmux.session)
@@ -26,79 +26,79 @@ extension SessionCreate: Handled {
             guard !name.isEmpty else { throw RPCError.invalidParams("Name the tmux session.") }
             o.argv = Tmux.argv(name)
             if o.title == nil { o.title = "tmux \(name)" }
-        } else if command == nil, (agent ?? "shell") == "shell", d.settings["terminal.tmux"]?.bool == true,
-                  d.remotes.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
+        } else if command == nil, (agent ?? "shell") == "shell", sessions.settings["terminal.tmux"]?.bool == true,
+                  sessions.remotes.of(dir) != nil || (try? LoginPath.resolve("tmux")) != nil {
             o.argv = Tmux.argv(Tmux.own())   // a terminal in a tmux session of its own, which ends with it (Tmux.isOwn)
         }
-        return try d.sessions.spawn(cwd: dir, manifest: d.sessions.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
+        return try sessions.spawn(cwd: dir, manifest: sessions.manifest(tmux == nil ? agent : "shell", command: tmux == nil ? command : nil),
                                  worktreeId: worktreeId, o)
     }
 }
 
 extension SessionRestart: Handled {
-    func handle(_ d: Daemon) throws -> Session {
-        guard try d.store.session(id) != nil else { throw RPCError.invalidParams("no session") }
+    func handle(_ sessions: Sessions) throws -> Session {
+        guard try sessions.store.session(id) != nil else { throw RPCError.invalidParams("no session") }
         // One copy of the conversation at a time: the resumed agent starts once the old one is gone (SIGKILL after 2 s).
         // Under its wake lock, and a paused one marked ended there: a tab opening it meanwhile can't wake a second copy.
         // If the new one can't start, the old one still ends as Ended. The record is read there, as it is then (a rename
         // just before is kept, in it and in the new session's title).
-        let old: Session = try d.sessions.wakeLocks.withLock(id) {
-            if let ls = d.sessions.existing(id) { Sessions.waitGone(ls.pty.terminate()) }
-            else { try d.store.update(Session.self, id) { if $0.status == .hibernated { $0.status = .exited } } }
-            guard let s = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
+        let old: Session = try sessions.wakeLocks.withLock(id) {
+            if let ls = sessions.existing(id) { Sessions.waitGone(ls.pty.terminate()) }
+            else { try sessions.store.update(Session.self, id) { if $0.status == .hibernated { $0.status = .exited } } }
+            guard let s = try sessions.store.session(id) else { throw RPCError.invalidParams("no session") }
             return s
         }
-        let m = try d.sessions.manifest(old.agent, command: nil, fallbackArgv: old.argv)
+        let m = try sessions.manifest(old.agent, command: nil, fallbackArgv: old.argv)
         var o = Sessions.Launch(self); o.title = old.titleManual ? old.title : nil
         if o.profile == nil { o.profile = old.profile }   // the same account unless told otherwise
         // A remote agent still running in its tmux session on the host: the new tab attaches to it (after a dropped
         // connection, that's all a restart is), so there's still one copy. Starting afresh ends it.
         if resume != false { o.tmux = old.tmux }
         // The new session pins an id of its own, never the old one's.
-        o.argv = Daemon.withoutSessionId(resume != false ? d.sessions.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
-        let s = try d.sessions.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
-        d.sessions.discard(old, keepTmux: old.tmux == nil || resume != false)   // its exit, still to come, doesn't save it again
+        o.argv = Sessions.withoutSessionId(resume != false ? sessions.resumeArgv(old, m) : old.argv, flag: m.sessionIdFlag)
+        let s = try sessions.spawn(cwd: old.cwd, manifest: m, worktreeId: old.worktreeId, o)
+        sessions.discard(old, keepTmux: old.tmux == nil || resume != false)   // its exit, still to come, doesn't save it again
         return s
     }
 }
 
 extension SessionHandoff: Handled {
-    func handle(_ d: Daemon) throws -> Session {
-        guard let old = try d.store.session(id) else { throw RPCError.invalidParams("no session") }
+    func handle(_ sessions: Sessions) throws -> Session {
+        guard let old = try sessions.store.session(id) else { throw RPCError.invalidParams("no session") }
         // The brief is a file on this Mac: an agent on a remote host couldn't read it.
-        if d.remotes.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
-        let transcript = try d.handoffFile(old, full: full == true)
+        if sessions.remotes.of(old.cwd) != nil { throw RPCError.invalidParams("Handoff isn't available for remote projects yet.") }
+        let transcript = try sessions.handoffFile(old, full: full == true)
         var o = Sessions.Launch(self)
         o.prompt = "Read \(transcript.path) — the transcript of the previous agent session in this project. "
             + (prompt ?? "Continue the task where the previous agent left off.")
         o.title = (old.title.isEmpty ? (old.agent ?? "agent") : old.title) + " (handoff)"
-        return try d.sessions.spawn(cwd: old.cwd, manifest: d.sessions.manifest(agent ?? old.agent, command: nil), worktreeId: old.worktreeId, o)
+        return try sessions.spawn(cwd: old.cwd, manifest: sessions.manifest(agent ?? old.agent, command: nil), worktreeId: old.worktreeId, o)
     }
 }
 
 extension HistoryResume: Handled {
-    func handle(_ d: Daemon) throws -> Session {
+    func handle(_ sessions: Sessions) throws -> Session {
         guard let s = session else { throw RPCError.invalidParams("session required") }
         var cwd = s.cwd, wid = worktreeId
-        if let w = wid, let wt = try d.store.worktree(w) { cwd = wt.path } else {
+        if let w = wid, let wt = try sessions.store.worktree(w) { cwd = wt.path } else {
             let real = URL(fileURLWithPath: s.cwd).resolvingSymlinksInPath().path
-            wid = try d.store.worktrees().first { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == real }?.id
+            wid = try sessions.store.worktrees().first { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == real }?.id
         }
         guard FileManager.default.fileExists(atPath: cwd) else { throw RPCError.invalidParams("the session's folder no longer exists: \(cwd)") }
         var o = Sessions.Launch(self); o.title = s.title.isEmpty ? "Resumed \(s.agent.rawValue)" : s.title
-        var m = try d.sessions.manifest(s.agent.rawValue, command: nil)
+        var m = try sessions.manifest(s.agent.rawValue, command: nil)
         m.args += Array(History.resumeCommand(for: s).dropFirst())
-        return try d.sessions.spawn(cwd: cwd, manifest: m, worktreeId: wid, o)
+        return try sessions.spawn(cwd: cwd, manifest: m, worktreeId: wid, o)
     }
 }
 
 /// A late one (it was paused or ended since) wakes nothing.
 extension SessionHook: Handled {
     static var quick: Bool { true }   // the agent waits for its hook
-    func handle(_ d: Daemon) throws -> Done {
-        guard let ls = d.sessions.existing(id) else { return Done() }
-        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; d.sessions.follow(ls, transcript: transcript) }
-        if let cwd, ls.workIn(cwd) != nil { d.sessions.publish(ls) }
+    func handle(_ sessions: Sessions) throws -> Done {
+        guard let ls = sessions.existing(id) else { return Done() }
+        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; sessions.follow(ls, transcript: transcript) }
+        if let cwd, ls.workIn(cwd) != nil { sessions.publish(ls) }
         if let notification, Hooks.isIdleReminder(notification) { return Done() }
         guard let event else { throw RPCError.invalidParams("missing event") }
         let background = Hooks.hasBackgroundWork(.obj(["background_tasks": .array(backgroundTasks ?? [])]))
@@ -109,9 +109,9 @@ extension SessionHook: Handled {
 
 extension SessionAnnotate: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> Done {
-        guard let ls = d.sessions.existing(id) else { return Done() }
-        if let summary { _ = ls.update { $0.summary = summary }; d.sessions.publish(ls) }
+    func handle(_ sessions: Sessions) throws -> Done {
+        guard let ls = sessions.existing(id) else { return Done() }
+        if let summary { _ = ls.update { $0.summary = summary }; sessions.publish(ls) }
         if let st = status.flatMap(AgentStatus.init(rawValue:)) { ls.overrideStatus(st) }
         return Done()
     }
@@ -130,7 +130,7 @@ extension RecipeRender: Handled {
 
 extension Ping: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> String { "pong" }
+    func handle(_: NoService) throws -> String { "pong" }
 }
 extension DaemonShutdown: Handled {
     func handle(_ d: Daemon) throws -> Done {
@@ -141,17 +141,17 @@ extension DaemonShutdown: Handled {
 
 /// The agents on this Mac, side by side, each through `offload`; latest from npm where they publish there.
 extension AgentsVersions: AsyncHandled {
-    func handle(_ d: Daemon) async throws -> [Item] {
-        let manifests = AgentManifest.load(dir: d.root.appendingPathComponent("agents"))
+    func handle(_ sessions: Sessions) async throws -> [Item] {
+        let manifests = AgentManifest.load(dir: sessions.root.appendingPathComponent("agents"))
         return await withTaskGroup(of: Item?.self) { g in
             for m in manifests {
                 g.addTask {
-                    try? await d.offload { () -> Item? in
+                    try? await sessions.offloads.run { () -> Item? in
                         let path = Sessions.childPath   // the login shell's PATH: the first read waits for the shell
                         guard let exe = try? LoginPath.resolve(m.command) else { return nil }
-                        let v = Daemon.run([exe, "--version"], path: path, timeout: 4).flatMap(Daemon.semver)
+                        let v = Sessions.run([exe, "--version"], path: path, timeout: 4).flatMap(Sessions.semver)
                         let npm = try? LoginPath.resolve("npm")
-                        let latest = m.npm.flatMap { pkg in npm.flatMap { Daemon.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }.flatMap(Daemon.semver)
+                        let latest = m.npm.flatMap { pkg in npm.flatMap { Sessions.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }.flatMap(Sessions.semver)
                         return Item(id: m.id, version: v, latest: latest)
                     }
                 }
@@ -205,18 +205,18 @@ extension Daemon {
 }
 
 extension ProcessWhich: Handled {
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_: NoService) throws -> Result {
         Dictionary(commands.compactMap { c in (try? LoginPath.resolve(c)).map { (c, $0) } }) { a, _ in a }
     }
 }
 
 extension ProcessRun: Handled {
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_ sessions: Sessions) throws -> Result {
         guard argv.first?.isEmpty == false else { throw RPCError.invalidParams("Nothing to run.") }
-        if let extensionId { try d.requireEnabledExtension(extensionId) }
+        if let extensionId { try sessions.requireEnabledExtension(extensionId) }
         // What sessions get (PATH with `kelp` on it, this home), minus the markers of whatever started the daemon.
         var env = ProcessInfo.processInfo.environment.filter { k, _ in !PTY.scrubbed.contains { k.hasPrefix($0) } }
-        env["PATH"] = Sessions.childPath; env["KELP_HOME"] = d.root.path; env["KELP_SOCKET"] = d.socketPath
+        env["PATH"] = Sessions.childPath; env["KELP_HOME"] = sessions.root.path; env["KELP_SOCKET"] = sessions.socketPath
         let dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? NSHomeDirectory()
         let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)),
                                    limit: Self.outputLimit)
@@ -234,7 +234,7 @@ extension ProcessRun: Handled {
     static let outputLimit = 16 << 20
 }
 
-extension Daemon {
+extension Sessions {
     /// An extension's command runs only while that extension is installed and on (Settings › Extensions): a page or a
     /// list left open after turning it off can't run it any more. `id` is its folder's name; the manifest has its id.
     func requireEnabledExtension(_ id: String) throws {

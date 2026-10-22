@@ -395,7 +395,7 @@ final class NoteBox: @unchecked Sendable {
     let c = p.c, w = try await firstDesk(p)
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "command": "yes > /dev/null"]), as: Session.self)
     #expect(try await waitFor(10) {
-        let all = try await c.call("session.usage", as: [Daemon.Usage].self)
+        let all = try await c.call("session.usage", as: [SessionUsage.Usage].self)
         guard let u = all.first(where: { $0.session == s.id }) else { return false }
         return u.cpu > 5 && u.memory > 0
     })

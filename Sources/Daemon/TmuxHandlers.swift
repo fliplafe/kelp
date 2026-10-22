@@ -30,8 +30,8 @@ extension Sessions {
 }
 
 extension TmuxList: Handled {
-    func handle(_ d: Daemon) throws -> Result {
-        let r = try d.sessions.tmux(["list-sessions", "-F", Tmux.format], cwd: d.cwd(forWorktree: worktreeId).path)
+    func handle(_ sessions: Sessions) throws -> Result {
+        let r = try sessions.tmux(["list-sessions", "-F", Tmux.format], cwd: sessions.store.worktree(named: worktreeId).path)
         let err = String(decoding: r.stderr, as: UTF8.self)
         if r.status == 0 { return Tmux.parse(String(decoding: r.stdout, as: UTF8.self)) }
         if Tmux.noServer(err) { return [] }

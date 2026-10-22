@@ -219,7 +219,7 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
 }
 
 @Test func agentVersionsAreTheFirstSemver() throws {
-    #expect(Daemon.semver("claude 2.1.3 (Claude Code)") == "2.1.3")
-    #expect(Daemon.semver("codex-cli v0.4.12-beta") == "0.4.12")
-    #expect(Daemon.semver("version 3.1") == nil && Daemon.semver("") == nil)
+    #expect(Sessions.semver("claude 2.1.3 (Claude Code)") == "2.1.3")
+    #expect(Sessions.semver("codex-cli v0.4.12-beta") == "0.4.12")
+    #expect(Sessions.semver("version 3.1") == nil && Sessions.semver("") == nil)
 }

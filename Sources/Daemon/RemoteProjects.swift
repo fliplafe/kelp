@@ -14,7 +14,7 @@ extension Daemon {
 }
 
 extension RemoteListFolders: Handled {
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_ remotes: Remotes) throws -> Result {
         let host = host.trimmingCharacters(in: .whitespaces), path = path.trimmingCharacters(in: .whitespaces)
         guard RemoteHost.isHost(host) else { throw RPCError.invalidParams("Enter the host, as you'd type it after ssh.") }
         // In sh whatever the host's login shell is: the folder's path, whether it's in a repository, then "g name" for a
@@ -24,8 +24,8 @@ extension RemoteListFolders: Handled {
             + #"for f in *; do [ -d "$f" ] || continue; if [ -e "$f/.git" ]; then echo "g $f"; else echo "d $f"; fi; done"#
         let out: String
         do {
-            out = try Git.run(["-o", "ConnectTimeout=10"] + d.remotes.host(host, path: "~").sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)],
-                              cwd: NSHomeDirectory(), executable: d.remotes.ssh)
+            out = try Git.run(["-o", "ConnectTimeout=10"] + remotes.host(host, path: "~").sshArgs(tty: false) + ["sh -c " + RemoteHost.quote(script)],
+                              cwd: NSHomeDirectory(), executable: remotes.ssh)
         } catch let e as GitError {
             let why = e.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             throw RPCError.invalidParams(why.isEmpty ? "Couldn't connect to \(host)." : why)
@@ -86,23 +86,23 @@ extension RepoAddRemote: Handled {
 
 /// `files.read` for a remote project's file, as the app first asked it: the text alone.
 extension FilesReadRemote: Handled {
-    func handle(_ d: Daemon) throws -> String {
-        guard d.remotes.containing(path) != nil else { throw RPCError.invalidParams("Not in a remote project.") }
-        return try d.files.read(path).text
+    func handle(_ files: FileService) throws -> String {
+        guard files.remotes.containing(path) != nil else { throw RPCError.invalidParams("Not in a remote project.") }
+        return try files.read(path).text
     }
 }
 
 /// `files.write` with the text read as its base instead of a stamp; a file that's gone is just written again.
 extension FilesWriteRemote: Handled {
-    func handle(_ d: Daemon) throws -> Changed? {
-        guard let host = d.remotes.containing(path)?.remote.host else { throw RPCError.invalidParams("Not in a remote project.") }
-        let r = try d.files.write(path, text, base: base.map { FileService.digest(Data($0.utf8)) })
+    func handle(_ files: FileService) throws -> Changed? {
+        guard let host = files.remotes.containing(path)?.remote.host else { throw RPCError.invalidParams("Not in a remote project.") }
+        let r = try files.write(path, text, base: base.map { FileService.digest(Data($0.utf8)) })
         if let c = r.conflict {
             // A version there that isn't UTF-8 text can't be shown, and writing over it unasked could lose it.
             guard let now = c.text else { throw RPCError.invalidParams("It changed on \(host) and isn't UTF-8 text now: not written.") }
             return Changed(changed: now)
         }
-        if r.missing == true { _ = try d.files.write(path, text, base: nil) }
+        if r.missing == true { _ = try files.write(path, text, base: nil) }
         return nil
     }
 }

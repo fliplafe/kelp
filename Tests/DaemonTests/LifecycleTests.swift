@@ -170,7 +170,7 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
 
 /// A short command that prints more than a pipe holds still comes back whole.
 @Test func runReadsLongOutput() {
-    #expect(Daemon.run(["/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' y"], path: "/bin:/usr/bin", timeout: 5)?.count == 200_000)
+    #expect(Sessions.run(["/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' y"], path: "/bin:/usr/bin", timeout: 5)?.count == 200_000)
 }
 
 /// Eighty pieces of slow work (git or ssh against a host that doesn't answer): the daemon still answers the next

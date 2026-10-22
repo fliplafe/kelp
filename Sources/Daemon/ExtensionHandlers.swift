@@ -6,9 +6,9 @@ extension Daemon {
 }
 
 extension ExtensionLibrary: Handled {
-    func handle(_ d: Daemon) throws -> Result { try IDE.library(index: d.settings["extensions.library"]?.string ?? IDE.libraryIndex) }
+    func handle(_ settings: SettingsStore) throws -> Result { try IDE.library(index: settings["extensions.library"]?.string ?? IDE.libraryIndex) }
 }
 
 extension ExtensionFetch: Handled {
-    func handle(_ d: Daemon) throws -> Result { Result(folder: try IDE.fetchExtension(source).path) }
+    func handle(_: NoService) throws -> Result { Result(folder: try IDE.fetchExtension(source).path) }
 }

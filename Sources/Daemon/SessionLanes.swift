@@ -39,26 +39,26 @@ final class SessionLanes: Sendable {
 /// Input for a session (keys, text), in the order sent: to the running session right away when nothing for it waits on
 /// its lane, else on the lane after what's there, a paused session woken first. Either way the reply goes out once the
 /// session has it, or with why it couldn't (a wake that failed): the reader thread reads on meanwhile.
-protocol SessionInput: Handled {
+protocol SessionInput: Handled where Service == Sessions {
     var id: String { get }
     func apply(to s: LiveSession) throws -> Result
 }
 
 extension SessionInput {
     /// Off the reader thread (another handler, a test): here, in order with the session's other input.
-    func handle(_ d: Daemon) throws -> Result {
-        if d.sessions.lanes.isClear(id), let ls = d.sessions.existing(id) { return try apply(to: ls) }
-        try d.sessions.mustWake(id)
-        return try d.sessions.lanes.runHere(id) { try apply(to: d.sessions.liveSession(id)) }
+    func handle(_ sessions: Sessions) throws -> Result {
+        if sessions.lanes.isClear(id), let ls = sessions.existing(id) { return try apply(to: ls) }
+        try sessions.mustWake(id)
+        return try sessions.lanes.runHere(id) { try apply(to: sessions.liveSession(id)) }
     }
 
     /// On the connection's reader thread: `done` with the reply's result, now or from the lane.
-    static func answerInOrder(_ p: JSONValue, _ d: Daemon, done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
+    static func answerInOrder(_ p: JSONValue, _ sessions: Sessions, done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
         do {
             let m = try decoded(p)
-            if d.sessions.lanes.isClear(m.id), let ls = d.sessions.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
-            try d.sessions.mustWake(m.id)
-            d.sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: d.sessions.liveSession(m.id))) }) }
+            if sessions.lanes.isClear(m.id), let ls = sessions.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
+            try sessions.mustWake(m.id)
+            sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: sessions.liveSession(m.id))) }) }
         } catch { done(.failure(error)) }
     }
 }

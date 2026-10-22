@@ -3,14 +3,14 @@ import Core
 
 /// What runs under each session's PTY, read with ps and lsof when asked (nothing samples in the background):
 /// the dev servers a workspace started (ports) and what each session costs (CPU, memory).
-extension Daemon {
+extension Sessions {
     typealias Port = PortsList.Port
     typealias Usage = SessionUsage.Usage
 
     /// Every process under a live session's PTY, by pid → session id; `only` limits it to one workspace.
     private func sessionProcesses(worktree only: String? = nil) -> (owner: [Int32: String], rows: [Int32: (cpu: Double, rss: Int)]) {
         var owner: [Int32: String] = [:], rows: [Int32: (cpu: Double, rss: Int)] = [:]
-        for ls in sessions.live.all where only == nil || ls.snapshot.worktreeId == only { for p in ls.pty.tree() { owner[p] = ls.snapshot.id } }
+        for ls in live.all where only == nil || ls.snapshot.worktreeId == only { for p in ls.pty.tree() { owner[p] = ls.snapshot.id } }
         guard !owner.isEmpty else { return ([:], [:]) }
         for line in (Self.run(["/bin/ps", "-axo", "pid=,pcpu=,rss="], path: "/bin:/usr/bin", timeout: 3) ?? "").split(whereSeparator: \.isNewline) {
             let f = line.split(separator: " ")

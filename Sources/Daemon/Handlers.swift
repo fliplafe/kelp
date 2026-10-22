@@ -21,24 +21,43 @@ protocol Answered: RPCMethod {
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data
 }
 
+/// What a method's handler is given (`Handled.Service`): one of the daemon's services, never the daemon itself, so it
+/// reaches only what that service holds. A handler names the type it takes (`handle(_ sessions: Sessions)`); which of
+/// the daemon's that is, each service says once, here.
+protocol DaemonService { static func of(_ d: Daemon) -> Self }
+
+/// For a method that needs nothing of the daemon's.
+struct NoService: DaemonService { static func of(_ d: Daemon) -> NoService { NoService() } }
+
+extension Daemon: DaemonService { static func of(_ d: Daemon) -> Daemon { d } }
+extension FileService: DaemonService { static func of(_ d: Daemon) -> FileService { d.files } }
+extension Watches: DaemonService { static func of(_ d: Daemon) -> Watches { d.watches } }
+extension AgentUsage: DaemonService { static func of(_ d: Daemon) -> AgentUsage { d.agentUsage } }
+extension SettingsStore: DaemonService { static func of(_ d: Daemon) -> SettingsStore { d.settings } }
+extension Remotes: DaemonService { static func of(_ d: Daemon) -> Remotes { d.remotes } }
+extension Sessions: DaemonService { static func of(_ d: Daemon) -> Sessions { d.sessions } }
+
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
 protocol Handled: Answered {
+    associatedtype Service: DaemonService
     /// Memory or a short write to the store, never a program: answered on a thread of its own at once, not after a slot
     /// in `offload` behind slow git, gh or ssh (an agent's `kelp hook` waits for its reply). `Subprocess.quickOnly`
     /// holds it to that: one that starts a program fails instead of quietly becoming slow.
     static var quick: Bool { get }
-    func handle(_ d: Daemon) throws -> Result
-    func handle(_ d: Daemon, conn: Int) throws -> Result
+    func handle(_ s: Service) throws -> Result
+    func handle(_ s: Service, conn: Int) throws -> Result
 }
 
 extension Handled {
     static var inOrder: Bool { false }
     static var quick: Bool { false }
-    func handle(_ d: Daemon, conn: Int) throws -> Result { try handle(d) }
+    func handle(_ s: Service, conn: Int) throws -> Result { try handle(s) }
 
     /// On the calling thread: an in-order method's, on the reader thread.
-    static func answerNow(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Data { try JSONEncoder().encode(decoded(p).handle(d, conn: conn)) }
+    static func answerNow(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Data {
+        try JSONEncoder().encode(decoded(p).handle(Service.of(d), conn: conn))
+    }
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload(quick: quick) { try answerNow(p, d, conn: conn) } }
 }
 
@@ -158,10 +177,10 @@ final class Slots: Sendable {
 
 extension DaemonInfo: Handled {
     static var quick: Bool { true }
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_ sessions: Sessions) throws -> Result {
         let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
-                      liveSessions: d.sessions.live.all.filter { $0.snapshot.status != .exited }.count)
+                      liveSessions: sessions.live.all.filter { $0.snapshot.status != .exited }.count)
     }
 }
 
@@ -226,20 +245,20 @@ extension RepoRemoveWorktrees: Handled {
 
 extension SessionReport: Handled {
     static var quick: Bool { true }   // `kelp report`: the agent waits for it
-    func handle(_ d: Daemon) throws -> Done {
+    func handle(_ sessions: Sessions) throws -> Done {
         guard ProgramStatus.states.contains(state) else { throw RPCError.invalidParams("state is one of idle, working, blocked, done, error, clear") }
-        guard let ls = d.sessions.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
+        guard let ls = sessions.existing(id) else { return Done() }   // ended or paused: there's nothing to show it on
         let r = ProgramStatus.Report(state: state, kind: state == "blocked" ? kind : nil, msg: message,
                                      progress: state == "working" ? progress.map { min(100, max(0, $0)) } : nil)
-        if ls.report(r) != nil { d.sessions.publish(ls) }
+        if ls.report(r) != nil { sessions.publish(ls) }
         return Done()
     }
 }
 
 extension SessionContextWindow: Handled {
-    func handle(_ d: Daemon) throws -> Usage? {
-        guard let t = d.sessions.existing(id).flatMap(d.agentUsage.transcript(of:)), let c = AgentUsage.contextUsage(transcript: t) else { return nil }
-        return Usage(used: c.used, window: d.agentUsage.contextWindow(model: c.model, peak: c.peak))
+    func handle(_ sessions: Sessions) throws -> Usage? {
+        guard let t = sessions.existing(id).flatMap(sessions.agentUsage.transcript(of:)), let c = AgentUsage.contextUsage(transcript: t) else { return nil }
+        return Usage(used: c.used, window: sessions.agentUsage.contextWindow(model: c.model, peak: c.peak))
     }
 }
 

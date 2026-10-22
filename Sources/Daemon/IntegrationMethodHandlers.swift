@@ -6,15 +6,18 @@ import Integrations
 /// A method that waits on a web API (Linear, Jira, Bitbucket): async, with its gh / git calls through `offload`.
 /// `handle(_:conn:)` for one that reports progress to the asking connection (repo.clone).
 protocol AsyncHandled: Answered {
-    func handle(_ d: Daemon) async throws -> Result
-    func handle(_ d: Daemon, conn: Int) async throws -> Result
+    associatedtype Service: DaemonService
+    func handle(_ s: Service) async throws -> Result
+    func handle(_ s: Service, conn: Int) async throws -> Result
 }
 
 extension AsyncHandled {
     static var inOrder: Bool { false }
-    func handle(_ d: Daemon, conn: Int) async throws -> Result { try await handle(d) }
+    func handle(_ s: Service, conn: Int) async throws -> Result { try await handle(s) }
 
-    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try JSONEncoder().encode(await decoded(p).handle(d, conn: conn)) }
+    static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data {
+        try JSONEncoder().encode(await decoded(p).handle(Service.of(d), conn: conn))
+    }
 }
 
 extension Daemon {
@@ -70,13 +73,13 @@ extension CIDispatch: Handled {
 }
 
 extension GitHubStatus: Handled {
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_: NoService) throws -> Result {
         let a = GitHub.account()
         return Result(installed: a.installed, user: a.user)
     }
 }
 extension GitLabStatus: Handled {
-    func handle(_ d: Daemon) throws -> Result {
+    func handle(_: NoService) throws -> Result {
         let a = GitLab.account()
         return Result(installed: a.installed, user: a.user)
     }
@@ -101,7 +104,7 @@ extension GitHubProjects: Handled {
     func handle(_ d: Daemon) throws -> [GitHub.Project] { try GitHub.projects(cwd: d.repoPath(worktreeId: worktreeId, repoId: repoId).1) }
 }
 extension GitHubProjectItems: Handled {
-    func handle(_ d: Daemon) throws -> [GitHub.ProjectItem] { try GitHub.projectItems(owner: owner, number: number ?? 0) }
+    func handle(_: NoService) throws -> [GitHub.ProjectItem] { try GitHub.projectItems(owner: owner, number: number ?? 0) }
 }
 
 // MARK: also a web API

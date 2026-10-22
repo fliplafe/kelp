@@ -44,7 +44,7 @@ public final class Daemon: Sendable {
         self.workspaces = Workspaces(root: root, store: self.store, remotes: remotes, deskAdded: { [clients] in clients.notify(ChangedEvent.worktree) })
         self.watches = Watches(store: self.store, clients: clients, remotes: remotes)
         self.sessions = Sessions(root: root, socketPath: root.appendingPathComponent("kelp.sock").path, store: self.store, remotes: remotes,
-                                 settings: settings, agentUsage: agentUsage, clients: clients, watches: watches)
+                                 settings: settings, agentUsage: agentUsage, clients: clients, watches: watches, offloads: offloads)
         // Remote projects' shared SSH connections; without it, they fail.
         do { try Paths.ensure(URL(fileURLWithPath: remotes.controlDir)) } catch { Log.start.error("no folder for ssh connections: \(error)") }
         watches.reading.withLock { $0.read = { [weak self] k, fast in await self?.sample(k, fast: fast) ?? (nil, nil) } }
@@ -184,7 +184,7 @@ public final class Daemon: Sendable {
                             }
                         }
                         // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
-                        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, self, done: reply) }
+                        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, sessions, done: reply) }
                         else { reply(Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }) }
                         continue
                     }

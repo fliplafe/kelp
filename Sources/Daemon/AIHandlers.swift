@@ -4,7 +4,7 @@ import GitKit
 import Agents
 
 /// RPCs that chain several steps or wait on other processes.
-extension Daemon {
+extension Sessions {
 
     /// What a short command prints (stdout, then stderr), or nil if it fails or takes longer than `timeout`.
     static func run(_ argv: [String], path: String, timeout: Double) -> String? {
@@ -21,10 +21,10 @@ extension Daemon {
     func handoffFile(_ s: Session, full: Bool) throws -> URL {
         let limit = full ? 400_000 : 40_000
         let body: String
-        if let t = sessions.existing(s.id).flatMap(agentUsage.transcript(of:)), let talk = AgentUsage.conversation(transcript: t, limit: limit), !talk.isEmpty {
+        if let t = existing(s.id).flatMap(agentUsage.transcript(of:)), let talk = AgentUsage.conversation(transcript: t, limit: limit), !talk.isEmpty {
             body = talk
         } else {
-            let d = try sessions.liveSessionOrLog(s.id, bytes: limit)
+            let d = try liveSessionOrLog(s.id, bytes: limit)
             // swiftlint:disable:next optional_data_string_conversion
             body = "```\n" + StatusDetector.stripANSI(String(decoding: d, as: UTF8.self)) + "\n```"   // lossy on purpose, see session.context
         }
@@ -36,17 +36,17 @@ extension Daemon {
 }
 
 extension SessionRename: Handled {
-    func handle(_ d: Daemon) throws -> Done {
+    func handle(_ sessions: Sessions) throws -> Done {
         // Under its wake lock: a paused record read here and saved back must not land over a wake that started meanwhile.
-        try d.sessions.wakeLocks.withLock(id) {
-            if let ls = d.sessions.existing(id) { _ = ls.update { $0.title = title; $0.titleManual = !title.isEmpty }; d.sessions.publish(ls) }
-            else { try d.sessions.change(id) { $0.title = title; $0.titleManual = !title.isEmpty } }
+        try sessions.wakeLocks.withLock(id) {
+            if let ls = sessions.existing(id) { _ = ls.update { $0.title = title; $0.titleManual = !title.isEmpty }; sessions.publish(ls) }
+            else { try sessions.change(id) { $0.title = title; $0.titleManual = !title.isEmpty } }
         }
         return Done()
     }
 }
 
-extension Daemon {
+extension Sessions {
     /// argv without `--session-id <id>`: two sessions can't share an id (Claude Code refuses one already used).
     static func withoutSessionId(_ argv: [String], flag: String?) -> [String] {
         guard let flag, let i = argv.firstIndex(of: flag) else { return argv }

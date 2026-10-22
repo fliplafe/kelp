@@ -86,7 +86,7 @@ extension Daemon {
     }
 }
 
-extension SettingsGet: Handled { func handle(_ d: Daemon) throws -> [String: JSONValue] { d.settings.values } }
+extension SettingsGet: Handled { func handle(_ settings: SettingsStore) throws -> [String: JSONValue] { settings.values } }
 extension SettingsSet: Handled {
     /// A colour dragged or a stepper held sends these quickly: the last one sent is the one that stays.
     static var inOrder: Bool { true }
