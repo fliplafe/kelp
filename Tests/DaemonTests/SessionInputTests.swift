@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import Core
 import Agents
@@ -105,4 +106,23 @@ import Agents
     await #expect(throws: RPCError.self) { _ = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "exec sleep 30")) }
     #expect(try w.d.store.sessions().isEmpty)
     #expect(w.d.sessions.live.all.isEmpty)
+}
+
+/// A pause is the record's last word: a status change that read the record just before it, still on its way to the
+/// database, isn't saved over it. It was, and the agent, gone, stayed "working" and could never be woken.
+@Test func aPauseIsntWrittenOverByAnOlderStatus() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "pausing")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    let ls = try #require(w.d.sessions.live[s.id])
+    let gate = DispatchSemaphore(value: 0)
+    ls.inOrder { let old = ls.snapshot; gate.wait(); w.d.sessions.publish(old) }   // held until the pause had its say
+    let paused = OSAllocatedUnfairLock(initialState: false)
+    Thread.detachNewThread { try? w.d.sessions.pauseSessions(of: wt.id); paused.withLock { $0 = true } }
+    try await Task.sleep(for: .milliseconds(500))
+    gate.signal()
+    #expect(try await waitFor(10) { paused.withLock { $0 } })
+    await withCheckedContinuation { c in ls.inOrder { c.resume() } }   // whatever was queued is saved by now
+    #expect(try w.d.store.session(s.id)?.status == .hibernated)
 }

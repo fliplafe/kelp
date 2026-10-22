@@ -280,9 +280,7 @@ final class LiveSession: Sendable {
     func attachedToRunning() { state.withLock { $0.detector.attachedToRunning() } }
 
     /// Hibernation: the PTY dies but the record says so, so the UI shows "Paused" instead of "Exited".
-    func markHibernated() -> Session {
-        state.withLock { s in s.detector.override(.hibernated); s.record.status = .hibernated; return s.record }
-    }
+    func markHibernated() { state.withLock { s in s.detector.override(.hibernated); s.record.status = .hibernated } }
 
     func overrideStatus(_ status: AgentStatus) { state.withLock { s in s.detector.override(status); emit(s.sync()) } }
 

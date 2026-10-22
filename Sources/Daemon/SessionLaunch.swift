@@ -92,9 +92,9 @@ extension Sessions {
         wakeLocks.withLock(ls.snapshot.id) {
             guard live.remove(ls, if: { !$0.isAttached }) else { return }
             hangUpStreams(ls)   // none by the check; one that came just after it ends too
-            let s = ls.markHibernated()
+            ls.markHibernated()
             Self.waitGone(ls.pty.terminate())   // SIGKILL after 2 s for what ignores the hangup: a wake must not start a second copy
-            publish(s)
+            publishLast(ls)
         }
     }
 
@@ -192,6 +192,14 @@ extension Sessions {
         }
     }
 
+    /// A pause or an end, saved and said now, after every status change queued before it: one that read the record just
+    /// before would otherwise write "working" over it, and a paused agent would never wake.
+    func publishLast(_ ls: LiveSession) {
+        let done = DispatchSemaphore(value: 0)
+        ls.inOrder { [self] in publish(ls.snapshot); done.signal() }
+        done.wait()
+    }
+
     func publish(_ s: Session) {
         do { try store.update(s) } catch {
             // Deleted meanwhile (closed, its project removed): not brought back. Anything else (a full disk) is logged.
@@ -282,11 +290,8 @@ extension Sessions {
     /// nothing records its exit any more — then stopped with all it started. Its pids, for `waitGone`.
     func pause(_ ls: LiveSession, _ manifests: [AgentManifest]) -> [pid_t] {
         hangUpStreams(ls)
-        if Self.resumable(ls.snapshot, manifests) {
-            publish(ls.markHibernated())
-        } else {
-            ls.overrideStatus(.exited); publish(ls.snapshot)
-        }
+        if Self.resumable(ls.snapshot, manifests) { ls.markHibernated() } else { ls.overrideStatus(.exited) }
+        publishLast(ls)
         return ls.pty.terminate()   // SIGKILL after 2 s for what ignores the hangup, so all is gone within waitGone's 3
     }
 
