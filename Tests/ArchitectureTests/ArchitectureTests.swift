@@ -77,6 +77,53 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     #expect(found == [])
 }
 
+/// The shell (everything outside `Builtins/`) reaches a built-in through what it contributed (its `TabProvider`, commands,
+/// panels…), never by its type: a built-in named there is one the shell can't do without. The names are read from the
+/// sources: every type a file in `Builtins/` declares at its top level, other than private ones (nested types are the
+/// feature's own). `Builtins` itself is the list the registry loads.
+@Test func theShellNamesNoBuiltin() throws {
+    let declared = try NSRegularExpression(
+        pattern: #"^(?:@\w+(?:\([^)\n]*\))?\s+)*(?:(?:public|internal|final|nonisolated)\s+)*(?:class|struct|enum|protocol|actor|typealias)\s+([A-Z]\w*)"#,
+        options: [.anchorsMatchLines])
+    var names = Set<String>()
+    for f in sources(["Sources/KelpApp/Builtins"]) {
+        for m in declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
+            if let r = Range(m.range(at: 1), in: f.text) { names.insert(String(f.text[r])) }
+        }
+    }
+    names.remove("Builtins")
+    #expect(names.contains("SessionTab") && names.contains("PaneView"), "\(names.sorted())")   // the scan finds them
+    let named = try NSRegularExpression(pattern: #"\b("# + names.sorted().joined(separator: "|") + #")\b"#)
+    var found: [String] = []
+    for f in sources(["Sources/KelpApp"]) where !f.path.hasPrefix("Sources/KelpApp/Builtins/") {
+        let code = codeOnly(f.text)
+        for m in named.matches(in: code, range: NSRange(code.startIndex..., in: code)) {
+            guard let r = Range(m.range(at: 1), in: code) else { continue }
+            found.append("\(f.path):\(code[..<r.lowerBound].filter { $0 == "\n" }.count + 1): \(code[r])")
+        }
+    }
+    // The one left: EditorAgents sizes a new terminal from PaneView.lastGrid.
+    #expect(found.count <= 1, "built-ins named outside Builtins/: \(found)")
+}
+
+/// A Swift file's code without its comments and string literals (their words could be any name); lines stay where they were.
+private func codeOnly(_ s: String) -> String {
+    var out = "", i = s.startIndex
+    func skip(to end: String.Index) { out += s[i..<end].filter { $0 == "\n" }; i = end }
+    while i < s.endIndex {
+        let rest = s[i...]
+        if rest.hasPrefix("//") { skip(to: rest.firstIndex(of: "\n") ?? s.endIndex) }
+        else if rest.hasPrefix("/*") { skip(to: rest.range(of: "*/")?.upperBound ?? s.endIndex) }
+        else if rest.hasPrefix("\"\"\"") { skip(to: rest.dropFirst(3).range(of: "\"\"\"")?.upperBound ?? s.endIndex) }
+        else if rest.first == "\"" {
+            var j = rest.index(after: rest.startIndex)
+            while j < s.endIndex, s[j] != "\"", s[j] != "\n" { j = s.index(j, offsetBy: s[j] == "\\" && s.index(after: j) < s.endIndex ? 2 : 1) }
+            skip(to: j < s.endIndex && s[j] == "\"" ? s.index(after: j) : j)
+        } else { out.append(s[i]); i = s.index(after: i) }
+    }
+    return out
+}
+
 /// The daemon's events reach the app as their types (`RPCClient.onEvent`, decoded once on the client's reader thread):
 /// the app doesn't switch on their names or decode them from JSON on the main thread.
 @Test func theAppTakesEventsByType() throws {

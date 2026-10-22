@@ -53,6 +53,19 @@ final class SessionTab: TabContent {
     /// running in a terminal (an idle shell or a finished agent just closes).
     func close() async -> Bool { await Self.close(session: sessionId) }
 
+    /// Its items in the tab's context menu.
+    static func menu(_ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
+        let sid = TabURI.body(uri)
+        m.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
+        m.add(String(localized: "Restart")) { AgentActions.restart(sid) }
+        m.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
+        m.setSubmenu(AgentActions.handoffMenu(sid), for: m.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
+        m.add(String(localized: "Changes in Its Last Turn")) {
+            Workbench.shared.focusedSession = sid
+            openBeside(TabURI.diff(workspace, source: "turn"))
+        }
+    }
+
     /// Also for a tab that was never built (EditorArea closes those without making them).
     static func close(session sid: String) async -> Bool {
         let session = AppModel.shared.session(sid)

@@ -14,6 +14,12 @@ public enum TabURI {
     public static func file(_ path: String, line: Int? = nil) -> String {
         "file://" + (path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path) + (line.map { "#L\($0)" } ?? "")
     }
+    /// A workspace's changes: all of them, one file's, a source's ("staged", "turn"…) or a commit's.
+    public static func diff(_ worktree: String, file: String? = nil, source: String? = nil, commit: String? = nil) -> String {
+        var c = URLComponents()
+        c.queryItems = [("file", file), ("source", source), ("commit", commit)].compactMap { n, v in v.map { URLQueryItem(name: n, value: $0) } }
+        return "diff:\(worktree)" + (c.queryItems?.isEmpty == false ? "?" + (c.percentEncodedQuery ?? "") : "")
+    }
     /// Absolute path and line of a file URI (also accepts a bare path).
     public static func filePath(_ uri: String) -> (path: String, line: Int?) {
         var s = uri.hasPrefix("file://") ? String(uri.dropFirst(7)) : uri

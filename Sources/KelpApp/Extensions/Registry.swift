@@ -75,6 +75,11 @@ struct IconThemeSpec {
 struct TabProvider {
     let schemes: [String]
     let make: @MainActor (String) -> TabContent?
+    /// Closing a tab of its URI that was never built (in the background since launch); false keeps it.
+    var closeUnbuilt: (@MainActor (_ uri: String) async -> Bool)?
+    /// Its items in the tab's context menu, added to `menu` above Close Tab: `workspace` is the editor area's, and
+    /// `openBeside` opens a URI in a pane to the right.
+    var menu: (@MainActor (_ menu: NSMenu, _ uri: String, _ workspace: String, _ openBeside: @escaping @MainActor (String) -> Void) -> Void)?
 }
 
 /// Everything one extension adds. Built-ins fill it in Swift; folders from extension.json.

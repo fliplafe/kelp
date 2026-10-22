@@ -1,6 +1,8 @@
+import AppKit
 import Foundation
 import Testing
 import Core
+import WorkbenchKit
 @testable import KelpApp
 
 private func folder(_ files: [String: String]) throws -> URL {
@@ -82,4 +84,20 @@ extension SharedAppModel {
     let r = await Shell.run(cmd, cwd: NSTemporaryDirectory())
     #expect(r.code == 0 && !FileManager.default.fileExists(atPath: marker) && r.stdout == evil)
 }
+}
+
+/// A tab's own items in its context menu come from its provider (an agent's, a file's); a tab whose provider adds none
+/// gets the shell's alone.
+extension SharedAppModel {
+    @Test func aTabsMenuHasWhatItsProviderAdds() {
+        _ = testHome; _ = NSApplication.shared   // reload applies the theme to NSApp
+        ExtensionRegistry.shared.reload()
+        let area = EditorArea(workspaceId: "menu-test")
+        let agent = area.layout.add("session:s1"), page = area.layout.add(TabURI.file("/tmp/a.html")), web = area.layout.add("https://example.com")
+        func titles(_ id: String) -> [String] { area.tabMenu(id).items.map { $0.isSeparatorItem ? "-" : $0.title } }
+        let around = (["Split Right", "Split Down", "-"], ["Close Tab", "Close Other Tabs"])
+        #expect(titles(agent.id) == around.0 + ["Rename…", "Restart", "Copy Context", "Hand Off to", "Changes in Its Last Turn", "-"] + around.1)
+        #expect(titles(page.id) == around.0 + ["Reveal in Finder", "Copy Path", "Copy Web Link", "Send to Agent", "Open Preview to the Side", "-"] + around.1)
+        #expect(titles(web.id) == around.0 + around.1)
+    }
 }

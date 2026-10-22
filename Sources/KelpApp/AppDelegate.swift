@@ -33,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await AppModel.shared.connect()
             ExtensionRegistry.shared.reload()   // settings (disabled extensions) are known now
             AgentAvailability.shared.refresh(force: true)
-            _ = await Accounts.load()
             let pick = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_WORKTREE"].flatMap { b in
                 AppModel.shared.worktrees.first { $0.id == b || $0.branch == b || $0.note == b }
             }

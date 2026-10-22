@@ -90,6 +90,12 @@ import Core
     #expect(TabURI.body("ext:my.ext/view") == "my.ext/view")
 }
 
+@Test func diffURIsCarryWhatTheyShow() {
+    #expect(TabURI.diff("w1") == "diff:w1")
+    #expect(TabURI.diff("w1", file: "my dir/a&b.swift", source: "staged") == "diff:w1?file=my%20dir/a%26b.swift&source=staged")
+    #expect(TabURI.scheme(TabURI.diff("w1", commit: "abc")) == "diff")
+}
+
 @Test func normalizeTakesWhatPeopleType() {
     #expect(TabURI.normalize("Sources/a.swift:12", cwd: "/repo") == "file:///repo/Sources/a.swift#L12")
     #expect(TabURI.normalize("/abs/b.swift", cwd: "/repo") == "file:///abs/b.swift")

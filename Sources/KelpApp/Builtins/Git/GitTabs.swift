@@ -45,9 +45,7 @@ final class DiffTab: TabContent {
     func focus() { controller.view.window?.makeFirstResponder(controller.view) }
 
     static func uri(_ worktree: String, file: String? = nil, source: String? = nil, commit: String? = nil) -> String {
-        var c = URLComponents()
-        c.queryItems = [("file", file), ("source", source), ("commit", commit)].compactMap { n, v in v.map { URLQueryItem(name: n, value: $0) } }
-        return "diff:\(worktree)" + (c.queryItems?.isEmpty == false ? "?" + (c.percentEncodedQuery ?? "") : "")
+        TabURI.diff(worktree, file: file, source: source, commit: commit)
     }
 }
 

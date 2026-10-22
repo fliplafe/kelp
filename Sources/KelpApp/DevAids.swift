@@ -1,5 +1,7 @@
 import AppKit
+import TerminalKit
 import WebKit
+import WorkbenchKit
 
 /// Developer aids driven by environment variables; inert in normal use.
 ///   KELP_SNAPSHOT=/x.png  render the window to a PNG and quit (no screen-recording permission needed)
@@ -49,7 +51,7 @@ extension AppDelegate {
             }
             driveInput(env)
             switch env["KELP_SNAPSHOT_WINDOW"] {
-            case "history": HistoryWindow.shared.show()
+            case "history": ExtensionRegistry.shared.command("agents.history")?.run([:])
             case "settings": SettingsWindow.show(section: env["KELP_SNAPSHOT_SECTION"])
             default: break
             }
@@ -121,7 +123,10 @@ extension AppDelegate {
             }
             NSApp.mainMenu.map(walk)
         }
-        for p in v.allSubviews(of: PaneView.self) { print("PANE", p.sessionId.prefix(8), p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)) }
+        for t in main.editors.current?.contents.values.map({ $0 }) ?? [] where TabURI.scheme(t.uri) == "session" && t.view.window === w {
+            guard let term = t.view.allSubviews(of: GhosttyTerminalView.self).first else { continue }
+            print("PANE", TabURI.body(t.uri).prefix(8), term.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600))
+        }
         // Web content is drawn out of process and may be missing from the PNG: report what the page really shows
         // (not under a sheet: its run loop may not deliver the script's answer).
         let webs = v.allSubviews(of: WKWebView.self)

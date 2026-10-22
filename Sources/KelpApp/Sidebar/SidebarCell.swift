@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import WorkbenchKit
 
 /// One row; `update()` re-reads the model, so status changes don't rebuild the outline.
 @MainActor
@@ -84,7 +85,7 @@ final class SidebarCell: NSTableCellView {
         case .agent, .section, .needs: nil
         }
     }
-    @objc private func openChanges() { if let w = folder { Workbench.open(DiffTab.uri(w.id), workspace: w.id) } }
+    @objc private func openChanges() { if let w = folder { Workbench.open(TabURI.diff(w.id), workspace: w.id) } }
     @objc private func openPR() { if let w = folder, let u = RowBadges.shared.prs[w.id]?.url { Workbench.open(u, workspace: w.id) } }
 
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.

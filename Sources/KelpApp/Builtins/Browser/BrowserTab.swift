@@ -253,10 +253,3 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     })();
     """
 }
-
-/// WKUserContentController retains its handlers; break the cycle.
-final class WeakHandler: NSObject, WKScriptMessageHandler {
-    weak var target: WKScriptMessageHandler?
-    init(_ t: WKScriptMessageHandler) { target = t }
-    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) { target?.userContentController(c, didReceive: m) }
-}

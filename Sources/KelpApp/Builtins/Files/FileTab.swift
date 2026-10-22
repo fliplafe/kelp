@@ -448,6 +448,18 @@ final class FileTab: SavableTab {
         }
     }
 
+    /// Its items in the tab's context menu.
+    static func menu(_ m: NSMenu, uri: String, workspace: String, openBeside: @escaping @MainActor (String) -> Void) {
+        let path = TabURI.filePath(uri).path
+        m.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+        m.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
+        m.add(String(localized: "Copy Web Link")) { FileActions.copyWebLink(path) }
+        m.add(String(localized: "Send to Agent")) { FileActions.sendToAgent(path) }
+        if ["html", "htm"].contains((path as NSString).pathExtension.lowercased()) {
+            m.add(String(localized: "Open Preview to the Side")) { openBeside("preview:" + path) }
+        }
+    }
+
     private static func message(_ s: String) -> NSView {
         let l = NSTextField(labelWithString: s); l.textColor = .secondaryLabelColor
         let v = NSView(); l.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(l)

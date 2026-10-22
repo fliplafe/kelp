@@ -57,8 +57,10 @@ extension EditorArea {
         defer { closing.remove(id) }
         let uri = layout.allTabs.first { $0.id == id }?.uri ?? ""
         let sid = TabURI.scheme(uri) == "session" ? TabURI.body(uri) : nil
-        // A tab not built yet (in the background since launch) ends its session all the same.
-        if let c = contents[id] { guard await c.close() else { return false } } else if let sid, await !SessionTab.close(session: sid) { return false }
+        // A tab not built yet (in the background since launch) closes all the same: an agent's ends its session.
+        if let c = contents[id] {
+            guard await c.close() else { return false }
+        } else if let close = ExtensionRegistry.shared.tabProvider(for: uri)?.closeUnbuilt, await !close(uri) { return false }
         guard layout.allTabs.contains(where: { $0.id == id }) else { return true }   // gone while it asked (its workspace closed)
         if let sid { closed.insert(sid) }
         contents[id] = nil
@@ -147,29 +149,10 @@ extension EditorArea {
         m.add(String(localized: "Split Right")) { [weak self] in self?.select(id); self?.splitFocused(.right) }
         m.add(String(localized: "Split Down")) { [weak self] in self?.select(id); self?.splitFocused(.down) }
         m.addItem(.separator())
-        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "session" {
-            let sid = TabURI.body(uri)
-            m.add(String(localized: "Rename…")) { AgentActions.rename(sid) }
-            m.add(String(localized: "Restart")) { AgentActions.restart(sid) }
-            m.add(String(localized: "Copy Context")) { AgentActions.copyContext(sid) }
-            m.setSubmenu(AgentActions.handoffMenu(sid), for: m.addItem(withTitle: String(localized: "Hand Off to"), action: nil, keyEquivalent: ""))
-            m.add(String(localized: "Changes in Its Last Turn")) { [weak self] in
-                guard let self else { return }
-                Workbench.shared.focusedSession = sid
-                open(DiffTab.uri(workspaceId, source: "turn"), split: .right)
-            }
-            m.addItem(.separator())
-        }
-        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, TabURI.scheme(uri) == "file" {
-            let path = TabURI.filePath(uri).path
-            m.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-            m.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string) }
-            m.add(String(localized: "Copy Web Link")) { FileActions.copyWebLink(path) }
-            m.add(String(localized: "Send to Agent")) { FileActions.sendToAgent(path) }
-            if ["html", "htm"].contains((path as NSString).pathExtension.lowercased()) {
-                m.add(String(localized: "Open Preview to the Side")) { [weak self] in self?.open("preview:" + path, split: .right) }
-            }
-            m.addItem(.separator())
+        if let uri = layout.allTabs.first(where: { $0.id == id })?.uri, let items = ExtensionRegistry.shared.tabProvider(for: uri)?.menu {
+            let before = m.items.count
+            items(m, uri, workspaceId) { [weak self] in self?.open($0, split: .right) }
+            if m.items.count > before { m.addItem(.separator()) }
         }
         m.add(String(localized: "Close Tab")) { [weak self] in self?.closeTab(id) }
         m.add(String(localized: "Close Other Tabs")) { [weak self] in

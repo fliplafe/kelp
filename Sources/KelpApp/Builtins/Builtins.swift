@@ -42,7 +42,8 @@ enum Builtins {
 
     static let agents = Builtin("kelp.agents", "Agents & Terminals", "Agent sessions and terminals as tabs.", icon: "sparkles", essential: true) {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["session"]) { SessionTab(uri: $0) }]
+        c.tabs = [TabProvider(schemes: ["session"], make: { SessionTab(uri: $0) },
+                              closeUnbuilt: { await SessionTab.close(session: TabURI.body($0)) }, menu: SessionTab.menu)]
         c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab() })
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", specs: [
@@ -96,7 +97,7 @@ enum Builtins {
 
     static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) {
         var c = Contributions()
-        c.tabs = [TabProvider(schemes: ["file"]) { FileTab(uri: $0) },
+        c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0) }, menu: FileTab.menu),
                   TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0) }]
         c.panels = [PanelSpec(id: "files", title: "Files", icon: "folder", extensionId: "kelp.files") { FilesPanel() }]
         c.editors = [EditorSpec(id: "files.new", title: "New File", icon: "doc.badge.plus") { _ in UntitledTab.next() }]
