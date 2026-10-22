@@ -1,13 +1,32 @@
 # Kelp
 
-A native macOS app for running many coding agents side by side — each in its own git worktree, with live status,
-notifications, diff review, an editor, a browser with Design Mode, and GitHub/Linear built in. An open-source,
-Swift + AppKit: no Electron, no cloud, no telemetry.
+A native macOS IDE that balances a classic code editor and an agent-first workspace.
 
-- **Any CLI agent.** Claude Code, Codex, OpenCode, Gemini CLI, Cursor Agent, Pi, Amp — or any command. Agents are JSON files.
-- **Sessions outlive the window.** A background daemon (`kelpd`) owns the terminals; quit the app and agents keep working.
-- **Plain git.** Standard branches and `git worktree`; everything is checkable from a normal terminal.
-- **Everything from the CLI.** `kelp` drives the app, so agents can drive it too.
+Editors like VS Code are built around a person writing code; agents come later, as a side panel. Agent apps like
+Claude Desktop are built around a conversation; the code sits behind it, out of reach. Kelp is made for doing both at
+once: several agents working side by side, and the code they touch always one tab away, to read, review and edit by
+hand. And it stays a Mac app: Swift and AppKit, no Electron, no cloud.
+
+## The idea
+
+**Code you can see and change.** A source editor with language servers, a file tree with Finder's keys, diffs with
+hunk staging, Markdown and notebooks, a browser whose Design Mode hands an element's source to an agent. Every tab — an
+agent, a terminal, a file, a diff, a web page — goes into any split, so the layout follows the task.
+
+**Agents, first class.** Any CLI agent: Claude Code, Codex, OpenCode, Gemini CLI, Cursor Agent, Pi, Amp, or any
+command (agents are JSON files). Each shows whether it is working, waiting for you or done, and tells you when it needs
+you; its changes come back as a diff you can comment on line by line. A background daemon (`kelpd`) owns the terminals,
+so quitting the app doesn't stop the agents. GitHub, GitLab, Bitbucket, Linear and Jira are built in: start an agent
+from an issue, review pull requests, follow CI. Agents drive Kelp too, through the `kelp` CLI: open files, run
+commands, report progress.
+
+**Flexible, not fixed.** Panels, tabs, commands, settings and themes come from extensions. A panel that shows what a
+command prints is a JSON file; shared extensions install from Settings › Extensions › Library or `kelp ext install`.
+
+**Native and light.** System controls and SF Symbols, the terminal on libghostty (GPU-rendered), web pages in the
+system's WebKit. No Electron, no bundled Chromium or Node, no account, no cloud service, no telemetry: Kelp talks only
+to the tools you set up (`git`, `gh`, `glab`, your agents) and to its update feed. Plain git underneath, so everything
+can be checked from any terminal.
 
 Requires macOS 14+.
 
