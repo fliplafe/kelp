@@ -89,9 +89,7 @@ private func lines(_ log: String) -> [String] {
 /// A server with no file open stops a while later: after its last close, and when the connection that opened the file
 /// goes (the app quit, say).
 @Test func aServerWithNoOpenFileStops() async throws {
-    let saved = LSPHost.idleDelay
-    LSPHost.idleDelay = 0.3; defer { LSPHost.idleDelay = saved }
-    let (d, c, _) = try daemon(); defer { d.stop() }
+    let (d, c, _) = try daemon(lsp: LSPHost(idleDelay: 0.3)); defer { d.stop() }
     let root = tmp().path, file = root + "/main.swift", server = try fakeServer(in: root)
     try d.store.setUIState(LSPOpen.trustKey, .array([.string(root)]))
     func open(_ c: RPCClient) async throws {
@@ -116,9 +114,7 @@ private func lines(_ log: String) -> [String] {
 /// A server that died starts again on the next open, and gets every file open for it as the app last sent it (unsaved
 /// edits too), not as it is on disk.
 @Test func aRestartedServerGetsTheOpenFilesAsLastSent() async throws {
-    let saved = LSPHost.retryDelay
-    LSPHost.retryDelay = 0; defer { LSPHost.retryDelay = saved }
-    let (d, c, _) = try daemon(); defer { d.stop() }
+    let (d, c, _) = try daemon(lsp: LSPHost(retryDelay: 0)); defer { d.stop() }
     let root = tmp().path, a = root + "/a.swift", b = root + "/b.swift", server = try fakeServer(in: root)
     try "on disk".write(toFile: a, atomically: true, encoding: .utf8)
     try d.store.setUIState(LSPOpen.trustKey, .array([.string(root)]))

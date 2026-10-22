@@ -27,9 +27,12 @@ final class LSPHost: Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     /// A broken server isn't started again on every open.
-    nonisolated(unsafe) static var retryDelay: TimeInterval = 30   // tests shorten it
+    let retryDelay: TimeInterval
     /// How long a server with no open file keeps running (a tab closed and opened again doesn't restart it).
-    nonisolated(unsafe) static var idleDelay: TimeInterval = 60   // tests shorten it
+    let idleDelay: TimeInterval
+
+    /// Tests shorten the delays.
+    init(retryDelay: TimeInterval = 30, idleDelay: TimeInterval = 60) { self.retryDelay = retryDelay; self.idleDelay = idleDelay }
 
     func open(conn: Int, _ o: LSPOpen) {
         let key = Key(root: o.root, argv: [o.command] + (o.args ?? [])), id = o.root + "|" + o.path
@@ -42,7 +45,7 @@ final class LSPHost: Sendable {
             case .running(let c)? where c.isRunning: Self.apply(op, to: c); return false
             case .starting(let pending, let ready)?: s.servers[key] = .starting(pending: pending + [op], ready: ready); return false
             default:   // none yet, or it died: a new one gets every file open for it, as last sent
-                if let at = s.started[key], Date().timeIntervalSince(at) < Self.retryDelay { return false }
+                if let at = s.started[key], Date().timeIntervalSince(at) < retryDelay { return false }
                 s.started[key] = Date()
                 let others = s.docs.filter { $0.key != id && $0.value.key == key }.values.flatMap { d in
                     Array(repeating: DocOp.open(path: d.path, text: d.text, languageId: d.languageId), count: d.count)
@@ -145,7 +148,7 @@ final class LSPHost: Sendable {
 
     /// Stops `key`'s server `idleDelay` from now if no file is open for it then.
     private func stopLater(_ key: Key) {
-        DispatchQueue.global().asyncAfter(deadline: .now() + Self.idleDelay) { [self] in
+        DispatchQueue.global().asyncAfter(deadline: .now() + idleDelay) { [self] in
             let idle = state.withLock { s -> LSPClient? in
                 guard !s.docs.values.contains(where: { $0.key == key }), case .running(let c)? = s.servers[key] else { return nil }
                 s.servers[key] = nil; s.started[key] = nil

@@ -22,7 +22,7 @@ public final class Daemon: Sendable {
     let agentUsage: AgentUsage   // what the agents left on disk: conversations, token usage, plan limits
     let offloads = Slots(Daemon.offloadLimit)   // what `offload` runs at once
     let forges: Forges   // pull requests by branch, running clones, the trackers' clients
-    let lsp = LSPHost()   // language servers: one per project and server command, shared by every client
+    let lsp: LSPHost   // language servers: one per project and server command, shared by every client
     let watches: Watches   // what clients watch (watch.start), read while anyone does and pushed when it changed
     let sessions: Sessions   // which run, starting, waking, pausing and deleting them
     let settingsEvents = DispatchQueue(label: "kelp.settings-events")   // event.settings in order: the last one is the settings now
@@ -30,9 +30,11 @@ public final class Daemon: Sendable {
     var files: FileService { FileService(remotes: remotes) }   // files.*: read, written, moved here or on a remote project's host
     let remotes: Remotes   // which project folders stand for one on a host (only those in this home's remote/), and how to reach it
 
-    public init(root: URL, store: Store? = nil) throws {
+    public convenience init(root: URL, store: Store? = nil) throws { try self.init(root: root, store: store, lsp: LSPHost()) }
+
+    init(root: URL, store: Store?, lsp: LSPHost) throws {
         signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
-        self.root = root
+        self.root = root; self.lsp = lsp
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
         self.settings = SettingsStore(root: root)
