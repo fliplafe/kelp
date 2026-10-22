@@ -26,6 +26,26 @@ import PDFKit
     }
 }
 
+/// A terminal link without a scheme is a path from the agent's folder (`PaneView.openLink`): one Ghostty found in the
+/// text, or an agent's Markdown link — with a line, a space or Cyrillic in it.
+@MainActor
+@Test func aTerminalLinkWithoutASchemeIsAFile() throws {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("tlinks-\(UUID().uuidString)")
+    let file = dir.appendingPathComponent("banner/мой файл.html")
+    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try "<p>".write(to: file, atomically: true, encoding: .utf8)
+    let resolved = (file.path as NSString).standardizingPath
+    let links: [(String, Int?)] = [("banner/мой файл.html", nil), ("banner/%D0%BC%D0%BE%D0%B9%20%D1%84%D0%B0%D0%B9%D0%BB.html:12", 12)]
+    for (link, line) in links {
+        let u = try #require(URL(string: link))
+        #expect(u.scheme == nil)
+        let f = try #require(TerminalPaths.resolve(u.path(percentEncoded: false), cwd: dir.path), "\(link)")
+        #expect(f.path == resolved && f.line == line)
+    }
+    #expect(TerminalPaths.resolve("banner/t00.00.png", cwd: dir.path) == nil)   // gone: a banner says so
+}
+
 /// An extension's `open` action opens what its data names, but can't run what its data says: a link field set to
 /// terminal://…?cmd=… or agent:… by whoever filed the issue. The extension's own template still may.
 @MainActor

@@ -4540,6 +4540,16 @@
         }
       }
     },
+    "No file “%@” in %@.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В %2$@ нет файла «%1$@»."
+          }
+        }
+      }
+    },
     "No matches": {
       "localizations": {
         "ru": {
