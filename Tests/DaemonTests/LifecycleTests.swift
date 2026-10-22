@@ -3,6 +3,7 @@ import os
 import Testing
 import Core
 import GitKit
+import Agents
 @testable import Daemon
 import TestSupport
 
@@ -225,4 +226,21 @@ private func status(_ c: RPCClient, _ id: String) async throws -> AgentStatus? {
     let started = try #require(third)
     #expect(!FileManager.default.fileExists(atPath: err.path))
     started.stop()
+}
+
+/// /resume in Claude Code switches the conversation: the hooks name the new one, and the session is pinned to it, so a
+/// wake brings it back instead of the one Kelp started (an old conversation under the new one's title).
+@Test func hooksMoveThePinToTheResumedConversation() async throws {
+    var pinned = AgentManifest(id: "pinned", name: "Pinned", command: "/bin/bash", args: ["-c", "sleep 30", "x"])
+    pinned.sessionIdFlag = "--session-id"; pinned.resumeIdFlag = "--resume"
+    let w = try await world(agents: [pinned]); defer { w.d.stop() }
+    let wt = try await desk(w, "resumed")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "pinned"]), as: Session.self)
+    let other = UUID().uuidString.lowercased()
+    func argv() async throws -> [String] { try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.argv ?? [] }
+    _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "working", "transcript": .string("/p/\(s.id.lowercased())/subagents/agent-a1.jsonl")]))
+    #expect(try await argv().contains(s.id.lowercased()))   // a subagent's file changes nothing
+    _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "working", "transcript": .string("/p/\(other).jsonl")]))
+    #expect(try await waitFor { try await argv().suffix(2) == ["--session-id", other] })
+    _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
 }

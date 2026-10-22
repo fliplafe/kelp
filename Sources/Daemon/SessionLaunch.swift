@@ -180,6 +180,20 @@ extension Daemon {
         return own.map { base + [flag, $0.id] } ?? base
     }
 
+    /// The conversation its hooks name is the one it continues: after /resume or /clear in Claude Code, a wake must bring
+    /// back that one, not the id Kelp started it with (an old conversation under the new one's title).
+    func follow(_ ls: LiveSession, transcript: String) {
+        let conversation = URL(fileURLWithPath: transcript).deletingPathExtension().lastPathComponent
+        let s = ls.snapshot
+        // Only a conversation's own file (a subagent's is agent-….jsonl), and the manifest read only when it changed: hooks come every turn.
+        guard UUID(uuidString: conversation) != nil, !s.argv.contains(where: { $0.lowercased() == conversation.lowercased() }),
+              let m = try? manifest(s.agent, command: nil, fallbackArgv: s.argv) else { return }
+        let argv = m.following(s.argv, conversation: conversation)
+        guard argv != s.argv else { return }
+        _ = ls.update { $0.argv = argv }
+        publish(ls)
+    }
+
     /// A running session's record as it is when written, in order with its status changes (see LiveSession.emit): a copy
     /// taken on a request's thread could otherwise land after a newer status and put an old one back.
     func publish(_ ls: LiveSession) {

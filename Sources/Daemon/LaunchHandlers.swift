@@ -96,7 +96,7 @@ extension HistoryResume: Handled {
 extension SessionHook: Handled {
     func handle(_ d: Daemon) throws -> Done {
         guard let ls = d.existing(id) else { return Done() }
-        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript }
+        if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; d.follow(ls, transcript: transcript) }
         if let cwd, ls.workIn(cwd) != nil { d.publish(ls) }
         if let notification, Hooks.isIdleReminder(notification) { return Done() }
         guard let event else { throw RPCError.invalidParams("missing event") }

@@ -151,6 +151,15 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         return resumes(argv) ? argv : argv + resumeArgs
     }
 
+    /// `argv` pinned to `conversation`, the one the agent writes now (Claude Code's /resume or /clear switched to it), so a
+    /// wake or restart brings back that one. Unchanged when it already names it, or names none.
+    public func following(_ argv: [String], conversation: String) -> [String] {
+        guard let pin = sessionIdFlag, let r = resumeIdFlag, let i = argv.lastIndex(where: { $0 == pin || $0 == r }), i + 1 < argv.count,
+              argv[i + 1].lowercased() != conversation.lowercased() else { return argv }
+        var a = argv; a[i] = pin; a[i + 1] = conversation   // pinned: a wake resumes it once it's on disk, else starts it under this id
+        return a
+    }
+
     public static let trust = AutoAnswer(pattern: #"(?i)(do you trust|trust (the files|this folder|the contents)|one you trust|allow .* to work in this folder)"#, input: "\r",
                                   choose: #"(?i)(yes|trust|allow|proceed)"#)
 
