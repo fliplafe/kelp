@@ -58,9 +58,10 @@ final class PaneView: NSView {
         g.onSearch = { [weak self] in self?.searchEvent($0) }
         // Paths the agent prints are its folder's: its own worktree once it went into one.
         let cwd = { [app] in app.session(id)?.currentDir ?? s.cwd }, wid = s.worktreeId
-        g.onOpenURL = { Self.openLink($0, cwd: cwd()) }
+        let projects = { [app] in app.repos.map(\.path) }
+        g.onOpenURL = { Self.openLink($0, cwd: cwd(), elsewhere: projects()) }
         g.onPasteRefused = { Banner.show(String(localized: "Not pasted: a program put these lines on the clipboard, and this terminal would run them as typed. Copy them yourself to paste here.")) }
-        g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), flags: flags) }
+        g.onOpenPath = { token, flags in TerminalPaths.open(token, cwd: cwd(), elsewhere: projects(), flags: flags) }
         g.onHoverWord = { [weak self, weak g] tokens, rect in
             guard let self, let g else { return }
             self.preview.show(tokens, rect: rect, in: g, cwd: cwd(), worktree: wid)
@@ -142,12 +143,13 @@ final class PaneView: NSView {
     /// A link ⌘-clicked in the terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
     /// the two. Files open as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target
     /// behind any text), and an app, a .command file or another app's scheme would run. A link without a scheme is a
-    /// path from `cwd`: one Ghostty found in the text ("banner/x.html"), or an agent's Markdown link to its own file.
-    static func openLink(_ url: URL, cwd: String) {
+    /// path from `cwd` (or another project's, `TerminalPaths.resolve`): one Ghostty found in the text ("banner/x.html"),
+    /// or an agent's Markdown link to its own file.
+    static func openLink(_ url: URL, cwd: String, elsewhere: [String]) {
         if url.scheme == nil {
             let path = url.path(percentEncoded: false)
-            if !TerminalPaths.open(path, cwd: cwd, flags: NSEvent.modifierFlags) {
-                Banner.show(String(localized: "No file “\(path)” in \((cwd as NSString).abbreviatingWithTildeInPath)."))
+            if !TerminalPaths.open(path, cwd: cwd, elsewhere: elsewhere, flags: NSEvent.modifierFlags) {
+                Banner.show(String(localized: "No file “\(path)” in \((cwd as NSString).abbreviatingWithTildeInPath) or your other projects."))
             }
             return
         }

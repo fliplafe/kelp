@@ -9,28 +9,36 @@ import WorkbenchKit
 enum TerminalPaths {
     static let images: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff", "bmp", "svg", "ico"]
 
-    /// "Sources/App.swift:12:5", "~/x.md", "a/src/x.ts" (a diff's) → an existing file and its line, from `cwd`.
-    static func resolve(_ token: String, cwd: String) -> (path: String, line: Int?)? {
+    /// "Sources/App.swift:12:5", "~/x.md", "a/src/x.ts" (a diff's) → an existing file and its line, from `cwd` — or from
+    /// the one folder of `elsewhere` (the other projects) that has it: an agent may name another project's files.
+    static func resolve(_ token: String, cwd: String, elsewhere: [String] = []) -> (path: String, line: Int?)? {
         guard !token.contains("://") || token.hasPrefix("file://") else { return nil }   // URLs are Ghostty's
         var t = token.hasPrefix("file://") ? (URL(string: token)?.path ?? token) : token
+        while let c = t.last, ".:;!?".contains(c) { t.removeLast() }   // Ghostty's links take the "." that ends a sentence
         if t.hasPrefix("@") { t.removeFirst() }   // "@src/x.ts" (an agent's mention)
         let parts = t.split(separator: ":", omittingEmptySubsequences: false)
         let line = parts.count > 1 ? Int(parts[1]) : nil
         let raw = (String(parts[0]) as NSString).expandingTildeInPath
         guard raw.contains("/") || raw.contains(".") else { return nil }   // a word, not a path
         for p in [raw, raw.hasPrefix("a/") || raw.hasPrefix("b/") ? String(raw.dropFirst(2)) : nil].compactMap({ $0 }) {
-            let abs = p.hasPrefix("/") ? p : (cwd as NSString).appendingPathComponent(p)
-            var st = stat()   // a file: not a folder, nor a pipe or device (reading one to preview it would block)
-            if stat(abs, &st) == 0, st.st_mode & S_IFMT == S_IFREG { return ((abs as NSString).standardizingPath, line) }
+            if let f = file(p, in: cwd) { return (f, line) }
         }
-        return nil
+        let found = raw.hasPrefix("/") ? [] : Set(elsewhere.compactMap { file(raw, in: $0) })
+        return found.count == 1 ? found.first.map { ($0, line) } : nil   // in two projects: which one is anyone's guess
+    }
+
+    /// A file: not a folder, nor a pipe or device (reading one to preview it would block).
+    private static func file(_ p: String, in dir: String) -> String? {
+        let abs = p.hasPrefix("/") ? p : (dir as NSString).appendingPathComponent(p)
+        var st = stat()
+        return stat(abs, &st) == 0 && st.st_mode & S_IFMT == S_IFREG ? (abs as NSString).standardizingPath : nil
     }
 
     /// ⌘-click: in Kelp, on its line (the tab it's already in, if any); ⌥⌘-click: shown in the Finder. Not opened with its
     /// app: a program printed the path, and a .command file (or any script) would run there — from a cloned repo,
     /// without Gatekeeper's check.
-    static func open(_ token: String, cwd: String, flags: NSEvent.ModifierFlags) -> Bool {
-        guard let f = resolve(token, cwd: cwd) else { return false }
+    static func open(_ token: String, cwd: String, elsewhere: [String] = [], flags: NSEvent.ModifierFlags) -> Bool {
+        guard let f = resolve(token, cwd: cwd, elsewhere: elsewhere) else { return false }
         if flags.contains(.option) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: f.path)]); return true }
         Workbench.open(TabURI.file(f.path) + (f.line.map { "#L\($0)" } ?? ""))
         return true
@@ -46,7 +54,8 @@ final class PathPreview {
 
     /// The first of `tokens` (what the word under the pointer may be) that is a file; none closes it.
     func show(_ tokens: [String], rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
-        guard let f = tokens.lazy.compactMap({ TerminalPaths.resolve($0, cwd: cwd) }).first else { popover.close(); return }
+        let projects = app.repos.map(\.path)
+        guard let f = tokens.lazy.compactMap({ TerminalPaths.resolve($0, cwd: cwd, elsewhere: projects) }).first else { popover.close(); return }
         let model = PreviewModel(path: f.path, line: f.line, cwd: cwd, app: app)
         let host = NSHostingController(rootView: PathPreviewView(model: model))
         host.sizingOptions = .preferredContentSize   // placed and resized around the anchor (see HoverCard)

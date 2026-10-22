@@ -44,6 +44,13 @@ import PDFKit
         #expect(f.path == resolved && f.line == line)
     }
     #expect(TerminalPaths.resolve("banner/t00.00.png", cwd: dir.path) == nil)   // gone: a banner says so
+    #expect(TerminalPaths.resolve("banner/мой файл.html.", cwd: dir.path)?.path == resolved)   // Ghostty's, at a sentence's end
+    // An agent in another project naming this one's file: found there, unless two projects have it.
+    let other = dir.appendingPathComponent("other").path, twin = dir.appendingPathComponent("twin")
+    #expect(TerminalPaths.resolve("banner/мой файл.html", cwd: other, elsewhere: [dir.path, other])?.path == resolved)
+    try FileManager.default.createDirectory(at: twin.appendingPathComponent("banner"), withIntermediateDirectories: true)
+    try "<p>".write(to: twin.appendingPathComponent("banner/мой файл.html"), atomically: true, encoding: .utf8)
+    #expect(TerminalPaths.resolve("banner/мой файл.html", cwd: other, elsewhere: [dir.path, twin.path]) == nil)
 }
 
 /// An extension's `open` action opens what its data names, but can't run what its data says: a link field set to

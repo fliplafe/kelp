@@ -4540,12 +4540,12 @@
         }
       }
     },
-    "No file “%@” in %@.": {
+    "No file “%@” in %@ or your other projects.": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "В %2$@ нет файла «%1$@»."
+            "value": "Нет файла «%1$@» ни в %2$@, ни в других проектах."
           }
         }
       }
