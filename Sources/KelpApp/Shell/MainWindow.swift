@@ -3,16 +3,18 @@ import SwiftUI
 import Core
 import WorkbenchKit
 
-/// The window, as Finder and Xcode are on macOS 26: projects & agents in a sidebar the full height of the window (the
-/// traffic lights sit in it), then the window bar (where you are, ⌘P, the inspector toggle) over editor area | inspector.
-/// Their first rows (search, tab strips, panel icons) line up as the second row.
+/// The window, as Arc and Safari are: one surface — projects & agents in the sidebar (the traffic lights sit in it), the
+/// window bar (where you are, ⌘P), the inspector — wrapped round the editor area, a card with rounded corners. The
+/// panels' first rows (search, panel icons) line up with the card's tab strips. An auto-hidden panel (and focus mode's)
+/// comes in over the card instead, floating clear of the window's edges.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let editors = EditorHost()
-    let inspector = InspectorController()
-    private let split = NSSplitViewController()
-    private var inspectorItem: NSSplitViewItem!
-    private var sidebarItem: NSSplitViewItem!
+    let inspector: InspectorController
+    private let sidebar: SidebarController
+    private let split = ShellSplit()
+    private let inspectorItem: NSSplitViewItem
+    private let sidebarItem: NSSplitViewItem
     /// Focus mode (⌃⌘Z): both panels away; they slide in while the pointer is at the window's edge.
     /// Holds the panels' state from before, to put back on leaving.
     private var focusMode: (sidebar: Bool, inspector: Bool)?
@@ -21,6 +23,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Auto-hide panels the toggle (⌘0 / ⌥⌘0) pinned: they stay in like a normal panel until it's pressed again.
     private var pinned = (sidebar: false, inspector: false)
     private let leftEdge = EdgeTrigger(), rightEdge = EdgeTrigger()
+    /// Where a hiding panel is while it's away, and comes in from.
+    private let leftFloat = Floater(width: 260), rightFloat = Floater(width: 300)
     private let bar = WindowBar()
     /// Fixed in the window bar's corners, whichever panels are open.
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
@@ -29,24 +33,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        sidebar = SidebarController(); inspector = InspectorController()
+        sidebarItem = Self.column(sidebar); inspectorItem = Self.column(inspector)
         super.init(window: w)
         // The title stays set: the Window menu, Mission Control and VoiceOver read it.
         w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.titlebarSeparatorStyle = .none
-        let sb = NSSplitViewItem(sidebarWithViewController: SidebarController())
-        sb.minimumThickness = 220; sb.maximumThickness = 400; sb.canCollapse = true
+        sidebarItem.minimumThickness = 220; sidebarItem.maximumThickness = 400
         let content = NSSplitViewItem(viewController: editors)
         content.minimumThickness = 420
-        inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
-        inspectorItem.minimumThickness = 250; inspectorItem.maximumThickness = 520; inspectorItem.canCollapse = true
+        inspectorItem.minimumThickness = 250; inspectorItem.maximumThickness = 520
         inspectorItem.isCollapsed = UserDefaults.standard.bool(forKey: "inspector.collapsed")
-        sidebarItem = sb
-        [sb, content, inspectorItem].forEach(split.addSplitViewItem)
+        [sidebarItem, content, inspectorItem].forEach(split.addSplitViewItem)
         split.splitView.autosaveName = "main.split"
         let root = NSViewController(); root.view = DropRoot(); root.addChild(split)
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
         root.view.pin(split.view)
-        for v in [bar, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        for v in [bar, leftFloat, rightFloat, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        leftFloat.attach(leading: true); rightFloat.attach(leading: false)
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
         rightEdge.onEnter = { [weak self] in self?.peek(sidebar: false) }
@@ -83,6 +87,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self?.setAutoHide(sidebar: false, $0)
             self?.inspectorToggle.menu = Self.autoHideMenu(String(localized: "Auto-Hide Inspector"), "workbench.inspector.autoHide", $0)
         }
+    }
+    /// A panel's column. It holds the panel while it's docked; while the panel hides (auto-hide, focus mode) the panel is
+    /// in its floater and the column stays collapsed.
+    private static func column(_ panel: NSViewController) -> NSSplitViewItem {
+        let slot = NSViewController(); slot.view = NSView(); slot.addChild(panel); slot.view.pin(panel.view)
+        let item = NSSplitViewItem(viewController: slot)
+        item.canCollapse = true; item.holdingPriority = .init(260)   // a resized window widens the editor area, not the panels
+        return item
     }
     /// The toggles' right-click menu: the panel's auto-hide, as in Settings › Appearance.
     private static func autoHideMenu(_ title: String, _ key: String, _ on: Bool) -> NSMenu {
@@ -124,35 +136,36 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         UserDefaults.standard.set(inspectorItem.isCollapsed, forKey: "inspector.collapsed")
     }
     func showInspector(panel: String) {
-        if inspectorItem.isCollapsed { if hides(inspectorItem) { peek(sidebar: false) } else { toggleInspectorPanel() } }
+        if inspectorItem.isCollapsed, peeking !== inspectorItem { if hides(inspectorItem) { peek(sidebar: false) } else { toggleInspectorPanel() } }
         inspector.show(panel: panel)
     }
     @objc func toggleSidebarPanel() {
-        if focusMode != nil { togglePeek(sidebarItem) } else if autoHide.sidebar { togglePin(sidebarItem) } else { split.toggleSidebar(nil) }
+        if focusMode != nil { togglePeek(sidebarItem) } else if autoHide.sidebar { togglePin(sidebarItem) } else { sidebarItem.animator().isCollapsed.toggle() }
     }
-    var sidebarShown: Bool { !sidebarItem.isCollapsed }
-    var inspectorShown: Bool { !inspectorItem.isCollapsed }
+    var sidebarShown: Bool { !sidebarItem.isCollapsed || peeking === sidebarItem }
+    var inspectorShown: Bool { !inspectorItem.isCollapsed || peeking === inspectorItem }
 
-    /// Quitting: a peeking panel goes and focus mode's panels come back first, or the split's autosave would start the next launch wrong.
+    /// Quitting: focus mode's panels come back first, or the split's autosave would start the next launch wrong.
     func leaveFocusMode() {
-        peeking?.isCollapsed = true; stopPeek()
+        stopPeek()
         guard let was = focusMode else { return }
         focusMode = nil
+        place()
         sidebarItem.isCollapsed = was.sidebar; inspectorItem.isCollapsed = was.inspector
-        updateEdges(); sidebarToggle.isHidden = false; inspectorToggle.isHidden = false
+        sidebarToggle.isHidden = false; inspectorToggle.isHidden = false
     }
 
     @objc func toggleFocusMode() {
+        stopPeek()
         if let was = focusMode {
-            focusMode = nil; stopPeek()
+            focusMode = nil; place()
             sidebarItem.animator().isCollapsed = was.sidebar; inspectorItem.animator().isCollapsed = was.inspector
         } else {
-            stopPeek()
             focusMode = (sidebarItem.isCollapsed || hides(sidebarItem), inspectorItem.isCollapsed || hides(inspectorItem))
+            place()   // before the columns close: the floaters take their widths
             sidebarItem.animator().isCollapsed = true; inspectorItem.animator().isCollapsed = true
         }
         let on = focusMode != nil
-        updateEdges()
         sidebarToggle.isHidden = on; inspectorToggle.isHidden = on
     }
     var inFocusMode: Bool { focusMode != nil }
@@ -162,73 +175,165 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if sidebar { autoHide.sidebar = on; pinned.sidebar = false; focusMode?.sidebar = on } else { autoHide.inspector = on; pinned.inspector = false; focusMode?.inspector = on }
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
         if peeking === item { stopPeek() }
+        place()
         if focusMode == nil {
             item.animator().isCollapsed = on
             if !sidebar { UserDefaults.standard.set(on, forKey: "inspector.collapsed") }
         }
-        updateEdges()
     }
     private func hides(_ item: NSSplitViewItem) -> Bool {
         focusMode != nil || (item === sidebarItem ? autoHide.sidebar && !pinned.sidebar : autoHide.inspector && !pinned.inspector)
     }
-    private func updateEdges() { leftEdge.isHidden = !hides(sidebarItem); rightEdge.isHidden = !hides(inspectorItem) }
+    private func floater(_ item: NSSplitViewItem) -> Floater { item === sidebarItem ? leftFloat : rightFloat }
 
-    /// Focus mode and auto-hide: the pointer at an edge brings that panel in; once it leaves the panel for the rest
-    /// of the window, the panel goes again. In focus mode ⌘0 / ⌥⌘0 bring it in the same way; with auto-hide they pin it.
-    /// (A tracking area on the editor used to end it: while the inspector slid in the editor was still under the
-    /// pointer for a frame, so it went straight back out.)
+    /// Each panel where it belongs now: in its column, or in its floater while it hides. A panel leaving its open column
+    /// for the floater keeps its width there.
+    private func place() {
+        for (item, panel, edge) in [(sidebarItem, sidebar.view, leftEdge), (inspectorItem, inspector.view, rightEdge)] {
+            let hide = hides(item), f = floater(item), column = item.viewController.view
+            edge.isHidden = !hide
+            if hide, panel.superview !== f.box {
+                if !item.isCollapsed, column.frame.width >= item.minimumThickness { f.width = column.frame.width }
+                f.box.pin(panel)
+            } else if !hide, panel.superview !== column {
+                column.pin(panel)
+            }
+        }
+    }
+
+    /// Focus mode and auto-hide: the pointer at an edge brings that panel in over the editor area (which keeps its size:
+    /// terminals aren't resized, nothing reflows); once the pointer leaves the panel for the rest of the window, the
+    /// panel goes again. In focus mode ⌘0 / ⌥⌘0 bring it in the same way; with auto-hide they pin it.
     private var peeking: NSSplitViewItem?
     private var peekMoves: Any?, peekedAt = Date.distantPast
     /// The pointer has been over the panel since it came in (from the edge at once; after ⌘0, once it gets there).
     private var peekReached = false
     private func peek(sidebar: Bool) {
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
-        guard hides(item), item.isCollapsed else { return }
+        guard hides(item), peeking !== item else { return }
         endPeek(); peeking = item; peekedAt = Date(); peekReached = false
-        editors.hold(from: sidebar ? .minX : .maxX)   // over the editor area, not squeezing it
-        item.animator().isCollapsed = false
+        floater(item).slide(in: true)
         window?.acceptsMouseMovedEvents = true
         peekMoves = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] e in self?.pointerMoved(e); return e }
     }
     private func pointerMoved(_ e: NSEvent) {
         guard let item = peeking, e.window === window, let root = window?.contentView else { return }
-        let p = root.convert(e.locationInWindow, from: nil), panel = item.viewController.view
+        let p = root.convert(e.locationInWindow, from: nil)
         let edge = item === sidebarItem ? leftEdge : rightEdge
-        if panel.convert(panel.bounds, to: root).contains(p) || edge.frame.contains(p) { peekReached = true; return }
+        if floater(item).frame.contains(p) || edge.frame.contains(p) { peekReached = true; return }
         // Not while it slides in: the panel isn't where the pointer is headed yet.
         if peekReached, Date().timeIntervalSince(peekedAt) > 0.4 { endPeek() }
     }
-    private func endPeek() {
+    private func endPeek(animated: Bool = true) {
         if let m = peekMoves { NSEvent.removeMonitor(m); peekMoves = nil }
         guard let p = peeking else { return }
         peeking = nil
-        // The editor area fills its place again once the panel is gone (unless another one came in meanwhile).
-        NSAnimationContext.runAnimationGroup { _ in p.animator().isCollapsed = true } completionHandler: { [weak self] in   // on main
-            MainActor.assumeIsolated {
-                guard let self, self.peeking == nil else { return }
-                self.window?.contentView?.layoutSubtreeIfNeeded()   // the split at its final widths first, or a terminal sees the narrow one
-                self.editors.hold(from: nil)
-            }
-        }
+        floater(p).slide(in: false, animated: animated)
     }
-    /// The panels change for good (focus mode, auto-hide switched): no peek, and the editor area fills its place.
-    private func stopPeek() {
-        if let m = peekMoves { NSEvent.removeMonitor(m); peekMoves = nil }
-        peeking = nil; editors.hold(from: nil)
-    }
+    /// The panels change for good (focus mode, auto-hide switched, pinned): the peeking one goes at once.
+    private func stopPeek() { endPeek(animated: false) }
     private func togglePeek(_ item: NSSplitViewItem) { if peeking === item { endPeek() } else { peek(sidebar: item === sidebarItem) } }
-    /// Auto-hide: pinned, the panel stays (a peeking one just stops peeking and the editor area makes room);
-    /// unpinned, it goes and comes in at the edge again.
+    /// Auto-hide: pinned, the panel stays in its column (a peeking one moves there); unpinned, it goes and comes in at
+    /// the edge again.
     private func togglePin(_ item: NSSplitViewItem) {
         let pin = item === sidebarItem ? !pinned.sidebar : !pinned.inspector
         if item === sidebarItem { pinned.sidebar = pin } else { pinned.inspector = pin }
         if peeking === item { stopPeek() }
+        place()
         item.animator().isCollapsed = !pin
-        updateEdges()
     }
 
     /// Closing the window quits (the daemon keeps agents running) — through the unsaved-files question; Cancel keeps it.
     func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
+}
+
+/// The window's split: its dividers aren't drawn (the panels and the gap round the card are one surface), and each can
+/// be dragged across that gap too, not only at the panel's edge.
+@MainActor
+private final class ShellSplit: NSSplitViewController {
+    init() {
+        super.init(nibName: nil, bundle: nil)
+        let v = Seamless(); v.isVertical = true; v.dividerStyle = .thin
+        splitView = v
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func splitView(_ v: NSSplitView, effectiveRect proposed: NSRect, forDrawnRect drawn: NSRect, ofDividerAt i: Int) -> NSRect {
+        var r = super.splitView(v, effectiveRect: proposed, forDrawnRect: drawn, ofDividerAt: i)
+        r.size.width += Card.gap; if i > 0 { r.origin.x -= Card.gap }   // into the gap, which is on the editor area's side
+        return r
+    }
+    private final class Seamless: NSSplitView { override var dividerColor: NSColor { .clear } }
+}
+
+/// A hiding panel's place (auto-hide, focus mode): it holds the panel while it's away and, at the window's edge, brings
+/// it in over the editor area, clear of the window's edges, with rounded corners and a shadow, as Arc's sidebar does.
+@MainActor
+final class Floater: NSView {
+    private static let inset: CGFloat = 6, radius: CGFloat = 12
+    /// The panel's background, the same material the window's surface is.
+    let box = NSVisualEffectView()
+    private var edge: NSLayoutConstraint?, widthC: NSLayoutConstraint?
+    private var shown = false
+    var width: CGFloat { didSet { widthC?.constant = width } }
+
+    init(width: CGFloat) {
+        self.width = width
+        super.init(frame: .zero)
+        isHidden = true; wantsLayer = true
+        box.material = .sidebar; box.blendingMode = .behindWindow; box.state = .followsWindowActiveState
+        box.wantsLayer = true; box.layer?.cornerRadius = Self.radius; box.layer?.cornerCurve = .continuous; box.layer?.masksToBounds = true
+        box.layer?.borderWidth = 1
+        pin(box)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// Against the window's leading or trailing edge, its full height; out of sight until it slides in.
+    func attach(leading: Bool) {
+        guard let s = superview else { return }
+        let e = leading ? leadingAnchor.constraint(equalTo: s.leadingAnchor) : s.trailingAnchor.constraint(equalTo: trailingAnchor)
+        let w = widthAnchor.constraint(equalToConstant: width)
+        NSLayoutConstraint.activate([e, w, topAnchor.constraint(equalTo: s.topAnchor, constant: Self.inset),
+                                     bottomAnchor.constraint(equalTo: s.bottomAnchor, constant: -Self.inset)])
+        edge = e; widthC = w
+    }
+
+    func slide(in on: Bool, animated: Bool = true) {
+        guard let edge, on != shown else { return }
+        shown = on
+        let away = -width - 2 * Self.inset - 20   // the shadow out of sight too
+        if on, isHidden { edge.constant = away; isHidden = false; superview?.layoutSubtreeIfNeeded() }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.2 : 0
+            ctx.timingFunction = CAMediaTimingFunction(name: on ? .easeOut : .easeIn)
+            edge.animator().constant = on ? Self.inset : away
+        } completionHandler: { [weak self] in   // on main
+            MainActor.assumeIsolated { if let self, !self.shown { self.isHidden = true } }
+        }
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        box.layer?.borderColor = NSColor.separatorColor.cgColor
+        layer?.shadowColor = NSColor.shadowColor.cgColor; layer?.shadowOpacity = 0.3; layer?.shadowRadius = 14; layer?.shadowOffset = .zero
+    }
+    override func layout() {
+        super.layout()
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Self.radius, cornerHeight: Self.radius, transform: nil)
+    }
+}
+
+/// The editor area's card: rounded, a hairline round it, in from the panels and the window's edges, so the panels and
+/// the window bar read as one surface round it.
+@MainActor
+final class Card: NSView {
+    static let gap: CGFloat = 6
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true; layer?.cornerRadius = 10; layer?.cornerCurve = .continuous; layer?.masksToBounds = true; layer?.borderWidth = 1
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor; layer?.borderColor = NSColor.separatorColor.cgColor }
 }
 
 extension NSButton {
@@ -254,11 +359,16 @@ final class EdgeTrigger: NSView {
     override func hitTest(_ p: NSPoint) -> NSView? { nil }   // clicks go to whatever is under it
 }
 
+/// The window's surface, in the sidebar's material: the panels and the gap round the editor area are this.
 /// Files and folders dropped where nothing else takes them (the empty workspace, the window bar, the inspector): as if
 /// dropped on the Dock icon.
 @MainActor
-private final class DropRoot: NSView {
-    init() { super.init(frame: .zero); registerForDraggedTypes([.fileURL]) }
+private final class DropRoot: NSVisualEffectView {
+    init() {
+        super.init(frame: .zero)
+        material = .sidebar; blendingMode = .behindWindow; state = .followsWindowActiveState
+        registerForDraggedTypes([.fileURL])
+    }
     required init?(coder: NSCoder) { fatalError() }
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { Workbench.files(s).isEmpty ? [] : .copy }
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
@@ -270,23 +380,8 @@ private final class DropRoot: NSView {
 /// Holds one editor area per recently used workspace, so switching back is instant (terminals stay attached).
 @MainActor
 final class EditorHost: NSViewController {
-    /// The editor area fills this view; while a panel peeks in over it, it keeps its width instead (`hold`).
-    private var fill: [NSLayoutConstraint] = [], held: [NSLayoutConstraint] = []
-
-    /// While a panel peeks in (auto-hide, focus mode) the editor area keeps its size and the panel covers its side
-    /// (`edge`: where the panel comes from), as a panel over the window would: terminals aren't resized (their agents
-    /// redraw everything at a new width) and nothing reflows. Nil lets it fill the view again.
-    func hold(from edge: NSRectEdge?) {
-        guard let area = current?.view else { return }
-        NSLayoutConstraint.deactivate(held); held = []
-        guard let edge else { NSLayoutConstraint.activate(fill); return }
-        NSLayoutConstraint.deactivate(fill)
-        held = [area.widthAnchor.constraint(equalToConstant: area.frame.width),
-                edge == .minX ? area.trailingAnchor.constraint(equalTo: view.trailingAnchor) : area.leadingAnchor.constraint(equalTo: view.leadingAnchor)]
-        NSLayoutConstraint.activate(held)
-        view.clipsToBounds = true
-    }
-
+    /// The editor area (or the welcome) is in this card, under the window bar, which lies over this view's top.
+    private let card = Card()
     private var areas: [String: EditorArea] = [:]
     private var recent: [String] = []
     private(set) var current: EditorArea?
@@ -296,7 +391,9 @@ final class EditorHost: NSViewController {
     private static let keep = 4
 
     override func loadView() {
-        view = NSView(); showWelcome()
+        view = NSView()
+        view.pin(card, inset: NSEdgeInsets(top: WindowBar.height, left: Card.gap, bottom: Card.gap, right: Card.gap))
+        showWelcome()
         // Daemon state: workspaces that are gone leave; sessions' tabs come and show their status and context ring.
         track { AppModel.shared.repos } changed: { [weak self] _ in self?.refresh() }
         track { AppModel.shared.worktrees } changed: { [weak self] _ in self?.refresh() }
@@ -306,8 +403,6 @@ final class EditorHost: NSViewController {
 
     func show(_ id: String?) {
         if let c = current, c.workspaceId == id { return }
-        // A hold's width is on the area itself and outlives its removal: left on, the area could never narrow again.
-        NSLayoutConstraint.deactivate(held); held = []
         current?.view.removeFromSuperview()
         guard let id, AppModel.shared.worktree(id) != nil else { current = nil; showWelcome(); return }
         welcome?.removeFromSuperview(); welcome = nil
@@ -318,12 +413,7 @@ final class EditorHost: NSViewController {
         for old in recent.dropFirst(Self.keep) where areas[old]?.editedFiles.isEmpty != false { areas[old]?.removeFromParent(); areas[old] = nil }
         recent = Array(recent.prefix(Self.keep))
         current = area
-        area.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(area.view)
-        // Under the window bar, which lies over this view's top (the split view is the window's full height).
-        fill = [area.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), area.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)]
-        NSLayoutConstraint.activate([area.view.topAnchor.constraint(equalTo: view.topAnchor, constant: WindowBar.height),
-                                     area.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)] + fill)
+        card.pin(area.view)
         area.reconcile()
         area.focusSelected()
     }
@@ -357,7 +447,7 @@ final class EditorHost: NSViewController {
         if let w = welcome as? WelcomeView, w.hasRepos == hasRepos { return }
         welcome?.removeFromSuperview()
         let w = WelcomeView(hasRepos: hasRepos)
-        view.pin(w, inset: NSEdgeInsets(top: WindowBar.height, left: 0, bottom: 0, right: 0))   // under the window bar
+        card.pin(w)
         welcome = w
     }
 }

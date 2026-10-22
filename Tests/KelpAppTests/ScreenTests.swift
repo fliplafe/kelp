@@ -101,28 +101,18 @@ extension SharedAppModel {
     }
 }
 
-/// Switching workspaces from a peeking sidebar (auto-hide) used to leave the old editor area held at its width for good:
-/// back on it, showing the sidebar for real widened the window by the sidebar, past the screen's edge.
-@Test func showingTheSidebarAfterASwitchFromItsPeekKeepsTheWindowsWidth() throws {
+/// Focus mode's panels wait in floaters over the editor area (they don't squeeze it when they come in) and go back to
+/// their columns after.
+@Test func focusModesPanelsFloatOverTheEditorAreaAndComeBack() throws {
     _ = testHome
-    let m = AppModel.shared
-    let saved = m.worktrees
-    defer { m.worktrees = saved }
-    m.worktrees = [desk("w1", "a"), desk("w2", "b")]
-    let host = EditorHost(), split = NSSplitViewController()
-    let sidebar = NSSplitViewItem(sidebarWithViewController: NSViewController())
-    sidebar.viewController.view = NSView(); sidebar.minimumThickness = 220; sidebar.isCollapsed = true
-    [sidebar, NSSplitViewItem(viewController: host)].forEach(split.addSplitViewItem)
-    let window = NSWindow(contentRect: .zero, styleMask: [.titled, .resizable], backing: .buffered, defer: true)   // never shown
-    window.contentViewController = split
-    window.setContentSize(NSSize(width: 1000, height: 600))
-    func settle() { window.contentView?.layoutSubtreeIfNeeded() }
-    host.show("w1"); settle()
-    host.hold(from: .minX); sidebar.isCollapsed = false; settle()      // the sidebar peeks in
-    host.show("w2"); settle()                                          // a workspace picked in it
-    sidebar.isCollapsed = true; host.hold(from: nil); settle()         // the pointer leaves
-    host.show("w1"); settle()                                          // back
-    sidebar.isCollapsed = false; settle()                              // ⌘0 pins the sidebar
-    #expect(window.frame.width == 1000, "the window grew to \(window.frame.width)")
+    let main = MainWindowController()
+    let split = try #require(main.window?.contentView?.subviews.first)   // the split's view; the bar and the floaters lie over it
+    #expect(main.inspector.view.isDescendant(of: split))
+    main.toggleFocusMode()
+    #expect(!main.inspector.view.isDescendant(of: split))
+    main.toggleInspectorPanel()   // ⌥⌘0 brings it in
+    #expect(main.inspectorShown && !main.inspector.view.isDescendant(of: split))
+    main.toggleFocusMode()
+    #expect(main.inspector.view.isDescendant(of: split))
 }
 }

@@ -73,9 +73,6 @@ final class WindowBar: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func updateLayer() { layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor }
-    override var wantsUpdateLayer: Bool { true }
-
     private static func chip(_ symbol: String?) -> NSButton {
         let b = NSButton(title: "", target: nil, action: nil)
         b.bezelStyle = .recessed; b.showsBorderOnlyWhileMouseInside = true
