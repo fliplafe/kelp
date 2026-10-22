@@ -9,7 +9,8 @@ import WorkbenchKit
 final class PaneView: NSView {
     let sessionId: String
     let app: AppModel
-    private var ghostty: GhosttyTerminalView
+    /// None once it let go of its attach (`letGo`), until it's shown again.
+    private var ghostty: GhosttyTerminalView?
     private let ended = NSStackView()
     private let endedLabel = NSTextField(labelWithString: String(localized: "Session ended"))
     private let restartButton = NSButton()
@@ -26,7 +27,6 @@ final class PaneView: NSView {
 
     init(session: Session, app: AppModel) {
         sessionId = session.id; self.app = app; attachedTo = app.connections
-        ghostty = Self.terminal(session)
         super.init(frame: .zero)
         wantsLayer = true
         buildTerminal(session)
@@ -48,7 +48,8 @@ final class PaneView: NSView {
     }
 
     private func buildTerminal(_ s: Session) {
-        let id = s.id, g = ghostty
+        let id = s.id, g = Self.terminal(s)
+        ghostty = g
         g.translatesAutoresizingMaskIntoConstraints = false
         addSubview(g, positioned: .below, relativeTo: nil)
         NSLayoutConstraint.activate([g.topAnchor.constraint(equalTo: topAnchor), g.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -102,10 +103,9 @@ final class PaneView: NSView {
     }
 
     private func reattach(_ s: Session) {
-        let focused = window?.firstResponder === ghostty
+        let focused = ghostty.map { window?.firstResponder === $0 } ?? false
         findBar?.removeFromSuperview(); findBar = nil   // it searched the old terminal
-        ghostty.removeFromSuperview()
-        ghostty = Self.terminal(s)
+        ghostty?.removeFromSuperview()
         attached = true; attachedTo = app.connections
         buildTerminal(s)
         if focused { focus() }
@@ -117,7 +117,27 @@ final class PaneView: NSView {
             ended.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         }
     }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle(shown: true) }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle(shown: true)
+        offScreen?.cancel(); offScreen = nil
+        guard window == nil, let minutes = app.settings.number("sessions.hibernateMinutes"), minutes > 0 else { return }
+        offScreen = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(minutes * 60))
+            if !Task.isCancelled { self?.letGo() }
+        }
+    }
+
+    private var offScreen: Task<Void, Never>?
+
+    /// Out of sight as long as an idle agent takes to pause: its terminal goes, and `kelp attach` with it. An attached
+    /// session counts as watched and never pauses, and a tab once shown stays built while it's in the layout. Shown
+    /// again, it attaches anew (`settle`): one history replay, or a wake if its agent was paused meanwhile.
+    private func letGo() {
+        guard window == nil, attached else { return }
+        findBar?.removeFromSuperview(); findBar = nil
+        ghostty?.removeFromSuperview(); ghostty = nil
+        attached = false
+    }
 
     /// A link ⌘-clicked in the terminal: local pages open as a browser tab, the rest in the default browser; ⌥ swaps
     /// the two. Files open as a tab, ⌥ or not. Nothing else opens: a program prints these links (OSC 8 hides the target
@@ -136,23 +156,24 @@ final class PaneView: NSView {
 
     func update(_: Session) { settle() }
 
-    func focus() { ghostty.focus() }
+    func focus() { ghostty?.focus() }
 
     /// Columns × rows now; the last one seen anywhere (`Workbench.terminalGrid`) sizes the next terminal before it's on screen.
     var gridSize: (cols: Int, rows: Int)? {
-        if let g = ghostty.gridSize { Workbench.terminalGrid = g; return g }
+        if let g = ghostty?.gridSize { Workbench.terminalGrid = g; return g }
         return nil
     }
 
     /// What's on screen (tests, "copy context" fallback).
-    var visibleText: String { ghostty.visibleText }
+    var visibleText: String { ghostty?.visibleText ?? "" }
 
     /// Text dropped or dictated into the prompt.
-    func insert(_ text: String) { ghostty.insert(text) }
+    func insert(_ text: String) { ghostty?.insert(text) }
 
     /// Right-click where the program in the terminal doesn't take the mouse itself, like Terminal's menu.
     override func menu(for event: NSEvent) -> NSMenu? {
-        let g = ghostty, m = NSMenu()
+        guard let g = ghostty else { return nil }
+        let m = NSMenu()
         m.addItem(withTitle: String(localized: "Copy"), action: #selector(GhosttyTerminalView.copy(_:)), keyEquivalent: "").target = g
         m.items.last?.isEnabled = g.hasSelection; m.autoenablesItems = false
         m.addItem(withTitle: String(localized: "Paste"), action: #selector(GhosttyTerminalView.paste(_:)), keyEquivalent: "").target = g
@@ -169,7 +190,7 @@ final class PaneView: NSView {
     private var findBar: FindBar?
 
     @objc func performFindPanelAction(_ sender: Any?) {
-        let g = ghostty
+        guard let g = ghostty else { return }
         switch NSFindPanelAction(rawValue: UInt((sender as? NSMenuItem)?.tag ?? 1)) {
         case .next?: g.perform(action: "navigate_search:next")
         case .previous?: g.perform(action: "navigate_search:previous")
@@ -179,15 +200,15 @@ final class PaneView: NSView {
     }
 
     private func showFind(_ needle: String?) {
-        let g = ghostty
+        guard let g = ghostty else { return }
         let bar = findBar ?? {
             let b = FindBar()
             b.onSearch = { g.perform(action: "search:" + $0) }
             b.onStep = { g.perform(action: "navigate_search:" + ($0 ? "next" : "previous")) }
             b.onClose = { [weak self] in g.perform(action: "end_search"); self?.focus() }
             b.translatesAutoresizingMaskIntoConstraints = false; addSubview(b)
-            NSLayoutConstraint.activate([b.topAnchor.constraint(equalTo: ghostty.topAnchor, constant: 8),
-                                         b.trailingAnchor.constraint(equalTo: ghostty.trailingAnchor, constant: -14)])
+            NSLayoutConstraint.activate([b.topAnchor.constraint(equalTo: g.topAnchor, constant: 8),
+                                         b.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14)])
             findBar = b; return b
         }()
         bar.begin(needle)

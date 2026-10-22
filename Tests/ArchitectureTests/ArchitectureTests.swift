@@ -179,6 +179,7 @@ private func codeOnly(_ s: String) -> String {
         "Notifier.swift": "a notification's summary waits a moment for the agent's last line",
         "Shell/Latency.swift": "\"Loading…\" only once a wait is long enough to notice",
         "Builtins/Agents/UsageTab.swift": "a \"still reading\" hint after 3 s",
+        "Builtins/Agents/PaneView.swift": "a terminal out of sight lets go of its agent once it could pause idle",
         "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
         "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
         "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list"
