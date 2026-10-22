@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-// The rules in AGENTS.md, read from the sources. Each number is a ceiling that only goes down: when a change brings a
+// The rules in docs/architecture.md, read from the sources. Each number is a ceiling that only goes down: when a change brings a
 // count under it, lower it to the new count in the same commit, so nothing creeps back.
 
 private let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

@@ -9,3 +9,5 @@ Vendor/
 skills-lock.json
 local.mk
 .s6/
+AGENTS.md
+CLAUDE.md

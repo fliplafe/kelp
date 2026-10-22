@@ -55,4 +55,4 @@ recipe.commit: "Write a conventional commit for: {stagedPatch}"
 
 ## Architecture
 
-See [AGENTS.md](AGENTS.md). License: MIT.
+See [docs/architecture.md](docs/architecture.md). License: MIT.
