@@ -73,7 +73,7 @@ extension Sessions {
         }
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-        let candidates = idle.filter { Self.resumable($0.snapshot, manifests) }
+        let candidates = idle.filter { Self.resumable($0.snapshot, manifests) }.map { ($0, $0.inputs) }
         // Off the ticker: waiting for programs to exit (up to 3 s each) must not hold up status for everyone else.
         let start = pausingIdle.withLock { busy -> Bool in
             guard !busy, !candidates.isEmpty else { return false }
@@ -81,16 +81,20 @@ extension Sessions {
         }
         guard start else { return }
         Thread.detachNewThread { [self] in
-            for ls in candidates { pauseIdle(ls) }
+            for (ls, seen) in candidates { pauseIdle(ls, inputs: seen) }
             pausingIdle.withLock { $0 = false }
         }
     }
 
     /// Under its wake lock, as a wake is: one that comes meanwhile waits until this program is gone, so two never write one
-    /// log. Taken out of `live` only if nobody attached since the check.
-    private func pauseIdle(_ ls: LiveSession) {
-        wakeLocks.withLock(ls.snapshot.id) {
-            guard live.remove(ls, if: { !$0.isAttached }) else { return }
+    /// log. Taken out of `live` only if nobody attached and no input came since the check (`seen`): input never goes to a
+    /// program that's about to be stopped. Input that comes once it's out waits for the pause and wakes it (`pausing`).
+    func pauseIdle(_ ls: LiveSession, inputs seen: Int) {
+        let id = ls.snapshot.id
+        pausing.withLock { _ = $0.insert(id) }
+        defer { pausing.withLock { _ = $0.remove(id) } }
+        wakeLocks.withLock(id) {
+            guard live.remove(ls, if: { $0.letGoIdle(seen: seen) }) else { return }
             hangUpStreams(ls)   // none by the check; one that came just after it ends too
             ls.markHibernated()
             Self.waitGone(ls.pty.terminate())   // SIGKILL after 2 s for what ignores the hangup: a wake must not start a second copy

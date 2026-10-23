@@ -349,6 +349,27 @@ final class LiveSession: Sendable {
     /// Out of `live` with its program still to stop (paused, deleted): nobody attaches from now on. Who was attached.
     func letGo() -> Set<Int> { state.withLock { s in s.letGo = true; defer { s.attached = [] }; return s.attached } }
 
+    /// Input from a client, `work` writing it: nil (nothing done) once the session was let go, its program stopping, so
+    /// the caller wakes it again instead. An idle pause doesn't let go of one with input on its way (`letGoIdle`).
+    func input<T>(_ work: () throws -> T) rethrows -> T? {
+        let open = state.withLock { s -> Bool in
+            guard !s.letGo else { return false }
+            s.inputs += 1; s.inputsInFlight += 1; return true
+        }
+        guard open else { return nil }
+        defer { state.withLock { $0.inputsInFlight -= 1 } }
+        return try work()
+    }
+    /// Inputs taken so far: an idle pause lets go only if none came after it looked.
+    var inputs: Int { state.withLock { $0.inputs } }
+    /// `letGo` for an idle pause: only while nobody is attached and no input came since there were `seen`.
+    func letGoIdle(seen: Int) -> Bool {
+        state.withLock { s in
+            guard s.attached.isEmpty, s.inputs == seen, s.inputsInFlight == 0 else { return false }
+            s.letGo = true; return true
+        }
+    }
+
     /// Given up to the kelpd that takes over (`Sessions.handOver`), its output no longer read here: what that one needs to
     /// show the same history. The log holds every byte the ring does by now (it's written as output is handled).
     func handedOver(fd: Int32) -> Handover.Session {
@@ -389,6 +410,7 @@ extension LiveSession {
         var redrawUntil = Date.distantPast
         var final = false                // deleted, or its last record saved: nothing it does may save its record again
         var letGo = false                // out of `live`, its program stopping: no new attach (`letGo()`)
+        var inputs = 0, inputsInFlight = 0   // client input taken (`input`)
         var ended = false
 
         // What the output says.

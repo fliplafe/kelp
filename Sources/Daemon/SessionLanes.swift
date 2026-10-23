@@ -47,18 +47,20 @@ protocol SessionInput: Handled where Service == Sessions {
 extension SessionInput {
     /// Off the reader thread (another handler, a test): here, in order with the session's other input.
     func handle(_ sessions: Sessions) throws -> Result {
-        if sessions.lanes.isClear(id), let ls = sessions.existing(id) { return try apply(to: ls) }
+        if sessions.lanes.isClear(id), let ls = sessions.existing(id), let r = try ls.input({ try apply(to: ls) }) { return r }
         try sessions.mustWake(id)
-        return try sessions.lanes.runHere(id) { try apply(to: sessions.liveSession(id)) }
+        return try sessions.lanes.runHere(id) { try sessions.withInput(id) { try apply(to: $0) } }
     }
 
     /// On the connection's reader thread: `done` with the reply's result, now or from the lane.
     static func answerInOrder(_ p: JSONValue, _ sessions: Sessions, done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
         do {
             let m = try decoded(p)
-            if sessions.lanes.isClear(m.id), let ls = sessions.existing(m.id) { done(.success(try JSONEncoder().encode(m.apply(to: ls)))); return }
+            if sessions.lanes.isClear(m.id), let ls = sessions.existing(m.id), let r = try ls.input({ try m.apply(to: ls) }) {
+                done(.success(try JSONEncoder().encode(r))); return
+            }
             try sessions.mustWake(m.id)
-            sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(m.apply(to: sessions.liveSession(m.id))) }) }
+            sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(sessions.withInput(m.id) { try m.apply(to: $0) }) }) }
         } catch { done(.failure(error)) }
     }
 }

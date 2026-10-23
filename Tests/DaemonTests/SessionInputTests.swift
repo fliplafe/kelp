@@ -150,3 +150,36 @@ import Agents
     await withCheckedContinuation { c in old.inOrder { c.resume() } }
     #expect(try w.d.store.session(s.id)?.status != .hibernated)
 }
+
+/// Input that came after an idle pause looked keeps the agent running: the pause would stop the program it was just
+/// given to, and the text, answered OK, would be gone.
+@Test func anIdlePauseLeavesAnAgentThatJustGotInput() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "late-input")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    let ls = try #require(w.d.sessions.live[s.id])
+    let seen = ls.inputs
+    _ = try await w.c.call(SessionWrite(id: s.id, text: "hello\r"))
+    w.d.sessions.pauseIdle(ls, inputs: seen)
+    #expect(w.d.sessions.live[s.id] === ls)
+}
+
+/// Input that comes while an idle pause stops the program waits for it and wakes the agent: it used to be refused
+/// ("no live session") because the pause hadn't been saved yet.
+@Test func inputDuringAnIdlePauseWakesTheAgent() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "mid-pause")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    let ls = try #require(w.d.sessions.live[s.id])
+    let gate = DispatchSemaphore(value: 0)
+    ls.inOrder { gate.wait() }   // the pause's last save waits behind this: it's out of `live`, not yet saved as paused
+    Thread.detachNewThread { w.d.sessions.pauseIdle(ls, inputs: ls.inputs) }
+    #expect(try await waitFor(5) { w.d.sessions.live[s.id] == nil })
+    let sent = Task { try await w.c.call(SessionWrite(id: s.id, text: "hello\r")) }
+    try await Task.sleep(for: .milliseconds(300))
+    gate.signal()
+    _ = try await sent.value
+    #expect(try #require(w.d.sessions.live[s.id]) !== ls)
+}

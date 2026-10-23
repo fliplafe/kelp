@@ -9,6 +9,7 @@ import Agents
 final class Sessions: Sendable {
     let live = SessionTable()
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
+    let pausing = OSAllocatedUnfairLock<Set<String>>(initialState: [])   // sessions an idle pause is stopping: input waits, then wakes them
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
@@ -50,7 +51,19 @@ final class Sessions: Sendable {
 
     /// Not running: it has to be paused, to be woken for input.
     func mustWake(_ id: String) throws {
-        guard try existing(id) != nil || store.session(id)?.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
+        guard try existing(id) != nil || pausing.withLock({ $0.contains(id) }) || store.session(id)?.status == .hibernated else {
+            throw RPCError.invalidParams("no live session \(id)")
+        }
+    }
+
+    /// `work` with the running session `id`, woken first if paused. Never one an idle pause is stopping: that one is out
+    /// of `live` by then, so the next look waits for the pause and wakes it.
+    func withInput<T>(_ id: String, _ work: (LiveSession) throws -> T) throws -> T {
+        for _ in 0..<3 {
+            let ls = try liveSession(id)
+            if let r = try ls.input({ try work(ls) }) { return r }
+        }
+        throw RPCError.invalidParams("no live session \(id)")
     }
 
     /// The last `bytes` (0 to 16 MB) it printed.
