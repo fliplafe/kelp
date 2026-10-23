@@ -199,13 +199,18 @@ final class Sessions: Sendable {
     /// Under its wake lock, as a wake is: a paused session being opened at this moment can't come back after its record and log
     /// are gone (it would restart an agent for a deleted project and save the record again). A terminal's own tmux session
     /// ends with it unless `keepTmux` (a restart, whose new session attaches to it).
-    func discard(_ s: Session, keepTmux: Bool = false) {
-        if !keepTmux { endOwnTmux(s) }
-        wakeLocks.withLock(s.id) {
-            let ls = live.remove(s.id)
-            if let ls { hangUpStreams(ls); Self.waitGone(ls.discard()) }   // gone before its project or folder goes (SIGKILL after 2 s)
-            do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
-            try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
+    func discard(_ s: Session, keepTmux: Bool = false) { discard([s], keepTmux: keepTmux) }
+
+    /// Several (a project's, a workspace's) stopped together: one wait for all, not up to 3 s each.
+    func discard(_ all: [Session], keepTmux: Bool = false) {
+        if !keepTmux { all.forEach(endOwnTmux) }
+        wakeLocks.withLocks(all.map(\.id)) {
+            let pids = all.compactMap { live.remove($0.id) }.flatMap { ls in hangUpStreams(ls); return ls.discard() }
+            Self.waitGone(pids)   // gone before their project or folder goes (SIGKILL after 2 s)
+            for s in all {
+                do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
+                try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
+            }
         }
     }
 

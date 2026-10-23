@@ -64,7 +64,7 @@ extension RepoRemove: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
         guard let r = try workspaces.store.repo(id) else { throw RPCError.invalidParams("no repo") }
         let desks = Set(try workspaces.store.worktrees(repo: r.id).map(\.id))
-        for s in try workspaces.store.sessions() where desks.contains(s.worktreeId ?? "") { workspaces.sessions.discard(s) }
+        workspaces.sessions.discard(try workspaces.store.sessions().filter { desks.contains($0.worktreeId ?? "") })
         try workspaces.store.delete(r); workspaces.notify(ChangedEvent.repo)
         return Done()
     }
@@ -140,7 +140,7 @@ extension WorktreeRemove: Handled {
         } else {
             try workspaces.sessions.pauseSessions(of: w.id)
         }
-        for s in try workspaces.store.sessions() where s.worktreeId == w.id { workspaces.sessions.discard(s) }
+        workspaces.sessions.discard(try workspaces.store.sessions().filter { $0.worktreeId == w.id })
         try workspaces.store.delete(w)
         workspaces.notify(ChangedEvent.worktree)
         return Done()
@@ -181,7 +181,7 @@ extension Workspaces {
         guard try store.worktrees(repo: r.id).filter({ isMain($0, r) }).count > 1 else {
             throw RPCError.invalidParams("A project keeps at least one workspace; remove the project instead.")
         }
-        for s in try store.sessions() where s.worktreeId == w.id { sessions.discard(s) }
+        sessions.discard(try store.sessions().filter { $0.worktreeId == w.id })
         try store.delete(w)
         notify(ChangedEvent.worktree)
     }

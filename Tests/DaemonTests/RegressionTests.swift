@@ -89,14 +89,21 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("session.kill", .obj(["id": .string(r.id)]))
 }
 
-/// Removing a project ends its programs, a stubborn one too: nothing keeps running out of sight.
+/// Removing a project ends its programs, stubborn ones too: nothing keeps running out of sight. All at once: each
+/// stubborn one takes the 2 s to SIGKILL, and one after another three would hold the user up for 6.
 @Test func removingAProjectEndsItsPrograms() async throws {
     let w = try await world(); defer { w.d.stop() }
     let wt = try await desk(w, "gone")
-    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string(stubbornScript)]), as: Session.self)
-    #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
+    var all: [Session] = []
+    for _ in 0..<3 {
+        let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": .string(stubbornScript)]), as: Session.self)
+        #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("up") == true })
+        all.append(s)
+    }
+    let start = Date()
     _ = try await w.c.call("repo.remove", .obj(["id": .string(w.repo.id)]))
-    #expect(kill(s.pid, 0) != 0)
+    #expect(Date().timeIntervalSince(start) < 4)
+    #expect(all.allSatisfy { kill($0.pid, 0) != 0 })
 }
 
 /// A record published after its session was deleted stays deleted.
