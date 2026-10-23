@@ -5,7 +5,10 @@ import Core
 
 /// SQLite persistence for repos, worktrees, sessions and diff comments.
 public final class Store: Sendable {
-    public let db: DatabaseQueue
+    /// A pool on disk: reads run beside a write (WAL) instead of queueing behind it, and many come from the cooperative
+    /// pool and connection reader threads, where waiting on a status write's fsync would hold up keystrokes. A queue in
+    /// memory (tests: a pool needs a file).
+    public let db: any DatabaseWriter
 
     /// A project or workspace record written (as it is now) or deleted, or a session deleted (its writes are pushed as
     /// `event.session` where its live state is known).
@@ -29,7 +32,7 @@ public final class Store: Sendable {
     public init(path: String? = nil) throws {
         // WAL: every status, summary and UI-state change is a write, and the rollback journal fsynced each one twice.
         var config = Configuration(); config.journalMode = .wal
-        if let path { db = try DatabaseQueue(path: path, configuration: config) } else { db = try DatabaseQueue() }
+        if let path { db = try DatabasePool(path: path, configuration: config) } else { db = try DatabaseQueue() }
         try Self.migrator.migrate(db)
     }
 
