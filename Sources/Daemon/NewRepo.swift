@@ -35,9 +35,12 @@ extension Forges {
         proc.environment = env
         let err = Pipe(); proc.standardError = err; proc.standardOutput = FileHandle.nullDevice; proc.standardInput = FileHandle.nullDevice
         // git rewrites its progress line with \r: pass the latest one on, at most a few times a second.
-        let log = CloneLog()
+        let log = CloneLog(), eof = DispatchSemaphore(value: 0)
         err.fileHandleForReading.readabilityHandler = { [weak self] h in
-            guard let line = log.add(h.availableData) else { return }
+            let d = h.availableData
+            // The end: the handler goes (it would be called again and again with nothing), and the failure can be read.
+            guard !d.isEmpty else { h.readabilityHandler = nil; eof.signal(); return }
+            guard let line = log.add(d) else { return }
             self?.notify(CloneEvent(id: id, line: line), to: [conn])
         }
         clones.set(id, proc)
@@ -50,6 +53,9 @@ extension Forges {
             }
         }
         clones.set(id, nil)
+        // git's last words ("fatal: …") can still be on their way when it has exited; a child holding the pipe can't
+        // keep this waiting past 2 s.
+        await withCheckedContinuation { c in DispatchQueue.global().async { _ = eof.wait(timeout: .now() + 2); c.resume() } }
         err.fileHandleForReading.readabilityHandler = nil
         guard status.0 == 0 else {
             try? FileManager.default.removeItem(atPath: dest)   // this clone made it (mkdir above), nobody else wrote there

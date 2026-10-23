@@ -396,7 +396,9 @@ final class NoteBox: @unchecked Sendable {
     let name = (src as NSString).lastPathComponent
     #expect(r["path"]?.string?.hasSuffix("/" + name) == true)
     await #expect(throws: (any Error).self) { try await c.call("repo.clone", .obj(["url": .string(src), "parent": .string(parent), "id": "b"])) }
-    await #expect(throws: (any Error).self) { try await c.call("repo.clone", .obj(["url": .string(src + "-missing"), "parent": .string(parent), "id": "c"])) }
+    // git's own words, not just its exit code.
+    let missing = await #expect(throws: RPCError.self) { try await c.call("repo.clone", .obj(["url": .string(src + "-missing"), "parent": .string(parent), "id": "c"])) }
+    #expect(missing?.message.contains("does not exist") == true, "\(String(describing: missing))")
     #expect(!FileManager.default.fileExists(atPath: parent + "/" + name + "-missing"))
     let named = try await c.call("repo.clone", .obj(["url": .string(src), "parent": .string(parent), "folder": "fork", "id": "d"]))
     #expect(named["path"]?.string?.hasSuffix("/fork") == true)
