@@ -68,10 +68,16 @@ extension Git {
 
     /// Remove worktree and its branch. Refuses dirty worktrees unless `force`, and a branch with commits that are on no
     /// other branch or remote unless `force` or `dropCommits` (they'd be gone for good). Both checks come first: on
-    /// refusal nothing has been removed.
+    /// refusal nothing has been removed. A local folder goes to the Trash: what git doesn't see (ignored .env files, a
+    /// local database, submodules' own work) isn't checked above, and `worktree remove --force` would delete it for good.
     public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false, remotes: Remotes = .none) throws {
         try checkRemovable(repo: repo, path: path, branch: branch, force: force, dropCommits: dropCommits, remotes: remotes)
-        try run(["worktree", "remove", "--force", path], cwd: repo, remotes: remotes)
+        if remotes.of(path) == nil, FileManager.default.fileExists(atPath: path) {
+            try Trash.move(URL(fileURLWithPath: path))
+            try run(["worktree", "prune"], cwd: repo, remotes: remotes)   // its record, now that the folder is gone
+        } else {
+            try run(["worktree", "remove", "--force", path], cwd: repo, remotes: remotes)
+        }
         if let branch { try run(["branch", "-D", rev(branch)], cwd: repo, remotes: remotes) }
     }
 

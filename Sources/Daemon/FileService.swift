@@ -56,9 +56,7 @@ struct FileService: Sendable {
         for p in paths {
             do {
                 let from = try here(p)
-                var out: NSURL?
-                try FileManager.default.trashItem(at: URL(fileURLWithPath: from), resultingItemURL: &out)
-                if let to = (out as URL?)?.path { done.append(.init(from: from, to: to)) }
+                done.append(.init(from: from, to: try Trash.move(URL(fileURLWithPath: from)).path))
             } catch { return .init(done: done, error: message(error)) }
         }
         return .init(done: done, error: nil)

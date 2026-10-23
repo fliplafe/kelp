@@ -30,7 +30,14 @@ func tempRepo() throws -> String {
     #expect(try Git.linkedWorktrees(repo).first?.locked == false)
     try "dirty".write(toFile: p + "/n.txt", atomically: true, encoding: .utf8)
     #expect(throws: GitError.self) { try Git.removeWorktree(repo: repo, path: p, branch: "feat/x", force: false) }
+    try ".env.local\n".write(toFile: repo + "/.git/info/exclude", atomically: true, encoding: .utf8)
+    try "local\n".write(toFile: p + "/.env.local", atomically: true, encoding: .utf8)   // ignored: no check sees it
     try Git.removeWorktree(repo: repo, path: p, branch: "feat/x", force: true)
+    // What git didn't see went to the Trash with the folder, not away for good.
+    let trash = try #require(ProcessInfo.processInfo.environment["KELP_TRASH"])
+    let kept = try FileManager.default.subpathsOfDirectory(atPath: trash).filter { $0.hasSuffix("feat-x/.env.local") }
+    #expect(!kept.isEmpty)
+    #expect(!(try Git.run(["worktree", "list"], cwd: repo)).contains("feat-x"))
     #expect(!(try Git.run(["worktree", "list"], cwd: repo).contains("[feat/x]")))
     #expect(try Git.linkedWorktrees(repo).isEmpty)
 }
