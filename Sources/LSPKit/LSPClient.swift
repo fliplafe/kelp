@@ -40,6 +40,11 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         var versions: [String: Int] = [:]
         var opened: [String: Int] = [:]   // path -> how many tabs have it open (didOpen once, didClose after the last)
         var exited = false
+        /// Requests in a row that got no answer in time: a server alive but hung (it stopped reading) is given up on.
+        var timeouts = 0
+        /// The latest text of each document whose didChange waits on the write queue: one write sends the newest, so a
+        /// server that reads slowly gets one copy per document, not one per keystroke.
+        var changes: [String: JSONValue] = [:]
         var onIdle: (@Sendable () -> Void)?
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -61,10 +66,14 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         do { try proc.run() } catch { return nil }
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)   // a server that died fails the write, not the app
         // Weak: the reader must not keep the client (and so the server) alive; deinit terminates the server, which ends the loop.
-        let h = output.fileHandleForReading
+        // read(2), not FileHandle.availableData, which raises on a read error and would take the daemon down.
+        let fd = output.fileHandleForReading.fileDescriptor
         Thread.detachNewThread { [weak self] in
-            var framer = LSPFramer()
-            while case let d = h.availableData, !d.isEmpty { for body in framer.append(d) { self?.handle(body) } }
+            var framer = LSPFramer(), buf = [UInt8](repeating: 0, count: 1 << 16)
+            while case let n = read(fd, &buf, buf.count), n > 0 || (n < 0 && errno == EINTR) {
+                guard n > 0 else { continue }
+                for body in framer.append(Data(buf[0..<n])) { self?.handle(body) }
+            }
             self?.fail(RPCError.internalError("language server exited"))
         }
     }
@@ -74,7 +83,10 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         state.withLock { $0.pending }.values.forEach { $0.resume(throwing: RPCError.internalError("language server stopped")) }
     }
 
-    public func terminate() { if proc.isRunning { proc.terminate() } }
+    /// The server and what it started (tsserver's workers…), SIGKILL for what's left after 2 s.
+    public func terminate() { if proc.isRunning { Subprocess.stopTree(proc.processIdentifier) } }
+    /// After this many requests in a row go unanswered the server counts as exited (the manager starts a new one).
+    static let timeoutsToGiveUp = 3
     public var isRunning: Bool { state.withLock { !$0.exited } }
     public var isIdle: Bool { state.withLock { $0.opened.isEmpty } }
     /// Open documents and how many tabs hold each (to open them again in a restarted server).
@@ -94,7 +106,7 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
             return
         }
         guard let id = id?.int else { return }
-        let c = state.withLock { $0.pending.removeValue(forKey: id) }
+        let c = state.withLock { s in s.timeouts = 0; return s.pending.removeValue(forKey: id) }
         if let e = m["error"], e != .null {
             c?.resume(throwing: RPCError(code: e["code"]?.int ?? -32603, message: e["message"]?.string ?? "language server error"))
         } else { c?.resume(returning: m["result"] ?? .null) }
@@ -120,8 +132,13 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
             send(["jsonrpc": "2.0", "id": .int(id), "method": .string(method), "params": params])
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard let self else { return }
-                let c = state.withLock { $0.pending.removeValue(forKey: id) }
+                let (c, hung) = state.withLock { s in
+                    let c = s.pending.removeValue(forKey: id)
+                    if c != nil { s.timeouts += 1 }
+                    return (c, s.timeouts >= Self.timeoutsToGiveUp)
+                }
                 c?.resume(throwing: RPCError.internalError("no answer to \(method) from the language server in \(Int(timeout)) s"))
+                if hung { fail(RPCError.internalError("the language server stopped answering")); terminate() }
             }
         }
     }
@@ -152,7 +169,15 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
     public func change(_ path: String, text: String) {
         let v = state.withLock { s in let v = s.versions[path].map { $0 + 1 }; if let v { s.versions[path] = v }; return v }
         guard let v else { return }   // not open here (a server started after the tab)
-        notify("textDocument/didChange", .obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])]))
+        let params = JSONValue.obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])])
+        let queued = state.withLock { s in defer { s.changes[path] = params }; return s.changes[path] != nil }
+        guard !queued else { return }   // the write already queued sends this newer text, in its place
+        let h = input.fileHandleForWriting
+        writes.async { [weak self] in
+            guard let p = self?.state.withLock({ $0.changes.removeValue(forKey: path) }),
+                  let d = try? JSONEncoder().encode(JSONValue.obj(["jsonrpc": "2.0", "method": "textDocument/didChange", "params": p])) else { return }
+            try? h.write(contentsOf: LSPFramer.frame(d))
+        }
     }
     public func close(_ path: String) {
         let (n, idle) = state.withLock { s in

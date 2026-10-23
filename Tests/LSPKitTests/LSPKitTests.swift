@@ -81,3 +81,29 @@ final class Counter: @unchecked Sendable {
     #expect(LSPClient.enclosingSymbol(flat, line: 6) == "TestFoo")
     #expect(LSPClient.enclosingSymbol(.null, line: 6) == nil)
 }
+
+/// A server that's alive but stopped answering is given up on, so the manager starts a new one; it used to be handed
+/// out for good, each request waiting its full timeout.
+@Test func aServerThatStopsAnsweringCountsAsExited() async throws {
+    let c = try #require(LSPClient(argv: ["/bin/sleep", "30"], root: NSTemporaryDirectory()))
+    for _ in 0..<LSPClient.timeoutsToGiveUp {
+        await #expect(throws: RPCError.self) { _ = try await c.request("x", .null, timeout: 0.1) }
+    }
+    #expect(!c.isRunning)
+}
+
+/// Edits to a server that isn't reading wait as one copy per document, the newest: they used to queue a whole
+/// document per keystroke.
+@Test func editsWaitingForASlowServerKeepOnlyTheNewest() async throws {
+    let out = FileManager.default.temporaryDirectory.appendingPathComponent("lsp-\(UUID().uuidString)").path
+    let c = try #require(LSPClient(argv: ["/bin/sh", "-c", "sleep 1; cat > '\(out)'"], root: NSTemporaryDirectory()))
+    c.open("/x.swift", text: "", languageId: "swift")
+    let big = String(repeating: "x", count: 100_000)   // more than the pipe holds: later writes wait
+    for i in 0..<50 { c.change("/x.swift", text: big + "\(i)") }
+    try await Task.sleep(for: .seconds(2))
+    c.terminate()
+    try await Task.sleep(for: .milliseconds(300))
+    let sent = (try? String(contentsOfFile: out, encoding: .utf8)) ?? ""
+    #expect(sent.components(separatedBy: "didChange").count - 1 < 5)
+    #expect(sent.contains("x49\""))   // the newest text (a short needle: contains on a 100 kB one crawls)
+}
