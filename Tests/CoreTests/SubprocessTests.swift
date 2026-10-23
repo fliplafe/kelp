@@ -38,6 +38,17 @@ private let env = ProcessInfo.processInfo.environment
     #expect(Date().timeIntervalSince(start) < 10)
 }
 
+/// Once the result is back, the pipes a lingering child holds are let go: no reader thread and pipe stay for the life of
+/// the daemon. The child then can't write to them (it would have printed to nobody anyway).
+@Test func aSubprocessLetsGoOfPipesAChildStillHolds() throws {
+    let mark = NSTemporaryDirectory() + "sp-\(UUID().uuidString)"
+    defer { try? FileManager.default.removeItem(atPath: mark) }
+    let r = try Subprocess.run(["/bin/bash", "-c", "echo hi; (sleep 5; echo late && touch \(mark)) &"], cwd: "/tmp", env: env, timeLimit: 30)
+    #expect(String(decoding: r.stdout, as: UTF8.self) == "hi\n")
+    Thread.sleep(forTimeInterval: 4)
+    #expect(!FileManager.default.fileExists(atPath: mark))
+}
+
 /// Past its limit a stream is still read, so the program runs to its end (its status is its own), but only the first
 /// `limit` bytes are kept, and the output says it's cut.
 @Test func aSubprocessKeepsItsLimitAndRunsToTheEnd() throws {

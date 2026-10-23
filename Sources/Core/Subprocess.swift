@@ -66,8 +66,9 @@ public enum Subprocess {
             // SIGKILL comes 2 s after SIGTERM; one stuck in the kernel (a hung network mount) may outlast even that.
             ended = exited.wait(timeout: .now() + 5) == .success
         }
-        // What's still in the pipes arrives at once; only a child holding them open would make this wait run out.
-        _ = out.done.wait(timeout: .now() + 2); _ = err.done.wait(timeout: .now() + 2)
+        // What's still in the pipes arrives at once; only a child holding them open would make this wait run out. Then
+        // they're let go, or a reader thread and a pipe would stay as long as that child (an ssh master, a daemon).
+        for r in [out, err] where r.done.wait(timeout: .now() + 2) == .timedOut { r.abandon() }
         // Its status only once it has exited: asking a Process still running raises, and would take the daemon down.
         return Output(status: ended ? p.terminationStatus : -1, stdout: out.data, stderr: err.data, timedOut: timedOut,
                       truncated: out.truncated || err.truncated)
@@ -120,16 +121,26 @@ public enum Subprocess {
         let limit: Int
         private struct Kept { var data = Data(), truncated = false }
         private let kept = OSAllocatedUnfairLock(initialState: Kept())
+        private let abandoned = OSAllocatedUnfairLock(initialState: false)
         init(_ limit: Int) { self.limit = limit }
+        /// Stop reading within half a second and close the pipe (on the reader's thread: never under a read, so no fd is reused).
+        func abandon() { abandoned.withLock { $0 = true } }
         var data: Data { kept.withLock { $0.data } }
         var truncated: Bool { kept.withLock { $0.truncated } }
         func start() {
             let fd = pipe.fileHandleForReading.fileDescriptor
-            Thread.detachNewThread { [pipe, kept, done, limit] in
+            Thread.detachNewThread { [pipe, kept, done, limit, abandoned] in
                 // read(2), not FileHandle.read(upToCount:): that one waits for the whole count, so output a lingering
                 // child keeps the pipe open behind would never arrive.
                 var buf = [UInt8](repeating: 0, count: 1 << 16), room = limit
+                var ready = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
                 while true {
+                    let r = poll(&ready, 1, 500)
+                    if r == 0 || (r < 0 && errno == EINTR) {
+                        // Closed here, after the last read: the Process holds the pipe too, so it wouldn't close with this.
+                        if abandoned.withLock({ $0 }) { try? pipe.fileHandleForReading.close(); break }
+                        continue
+                    }
                     let n = read(fd, &buf, buf.count)
                     if n > 0 {
                         // Past the limit it's still read (a full pipe would stop the program) and dropped.
