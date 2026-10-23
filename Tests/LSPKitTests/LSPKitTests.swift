@@ -107,3 +107,24 @@ final class Counter: @unchecked Sendable {
     #expect(sent.components(separatedBy: "didChange").count - 1 < 5)
     #expect(sent.contains("x49\""))   // the newest text (a short needle: contains on a 100 kB one crawls)
 }
+
+/// An edit made after a file was closed and opened again reaches the server after that didOpen: a queued edit from
+/// before the close used to send the newest text early, in its place, and the server kept the reopened file's text.
+@Test func anEditAfterReopeningComesAfterTheOpen() async throws {
+    let out = FileManager.default.temporaryDirectory.appendingPathComponent("lsp-\(UUID().uuidString)").path
+    let c = try #require(LSPClient(argv: ["/bin/sh", "-c", "sleep 1; cat > '\(out)'"], root: NSTemporaryDirectory()))
+    let big = String(repeating: "x", count: 100_000)   // fills the pipe: the first edit's write waits
+    c.open("/x.swift", text: "", languageId: "swift")
+    c.change("/x.swift", text: big)
+    c.change("/x.swift", text: "A")
+    c.close("/x.swift")
+    c.open("/x.swift", text: "B", languageId: "swift")
+    c.change("/x.swift", text: "NEWEST")
+    try await Task.sleep(for: .seconds(2))
+    c.terminate()
+    try await Task.sleep(for: .milliseconds(300))
+    let sent = (try? String(contentsOfFile: out, encoding: .utf8)) ?? ""
+    let lastOpen = try #require(sent.range(of: "didOpen", options: .backwards))
+    let newest = try #require(sent.range(of: "NEWEST"))
+    #expect(newest.lowerBound > lastOpen.lowerBound)
+}

@@ -44,7 +44,10 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         var timeouts = 0
         /// The latest text of each document whose didChange waits on the write queue: one write sends the newest, so a
         /// server that reads slowly gets one copy per document, not one per keystroke.
-        var changes: [String: JSONValue] = [:]
+        /// Each with the number of the write that sends it: a write queued before the document was closed finds a
+        /// newer number (or none) and sends nothing, so it can't carry text from after a reopen ahead of that didOpen.
+        var changes: [String: (write: Int, params: JSONValue)] = [:]
+        var nextWrite = 0
         var onIdle: (@Sendable () -> Void)?
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -170,11 +173,17 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         let v = state.withLock { s in let v = s.versions[path].map { $0 + 1 }; if let v { s.versions[path] = v }; return v }
         guard let v else { return }   // not open here (a server started after the tab)
         let params = JSONValue.obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])])
-        let queued = state.withLock { s in defer { s.changes[path] = params }; return s.changes[path] != nil }
-        guard !queued else { return }   // the write already queued sends this newer text, in its place
+        let write = state.withLock { s -> Int? in
+            if let w = s.changes[path]?.write { s.changes[path] = (w, params); return nil }   // the queued write sends this, in its place
+            s.nextWrite += 1; s.changes[path] = (s.nextWrite, params); return s.nextWrite
+        }
+        guard let write else { return }
         let h = input.fileHandleForWriting
         writes.async { [weak self] in
-            guard let p = self?.state.withLock({ $0.changes.removeValue(forKey: path) }),
+            guard let p = self?.state.withLock({ s -> JSONValue? in
+                      guard let c = s.changes[path], c.write == write else { return nil }
+                      s.changes[path] = nil; return c.params
+                  }),
                   let d = try? JSONEncoder().encode(JSONValue.obj(["jsonrpc": "2.0", "method": "textDocument/didChange", "params": p])) else { return }
             try? h.write(contentsOf: LSPFramer.frame(d))
         }
@@ -182,7 +191,7 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
     public func close(_ path: String) {
         let (n, idle) = state.withLock { s in
             let n = s.opened[path] ?? 0; s.opened[path] = n > 1 ? n - 1 : nil
-            if n == 1 { s.versions[path] = nil }
+            if n == 1 { s.versions[path] = nil; s.changes[path] = nil }   // its queued write sends nothing now
             return (n, s.opened.isEmpty ? s.onIdle : nil)
         }
         guard n == 1 else { return }
