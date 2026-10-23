@@ -44,10 +44,14 @@ enum Attach {
             }
         }
         var buf = [UInt8](repeating: 0, count: 65536)   // session → screen
+        var sized = false
         while true {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { break }
             _ = buf.withUnsafeBytes { p in p.baseAddress.map { Darwin.write(1, $0, n) } }
+            // The first bytes come once the session runs. A size sent while a paused one was still waking went nowhere
+            // (a size never wakes one), and it woke at the size read above, before this terminal was laid out.
+            if !sized { sized = true; sendSize() }
         }
         winch.cancel()
         restore()

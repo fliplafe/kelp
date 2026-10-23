@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Core
+import Agents
 import Testing
 @testable import Daemon
 
@@ -41,6 +42,39 @@ final class Box: @unchecked Sendable {
     for _ in 0..<100 where !box.text.contains("20 50") { try await Task.sleep(for: .milliseconds(50)) }   // a busy machine is slow, not wrong
     #expect(box.text.contains("20 50"), "\(box.text.debugDescription)")
     p.kill()
+}
+
+/// A paused agent woken by a terminal the app hasn't laid out yet wakes at that terminal's first size; the real one,
+/// sent while it woke, went nowhere (aResizeNeverWakesAPausedAgent). It still reaches the agent once it runs, or the
+/// agent draws for a smaller screen than the one it's shown on, and its redraws leave the rest of the old screen behind.
+@Test func theSizeATerminalGotWhileItsAgentWokeReachesTheAgent() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let kelp = root.appendingPathComponent(".build/debug/kelp").path
+    try #require(FileManager.default.isExecutableFile(atPath: kelp), "build the kelp CLI first: swift build")
+    let sizer = AgentManifest(id: "sizer", name: "Sizer", command: "/bin/sh",
+                              args: ["-c", "trap 'echo SIZE=$(stty size)' WINCH; echo SIZE=$(stty size); while :; do sleep 0.1; done", "x"],
+                              resumeArgs: ["--resume"])
+    let w = try await world(agents: [sizer]); defer { w.d.stop() }
+    let wt = try await desk(w, "sizes")
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "sizer"]), as: Session.self)
+    _ = try await w.c.call("worktree.archive", .obj(["id": .string(wt.id)]))
+    _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
+    #expect(w.d.sessions.existing(s.id) == nil)
+    // Its wake waits here while the terminal gets its real size.
+    let held = Box(), release = DispatchSemaphore(value: 0)
+    Thread.detachNewThread { w.d.sessions.wakeLocks.withLock(s.id) { held.add("held"); release.wait() } }
+    #expect(try await waitFor(5) { held.text == "held" })
+    let term = try PTY(argv: [kelp, "attach", s.id], cwd: "/tmp", env: ["KELP_SOCKET": w.root.appendingPathComponent("kelp.sock").path],
+                       cols: 47, rows: 16, trampoline: kelp)
+    let box = Box()
+    term.onOutput = { box.add(String(decoding: $0, as: UTF8.self)) }
+    term.start()
+    defer { term.kill() }
+    #expect(try await waitFor(10) { box.text.contains("\u{1B}[3J") })   // it asked for the session (it clears the screen next)
+    term.resize(cols: 100, rows: 30)
+    try await Task.sleep(for: .milliseconds(500))   // that size reached the daemon, with the session not running yet
+    release.signal()
+    #expect(try await waitFor(10) { box.text.contains("SIZE=30 100") }, "\(box.text.debugDescription)")
 }
 
 /// Agents are found on the login-shell PATH even when the daemon itself started with a bare one (from Finder).
