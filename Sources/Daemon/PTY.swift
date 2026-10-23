@@ -20,7 +20,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private var exited = false
     private let io = NSLock()     // `closed`: the primaryFD is closed under it, so no write lands in a reused fd
     private let life = NSLock()   // `reaped`: set before the pid is reaped, so no signal reaches a recycled one
-    private var closed = false, reaped = false, started = false
+    private var closed = false, reaped = false, started = false, handedOver = false
     /// Typing goes out on a queue of its own, from a copy of the terminal's fd that only this queue closes: a program that
     /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `io`, and a write never
     /// reaches a reused fd number. `stopWrites` (under io) ends a write that's waiting for room.
@@ -58,6 +58,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         q.sync {
             let fd = io.withLock { () -> Int32? in
                 guard !closed, !exited, let s = source else { return nil }
+                // Already being reaped here: it has ended, and the new kelpd would find no such child.
+                guard life.withLock({ () -> Bool in if reaped { return false }; handedOver = true; return true }) else { return nil }
                 closed = true; stopWrites = true
                 s.cancel(); source = nil   // `closer` isn't asked: the fd stays open
                 return primaryFD
@@ -144,7 +146,9 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
             // Wait without reaping: while it's a zombie its pid can't be anyone else's, so `reaped` goes up first.
             var info = siginfo_t()
             while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) < 0 && errno == EINTR {}
-            self?.life.withLock { self?.reaped = true }
+            // Handed over: the kelpd that takes over reaps it (exiting before the exec, it's that one's zombie to read).
+            let handedOver = self.map { me in me.life.withLock { () -> Bool in if me.handedOver { return true }; me.reaped = true; return false } }
+            if handedOver == true { return }
             var st: Int32 = 0
             while waitpid(pid, &st, 0) < 0 && errno == EINTR {}
             guard let pty = self else { return }
