@@ -147,6 +147,7 @@ final class AppModel {
     }
 
     private func open() async {
+        BackgroundItem.register()   // before the first quit: what the app started is ended then unless it has the item
         // Launched again on each try: a daemon that's stopping (a restart, an update) closes its socket first and holds
         // its home's lock until its agents are gone (up to 3 s), so the kelpd started meanwhile finds it taken and exits.
         // One that's already running takes no harm: a second kelpd exits at once.

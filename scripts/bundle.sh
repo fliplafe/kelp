@@ -24,6 +24,7 @@ cp "$BIN/KelpApp" "$APP/Contents/MacOS/KelpApp"
 # the daemon then doesn't offer to restart it (that ends the running agents). Signing below puts the time back.
 cp -p "$BIN/kelpd" "$BIN/kelp" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Library/LaunchAgents"; cp Resources/dev.kelp.kelpd.plist "$APP/Contents/Library/LaunchAgents/"   # BackgroundItem
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"   # from AppIcon.svg: scripts/icon.sh
 [ -d "$BIN/Sparkle.framework" ] && cp -R "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/" || true
 for b in "$BIN"/*.bundle(N); do cp -R "$b" "$APP/Contents/Resources/"; done

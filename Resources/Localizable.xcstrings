@@ -3588,6 +3588,16 @@
         }
       }
     },
+    "Kelp isn't allowed to run in the background: quitting or updating it ends running agents.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kelp не разрешено работать в фоне: выход из него или обновление завершают запущенных агентов."
+          }
+        }
+      }
+    },
     "Kelp was updated": {
       "localizations": {
         "ru": {
@@ -4858,6 +4868,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открыть"
+          }
+        }
+      }
+    },
+    "Open Login Items": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть «Объекты входа»"
           }
         }
       }
