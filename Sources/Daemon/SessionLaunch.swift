@@ -68,8 +68,10 @@ extension Sessions {
     func hibernateIdle() {
         let minutes = settings.number("sessions.hibernateMinutes") ?? 0
         guard minutes > 0 else { return }
+        // A shell or a command (not in tmux) can't be resumed: one left idle mustn't have the agents' folder read on every tick.
         let idle = live.all.filter { ls in
             [.done, .waiting, .idle].contains(ls.snapshot.status) && !ls.isAttached && ls.idleSeconds > minutes * 60
+                && (!["shell", "custom"].contains(ls.snapshot.agent) || Self.tmuxName(ls.snapshot) != nil)
         }
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
