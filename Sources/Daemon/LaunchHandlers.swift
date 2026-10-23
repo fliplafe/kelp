@@ -145,12 +145,14 @@ struct Shutdown {
 }
 
 extension DaemonUpgrade: Handled {
+    /// Answered on the reader thread, its reply queued right after: the hand-over (which drains what's queued) starts
+    /// once it is, not on a timer that a busy cooperative pool could outrun (`Daemon.serve`).
+    static var inOrder: Bool { true }
     func handle(_ upgrade: Upgrade) throws -> Done {
         // Only kelpd itself: a daemon hosted in another program (the tests) would exec that program.
         guard URL(fileURLWithPath: upgrade.executable).lastPathComponent == "kelpd", FileManager.default.isExecutableFile(atPath: upgrade.executable) else {
             throw RPCError.invalidParams("no kelpd to upgrade to at \(upgrade.executable)")
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { upgrade.run() }   // once the reply is queued (handOver drains it)
         return Done()
     }
 }

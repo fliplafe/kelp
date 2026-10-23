@@ -242,7 +242,12 @@ public final class Daemon: Sendable {
                         }
                         // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
                         if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, sessions, done: reply) }
-                        else { reply(Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }) }
+                        else {
+                            let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
+                            reply(r)
+                            // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
+                            if t == DaemonUpgrade.self, case .success = r { Thread.detachNewThread { Upgrade.of(self).run() } }
+                        }
                         continue
                     }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
