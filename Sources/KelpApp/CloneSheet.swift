@@ -21,7 +21,7 @@ final class CloneSheet: SheetController, NSTextFieldDelegate {
         let s = CloneSheet(app: app)
         guard s.begin(ended: { shown = nil }) else { return }
         shown = s
-        if let text { s.field.stringValue = text; s.start() }
+        if let text { s.field.stringValue = text; s.fill(); s.start() }
     }
 
     private init(app: AppModel) {
@@ -88,8 +88,9 @@ final class CloneSheet: SheetController, NSTextFieldDelegate {
 
     /// The typed destination as a full path; one ending in "/" is the folder to go in, named after the repository.
     private var destination: String? {
-        var p = (dest.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
-        if p.hasSuffix("/") { p += RepoClone.folderName(field.stringValue) }
+        let typed = dest.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var p = (typed as NSString).expandingTildeInPath   // drops a trailing "/": checked on what was typed
+        if typed.hasSuffix("/") { p = (p as NSString).appendingPathComponent(RepoClone.folderName(field.stringValue)) }
         return p.hasPrefix("/") ? (p as NSString).standardizingPath : nil
     }
 
