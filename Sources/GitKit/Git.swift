@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Core
 
 public struct GitError: Error, CustomStringConvertible, Sendable {
@@ -47,7 +48,9 @@ extension Git {
             // Paths as they are, not C-quoted ("\321\204…" for "ф"). No fsmonitor: a folder's own .git/config (one that
             // came in a download, not a clone) would otherwise have every status Kelp runs start its program.
             args = ["-c", "core.quotePath=false", "-c", "core.fsmonitor=false"] + args
-            if let r = remotes.of(cwd) {   // a remote project: the same git, on its host
+            let remote = remotes.of(cwd)
+            if remote == nil, let sub = args.dropFirst(4).first, readOnly.contains(sub) { args = RepoFilters.off(cwd) + args }
+            if let r = remote {   // a remote project: the same git, on its host
                 args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]
                 executable = r.ssh; cwd = NSHomeDirectory()
             }
@@ -63,6 +66,9 @@ extension Git {
         }
         return (r.stdout, r.truncated)
     }
+
+    /// What Kelp runs by itself (watches, panels): these read, and never run a repository's own filters (`RepoFilters`).
+    static let readOnly: Set<String> = ["status", "diff", "show", "log", "blame", "ls-files", "grep", "diff-files", "diff-index"]
 
     /// `d` up to its last `separator`, inclusive: the whole entries of output cut off mid-entry.
     static func wholeEntries(_ d: Data, _ separator: UInt8) -> Data { d.lastIndex(of: separator).map { d[...$0] } ?? Data() }
@@ -116,5 +122,62 @@ extension RemoteHost {
     /// `script` in sh on the host (whatever its login shell is), its output as the bytes it wrote.
     public func run(_ script: String) throws -> Data {
         try Git.runData(sshArgs(tty: false) + ["sh -c " + Self.quote(script)], cwd: NSHomeDirectory(), executable: ssh)
+    }
+}
+
+/// Filter drivers a repository's own config defines (`filter.<name>.clean` / `process` in .git/config, an include of it, or
+/// config.worktree). A folder that came as a download, not a clone, can carry one with `.gitattributes`, and every
+/// `git status` Kelp runs as files change would start it. Reads turn them off; what the user does (add, commit, checkout)
+/// keeps them, so git-crypt and the like still encrypt. Filters from the user's own (global) config are left alone.
+/// Limit: with its filter off, a file whose stat changed reads as modified in a git-crypt-style repo until it's added.
+enum RepoFilters {
+    private static let cache = OSAllocatedUnfairLock<[String: (stamp: Date, names: [String])]>(initialState: [:])
+
+    /// `-c` arguments that turn them off for one run in `cwd`.
+    static func off(_ cwd: String) -> [String] {
+        names(cwd).flatMap { n in
+            ["clean=", "smudge=", "process=", "required=false"].flatMap { ["-c", "filter.\(n).\($0)"] }
+        }
+    }
+
+    /// Read again only when the repository's config file changed (its stamp); every run when it can't be found.
+    static func names(_ cwd: String) -> [String] {
+        let file = configFile(cwd)
+        let stamp = file.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
+        if let file, let stamp, let hit = cache.withLock({ $0[file] }), hit.stamp == stamp { return hit.names }
+        let names = read(cwd)
+        if let file, let stamp { cache.withLock { $0[file] = (stamp, names) } }
+        return names
+    }
+
+    private static func read(_ cwd: String) -> [String] {
+        let args = ["/usr/bin/git", "-c", "core.fsmonitor=false", "config", "--show-scope", "--get-regexp", #"^filter\..*\.(clean|smudge|process)$"#]
+        guard let r = try? Subprocess.run(args, cwd: cwd, env: ProcessInfo.processInfo.environment, timeLimit: 10, limit: 1 << 20) else { return [] }
+        return Set(String(decoding: r.stdout, as: UTF8.self).split(whereSeparator: \.isNewline).compactMap { line -> String? in
+            let f = line.split(separator: "\t", maxSplits: 1)
+            guard f.count == 2, f[0] == "local" || f[0] == "worktree", let key = f[1].split(separator: " ").first else { return nil }
+            let parts = key.split(separator: ".")
+            return parts.count >= 3 ? parts.dropFirst().dropLast().joined(separator: ".") : nil
+        }).sorted()
+    }
+
+    /// The config file of the repository `cwd` is in: .git/config, or the main one's for a linked worktree.
+    static func configFile(_ cwd: String) -> String? {
+        var dir = URL(fileURLWithPath: cwd).standardizedFileURL
+        while true {
+            let git = dir.appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir) {
+                if isDir.boolValue { return git.appendingPathComponent("config").path }
+                guard let text = try? String(contentsOf: git, encoding: .utf8), text.hasPrefix("gitdir: ") else { return nil }
+                let gitdir = URL(fileURLWithPath: text.dropFirst(8).trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: dir).standardizedFileURL
+                let common = (try? String(contentsOf: gitdir.appendingPathComponent("commondir"), encoding: .utf8))
+                    .map { URL(fileURLWithPath: $0.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: gitdir).standardizedFileURL } ?? gitdir
+                return common.appendingPathComponent("config").path
+            }
+            let up = dir.deletingLastPathComponent()
+            if up.path == dir.path { return nil }
+            dir = up
+        }
     }
 }
