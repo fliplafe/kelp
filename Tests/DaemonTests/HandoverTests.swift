@@ -46,8 +46,12 @@ private let readAndEcho = "echo before; while read l; do echo got-$l; done"
     let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
     #expect(try await waitFor { try await c.call(SessionRead(id: s.id)).contains("before") })
 
+    // A program the old run started that isn't a session (a git, a language server) ends after the exec: reaped, not a zombie.
+    let stray = Task { try? await c.call(ProcessRun(argv: ["/bin/sleep", "1"])) }
+    #expect(try await waitFor { children(of: p.processIdentifier).contains { name($0) == "sleep" } })
     _ = try await c.call(DaemonUpgrade())
     #expect(try await waitFor { (try? await c.call(Ping())) == nil })   // this connection ended with the old run
+    _ = await stray.value
     let c2 = try #require(try await connected())
     let info = try await c2.call(DaemonInfo())
     #expect(info.pid == Int(p.processIdentifier) && info.liveSessions == 1 && p.isRunning)
@@ -55,6 +59,28 @@ private let readAndEcho = "echo before; while read l; do echo got-$l; done"
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("handover.json").path))
     _ = try await c2.call(SessionWrite(id: s.id, text: "x\n"))
     #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-x") })
+    #expect(try await waitFor(5) { children(of: p.processIdentifier).allSatisfy { name($0) != "sleep" && !isZombie($0) } })
     _ = try await c2.call(DaemonShutdown())
     #expect(try await waitFor { !p.isRunning && kill(s.pid, 0) != 0 })
+}
+
+/// `pid`'s children, zombies included.
+private func children(of pid: pid_t) -> [pid_t] {
+    var pids = [pid_t](repeating: 0, count: 256)
+    let n = Int(proc_listchildpids(pid, &pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+    return Array(pids.prefix(max(0, n)))
+}
+
+/// Ended, and not reaped by its parent.
+private func isZombie(_ pid: pid_t) -> Bool {
+    var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.size
+    var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+    return sysctl(&mib, 4, &info, &size, nil, 0) == 0 && size > 0 && info.kp_proc.p_stat == SZOMB
+}
+
+/// Its program's name while it runs ("" once it has ended).
+private func name(_ pid: pid_t) -> String {
+    var info = proc_bsdinfo()
+    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 else { return "" }
+    return withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
 }

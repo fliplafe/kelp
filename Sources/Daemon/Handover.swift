@@ -22,6 +22,18 @@ public struct Handover: Codable, Sendable {
         }
     }
 
+    /// What the kelpd before this one still ran besides the sessions (a git, a language server it was stopping) is this
+    /// process's now: reaped once it ends instead of staying a zombie. Called before this run starts a program of its own,
+    /// whose exit is its runner's to read.
+    public func reapOthers() {
+        let kept = Set(sessions.map(\.pid))
+        var pids = [pid_t](repeating: 0, count: 4096)
+        let n = Int(proc_listchildpids(getpid(), &pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+        for pid in pids.prefix(max(0, n)) where !kept.contains(pid) {
+            Thread.detachNewThread { var st: Int32 = 0; while waitpid(pid, &st, 0) < 0 && errno == EINTR {} }
+        }
+    }
+
     /// Exec in place (`POSIX_SPAWN_SETEXEC`) of `exe --adopt file`: the same process, pid and children; of its files only
     /// stdio and these stay open. Returns only by throwing.
     func exec(_ exe: String, file: String) throws {

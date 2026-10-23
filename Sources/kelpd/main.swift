@@ -11,9 +11,10 @@ if getrlimit(RLIMIT_NOFILE, &files) == 0, files.rlim_cur < rlim_t(OPEN_MAX) {
 }
 nonisolated(unsafe) var signalSources: [DispatchSourceSignal] = []   // must outlive this scope or the handlers vanish
 do {
-    let d = try Daemon(root: Paths.root)
-    // An update's exec in place (`daemon.upgrade`): what the kelpd before this one handed over.
+    // An update's exec in place (`daemon.upgrade`): what the kelpd before this one handed over, and the rest it ran reaped.
     let handover = CommandLine.arguments.firstIndex(of: "--adopt").flatMap { i in CommandLine.arguments.dropFirst(i + 1).first }.flatMap(Handover.take)
+    handover?.reapOthers()
+    let d = try Daemon(root: Paths.root)
     try d.start(adopting: handover)
     for s in [SIGTERM, SIGINT, SIGHUP] {
         signal(s, SIG_IGN)
