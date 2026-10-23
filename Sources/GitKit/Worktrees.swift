@@ -17,7 +17,7 @@ extension Git {
         let fm = FileManager.default
         for f in Array(Set(copyFiles + includedIgnoredFiles(repo: repo, remotes: remotes))) {
             let src = (repo as NSString).appendingPathComponent(f), dst = (path as NSString).appendingPathComponent(f)
-            guard fm.fileExists(atPath: src), !fm.fileExists(atPath: dst) else { continue }
+            guard fm.fileExists(atPath: src), !fm.fileExists(atPath: dst), staysInside(dst, path) else { continue }
             try? fm.createDirectory(atPath: (dst as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             try? fm.copyItem(atPath: src, toPath: dst)
         }
@@ -32,12 +32,21 @@ extension Git {
         return ignored.filter { f in pats.contains { fnmatch($0, f, 0) == 0 || fnmatch($0, (f as NSString).lastPathComponent, 0) == 0 } }
     }
 
+    /// `dst` is still in `root` once symlinks are followed: a folder the branch commits as a link (`conf -> ~/x`) would
+    /// take the copy (the user's ignored `.env`), or the folders made for it, out of the worktree.
+    static func staysInside(_ dst: String, _ root: String) -> Bool {
+        var folder = (dst as NSString).deletingLastPathComponent
+        while !FileManager.default.fileExists(atPath: folder), folder.count > 1 { folder = (folder as NSString).deletingLastPathComponent }
+        let real = URL(fileURLWithPath: folder).resolvingSymlinksInPath().path, inside = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+        return real == inside || real.hasPrefix(inside + "/")
+    }
+
     /// Symlink shared directories (node_modules, .venv…) from the main checkout instead of reinstalling.
     public static func linkShared(_ dirs: [String], repo: String, worktree: String) {
         // Only paths inside the project: "/etc", "../x" or "a/../../b" would link (or create folders) outside it.
         for d in dirs where !d.hasPrefix("/") && !d.hasPrefix("~") && !d.split(separator: "/").contains("..") {
             let src = (repo as NSString).appendingPathComponent(d), dst = (worktree as NSString).appendingPathComponent(d)
-            guard FileManager.default.fileExists(atPath: src), !FileManager.default.fileExists(atPath: dst) else { continue }
+            guard FileManager.default.fileExists(atPath: src), !FileManager.default.fileExists(atPath: dst), staysInside(dst, worktree) else { continue }
             try? FileManager.default.createDirectory(atPath: (dst as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             try? FileManager.default.createSymbolicLink(atPath: dst, withDestinationPath: src)
         }

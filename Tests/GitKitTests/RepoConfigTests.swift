@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import TestSupport
 @testable import GitKit
 import Core
 
@@ -30,4 +31,24 @@ import Core
     _ = try Git.run(["show", "HEAD"], cwd: repo)   // any patch Kelp reads, not only Diff's
     _ = try Git.run(["log", "-p", "-1"], cwd: repo)
     #expect(!FileManager.default.fileExists(atPath: ran))
+}
+
+/// A branch that commits a folder as a symlink out of the project can't have the user's ignored files copied there:
+/// `.worktreeinclude` (a file the repository ships) names them, the copy stays inside the new worktree or doesn't happen.
+@Test func copiedFilesStayInTheWorktree() throws {
+    let repo = try tempRepo(), outside = tmp().path
+    try FileManager.default.createDirectory(atPath: repo + "/conf", withIntermediateDirectories: true)
+    try "TOKEN=1\n".write(toFile: repo + "/conf/.env", atomically: true, encoding: .utf8)
+    try "conf/.env\n.env\n".write(toFile: repo + "/.gitignore", atomically: true, encoding: .utf8)
+    try ".env\n".write(toFile: repo + "/.worktreeinclude", atomically: true, encoding: .utf8)
+    try Git.run(["add", ".gitignore", ".worktreeinclude"], cwd: repo); try Git.run(["commit", "-qm", "include"], cwd: repo)
+    try Git.run(["checkout", "-qb", "evil"], cwd: repo)
+    try FileManager.default.moveItem(atPath: repo + "/conf", toPath: repo + "/conf-real")
+    try FileManager.default.createSymbolicLink(atPath: repo + "/conf", withDestinationPath: outside)
+    try Git.run(["add", "conf"], cwd: repo); try Git.run(["commit", "-qm", "link"], cwd: repo)
+    try Git.run(["checkout", "-q", "main"], cwd: repo)   // takes the link away
+    try FileManager.default.moveItem(atPath: repo + "/conf-real", toPath: repo + "/conf")
+    let p = try Git.addWorktree(repo: repo, branch: "w", base: "evil", into: URL(fileURLWithPath: repo + "-wt"), copyFiles: ["conf/.env"])
+    #expect(!FileManager.default.fileExists(atPath: outside + "/.env"))
+    #expect(FileManager.default.fileExists(atPath: p + "/.env"))   // one inside still comes
 }
