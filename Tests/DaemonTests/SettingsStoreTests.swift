@@ -106,3 +106,15 @@ private func home() throws -> URL {
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: real.path)
     #expect(s.reloadIfChanged() && s["theme"] == .string("edited by hand"))   // the file changed, not the link
 }
+
+/// Reading a setting doesn't wait for settings.json being written (a slow or network home folder): the ticker reads
+/// settings twice a second for every session, and used to wait on the disk under the same lock.
+@Test func readingASettingDoesntWaitForTheFile() throws {
+    let s = SettingsStore(root: tmp())
+    _ = try s.set("sessions.hibernateMinutes", .int(5))
+    s.file.lock()   // a write in progress
+    let read = DispatchSemaphore(value: 0)
+    Thread.detachNewThread { if s.number("sessions.hibernateMinutes") == 5 { read.signal() } }
+    #expect(read.wait(timeout: .now() + 2) == .success)
+    s.file.unlock()
+}

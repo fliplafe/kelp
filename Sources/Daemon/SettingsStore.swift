@@ -6,8 +6,11 @@ import Core
 /// Hand edits are picked up by `reloadIfChanged`; a file that doesn't parse is ignored and the last good settings stay.
 final class SettingsStore: Sendable {
     let url: URL
-    /// The settings and the file's date as last read or written; reads and writes of the file happen under it too.
+    /// The settings and the file's date as last read or written, held only to copy them: the ticker reads settings twice
+    /// a second, and must not wait on a disk.
     private let state = OSAllocatedUnfairLock<(values: [String: JSONValue], mtime: Date?)>(initialState: ([:], nil))
+    /// The file's reads and writes, one at a time (a set's read, merge and write stay together).
+    let file = NSLock()
 
     /// config.json keys from before settings.json; read once, when settings.json doesn't exist yet.
     static let legacyKeys = ["hibernateMinutes": "sessions.hibernateMinutes", "keepAwake": "power.keepAwake", "profiles": "accounts.profiles"]
@@ -16,10 +19,9 @@ final class SettingsStore: Sendable {
         url = root.appendingPathComponent("settings.json")
         if FileManager.default.fileExists(atPath: url.path) { _ = reloadIfChanged(); return }
         let old = (try? Data(contentsOf: root.appendingPathComponent("config.json"))).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
-        state.withLock { st in
-            for (k, v) in Self.legacyKeys { if let x = old?[k] { st.values[v] = x } }
-            try? write(&st)
-        }
+        var values: [String: JSONValue] = [:]
+        for (k, v) in Self.legacyKeys { if let x = old?[k] { values[v] = x } }
+        file.withLock { try? write(values) }
     }
 
     var values: [String: JSONValue] { state.withLock { $0 }.values }
@@ -29,31 +31,34 @@ final class SettingsStore: Sendable {
 
     /// nil or .null removes the key.
     func set(_ key: String, _ value: JSONValue?) throws -> [String: JSONValue] {
-        try state.withLock { st in
+        try file.withLock {
             // A hand edit saved since the last poll is merged, not overwritten; a file that doesn't parse is the user's
             // work in progress, so nothing is written over it.
+            var values = self.values
             if let d = try? Data(contentsOf: url) {
                 guard case .object(let onDisk)? = try? JSONDecoder().decode(JSONValue.self, from: d) else {
                     throw RPCError.invalidParams("settings.json has an error, so the change wasn't saved. Fix the file (or remove it) and try again.")
                 }
-                st.values = onDisk
+                values = onDisk
             }
-            st.values[key] = value == .null ? nil : value
-            try write(&st)
-            return st.values
+            values[key] = value == .null ? nil : value
+            try write(values)
+            return values
         }
     }
 
     /// true when the file changed on disk and parsed.
+    /// From the ticker: a set writing now is left to finish (it's read again on the next tick).
     func reloadIfChanged() -> Bool {
-        state.withLock { st in
-            let m = modified()
-            guard m != st.mtime else { return false }
-            st.mtime = m
-            guard let d = try? Data(contentsOf: url), case .object(let o)? = try? JSONDecoder().decode(JSONValue.self, from: d) else { return false }
-            st.values = o
-            return true
+        guard file.try() else { return false }
+        defer { file.unlock() }
+        let m = modified()
+        guard m != state.withLock({ $0.mtime }) else { return false }
+        let o: [String: JSONValue]? = (try? Data(contentsOf: url)).flatMap {
+            if case .object(let o)? = try? JSONDecoder().decode(JSONValue.self, from: $0) { o } else { nil }
         }
+        state.withLock { st in st.mtime = m; if let o { st.values = o } }
+        return o != nil
     }
 
     /// The date of the file a symlink points at: the link's own never changes on an edit.
@@ -61,12 +66,13 @@ final class SettingsStore: Sendable {
         (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
     }
 
-    /// Inside `state.withLock`.
-    private func write(_ st: inout (values: [String: JSONValue], mtime: Date?)) throws {
+    /// Under `file`; the values change only once they're on disk.
+    private func write(_ values: [String: JSONValue]) throws {
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         // To where a symlink points (settings.json kept in a dotfiles repo): an atomic write would replace the link itself.
-        try (e.encode(JSONValue.object(st.values)) + Data("\n".utf8)).write(to: url.resolvingSymlinksInPath(), options: .atomic)
-        st.mtime = modified()   // our own write isn't a hand edit
+        try (e.encode(JSONValue.object(values)) + Data("\n".utf8)).write(to: url.resolvingSymlinksInPath(), options: .atomic)
+        let m = modified()   // our own write isn't a hand edit
+        state.withLock { $0 = (values, m) }
     }
 }
 
