@@ -277,8 +277,8 @@ public final class Daemon: Sendable {
     /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
     /// An ended session shows what it last printed (from its log), then the attach ends.
     private func stream(_ c: Connection, session: String, size: JSONValue?, leftover: Data) {
-        clients.setRaw(c.id, true)   // before waking: its status events must not land in the byte stream
-        defer { clients.setRaw(c.id, false) }
+        // Before waking: its status events must not land in the byte stream. It stays raw until `hungUp` removes it.
+        clients.setRaw(c.id, true)
         if sessions.existing(session) == nil, (try? store.session(session))?.status == .exited {
             c.send(TerminalReplies.withoutQueries((try? sessions.liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
