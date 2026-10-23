@@ -45,7 +45,8 @@ public struct Handover: Codable, Sendable {
         posix_spawn_file_actions_init(&fa)
         defer { posix_spawn_file_actions_destroy(&fa) }
         for fd in [0, 1, 2, socket, lock] + sessions.map(\.fd) { posix_spawn_file_actions_addinherit_np(&fa, fd) }
-        let argv = ([exe, "--adopt", file].map { strdup($0) } + [nil]) as [UnsafeMutablePointer<CChar>?]
+        let args: [String] = [exe, "--adopt", file]
+        let argv = (args.map { strdup($0) } + [nil]) as [UnsafeMutablePointer<CChar>?]
         let env = (ProcessInfo.processInfo.environment.map { strdup("\($0)=\($1)") } + [nil]) as [UnsafeMutablePointer<CChar>?]
         defer { (argv + env).forEach { free($0) } }
         let rc = posix_spawn(nil, exe, &fa, &attr, argv, env)
