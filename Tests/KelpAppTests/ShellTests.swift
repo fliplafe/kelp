@@ -62,3 +62,13 @@ import WorkbenchKit
     for _ in 0..<50 where looks.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
     #expect(looks.map(\.isEdited) == [true])
 }
+
+/// Past the newest four, editor areas go; one with unsaved files stays listed, and goes on a later switch once saved.
+@MainActor @Test func anAreaKeptForUnsavedFilesGoesOnceSaved() {
+    var unsaved: Set<String> = ["e"]
+    var (recent, gone) = EditorHost.evicting(["a", "b", "c", "d", "e", "f"], keep: 4) { unsaved.contains($0) }
+    #expect(recent == ["a", "b", "c", "d", "e"] && gone == ["f"])
+    unsaved = []
+    (recent, gone) = EditorHost.evicting(["g"] + recent, keep: 4) { unsaved.contains($0) }
+    #expect(recent == ["g", "a", "b", "c"] && gone == ["d", "e"])
+}

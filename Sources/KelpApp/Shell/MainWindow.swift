@@ -420,13 +420,21 @@ final class EditorHost: NSViewController {
         let area = areas[id] ?? EditorArea(app: app, workspaceId: id)
         if areas[id] == nil { areas[id] = area; addChild(area) }
         recent.removeAll { $0 == id }; recent.insert(id, at: 0)
-        // Their terminals detach; a workspace with unsaved files stays.
-        for old in recent.dropFirst(Self.keep) where areas[old]?.editedFiles.isEmpty != false { areas[old]?.removeFromParent(); areas[old] = nil }
-        recent = Array(recent.prefix(Self.keep))
+        // Their terminals detach.
+        let gone: [String]
+        (recent, gone) = Self.evicting(recent, keep: Self.keep) { self.areas[$0]?.editedFiles.isEmpty == false }
+        for old in gone { areas[old]?.removeFromParent(); areas[old] = nil }
         current = area
         card.pin(area.view)
         area.reconcile()
         area.focusSelected()
+    }
+
+    /// The areas past the newest `keep` go, except those with unsaved files: they stay listed, and go on a later switch
+    /// once saved (dropped from the list, one would stay loaded, and its terminal attached, until shown again).
+    static func evicting(_ recent: [String], keep: Int, edited: (String) -> Bool) -> (recent: [String], gone: [String]) {
+        let gone = recent.dropFirst(keep).filter { !edited($0) }
+        return (recent.filter { !gone.contains($0) }, gone)
     }
 
     /// A tab for a workspace that isn't on screen: into its editor area if it's loaded, else into its saved layout.
