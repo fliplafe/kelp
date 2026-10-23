@@ -54,7 +54,12 @@ final class SidebarCell: NSTableCellView {
             chip.bezelStyle = .inline; chip.controlSize = .mini; chip.font = .ui(10); chip.imagePosition = .imageLeading
             chip.refusesFirstResponder = true; chip.isHidden = true; chip.lineBreakMode = .byTruncatingTail
             chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)   // the name keeps its room first
-            layout(row: [icon, title, chip, trailing, mark])
+            // What it does sits on the right, as on a workspace's row; the mark keeps its column when it has none.
+            let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+            let slot = NSView(); slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
+            NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 14), slot.heightAnchor.constraint(equalToConstant: 14),
+                                         mark.centerXAnchor.constraint(equalTo: slot.centerXAnchor), mark.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
+            layout(row: [icon, title, spacer, chip, trailing, slot])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         for b in [changes, pr] { b.isBordered = false; b.title = ""; b.target = self }

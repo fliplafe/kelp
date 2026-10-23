@@ -77,7 +77,7 @@ final class AgentSummary: NSView {
         let name: [NSAttributedString.Key: Any] = [.font: NSFont.ui(12, weight: .semibold), .foregroundColor: NSColor.labelColor, .paragraphStyle: cut]
         let t = NSMutableAttributedString(string: app.catalog.displayName(s), attributes: name)
         let place = app.worktree(s.worktreeId)?.displayName ?? ""
-        let what = s.summary.isEmpty ? s.statusWords : s.summary
+        let what = s.summary.isEmpty ? SidebarCell.shownStatus(s).words : s.summary   // paused with news: "Done", not "Paused"
         t.append(NSAttributedString(string: "  " + what + (place.isEmpty ? "" : " · " + place),
                                     attributes: [.font: NSFont.ui(12), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: cut]))
         return t
@@ -145,7 +145,7 @@ private struct InboxView: View {
                     }
                     Text([app.repo(w?.repoId)?.name, w?.displayName].compactMap { $0 }.joined(separator: " › "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Text(s.summary.isEmpty ? s.statusWords : s.summary).font(.callout).lineLimit(2)
+                    Text(s.summary.isEmpty ? SidebarCell.shownStatus(s).words : s.summary).font(.callout).lineLimit(2)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle())
