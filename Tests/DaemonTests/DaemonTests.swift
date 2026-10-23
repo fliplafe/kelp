@@ -328,6 +328,22 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.summary == "Allow rm?")
 }
 
+/// The daemon's own replies (OSC 7501's answer, an auto-answer) wait behind a send: a probe printed between the text and
+/// its Enter gets its answer after the Enter, not inside the line being typed.
+@Test func aReplyDoesntLandInsideASend() async throws {
+    let script = #"stty -icanon -echo; IFS= read -rn1 first; printf '\033]7501;?\033\\'; IFS= read -r -t 5 -d '\' rest; "#
+        + #"[[ $rest == i$'\n'* ]] && echo IN-ORDER || echo MIXED; sleep 30"#
+    let p = try await world(agents: [AgentManifest(id: "osc", name: "OSC", command: "/bin/bash", args: ["-c", script])]); defer { p.d.stop() }
+    let c = p.c, w = try await firstDesk(p)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "agent": "osc"]), as: Session.self)
+    _ = try await c.call("session.send", .obj(["id": .string(s.id), "text": "hi"]))
+    #expect(try await waitFor(10) {
+        let screen = try await c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
+        return screen.contains("IN-ORDER") || screen.contains("MIXED")
+    })
+    #expect(try await c.call("session.read", .obj(["id": .string(s.id)])).string?.contains("IN-ORDER") == true)
+}
+
 /// A notification's "Allow": the daemon walks the agent's menu to the Yes option and confirms it there.
 @Test func answerAMenuFromOutside() async throws {
     let script = #"stty -icanon -echo; printf 'Do you want to proceed?\n\xe2\x9d\xaf 1. Yes\n  2. Yes, and do not ask again\n  3. No\n'; IFS= read -rsn1 k; [[ -z "$k" ]] && echo ALLOWED; sleep 30"#

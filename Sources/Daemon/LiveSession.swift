@@ -137,7 +137,7 @@ final class LiveSession: Sendable {
         // Disk, off the lock: a slow disk or the trim (a megabyte read back) doesn't hold up typing, attaching or status.
         try? log?.write(contentsOf: d)
         if heard.trimLog, let n = Self.trimmed(log, logURL) { state.withLock { $0.logSize = n } }
-        if heard.probe { pty.write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
+        if heard.probe { write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if !heard.limits.isEmpty { callbacks.limits?(heard.limits) }
         if let url = heard.url { callbacks.localURL?(url) }
         if let topic = heard.topic { callbacks.topic?(topic) }
@@ -173,7 +173,7 @@ final class LiveSession: Sendable {
             let tail = s.screen(4000)
             return a.asked.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil
         }
-        if still { pty.write(Data(a.input.utf8)) }
+        if still { write(Data(a.input.utf8)) }
     }
 
     /// On the PTY's queue too, after its last output: the log closes after the last write.
@@ -311,6 +311,31 @@ final class LiveSession: Sendable {
                 s.detector.hook(event)
             default: s.detector.hook(event)
             }
+            emit(s.sync())
+        }
+    }
+
+    /// Stop: done, or still working while it goes on by itself (TurnEnd); the record says what it works toward and
+    /// what runs in the background. Returns the verdict and the hook's time, which `release` checks.
+    func stop(_ tasks: [JSONValue], goal: GoalStatus?) -> (TurnEnd.Verdict, Date) {
+        state.withLock { s in
+            let now = Date()
+            s.lastHookAt = now
+            let (verdict, running) = s.turnEnd.stop(tasks, goal: goal)
+            s.record.background = running.isEmpty ? nil : running
+            if case .goal(let c) = verdict { s.record.goal = c } else if goal?.met != false { s.record.goal = nil }
+            s.detector.hook(verdict == .done ? "done" : "working")
+            emit(s.sync() ?? s.record)
+            return (verdict, now)
+        }
+    }
+
+    /// A Stop held as working that nothing came after (`at`: its time): the goal was met, or the wait ran out.
+    func release(_ at: Date) {
+        state.withLock { s in
+            guard s.lastHookAt == at, s.detector.status == .working else { return }
+            s.record.goal = nil
+            s.detector.hook("done")
             emit(s.sync())
         }
     }
