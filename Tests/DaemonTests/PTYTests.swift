@@ -270,3 +270,23 @@ final class Box: @unchecked Sendable {
     if !gone { kill(pid, SIGKILL) }
     #expect(gone)
 }
+
+/// A terminal's fd is closed once, and never while a read source still has it: whether the source ended first (its
+/// program's EOF) or the hang-up did, and right away when no source ever had it.
+@Test func aTerminalsFdClosesOnceNoSourceHasIt() {
+    func open() -> Int32 { var fds: [Int32] = [0, 0]; pipe(&fds); close(fds[1]); return fds[0] }
+    func isOpen(_ fd: Int32) -> Bool { fcntl(fd, F_GETFD) != -1 }
+    let eofFirst = FDCloser(open())
+    eofFirst.watch(); eofFirst.cancelled()
+    #expect(isOpen(eofFirst.fd))   // not asked yet: a hand-over keeps it
+    eofFirst.ask()
+    #expect(!isOpen(eofFirst.fd))
+    let hangUpFirst = FDCloser(open())
+    hangUpFirst.watch(); hangUpFirst.ask()
+    #expect(isOpen(hangUpFirst.fd))   // GCD still has it
+    hangUpFirst.cancelled()
+    #expect(!isOpen(hangUpFirst.fd))
+    let never = FDCloser(open())
+    never.ask()
+    #expect(!isOpen(never.fd))
+}

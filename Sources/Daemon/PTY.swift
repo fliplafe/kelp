@@ -136,6 +136,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         src.setEventHandler { [weak self] in self?.drain() }
         let closer = closer
         src.setCancelHandler { closer.cancelled() }
+        closer.watch()
         q.sync { source = src }
         src.resume()
         let pid = pid
@@ -176,7 +177,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         let first = io.withLock { () -> Bool in
             guard !closed else { return false }
             closed = true; stopWrites = true
-            if let s = source { closer.ask(); s.cancel(); source = nil } else { close(primaryFD) }   // with a source: closed in its cancel handler
+            if let s = source { s.cancel(); source = nil }
+            closer.ask()   // closed once no source has it: now, or in the cancel handler (also of one ended by EOF)
             return true
         }
         // Once only (finish and deinit both get here): a second close would hit whatever reused the number since.
@@ -265,11 +267,18 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     private func signal(_ f: (pid_t) -> Void) { life.withLock { if !reaped { f(pid) } } }
 }
 
-/// Closes an fd from a dispatch source's cancel handler, only when asked to (a source cancelled at EOF leaves it open).
-private final class FDCloser: Sendable {
+/// Closes an fd when asked, but never while a dispatch source still has it. Not asked (a hand-over), it stays open.
+final class FDCloser: Sendable {
     let fd: Int32
-    private let state = OSAllocatedUnfairLock<(asked: Bool, done: Bool)>(initialState: (false, false))
+    private let state = OSAllocatedUnfairLock<(asked: Bool, watched: Bool, done: Bool)>(initialState: (false, false, false))
     init(_ fd: Int32) { self.fd = fd }
-    func ask() { state.withLock { $0.asked = true } }
-    func cancelled() { state.withLock { if $0.asked && !$0.done { $0.done = true; close(fd) } } }
+    /// A read source has the fd from now until its cancel handler runs (`cancelled`).
+    func watch() { state.withLock { $0.watched = true } }
+    /// Close it once no source has it: at once, or when the cancel handler runs. However the source ended (hung up, or
+    /// its own EOF), the fd is closed once, never under GCD.
+    func ask() { state.withLock { $0.asked = true; closeIfDue(&$0) } }
+    func cancelled() { state.withLock { $0.watched = false; closeIfDue(&$0) } }
+    private func closeIfDue(_ s: inout (asked: Bool, watched: Bool, done: Bool)) {
+        if s.asked && !s.watched && !s.done { s.done = true; close(fd) }
+    }
 }
