@@ -44,6 +44,7 @@ extension SettingsEvents: DaemonService { static func of(_ d: Daemon) -> Setting
 extension UIStore: DaemonService { static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) } }
 extension ForgeWork: DaemonService { static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) } }
 extension Shutdown: DaemonService { static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } } }
+extension Upgrade: DaemonService { static func of(_ d: Daemon) -> Upgrade { Upgrade(executable: Daemon.executable) { [weak d] in d?.upgrade() } } }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
@@ -217,9 +218,8 @@ final class Slots: Sendable {
 extension DaemonInfo: Handled {
     static var quick: Bool { true }
     func handle(_ sessions: Sessions) throws -> Result {
-        let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        return Result(path: exe.resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
-                      liveSessions: sessions.live.all.filter { $0.snapshot.status != .exited }.count)
+        Result(path: URL(fileURLWithPath: Daemon.executable).resolvingSymlinksInPath().path, binaryMTime: Daemon.binaryMTime, pid: Int(getpid()),
+               liveSessions: sessions.live.all.filter { $0.snapshot.status != .exited }.count)
     }
 }
 

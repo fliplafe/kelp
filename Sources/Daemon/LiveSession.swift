@@ -61,10 +61,16 @@ final class LiveSession: Sendable {
         return (key, ((m.3.flatMap { Int($0) } ?? 1) - 1) & 0b111111)
     }
 
-    init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16, rows: UInt16,
-         callbacks: Callbacks) throws {
-        var rec = record
+    convenience init(record: Session, manifest: AgentManifest, argv: [String], env: [String: String], historyDir: URL, cols: UInt16,
+                     rows: UInt16, callbacks: Callbacks) throws {
         try Paths.ensure(historyDir)
+        self.init(record: record, manifest: manifest, pty: try PTY(argv: argv, cwd: record.cwd, env: env, cols: cols, rows: rows),
+                  historyDir: historyDir, callbacks: callbacks)
+    }
+
+    /// `pty`: started for it, or taken over from the kelpd before this one (`Sessions.adopt`).
+    init(record: Session, manifest: AgentManifest, pty: PTY, historyDir: URL, callbacks: Callbacks) {
+        var rec = record
         // A woken session goes on in the same log: what it showed before the pause stays readable.
         logURL = historyDir.appendingPathComponent("\(record.id).log")
         if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
@@ -74,7 +80,7 @@ final class LiveSession: Sendable {
         }
         var logSize = Int((try? log?.seekToEnd()) ?? 0)
         if logSize > Self.logLimit, let tail = Self.trimmed(log, logURL) { logSize = tail }
-        pty = try PTY(argv: argv, cwd: record.cwd, env: env, cols: cols, rows: rows)
+        self.pty = pty
         rec.pid = pty.pid
         self.callbacks = callbacks
         state = OSAllocatedUnfairLock(initialState: State(record: rec, manifest: manifest, logSize: logSize, callbacks: callbacks))
@@ -334,9 +340,7 @@ final class LiveSession: Sendable {
         state.withLock { s in
             guard !s.letGo else { return nil }
             s.attached.insert(conn)
-            var modes = s.ringModes
-            modes.read(s.ring.dropLast(Self.ringLimit))
-            let history = modes.restore + TerminalReplies.withoutQueries(s.ring.suffix(Self.ringLimit))
+            let history = s.historyModes.restore + TerminalReplies.withoutQueries(s.ring.suffix(Self.ringLimit))
             send(history)
             return history
         }
@@ -344,6 +348,26 @@ final class LiveSession: Sendable {
     func detach(_ conn: Int) { state.withLock { _ = $0.attached.remove(conn) } }
     /// Out of `live` with its program still to stop (paused, deleted): nobody attaches from now on. Who was attached.
     func letGo() -> Set<Int> { state.withLock { s in s.letGo = true; defer { s.attached = [] }; return s.attached } }
+
+    /// Given up to the kelpd that takes over (`Sessions.handOver`), its output no longer read here: what that one needs to
+    /// show the same history. The log holds every byte the ring does by now (it's written as output is handled).
+    func handedOver(fd: Int32) -> Handover.Session {
+        state.withLock { s in
+            Handover.Session(id: s.record.id, pid: pty.pid, fd: fd, modes: String(decoding: s.historyModes.restore, as: UTF8.self),
+                             bytes: min(s.ring.count, Self.ringLimit))
+        }
+    }
+
+    /// Taken over from the kelpd this one replaced: its history is the log's last `bytes` (that one's ring), in `modes`. It's
+    /// long past starting up: no launch prompt, startup answer or title from its first prompt comes now.
+    func adopted(modes: String, bytes: Int) {
+        let history = bytes > 0 ? Data(tailOf: logURL, bytes: bytes) ?? Data() : Data()
+        state.withLock { s in
+            s.ring = history; s.ringModes.read(Data(modes.utf8))
+            s.detector.adopted(s.record.status)
+            s.startedUp = true; s.typedYet = true; s.dialogSettled = true; s.sawFirstPrompt = true
+        }
+    }
 }
 
 extension LiveSession {
@@ -417,6 +441,11 @@ extension LiveSession {
 
         /// The last `bytes` of what it printed, without escapes: what's on screen, near enough.
         func screen(_ bytes: Int) -> String { StatusDetector.stripANSI(String(decoding: ring.suffix(bytes), as: UTF8.self)) }
+
+        /// The modes in effect where the history (the ring's last `ringLimit` bytes) starts.
+        var historyModes: TerminalModes {
+            var m = ringModes; m.read(ring.dropLast(LiveSession.ringLimit)); return m
+        }
 
         // What a chunk of output says. Whether a chunk has a sequence at all is asked of its bytes: String.contains
         // compares Characters, and on a stream of output that was most of the daemon's time.

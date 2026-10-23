@@ -203,6 +203,36 @@ final class Sessions: Sendable {
         Self.waitGone(live.close().flatMap { ls in live.remove(ls.snapshot.id).map { pause($0, manifests) } ?? [] })
     }
 
+    /// Every running one, for the kelpd that takes over (`Daemon.handOver`): out of `live` with its program left running and
+    /// its last record saved. One ending right now isn't handed over: its record says what became of it. None starts or
+    /// wakes from now on.
+    func handOver() -> [Handover.Session] {
+        sleepAssertion.withLock { if $0.id != 0 { IOPMAssertionRelease($0.id); $0 = (0, nil) } }   // the next one takes its own
+        return live.close().compactMap { ls in
+            guard live.remove(ls.snapshot.id) != nil, let fd = ls.pty.handOver() else { return nil }
+            publishLast(ls)
+            return ls.handedOver(fd: fd)
+        }
+    }
+
+    /// One the kelpd before this one ran (`Handover`), live here from now on: its program never stopped. One that can't be
+    /// (its record gone) is stopped rather than left running unseen.
+    func adopt(_ h: Handover.Session) {
+        let pty = PTY(adopting: h.pid, fd: h.fd)
+        do {
+            guard let rec = try store.session(h.id) else { throw RPCError.invalidParams("no session \(h.id)") }
+            var m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
+            if remotes.of(rec.cwd) != nil { m.hooksSettingsFlag = nil }   // as `liveManifest`; past startup, nothing is answered for it
+            let ls = LiveSession(record: rec, manifest: m, pty: pty, historyDir: root.appendingPathComponent("history"), callbacks: callbacks(for: rec))
+            ls.adopted(modes: h.modes, bytes: h.bytes)
+            try live.add(ls)
+            ls.start()
+        } catch {
+            Log.session.error("\(h.id, privacy: .public) wasn't taken over: \(error)")
+            pty.terminate(); pty.start()   // start: its exit is reaped
+        }
+    }
+
     // MARK: keep awake
 
     /// keepAwake: "always" | "agents" (only while an agent is working) | "off".

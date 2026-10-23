@@ -88,6 +88,12 @@ public struct StatusDetector: Sendable {
     /// of the screen in the first seconds is past (that redraw is no turn, and its end no "done").
     public mutating func attachedToRunning(at now: Date = Date()) { active = true; settledAt = now }
 
+    /// Taken over from the kelpd an update replaced: its program went on as `status`, past its first input.
+    public mutating func adopted(_ status: AgentStatus, at now: Date = Date()) {
+        self.status = status; active = true
+        if status == .working { lastOutput = now }   // it settles once quiet, as it would have
+    }
+
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.
     /// `typing`: keys without Return (the prompt is still being written); output in the next seconds is their echo.
     public mutating func input(typing: Bool = false, at now: Date = Date()) { tail = ""; active = true; settledAt = nil; typedAt = typing ? now : nil }

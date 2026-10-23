@@ -160,3 +160,7 @@ public struct ProcessWhich: RPCMethod {
 /// "pong".
 public struct Ping: RPCMethod { public static let name = "ping"; public typealias Result = String; public init() {} }
 public struct DaemonShutdown: RPCMethod { public static let name = "daemon.shutdown"; public typealias Result = Done; public init() {} }
+/// The kelpd binary now at the running one's path (an update put it there) takes over in the same process: running
+/// sessions carry on, their programs never stop. Answered first; then every connection drops, and the socket answers
+/// again once the new one is up.
+public struct DaemonUpgrade: RPCMethod { public static let name = "daemon.upgrade"; public typealias Result = Done; public init() {} }

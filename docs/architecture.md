@@ -151,6 +151,16 @@ else a `NotificationCenter` name.
   Language-server requests time out.
 - **Checked by** DaemonTests, which run against a real daemon with real PTYs and git, also under Thread Sanitizer in CI.
 
+## Updates
+An update replaces the app bundle while kelpd keeps running the old binary. The relaunched app sees that
+(`daemon.info`'s `binaryMTime`) and calls `daemon.upgrade`: kelpd stops serving, saves each running session's record,
+and runs the new kelpd at the same path in the same process (`posix_spawn` with `POSIX_SPAWN_SETEXEC`). The new kelpd gets
+the listening socket, the home's lock and each session's terminal fd (`Handover`, `kelpd --adopt`). The agents stay this
+process's children and keep working, and their output waits in the terminal for the few hundred milliseconds this takes.
+Connections drop; the app reconnects and its terminals attach again, the history read back from each session's log. A
+kelpd from before `daemon.upgrade` existed is restarted instead, which ends the sessions; the app asks first when any are
+running.
+
 ## When the daemon misbehaves
 - **Its log:** `log stream --predicate 'subsystem == "dev.kelp.daemon"'` (or Console.app). It logs what would otherwise
   fail without a trace: startup, store writes that fail (a full disk), failed requests (debug level), refused

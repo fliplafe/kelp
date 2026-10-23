@@ -144,6 +144,23 @@ struct Shutdown {
     let stop: @Sendable () -> Void
 }
 
+extension DaemonUpgrade: Handled {
+    func handle(_ upgrade: Upgrade) throws -> Done {
+        // Only kelpd itself: a daemon hosted in another program (the tests) would exec that program.
+        guard URL(fileURLWithPath: upgrade.executable).lastPathComponent == "kelpd", FileManager.default.isExecutableFile(atPath: upgrade.executable) else {
+            throw RPCError.invalidParams("no kelpd to upgrade to at \(upgrade.executable)")
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { upgrade.run() }   // once the reply is out
+        return Done()
+    }
+}
+
+/// daemon.upgrade's: the binary the daemon runs and its exec in place, nothing else of it.
+struct Upgrade {
+    let executable: String
+    let run: @Sendable () -> Void
+}
+
 /// The agents on this Mac, side by side, each through `offload`; latest from npm where they publish there.
 extension AgentsVersions: AsyncHandled {
     func handle(_ sessions: Sessions) async throws -> [Item] {
@@ -206,7 +223,7 @@ extension TaskFromIssue: AsyncHandled {
 
 extension Methods {
     static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
-        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, ProcessRun.self, ProcessWhich.self]
+        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, DaemonUpgrade.self, ProcessRun.self, ProcessWhich.self]
 }
 
 extension ProcessWhich: Handled {

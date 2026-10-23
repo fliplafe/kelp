@@ -73,30 +73,37 @@ public final class Daemon: Sendable {
         return why
     }
 
+    /// The binary this process runs: the one an update replaces.
+    static var executable: String { (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).path }
+
     /// When this binary was built; the app compares it with the kelpd it ships to spot a stale daemon after an update.
     static let binaryMTime: Double = {
-        let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        return (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        (try? FileManager.default.attributesOfItem(atPath: executable)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
     }()
 
-    public func start() throws {
+    /// `handover`: what the kelpd this process ran before (an update, `daemon.upgrade`) left open for this one to take over.
+    public func start(adopting handover: Handover? = nil) throws {
         // One daemon per KELP_HOME: a second one (launchd's KeepAlive, a CLI that couldn't connect) would take the socket
-        // over and mark the first one's running agents paused.
-        let lockFD = open(root.appendingPathComponent("kelpd.lock").path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
-        guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
+        // over and mark the first one's running agents paused. A handover's lock is held already.
+        let lockFD = handover?.lock ?? open(root.appendingPathComponent("kelpd.lock").path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+        guard lockFD >= 0, handover != nil || flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
             if lockFD >= 0 { close(lockFD) }
             throw RPCError.internalError("another kelpd is already running for \(root.path)")
         }
+        if handover != nil { _ = fcntl(lockFD, F_SETFD, FD_CLOEXEC) }   // as opened: a program started here must not keep the home locked
         running.withLock { $0.instanceLock = lockFD }
-        // Sessions from a previous daemon run lost their PTYs; resumable ones come back as paused, the rest as exited.
+        // Sessions from a previous daemon run lost their PTYs, unless it handed them over; resumable ones come back as
+        // paused, the rest as exited.
         let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        let adopted = Set(handover?.sessions.map(\.id) ?? [])
         do {
-            for var s in try store.sessions() where s.status != .exited {
+            for var s in try store.sessions() where s.status != .exited && !adopted.contains(s.id) {
                 s.status = Sessions.resumable(s, manifests) ? .hibernated : .exited
                 s.progress = nil   // what ran there isn't getting any further
                 try store.save(s)
             }
         } catch { Log.store.error("couldn't mark the last run's sessions paused or ended: \(error)") }
+        handover?.sessions.forEach(sessions.adopt)   // before the first connection: it finds them running
         _ = Self.binaryMTime   // read now: after an update the file on disk is already the new one
         DispatchQueue.global().async { _ = LoginPath.value }   // warm up so the first agent doesn't wait for the shell
         // The usage index reads gigabytes the first time: do it in the background now, not when Usage is opened.
@@ -105,7 +112,7 @@ public final class Daemon: Sendable {
             _ = agentUsage.usageIndex.rows(roots: agentUsage.agentRoots().claude.filter { FileManager.default.fileExists(atPath: $0.path) }, since: since)
         }
         let listenFD: Int32
-        do { listenFD = try Unix.listen(socketPath) } catch {
+        do { listenFD = try handover?.socket ?? Unix.listen(socketPath) } catch {
             running.withLock { if $0.instanceLock >= 0 { close($0.instanceLock); $0.instanceLock = -1 } }   // not ours to keep
             throw error
         }
@@ -148,6 +155,38 @@ public final class Daemon: Sendable {
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }
+    }
+
+    /// As `stop()`, except every running session goes on, handed over with copies of the socket and the lock to the kelpd
+    /// this process runs next (`upgrade`). Connections made meanwhile wait in the socket's queue for it. Nil when not running.
+    func handOver() -> Handover? {
+        let r = running.withLock { r in defer { r = Running() }; return r }
+        guard let accept = r.accept else { return nil }
+        let socket = dup(r.listenFD)
+        accept.cancel(); r.ticker?.cancel(); r.prune?.cancel()   // the accept source's cancel closes its own fd, not the copy
+        let h = Handover(socket: socket, lock: dup(r.instanceLock), sessions: sessions.handOver())
+        lsp.stopAll()
+        watches.stopAll()
+        workspaces.stopWatching()
+        clients.everyone().forEach { $0.hangUp() }
+        close(r.instanceLock)
+        return h
+    }
+
+    /// `daemon.upgrade`: this process runs the kelpd now at `executable`, which takes every running session over. Returns
+    /// only when the daemon is stopping anyway.
+    func upgrade() {
+        guard let h = handOver() else { return }
+        let file = root.appendingPathComponent("handover.json")
+        do {
+            try JSONEncoder().encode(h).write(to: file)
+            try h.exec(Self.executable, file: file.path)
+        } catch {
+            Log.start.fault("kelpd couldn't run its update: \(error)")
+        }
+        // Limit: the sessions were handed over and nothing here runs them now. They end with this process; the next kelpd
+        // (the app starts one) finds them paused or ended, as after a crash.
+        exit(1)
     }
 
     // MARK: connections

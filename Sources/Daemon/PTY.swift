@@ -43,6 +43,30 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         _ = fcntl(writeFD, F_SETFL, fcntl(writeFD, F_GETFL) | O_NONBLOCK)   // shared with primaryFD: its reads already allow EAGAIN
     }
 
+    /// A program the kelpd this one replaced started (`Handover`): still this process's child, its terminal's fd kept
+    /// open across exec.
+    init(adopting pid: pid_t, fd: Int32) {
+        self.pid = pid; primaryFD = fd
+        writeFD = dup(fd)
+        closer = FDCloser(fd)
+        _ = fcntl(writeFD, F_SETFL, fcntl(writeFD, F_GETFL) | O_NONBLOCK)
+    }
+
+    /// For the kelpd that takes over (`Handover`): output stops being read here once what was read is handled, and the fd
+    /// stays open, never written or closed here again. The program's exit is that one's to read. Nil once it has ended.
+    func handOver() -> Int32? {
+        q.sync {
+            let fd = io.withLock { () -> Int32? in
+                guard !closed, !exited, let s = source else { return nil }
+                closed = true; stopWrites = true
+                s.cancel(); source = nil   // `closer` isn't asked: the fd stays open
+                return primaryFD
+            }
+            if fd != nil { exited = true; let w = writeFD; writes.async { close(w) } }
+            return fd
+        }
+    }
+
     /// A terminal that was freed a moment ago can refuse to open its slave side (EIO, or ENXIO from openpty itself, seen
     /// with several daemons starting terminals at once) while the kernel is still tearing it down; a fresh terminal a few
     /// milliseconds later works. Any other failure is returned at once.

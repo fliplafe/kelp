@@ -194,8 +194,9 @@ final class AppModel {
     private var binDir: URL { (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).deletingLastPathComponent() }
     private var bundledDaemon: URL { binDir.appendingPathComponent("kelpd") }
 
-    /// After an app update the running daemon may be older. Restart it right away when no agent is running;
-    /// otherwise ask, because restarting ends running sessions. Returns true when a restart is in progress.
+    /// After an app update the running daemon may be older. It takes the update over in place when it can (`daemon.upgrade`:
+    /// agents keep running); else it restarts right away when no agent is running, and otherwise asks, because restarting
+    /// ends running sessions. Returns true when an upgrade or a restart is in progress.
     private func checkDaemonVersion(_ c: RPCClient) async -> Bool {
         guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return false }
         guard let info = try? await c.call(DaemonInfo()) else { return false }
@@ -203,16 +204,21 @@ final class AppModel {
         let samePath = info.path == bundledDaemon.resolvingSymlinksInPath().path
         guard !(samePath && abs((info.binaryMTime ?? 0) - mine) < 1), !restartAttempted else { return false }
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
-        if info.liveSessions > 0 {
-            let a = NSAlert(); a.messageText = String(localized: "Kelp was updated")
-            a.informativeText = String(
-                localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
-            a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
-            // Return keeps the agents running: ending them takes a deliberate click.
-            a.buttons[0].hasDestructiveAction = true; a.buttons[0].keyEquivalent = ""; a.buttons[1].keyEquivalent = "\r"
-            guard await runSheet(a) == .alertFirstButtonReturn else { return false }
+        // One that runs the new binary at its path in place keeps every agent running; an older one (or another copy of
+        // Kelp's) has to restart.
+        let upgrading = samePath ? (try? await c.call(DaemonUpgrade())) != nil : false
+        if !upgrading {
+            if info.liveSessions > 0 {
+                let a = NSAlert(); a.messageText = String(localized: "Kelp was updated")
+                a.informativeText = String(
+                    localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
+                a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
+                // Return keeps the agents running: ending them takes a deliberate click.
+                a.buttons[0].hasDestructiveAction = true; a.buttons[0].keyEquivalent = ""; a.buttons[1].keyEquivalent = "\r"
+                guard await runSheet(a) == .alertFirstButtonReturn else { return false }
+            }
+            _ = try? await c.call(DaemonShutdown())
         }
-        _ = try? await c.call(DaemonShutdown())
         c.close(); client = nil
         try? await Task.sleep(for: .milliseconds(600))
         await open()
