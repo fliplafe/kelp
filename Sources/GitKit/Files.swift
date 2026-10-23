@@ -113,7 +113,9 @@ extension ProjectFiles {
 extension Git {
     /// Which of `paths` (relative to `root`; a folder ends with "/") .gitignore and the other exclude files leave out.
     public static func ignored(_ paths: [String], cwd root: String, remotes: Remotes = .none) throws -> Set<String> {
-        let out = try run(["check-ignore", "-z", "--stdin"], cwd: root, stdin: paths.joined(separator: "\0"), ok: [0, 1], remotes: remotes)
-        return Set(out.split(separator: "\0").map(String.init))
+        // 10 s: it runs as files change, for a watch; one that takes longer (a held lock, a huge repo) counts every change.
+        let out = try runData(["check-ignore", "-z", "--stdin"], cwd: root, stdin: Data(paths.joined(separator: "\0").utf8), ok: [0, 1],
+                              timeLimit: 10, remotes: remotes)
+        return Set(String(decoding: out, as: UTF8.self).split(separator: "\0").map(String.init))
     }
 }

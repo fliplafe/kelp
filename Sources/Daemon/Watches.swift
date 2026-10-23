@@ -30,7 +30,6 @@ final class Watches: Sendable {
     /// bare in the lock: see `Store.Listener`.
     struct Reading: Sendable { var read: (@Sendable (Key, _ fast: Bool) async -> (Data?, TimeInterval?))? }
     let reading = OSAllocatedUnfairLock(initialState: Reading())
-    private let files = DispatchQueue(label: "kelp.watches.files")
     private let store: Store
     private let clients: Clients
 
@@ -86,8 +85,9 @@ final class Watches: Sendable {
 
     private func begin(_ k: Key) {
         if let (root, matters) = folder(k) {
-            // Debounced: a save is several events, a checkout hundreds.
-            let fw = FileWatcher(root: root, deliver: files) { [weak self] paths in
+            // Debounced: a save is several events, a checkout hundreds. A queue of its own: `matters` may run git
+            // (check-ignore), and one slow folder must not hold up every other watch.
+            let fw = FileWatcher(root: root, deliver: DispatchQueue(label: "kelp.watches.files")) { [weak self] paths in
                 guard let self, matters(paths) else { return }
                 soon(k)
             }
