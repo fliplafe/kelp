@@ -184,7 +184,8 @@ private func codeOnly(_ s: String) -> String {
         "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
         "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
         "Builtins/Git/CommitCard.swift": "a commit's card opens once the pointer rests on its row, and closes a moment after it leaves",
-        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list"
+        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list",
+        "Extensions/DeclarativeExtension.swift": "an extension's own refresh interval for its panel's badge command"
     ]
     let all = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])
     let found = all.filter { m in !clocks.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }

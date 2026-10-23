@@ -11,8 +11,12 @@ import WorkbenchKit
 @MainActor
 final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNavigationDelegate {
     private let page: URL, folder: URL, app: AppModel
+    /// The panel icon's badge `kelp.badge` sets (nil in a tab).
+    private let badge: ExtBadge?
     private var web: WKWebView!
-    init(page: URL, folder: URL, app: AppModel) { self.page = page; self.folder = folder; self.app = app; super.init(nibName: nil, bundle: nil) }
+    init(page: URL, folder: URL, app: AppModel, badge: ExtBadge? = nil) {
+        self.page = page; self.folder = folder; self.app = app; self.badge = badge; super.init(nibName: nil, bundle: nil)
+    }
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
@@ -72,6 +76,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
             if let u = ExtActions.openableURI(TabURI.normalize(arg, cwd: ctx.workspace?.path)) { app.workbench.open(u) }
             reply(id, .null)
         case "agent": app.workbench.editor?.newAgent(nil, prompt: arg, draft: true); reply(id, .null)
+        case "badge": badge?.value = PanelBadge(arg); reply(id, .null)
         case "settings.get": reply(id, app.settings.value(arg) ?? .null)
         case "settings.set":
             let v = (d["value"] as? String).flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
@@ -93,7 +98,7 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
         window.webkit.messageHandlers.kelp.postMessage(Object.assign({op, arg, id}, extra || {})); });
       window.kelp = {
         workspace: {}, exec: c => call('exec', c), terminal: (c, o) => call('terminal', c, {title: o && o.title}),
-        open: u => call('open', u), agent: p => call('agent', p),
+        open: u => call('open', u), agent: p => call('agent', p), badge: v => call('badge', v == null ? '' : String(v)),
         settings: { get: k => call('settings.get', k), set: (k, v) => call('settings.set', k, {value: JSON.stringify(v)}) },
         on: (ev, cb) => (listeners[ev] = listeners[ev] || []).push(cb),
         __resolve: (id, v) => { const r = pending[id]; delete pending[id]; r && r(v); },

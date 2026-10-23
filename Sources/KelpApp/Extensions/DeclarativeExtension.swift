@@ -14,7 +14,9 @@ struct ExtManifest: Decodable {
     }
     /// VS Code's own shape: the theme file is in VS Code's file icon theme format.
     struct IconThemeRef: Decodable { var id: String; var label: String?; var path: String }
-    struct ViewDef: Decodable { var id: String; var title: String; var icon: String?; var list: ListDef?; var web: String? }
+    struct ViewDef: Decodable { var id: String; var title: String; var icon: String?; var list: ListDef?; var web: String?; var badge: BadgeDef? }
+    /// A panel's icon badge: what `command` prints (`PanelBadge(_:)`), read every `refresh` seconds (60 by default).
+    struct BadgeDef: Decodable { var command: String; var refresh: Double? }
     struct ListDef: Decodable {
         struct StatusMap: Decodable { var field: String; var map: [String: String] }
         var command: String
@@ -92,8 +94,12 @@ enum DeclarativeExtension {
         let x = m.contributes
         for v in x?.panels ?? [] {
             views["\(m.id)/\(v.id)"] = (m, v, folder)
-            c.panels.append(PanelSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id) {
-                viewController(m, v, folder, app)
+            let badge = ExtBadge()
+            var poll: (@MainActor () async -> Void)?
+            if let def = v.badge { poll = { await badge.poll(def, folder: folder, app: app) } }
+            c.panels.append(PanelSpec(id: "\(m.id).\(v.id)", title: v.title, icon: v.icon ?? m.icon ?? "puzzlepiece.extension", extensionId: m.id,
+                                      badge: { badge.value }, poll: poll) {
+                viewController(m, v, folder, app, badge: badge)
             })
         }
         for v in x?.editors ?? [] {
@@ -130,9 +136,9 @@ enum DeclarativeExtension {
         }
     }
 
-    private static func viewController(_ m: ExtManifest, _ v: ExtManifest.ViewDef, _ folder: URL, _ app: AppModel) -> NSViewController {
+    private static func viewController(_ m: ExtManifest, _ v: ExtManifest.ViewDef, _ folder: URL, _ app: AppModel, badge: ExtBadge? = nil) -> NSViewController {
         if let list = v.list { return hosting(ExtListView(def: list, folder: folder, app: app)) }
-        if let web = v.web { return ExtWebController(page: folder.appendingPathComponent(web), folder: folder, app: app) }
+        if let web = v.web { return ExtWebController(page: folder.appendingPathComponent(web), folder: folder, app: app, badge: badge) }
         let vc = NSViewController(); vc.view = NSTextField(labelWithString: String(localized: "\(m.name): view “\(v.id)” has neither list nor web."))
         return vc
     }
@@ -255,6 +261,23 @@ enum Shell {
             return Result(code: r.code, stdout: r.stdout, stderr: r.stderr)
         } catch {
             return Result(code: -1, stdout: "", stderr: (error as? RPCError)?.message ?? error.localizedDescription)
+        }
+    }
+}
+
+/// An extension panel's badge: its manifest's command, read while the inspector lists the panel, or `kelp.badge` from its page.
+@MainActor @Observable
+final class ExtBadge {
+    var value: PanelBadge?
+
+    func poll(_ def: ExtManifest.BadgeDef, folder: URL, app: AppModel) async {
+        while !Task.isCancelled {
+            let cmd = ExtActions(app).expand(def.command, item: nil, quote: true)
+            let r = await Shell.run(app, cmd, cwd: IDEContext.of(app).workspace?.path ?? folder.path, extension: folder.lastPathComponent)
+            // A command that fails is a red dot, its error the key: looked at once, it stays quiet until the error changes.
+            let next = r.code == 0 ? PanelBadge(r.stdout) : PanelBadge(alert: true, key: String(r.stderr.prefix(200)))
+            if next != value { value = next }
+            try? await Task.sleep(for: .seconds(max(def.refresh ?? 60, 5)))
         }
     }
 }

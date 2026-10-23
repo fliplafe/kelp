@@ -21,9 +21,28 @@ struct IDEContext {
 /// A right-inspector panel.
 struct PanelSpec: Identifiable {
     let id: String, title: String, icon: String, extensionId: String
-    /// A number on the panel's icon (0: none). Read under observation, so it must not build the panel.
-    var badge: (@MainActor () -> Int)?
+    /// What the panel's icon says (nil: nothing). Read under observation, so it must not build the panel.
+    var badge: (@MainActor () -> PanelBadge?)?
+    /// Keeps `badge` current while the inspector lists the panel (an extension's badge command); cancelled on a rebuild.
+    var poll: (@MainActor () async -> Void)?
     let make: @MainActor () -> NSViewController
+}
+
+/// A panel icon's mark: a number for what's left to go through (changed files), a dot for something that happened
+/// (a failed run). Grey, or red for a failure. A dot goes once its panel has been shown with the same `key`.
+struct PanelBadge: Equatable {
+    var count = 0, alert = false
+    var key = ""
+
+    /// What an extension's badge command prints (or a page's `kelp.badge`): a number, any other text for a dot (the
+    /// text is its key), "!" first for red; nothing or 0: no badge.
+    init?(_ text: String) {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        alert = t.hasPrefix("!")
+        if alert { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        if let n = Int(t) { guard n > 0 else { return nil }; count = n } else { guard alert || !t.isEmpty else { return nil }; key = t }
+    }
+    init(count: Int = 0, alert: Bool = false, key: String = "") { self.count = count; self.alert = alert; self.key = key }
 }
 
 /// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).

@@ -174,7 +174,7 @@ enum Builtins {
                   TabProvider(schemes: ["commit"]) { CommitMessageTab(uri: $0, app: app) }]
         let changed = ChangedFiles(app: app)
         c.panels = [PanelSpec(id: "git.changes", title: "Source Control", icon: "arrow.triangle.branch", extensionId: "kelp.git",
-                              badge: { changed.count }) { SourceControlController(app: app) }]
+                              badge: { changed.count > 0 ? PanelBadge(count: changed.count) : nil }) { SourceControlController(app: app) }]
         c.editors = [EditorSpec(id: "git.review", title: "Review Changes", icon: "plusminus", uri: { ctx in ctx.workspace.map { DiffTab.uri($0.id) } })]
         c.settings = [SettingsSection(id: "git", title: "Git", icon: "arrow.triangle.branch", specs: [
             s("git.branchPrefix", "Branch prefix", "string", "", "Added to branches Kelp names, e.g. “niko/”.")
@@ -214,11 +214,12 @@ enum Builtins {
 
     static let issues = Builtin("kelp.issues", "Issues & Pull Requests", "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.", icon: "checklist") { app in
         var c = Contributions()
+        let failed = FailedRuns(app: app)
         c.panels = [PanelSpec(id: "issues", title: "Issues & PRs", icon: "checklist", extensionId: "kelp.issues") {
             let t = TasksViewController(app: app)
             track(owner: t) { app.workbench.workspaceId } changed: { [weak t] in t?.show(worktree: $0) }
             return t
-        }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues") { CIRunsController(app: app) }]
+        }, PanelSpec(id: "ci", title: "CI Runs", icon: "checkmark.seal", extensionId: "kelp.issues", badge: { failed.badge }) { CIRunsController(app: app) }]
         c.settings = [SettingsSection(id: "integrations", title: "Integrations", icon: "link", specs: [],
                                       custom: { AnyView(IntegrationsSettings(app: app)) })]
         // The workspace's project on GitHub / GitLab / Bitbucket, in the default browser.
