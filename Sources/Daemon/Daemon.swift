@@ -168,7 +168,11 @@ public final class Daemon: Sendable {
         lsp.stopAll()
         watches.stopAll()
         workspaces.stopWatching()
-        clients.everyone().forEach { $0.hangUp() }
+        // daemon.upgrade's own reply is out first: an app that never got it would think the upgrade failed and offer a
+        // restart that ends the agents just handed over.
+        let everyone = clients.everyone()
+        DispatchQueue.concurrentPerform(iterations: everyone.count) { everyone[$0].drain(within: 2) }
+        everyone.forEach { $0.hangUp() }
         close(r.instanceLock)
         return h
     }

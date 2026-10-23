@@ -1,0 +1,48 @@
+import Foundation
+import Testing
+import Core
+@testable import Daemon
+
+/// One reply bigger than 16 MiB (a monorepo's file list) reaches a client that reads it; it used to hang that client up.
+@Test func aHugeReplyReachesAClientThatReads() async throws {
+    var sv: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+    Unix.noSigPipe(sv[0])   // as the daemon does for every client
+    let c = Connection(id: 1, fd: sv[0])
+    let big = Data(repeating: 0x61, count: 20 << 20), tail = Data("\n".utf8)
+    let fd = sv[1], want = big.count + tail.count
+    let reader = Task.detached { () -> Int in
+        var total = 0, b = [UInt8](repeating: 0, count: 1 << 16)
+        while total < want {
+            let n = read(fd, &b, b.count)
+            if n <= 0 { break }
+            total += n
+        }
+        return total
+    }
+    c.send(big); c.send(tail)
+    #expect(await reader.value == want)
+    c.close(); close(fd)
+}
+
+/// What's queued for a client goes out before the daemon hangs up on it to hand over (`daemon.upgrade`): its own reply
+/// was cut off on a loaded Mac, and the app, thinking the upgrade failed, offered a restart that ended every agent.
+@Test func aHandOverSendsWhatsQueuedFirst() async throws {
+    var sv: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sv) == 0)
+    Unix.noSigPipe(sv[0])
+    let c = Connection(id: 1, fd: sv[0])
+    let reply = Data(repeating: 0x61, count: 4 << 20)   // more than the socket holds: it's still being written
+    let fd = sv[1]
+    c.send(reply)
+    let reader = Task.detached { () -> Int in
+        try? await Task.sleep(for: .milliseconds(200))   // a client slow to read
+        var total = 0, b = [UInt8](repeating: 0, count: 1 << 16)
+        while case let n = read(fd, &b, b.count), n > 0 { total += n }
+        return total
+    }
+    c.drain(within: 5)
+    c.hangUp()
+    #expect(await reader.value == reply.count)
+    c.close(); close(fd)
+}

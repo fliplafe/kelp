@@ -150,7 +150,7 @@ extension DaemonUpgrade: Handled {
         guard URL(fileURLWithPath: upgrade.executable).lastPathComponent == "kelpd", FileManager.default.isExecutableFile(atPath: upgrade.executable) else {
             throw RPCError.invalidParams("no kelpd to upgrade to at \(upgrade.executable)")
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { upgrade.run() }   // once the reply is out
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { upgrade.run() }   // once the reply is queued (handOver drains it)
         return Done()
     }
 }

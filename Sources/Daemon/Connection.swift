@@ -41,6 +41,13 @@ final class Connection: Sendable {
         if let behind, behind > Self.backlogLimit { hangUp() }
     }
 
+    /// Until what's queued so far is written, or `seconds` pass (a client that stopped reading).
+    func drain(within seconds: Double) {
+        let done = DispatchSemaphore(value: 0)
+        q.async { done.signal() }
+        _ = done.wait(timeout: .now() + seconds)
+    }
+
     /// Reading and writing stop now (a stalled client, the daemon quitting): its reader sees EOF, queued writes fail fast.
     func hangUp() { state.withLock { if !$0.closed { _ = shutdown(fd, SHUT_RDWR) } } }
 
