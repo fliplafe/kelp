@@ -39,18 +39,20 @@ public final class RPCClient: Sendable {
 
     public init(socket: String) throws {
         fd = try Unix.connect(socket)
+        // A daemon alive but no longer reading (hung, stopped): a write gives up instead of holding the writer for good.
+        var t = timeval(tv_sec: 10, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
         Thread.detachNewThread { [self] in readLoop() }
     }
 
     deinit { close() }
 
-    /// Shuts the connection once what was sent before is written, without waiting for that; the reader thread has the fd
-    /// closed when its read returns. Closing it here could let that read land on a number already reused by a newer
-    /// connection, and take its replies.
+    /// Shuts the connection now, what's still queued to write included: a write blocked on a daemon that stopped reading
+    /// fails, and the reader's read returns. The reader thread has the fd closed after that. Closing it here could let
+    /// that read land on a number already reused by a newer connection, and take its replies.
     public func close() {
-        state.withLock { $0.closed = true }   // nothing new goes out
-        // Not on self: deinit calls this. Before the reader is done its close isn't queued yet, so the number is still ours.
-        writer.async { [fd, state] in state.withLock { if !$0.readerDone { shutdown(fd, SHUT_RDWR) } } }
+        // Under the lock the reader sets `readerDone` with, before it queues the close: the number is still ours here.
+        state.withLock { s in s.closed = true; if !s.readerDone { shutdown(fd, SHUT_RDWR) } }
     }
 
     /// Waits (up to `timeout`) until what's queued is written: a quitting app's last change must reach the daemon.
@@ -65,6 +67,7 @@ public final class RPCClient: Sendable {
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
             let n = read(fd, &buf, buf.count)
+            if n < 0, errno == EINTR { continue }   // a signal, not the end of the connection
             if n <= 0 { break }
             for line in lb.append(Data(buf[0..<n])) {
                 // The result isn't read here: the caller reads it straight from the line, as its own type. An event is read

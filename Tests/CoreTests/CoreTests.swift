@@ -309,3 +309,17 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     #expect(id(#"{"id":7,"jsonrpc":"2.0","result":1}"#) == nil)
     #expect(id(#"{"jsonrpc":"2.0","id":"#) == nil)
 }
+
+/// Closing the connection to a daemon that's alive but no longer reads ends it now: the close used to wait behind a
+/// write blocked on that daemon, for good, so the app never heard the connection end and never reconnected.
+@Test func closingAConnectionToAHungDaemonEndsIt() throws {
+    let path = tmp().appendingPathComponent("s.sock").path
+    let listener = try Unix.listen(path); defer { Darwin.close(listener) }   // accepts nothing, reads nothing
+    let c = try RPCClient(socket: path)
+    let ended = DispatchSemaphore(value: 0)
+    c.onClose = { ended.signal() }
+    c.notify("x", .string(String(repeating: "x", count: 4 << 20)))   // more than the socket holds: the write blocks
+    Thread.sleep(forTimeInterval: 0.3)
+    c.close()
+    #expect(ended.wait(timeout: .now() + 3) == .success)
+}
