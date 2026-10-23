@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest something Kelp should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The workflow or problem, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: Many features fit as an extension (docs/extensions.md) — say if one could cover it.
