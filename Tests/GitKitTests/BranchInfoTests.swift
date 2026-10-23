@@ -68,6 +68,17 @@ import TestSupport
     #expect(try Set(ProjectFiles.list(repo)) == ["f.txt", ".env", "d/kept.txt", "new.txt"])
 }
 
+@Test func ignoredFilesListTheirFoldersClosed() throws {
+    let repo = try tempRepo()
+    defer { try? FileManager.default.removeItem(atPath: repo) }
+    try FileManager.default.createDirectory(atPath: repo + "/build/sub", withIntermediateDirectories: true)
+    for f in ["build/out.o", "build/sub/x.o", "notes.log", ".gitignore"] { try "x\n".write(toFile: repo + "/" + f, atomically: true, encoding: .utf8) }
+    try "build/\n*.log\n".write(toFile: repo + "/.gitignore", atomically: true, encoding: .utf8)
+    #expect(try Set(ProjectFiles.ignored(repo)) == ["build/", "notes.log"])
+    #expect(try Set(ProjectFiles.ignored(repo, folder: "build/")) == ["build/out.o", "build/sub/"])
+    #expect(throws: GitError.self) { try ProjectFiles.ignored(repo, folder: "build/../..") }
+}
+
 @Test func fuzzyMatchesWholeCharacters() {
     let nfd = "cafe\u{301}/menu.txt", nfc = "caf\u{E9}/menu.txt"
     #expect(fuzzy(nfd, "café") != nil && fuzzy(nfc, "cafe\u{301}") != nil)   // either way it's stored

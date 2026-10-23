@@ -7,29 +7,43 @@ import WorkbenchKit
 final class FileNode: NSObject {
     let name: String, path: String   // path relative to worktree root
     var children: [FileNode]?  // nil = file
-    init(name: String, path: String, dir: Bool) { self.name = name; self.path = path; children = dir ? [] : nil }
+    /// Git ignores it (drawn dimmed, like VS Code's). `unread`: an ignored folder whose files are read when it opens.
+    let ignored: Bool
+    var unread: Bool
+    init(name: String, path: String, dir: Bool, ignored: Bool = false) {
+        self.name = name; self.path = path; children = dir ? [] : nil; self.ignored = ignored; unread = ignored && dir
+    }
 
-    /// Build a sorted tree (folders first) from relative paths.
-    static func tree(_ paths: [String]) -> [FileNode] {
+    /// Build a sorted tree (folders first) from relative paths, and what git ignores (`files.ignored`: a folder ends with "/").
+    static func tree(_ paths: [String], ignored: [String] = []) -> [FileNode] {
         let root = FileNode(name: "", path: "", dir: true)
         var dirs: [String: FileNode] = ["": root]
-        for p in paths {
-            let parts = p.split(separator: "/").map(String.init)
+        for (p, isIgnored) in paths.lazy.map({ ($0, false) }) + ignored.lazy.map({ ($0, true) }) {
+            let parts = p.split(separator: "/").map(String.init), dir = p.hasSuffix("/")
             var parent = root, acc = ""
             for (i, part) in parts.enumerated() {
                 acc = acc.isEmpty ? part : acc + "/" + part
-                if i == parts.count - 1 { parent.children?.append(FileNode(name: part, path: acc, dir: false)) }
-                else if let d = dirs[acc] { parent = d }
-                else { let d = FileNode(name: part, path: acc, dir: true); parent.children?.append(d); dirs[acc] = d; parent = d }
+                if let d = dirs[acc] { parent = d; continue }   // an ignored folder with tracked files in it: those show
+                let n = FileNode(name: part, path: acc, dir: dir || i < parts.count - 1, ignored: isIgnored && i == parts.count - 1)
+                parent.children?.append(n)
+                if n.children != nil { dirs[acc] = n; parent = n }
             }
-        }
-        // Keys made once per node: lowercasing inside the comparator did it n log n times (100k files in a big repo).
-        func sort(_ n: FileNode) {
-            n.children = n.children?.map { ($0.children != nil ? 0 : 1, $0.name.lowercased(), $0) }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map(\.2)
-            n.children?.forEach(sort)
         }
         sort(root)
         return root.children ?? []
+    }
+
+    /// An ignored folder's files as `files.ignored` lists them (each path from the root).
+    func read(_ entries: [String]) {
+        unread = false
+        children = entries.map { e in FileNode(name: (e as NSString).lastPathComponent, path: String(e.dropLast(e.hasSuffix("/") ? 1 : 0)), dir: e.hasSuffix("/"), ignored: true) }
+        Self.sort(self)
+    }
+
+    // Keys made once per node: lowercasing inside the comparator did it n log n times (100k files in a big repo).
+    private static func sort(_ n: FileNode) {
+        n.children = n.children?.map { ($0.children != nil ? 0 : 1, $0.name.lowercased(), $0) }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map(\.2)
+        n.children?.forEach(sort)
     }
 }
 
@@ -49,8 +63,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private var status: [String: FileChange] = [:]
     /// Folders with a changed file somewhere under them (drawn orange).
     private var changedFolders = Set<String>()
-    /// The paths the tree was built from: an edit that adds or removes none only changes badges.
-    private var shownPaths: [String]?
+    /// The paths the tree was built from (listed, ignored): an edit that adds or removes none only changes badges.
+    private var shownPaths: ([String], [String]?)?
     private var matches: [SearchMatch] = []
     /// Its files and their git status, pushed by the daemon while the panel is on screen (`WatchTopic.files`, `.git`):
     /// a hidden one costs no listing on every change, and the list comes again when it shows.
@@ -155,7 +169,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
             let r = await app.tryCall(FilesList(id: w.id))
-            listed(FilesEvent(worktree: w.id, paths: r.value, error: r.error))
+            listed(FilesEvent(worktree: w.id, paths: r.value, ignored: await app.quiet(FilesIgnored(id: w.id)), error: r.error))
             done?()
         }
     }
@@ -165,11 +179,11 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         // Another workspace's (switched meanwhile), or a rename in place, which a reload would end (it reads after).
         guard let e, e.worktree == worktree?.id, renaming == nil else { return }
         showLoadError(e.error)
-        guard let paths = e.paths, paths != shownPaths else { return }   // an agent saving a file changes its badge, not the tree
-        shownPaths = paths
+        guard let paths = e.paths, shownPaths.map({ $0 != paths || $1 != e.ignored }) ?? true else { return }   // an agent saving a file changes its badge, not the tree
+        shownPaths = (paths, e.ignored)
         let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
         let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
-        nodes = FileNode.tree(paths); outline.reloadData()
+        nodes = FileNode.tree(paths, ignored: e.ignored ?? []); outline.reloadData()
         @MainActor func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
         expand(nodes)
         if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
@@ -198,7 +212,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         if let s = status[n.path] {
             let (letter, color) = s.badge
             badge.stringValue = letter; badge.textColor = color; tf.textColor = color
-        } else if n.children != nil, changedFolders.contains(n.path) { tf.textColor = .textOrange }
+        } else if n.children != nil, changedFolders.contains(n.path) { tf.textColor = .textOrange
+        } else if n.ignored { tf.textColor = .secondaryLabelColor; img.alphaValue = 0.5 }
         badge.font = .ui(10, weight: .bold)
         for v in [img, tf, badge] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(v) }
         cell.textField = tf; cell.imageView = img
@@ -210,6 +225,15 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
             badge.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6), badge.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
         ])
         return cell
+    }
+    /// An ignored folder's files are read when it opens (node_modules can hold 100k).
+    func outlineViewItemWillExpand(_ n: Notification) {
+        guard let node = n.userInfo?["NSObject"] as? FileNode, node.unread, let w = worktree else { return }
+        node.unread = false
+        Task {
+            node.read(await app.call(FilesIgnored(id: w.id, folder: node.path + "/")) ?? [])
+            outline.reloadItem(node, reloadChildren: true)
+        }
     }
     // themes may draw open folders differently
     func outlineViewItemDidExpand(_ n: Notification) { reloadRow(of: n) }

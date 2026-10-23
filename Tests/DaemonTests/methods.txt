@@ -18,6 +18,7 @@ extension.fetch
 extension.library
 files.copy
 files.create
+files.ignored
 files.list
 files.move
 files.read

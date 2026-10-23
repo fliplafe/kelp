@@ -151,6 +151,13 @@ public struct FilesList: RPCMethod {
     public var id: String
     public init(id: String) { self.id = id }
 }
+/// What git ignores in the project (.build/, .env…), relative paths; a folder ignored whole ends with "/" and isn't
+/// opened. `folder` (one of those): what's in it, one level, its folders ending with "/".
+public struct FilesIgnored: RPCMethod {
+    public static let name = "files.ignored"; public typealias Result = [String]
+    public var id: String, folder: String?
+    public init(id: String, folder: String? = nil) { self.id = id; self.folder = folder }
+}
 public struct FilesSearch: RPCMethod {
     public static let name = "files.search"; public typealias Result = [SearchMatch]
     public var id: String, query: String, regex: Bool?, `case`: Bool?

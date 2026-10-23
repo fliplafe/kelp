@@ -22,7 +22,7 @@ public enum WatchTopic: String, Codable, Sendable, CaseIterable {
     /// A file's version (`FileEvent`): read when its folder's files change. Key: its absolute path. A file in a remote
     /// project isn't watched (nothing is pushed).
     case file
-    /// A workspace's files (`FilesEvent`, `files.list`'s answer): read when its files change, a remote one's every 10 s.
+    /// A workspace's files (`FilesEvent`, `files.list` and `files.ignored`'s answers): read when its files change, a remote one's every 10 s.
     /// Key: worktree id.
     case files
 }
@@ -97,11 +97,14 @@ public struct FileEvent: RPCEvent, Equatable {
     public init(path: String, stamp: FileStamp?) { self.path = path; self.stamp = stamp }
 }
 
-/// A watched workspace's files as `files.list` gives them, pushed when that changed. `error`: they couldn't be listed.
+/// A watched workspace's files as `files.list` gives them, and what git ignores (`files.ignored`), pushed when that
+/// changed. `error`: they couldn't be listed.
 public struct FilesEvent: RPCEvent, Equatable {
     public static let name = "event.files"
-    public var worktree: String, paths: [String]?, error: String?
-    public init(worktree: String, paths: [String]? = nil, error: String? = nil) { self.worktree = worktree; self.paths = paths; self.error = error }
+    public var worktree: String, paths: [String]?, ignored: [String]?, error: String?
+    public init(worktree: String, paths: [String]? = nil, ignored: [String]? = nil, error: String? = nil) {
+        self.worktree = worktree; self.paths = paths; self.ignored = ignored; self.error = error
+    }
 }
 
 /// A project or workspace record as it is now, after any change (as `event.session` is for sessions).

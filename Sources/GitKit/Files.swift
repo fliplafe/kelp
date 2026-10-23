@@ -22,6 +22,30 @@ extension ProjectFiles {
         return files
     }
 
+    /// What git ignores (`files.ignored`): a folder ignored whole is one entry ending with "/", not opened (.build/,
+    /// node_modules/). `folder`, one of those: what's in it, one level, read from the folder. The first `limit`.
+    /// Limit: on a host a name with a newline in it reads as two.
+    public static func ignored(_ root: String, folder: String? = nil, limit: Int = listLimit, remotes: Remotes = .none) throws -> [String] {
+        guard let folder else {
+            let a = ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]
+            let r: (data: Data, truncated: Bool)
+            do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit, remotes: remotes) } catch where outsideGit(error) { return [] }
+            return Array(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self).split(separator: "\0").prefix(limit).map(String.init))
+        }
+        let dir = folder.hasSuffix("/") ? folder : folder + "/"
+        guard !dir.hasPrefix("/"), !dir.split(separator: "/").contains("..") else { throw GitError(args: [dir], status: 1, stderr: "“\(dir)” isn't in the workspace.") }
+        let names: [String]
+        if let r = remotes.of(root) {
+            names = String(decoding: try r.run("cd \(RemoteHost.cdArg(r.path + "/" + dir)) && ls -1Ap"), as: UTF8.self).split(separator: "\n").map(String.init)
+        } else {
+            names = try FileManager.default.contentsOfDirectory(atPath: root + "/" + dir).map { n in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: root + "/" + dir + n, isDirectory: &isDir) && isDir.boolValue ? n + "/" : n
+            }
+        }
+        return names.prefix(limit).map { dir + $0 }
+    }
+
     /// A project added without git: no repository around `root`.
     static func outsideGit(_ e: Error) -> Bool { (e as? GitError)?.stderr.contains("not a git repository") == true }
 

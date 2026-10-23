@@ -131,6 +131,9 @@ extension GitWebPages: Handled {
 }
 
 extension FilesList: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.list(workspaces.folder(id), remotes: workspaces.remotes) } }
+extension FilesIgnored: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.ignored(workspaces.folder(id), folder: folder, remotes: workspaces.remotes) }
+}
 extension FilesSearch: Handled {
     func handle(_ workspaces: Workspaces) throws -> Result {
         try ProjectFiles.search(workspaces.folder(id), query: query, regex: regex == true, caseSensitive: `case` == true, remotes: workspaces.remotes)
@@ -180,6 +183,6 @@ extension CommentSend: Handled {
 extension Methods {
     static let gitMethods: [any Handled.Type] = [GitStatus.self, GitBranches.self, GitLineStats.self, GitPush.self, GitDiff.self, GitLog.self,
         GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self, GitCommitDetails.self,
-        GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesSearch.self,
+        GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesIgnored.self, FilesSearch.self,
         CommentAdd.self, CommentList.self, CommentSetState.self, CommentSend.self]
 }
