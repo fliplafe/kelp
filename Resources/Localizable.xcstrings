@@ -10669,6 +10669,36 @@
           }
         }
       }
+    },
+    "Show the agents that need you (⇧⌘U goes to the next one)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать агентов, которые ждут вас (⇧⌘U — к следующему)"
+          }
+        }
+      }
+    },
+    "Mark Finished as Read": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прочитать готовые"
+          }
+        }
+      }
+    },
+    "Needs a Decision": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно решение"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

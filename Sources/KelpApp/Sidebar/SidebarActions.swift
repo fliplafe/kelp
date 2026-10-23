@@ -56,11 +56,6 @@ extension SidebarController {
             if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions(app).removeCleanWorktrees(r) } }
             menu.add(String(localized: "Remove Project…")) { WorkspaceActions(app).removeProject(r) }
         case .section: return
-        case .needs(let sid):
-            menu.add(String(localized: "Show")) { app.workbench.focus(session: sid) }
-            if m.session(sid)?.unread == true {
-                menu.add(String(localized: "Mark as Read")) { [app] in Task { await app.call(SessionMarkRead(id: sid)) } }
-            }
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
             let pinned = self.pinned.contains(id)

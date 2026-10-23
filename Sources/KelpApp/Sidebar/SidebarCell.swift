@@ -42,14 +42,6 @@ final class SidebarCell: NSTableCellView {
             count.font = .ui(11); count.textColor = .secondaryLabelColor
             icon.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
             layout(row: [icon, title, count, NSView()])
-        case .needs:
-            title.font = .ui(13)
-            count.font = .ui(11); count.textColor = .secondaryLabelColor; count.lineBreakMode = .byTruncatingTail
-            icon.imageScaling = .scaleProportionallyUpOrDown
-            icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            let name = NSStackView(views: [title, count]); name.spacing = 6
-            name.setClippingResistancePriority(.defaultLow, for: .horizontal); name.setHuggingPriority(.defaultLow, for: .horizontal)
-            layout(row: [icon, name, trailing, mark])
         case .workspace:
             title.font = .ui(13)
             layout(row: [title, NSView(), changes, pr, trailing, mark])
@@ -60,7 +52,6 @@ final class SidebarCell: NSTableCellView {
             layout(row: [icon, title, trailing, mark])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
-        if case .needs = node.kind { count.setContentCompressionResistancePriority(.init(200), for: .horizontal) }   // the place gives way to the name
         for b in [changes, pr] { b.isBordered = false; b.title = ""; b.target = self }
         changes.action = #selector(openChanges); pr.action = #selector(openPR)
     }
@@ -83,7 +74,7 @@ final class SidebarCell: NSTableCellView {
         switch node.kind {
         case .project(let id): app.rowBadges.folder(project: id)
         case .workspace(let id): app.rowBadges.folder(workspace: id)
-        case .agent, .section, .needs: nil
+        case .agent, .section: nil
         }
     }
     @objc private func openChanges() { if let w = folder { app.workbench.open(TabURI.diff(w.id), workspace: w.id) } }
@@ -133,22 +124,10 @@ final class SidebarCell: NSTableCellView {
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
             // Who needs you is on the agents' own rows and in the line above the projects, not repeated here.
             trailing.stringValue = missing ? String(localized: "Folder missing") : ""
-        case .section(let name):
-            let needs = name == "Needs You"
-            icon.image = .symbol(needs ? "bell.fill" : "pin.fill"); icon.contentTintColor = needs ? .systemOrange : .secondaryLabelColor
-            title.stringValue = needs ? String(localized: "Needs You") : String(localized: "Pinned")   // the kind stays English, the title is shown translated
+        case .section:
+            icon.image = .symbol("pin.fill"); icon.contentTintColor = .secondaryLabelColor
+            title.stringValue = String(localized: "Pinned")
             count.stringValue = "\(node.children.count)"; toolTip = nil
-        case .needs(let sid):
-            guard let s = m.session(sid) else { return }
-            icon.image = app.catalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
-            title.stringValue = app.catalog.displayName(s)
-            title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
-            let w = m.worktree(s.worktreeId)
-            count.stringValue = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
-            mark.status = s.endedWithError ? .error : Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
-            mark.progress = s.progress.map { Double($0) / 100 }
-            trailing.stringValue = shortAgo(s.statusAt ?? s.createdAt)
-            showState(s)
         case .workspace(let id):
             guard let w = m.worktree(id) else { return }
             let agents = live(id)
@@ -165,8 +144,10 @@ final class SidebarCell: NSTableCellView {
             toolTip = nil   // the hover card shows the workspace in full
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
-            icon.image = app.catalog.icon(s.agent, size: 16); icon.contentTintColor = .secondaryLabelColor
-            icon.alphaValue = s.status == .hibernated ? 0.45 : 1
+            let image = app.catalog.icon(s.agent, size: 16)
+            // Paused: the same icon without its colour, not see-through (a faded tile read wider than the others).
+            icon.image = s.status == .hibernated ? image?.grayscale : image; icon.contentTintColor = .secondaryLabelColor
+            icon.alphaValue = s.status == .hibernated ? 0.7 : 1
             title.stringValue = app.catalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")

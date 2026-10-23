@@ -12,8 +12,8 @@ private func agent(_ id: String, in w: String, _ status: AgentStatus, title: Str
     s.unread = unread
     return s
 }
-private func tree(_ ws: [Worktree], _ ss: [Session] = [], attention: [Session] = []) -> SidebarTree {
-    SidebarTree(projects: [r1, r2], workspaces: ws, sessions: ss, attention: attention)
+private func tree(_ ws: [Worktree], _ ss: [Session] = []) -> SidebarTree {
+    SidebarTree(projects: [r1, r2], workspaces: ws, sessions: ss)
 }
 private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.kind) }
 
@@ -67,34 +67,17 @@ private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.k
     #expect(kinds(out[1].children) == [.workspace("w1")])
 }
 
-@Test func needsYouAppearsOnlyWithMoreThanAFewWorkspaces() {
-    let ss = [agent("a1", in: "w1", .waiting)]
-    var t = tree([wt("w1", "r1", "a"), wt("w2", "r1", "b")], ss, attention: ss)
-    #expect(kinds(t.build()) == [.project("r1"), .project("r2")])   // two workspaces: the list is short enough to see
-    t = tree([wt("w1", "r1", "a"), wt("w2", "r1", "b"), wt("w3", "r2", "c")], ss, attention: ss)
-    let out = t.build()
-    #expect(out[0].kind == .section("Needs You") && kinds(out[0].children) == [.needs("a1")])
-    t.filter = .working
-    #expect(!kinds(t.build()).contains(.section("Needs You")))
-}
-
-@Test func needsYouWaitsUntilAnAgentHasNeededYouAWhile() {
+@Test func inboxSkipsTheAgentOnScreenAndWaitsUntilOneHasNeededYouAWhile() {
     let t0 = Date(timeIntervalSince1970: 1000)
     var a = agent("a1", in: "w1", .done, unread: true); a.statusAt = t0
-    var t = tree([wt("w1", "r1", "a"), wt("w2", "r1", "b"), wt("w3", "r2", "c")], [a], attention: [a])
-    t.settle = 5; t.now = t0 + 2
-    #expect(kinds(t.build()) == [.project("r1"), .project("r2")])   // a blip: it may go on by itself
-    #expect(t.settlesAt == t0 + 5)                                   // when to look again
-    t.now = t0 + 5
-    #expect(t.build()[0].kind == .section("Needs You"))
-    #expect(t.settlesAt == nil)
-}
-
-@Test func stableOrderKeepsRowsStillUntilItIsTimeToSort() {
-    var order = StableOrder()
-    let t0 = Date(timeIntervalSince1970: 1000)
-    #expect(order(["a", "b"], now: t0) == ["a", "b"])
-    #expect(order(["b", "c", "a"], now: t0 + 10) == ["a", "b", "c"])   // kept in place, the new one joins at the end
-    #expect(order(["c"], now: t0 + 20) == ["c"])                         // one that stopped needing you leaves
-    #expect(order(["b", "c", "a"], now: t0 + 500) == ["b", "c", "a"])    // after a few minutes: the queue's own order
+    var b = agent("b1", in: "w2", .waiting); b.statusAt = t0 - 60
+    var inbox = Inbox(queue: [b, a])
+    inbox.now = t0 + 2
+    #expect(inbox.shown.map(\.id) == ["b1"])     // a1 is a blip so far: it may go on by itself
+    #expect(inbox.settlesAt == t0 + 5)            // when to look again
+    inbox.now = t0 + 5
+    #expect(inbox.shown.map(\.id) == ["b1", "a1"])
+    #expect(inbox.settlesAt == nil)
+    inbox.viewing = ["b1"]
+    #expect(inbox.shown.map(\.id) == ["a1"])     // you're looking at it already
 }

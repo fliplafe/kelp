@@ -3,7 +3,8 @@ import SwiftUI
 import Core
 
 /// One look for agent state everywhere (sidebar, tabs, panes): a spinning ring while it works, an orange ◎ when it
-/// needs you, a filled ✓ when it finished and you haven't looked, a plain ✓ after, a moon when paused.
+/// needs you, a filled grey ✓ when it finished and you haven't looked, nothing after (as an agent that did nothing),
+/// a moon when paused.
 extension AgentStatus {
     var symbol: String {
         switch self {
@@ -20,7 +21,7 @@ extension AgentStatus {
         switch self {
         case .working: .secondaryLabelColor
         case .waiting: .systemOrange
-        case .done: .labelColor
+        case .done: .secondaryLabelColor   // quiet: what's new is said by the bold name and the line over the list
         case .idle: .tertiaryLabelColor   // nothing to look at: it stays quiet
         case .hibernated: .secondaryLabelColor   // quiet, but a mark must still read (tertiary is about 2:1)
         case .exited: .secondaryLabelColor
@@ -84,7 +85,7 @@ final class StatusMark: NSView {
     private let ring = CAShapeLayer()
     private let size: CGFloat
     var status: AgentStatus? { didSet { if status != oldValue { update() } } }
-    /// Done and not looked at yet: the filled ✓; seen: a plain one.
+    /// Done and not looked at yet: the filled ✓; seen: no mark.
     var unread = true { didSet { if unread != oldValue { update() } } }
     /// Working on shrinking its conversation (Claude's compaction): a slow pulse, not the spin.
     var compacting = false { didSet { if compacting != oldValue { update() } } }
@@ -121,7 +122,7 @@ final class StatusMark: NSView {
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); update() }   // animations stop when a view leaves a window
 
     private func update() {
-        let s = status == .idle ? nil : status
+        let s = status == .idle || (status == .done && !unread) ? nil : status
         let filling = s == .working ? progress : nil
         isHidden = s == nil
         toolTip = filling.map { "\(s?.words ?? "") · \(Int($0 * 100)) %" } ?? s?.words
@@ -164,10 +165,10 @@ final class StatusMark: NSView {
             return
         }
         guard let s else { return }
-        let seen = s == .done && !unread
-        image.image = .symbol(seen ? "checkmark" : s.symbol, s.words)
-        image.symbolConfiguration = .init(pointSize: seen ? size - 3 : size - 1, weight: seen ? .semibold : .regular)
-        image.contentTintColor = seen ? .secondaryLabelColor : s.nsColor
+        image.image = .symbol(s.symbol, s.words)
+        // The moon is wider than the circles: a size smaller, it takes the same room.
+        image.symbolConfiguration = .init(pointSize: s == .hibernated ? size - 3 : size - 1, weight: .regular)
+        image.contentTintColor = s.nsColor
     }
 }
 

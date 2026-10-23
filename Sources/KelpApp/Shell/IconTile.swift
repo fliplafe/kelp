@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 
 /// The small rounded tiles agents and projects show as (sidebar, tabs, menus), so every row's icon has the same size
 /// and shape: an app's icon filling its tile without the margin macOS draws around it, or the name's initial on a colour.
@@ -33,4 +34,15 @@ enum IconTile {
     }
 
     private static let palette: [NSColor] = [.systemPurple, .systemBlue, .systemTeal, .systemGreen, .systemOrange, .systemPink, .systemIndigo, .systemBrown]
+}
+
+extension NSImage {
+    /// The same picture without its colour, at the same size (a paused agent's icon).
+    var grayscale: NSImage {
+        guard let cg = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return self }
+        let gray = CIImage(cgImage: cg).applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
+        let out = NSImage(size: size)
+        out.addRepresentation(NSCIImageRep(ciImage: gray))
+        return out
+    }
 }

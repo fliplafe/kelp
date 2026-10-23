@@ -73,14 +73,12 @@ extension OneAtATime {
     }
 }
 
-@Test func theAgentWaitingForYouIsPulledToTheTopWhenThereAreSeveralWorkspaces() throws {
+@Test func theAgentWaitingForYouIsNamedInTheLineOverTheListNotRepeatedInIt() throws {
     var ask = Session(worktreeId: "w3", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?", summary: "Needs permission")
-    ask.statusAt = Date() - 60   // it has needed you a while (SidebarTree.settle)
-    try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { _, o in
-        let r = rows(of: o)
-        #expect(r.first?.contains { $0.localizedCaseInsensitiveContains("needs you") } == true)   // the section comes first
-        let asks = r.flatMap { $0 }.filter { $0 == "Allow rm?" }
-        #expect(asks.count == 2)                                                                      // under the section, and under its workspace
+    ask.statusAt = Date() - 60   // it has needed you a while (Inbox.settle)
+    try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { vc, o in
+        #expect(rows(of: o).flatMap { $0 }.filter { $0 == "Allow rm?" }.count == 1)   // under its workspace only
+        #expect(texts(vc.view).contains { $0.contains("Needs permission") && $0.contains("c") })   // who, where, what — over the list
     }
 }
 

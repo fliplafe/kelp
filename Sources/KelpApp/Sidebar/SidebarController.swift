@@ -20,7 +20,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             case .workspace(let id): "w:" + id
             case .agent(let id): "a:" + id
             case .section(let s): "s:" + s
-            case .needs(let id): "n:" + id
             }
         }
         /// What a dragged row reorders: a project's or a workspace's id.
@@ -90,8 +89,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
             add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
-            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 8), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14),
-            summary.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -10),
+            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 6),
+            summary.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6),
             scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -105,7 +104,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         view = v
         track(owner: self) { [app] in app.repos } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { [app] in app.worktrees } changed: { [weak self] _ in self?.refresh() }
-        track(owner: self) { [app] in app.sessions } changed: { [weak self] in self?.refresh(); self?.summary.update($0) }
+        track(owner: self) { [app] in app.sessions } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { [app] in app.order } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] _ in self?.syncSelection(); self?.updateCard() }
         track(owner: self) { [app] in app.workbench.focusedTab } changed: { [weak self] _ in self?.syncSelection() }
@@ -158,7 +157,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     override func mouseMoved(with e: NSEvent) {
         let row = outline.row(at: outline.convert(e.locationInWindow, from: nil))
         guard row >= 0, renaming == nil, let n = outline.item(atRow: row) as? Node, !n.key.hasPrefix("s:") else { card.hover(nil, rect: .zero, in: outline); return }
-        card.hover(n.key.replacingOccurrences(of: "n:", with: "a:"), rect: outline.rect(ofRow: row), in: outline)
+        card.hover(n.key, rect: outline.rect(ofRow: row), in: outline)
     }
     override func mouseExited(with e: NSEvent) { card.hover(nil, rect: .zero, in: outline) }
 
@@ -175,27 +174,15 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     // MARK: model → tree
 
-    private var needsOrder = StableOrder()
-    /// Builds the list again when an agent held back from "Needs You" (SidebarTree.settle) is due.
-    private var settleTimer: Timer?
-
     private func build() -> [Node] {
         let m = app
-        var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions, attention: AttentionQueue(app).sessions)
+        var tree = SidebarTree(projects: m.projects, workspaces: m.projects.flatMap { m.workspaces(of: $0) }, sessions: m.sessions)
         tree.pinned = pinned
         tree.query = query
         tree.filter = filter
         tree.current = app.workbench.workspaceId
         tree.statusLabel = { $0.label }
         tree.hasPR = { [app] w in (app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)).map { [app] in app.rowBadges.prs[$0.id] != nil } ?? false }
-        tree.stableOrder = { [unowned self] in needsOrder($0) }
-        tree.settle = 5
-        settleTimer?.invalidate(); settleTimer = nil
-        if let due = tree.settlesAt {
-            settleTimer = Timer.scheduledTimer(withTimeInterval: due.timeIntervalSinceNow, repeats: false) { [weak self] _ in   // main run loop
-                MainActor.assumeIsolated { self?.refresh() }
-            }
-        }
         func node(_ i: SidebarItem) -> Node {
             let n = Node(i.kind)
             n.children = i.children.map(node)
@@ -345,7 +332,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard !syncing, outline.selectedRowIndexes.count == 1, let node = outline.item(atRow: outline.selectedRow) as? Node else { return }
         switch node.kind {
         case .workspace(let id): app.workbench.show(workspace: id)
-        case .agent(let id), .needs(let id): app.workbench.focus(session: id)
+        case .agent(let id): app.workbench.focus(session: id)
         case .project, .section: break
         }
     }
@@ -359,7 +346,7 @@ extension SidebarController {
         let ws = nodes.compactMap { n -> Worktree? in if case .workspace(let id) = n.kind { m.worktree(id) } else { nil } }
         let picked = nodes.compactMap { n -> String? in
             switch n.kind {
-            case .agent(let id), .needs(let id): id
+            case .agent(let id): id
             default: nil
             }
         }
