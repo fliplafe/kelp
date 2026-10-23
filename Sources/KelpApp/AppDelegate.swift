@@ -59,15 +59,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let edited = app.workbench.editedFiles
         guard !edited.isEmpty, !unsavedAnswered else { return .terminateNow }
-        // Asked in a sheet, then quit again. Not `terminateLater`: until its reply AppKit runs a modal mode in which the
-        // main actor's tasks don't run, so the question could never be asked.
+        let system = Self.systemQuit
+        var answered: Bool?
         Task {
             let answer = await runSheet(UnsavedChanges.alert(edited, quitting: true))
-            guard await UnsavedChanges.settle(edited, answer), await UnsavedChanges.written(edited) else { return }
-            unsavedAnswered = true
-            NSApp.terminate(nil)
+            let done = await UnsavedChanges.settle(edited, answer)
+            answered = done ? await UnsavedChanges.written(edited) : false
+            if answered == true, !system { unsavedAnswered = true; NSApp.terminate(nil) }
         }
-        return .terminateCancel
+        // Logging out or shutting down: a cancel here cancels it, so the answer is waited for in place, events and
+        // the main actor's tasks served meanwhile. Not `terminateLater`: until its reply AppKit runs a modal mode in
+        // which the main actor's tasks don't run, so the question could never be asked.
+        guard system else { return .terminateCancel }   // ⌘Q: asked in a sheet, then quit again
+        while answered == nil {
+            if let e = NSApp.nextEvent(matching: .any, until: .now + 0.1, inMode: .default, dequeue: true) { NSApp.sendEvent(e) }
+        }
+        return answered == true ? .terminateNow : .terminateCancel
+    }
+    /// The quit macOS asks for when the user logs out, restarts or shuts down (its Apple event says why); a ⌘Q or a
+    /// script's quit gives no reason.
+    private static var systemQuit: Bool {
+        NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason) != nil
     }
     /// The quit question was answered (saved, or Don't Save): the next terminate goes through.
     private var unsavedAnswered = false
