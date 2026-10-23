@@ -298,3 +298,14 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     let refused = LoginPath.Once { nil }
     #expect(refused.value == LoginPath.path("") && refused.ifRead == nil)
 }
+
+/// A reply in the daemon's layout is matched to its call from its first bytes; anything else goes to the full decode.
+@Test func aRepliesIdIsReadFromItsFirstBytes() {
+    func id(_ s: String) -> Int? { RPCClient.resultID(Data(s.utf8)) }
+    #expect(id(#"{"jsonrpc":"2.0","id":42,"result":{"big":[1,2,3]}}"#) == 42)
+    #expect(id(#"{"jsonrpc":"2.0","id":7,"error":{"code":-32602,"message":"no"}}"#) == nil)
+    #expect(id(#"{"jsonrpc":"2.0","method":"event.session","params":{}}"#) == nil)
+    #expect(id(#"{"jsonrpc":"2.0","id":"7","result":1}"#) == nil)
+    #expect(id(#"{"id":7,"jsonrpc":"2.0","result":1}"#) == nil)
+    #expect(id(#"{"jsonrpc":"2.0","id":"#) == nil)
+}

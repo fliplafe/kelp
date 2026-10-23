@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import Core
+@testable import Core
 @testable import Daemon
 
 /// The method names are the wire contract with the app, the CLI and people's scripts: adding one is fine (add it to
@@ -42,4 +42,10 @@ import Core
     let line = Daemon.replyLine(id: 7, result: try JSONEncoder().encode(["a", "b"]))
     #expect(try JSONDecoder().decode(JSONValue.self, from: line) == .obj(["jsonrpc": "2.0", "id": 7, "result": .array(["a", "b"])]))
     #expect(line.last == 0x0A)
+}
+
+/// The client matches a reply to its call from the daemon's layout of it without parsing it (`RPCClient.resultID`): a
+/// change to `replyLine` that the client no longer recognises would cost every reply a second parse.
+@Test func theClientRecognisesTheDaemonsReplies() {
+    #expect(RPCClient.resultID(Daemon.replyLine(id: .int(5), result: Data("[1]".utf8))) == 5)
 }

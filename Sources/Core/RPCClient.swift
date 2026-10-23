@@ -69,6 +69,9 @@ public final class RPCClient: Sendable {
             for line in lb.append(Data(buf[0..<n])) {
                 // The result isn't read here: the caller reads it straight from the line, as its own type. An event is read
                 // here, once, as its type (as JSON too only for `onNotification`).
+                if let id = Self.resultID(line) {   // most lines: the caller's decode is the only pass over a big result
+                    state.withLock { $0.pending.removeValue(forKey: id) }?.resume(returning: line); continue
+                }
                 guard let m = try? JSONDecoder().decode(Envelope.self, from: line) else { continue }
                 if let method = m.method {
                     let (typed, named) = state.withLock { ($0.eventHandler, $0.notificationHandler) }
@@ -87,6 +90,18 @@ public final class RPCClient: Sendable {
         writer.async { [fd] in _ = Darwin.close(fd) }   // the only close, after the last write (none is written once the reader is done)
         for (_, c) in all { c.resume(throwing: RPCError.internalError("connection closed")) }
         done?()
+    }
+
+    /// The id of a successful reply in the daemon's own layout (`{"jsonrpc":"2.0","id":7,"result":…`, as its `replyLine`
+    /// writes it), read from its first bytes; nil for anything else (an error, an event, another layout), which the
+    /// reader decodes. Spares a second parse of a reply that can be megabytes (a diff, a file list).
+    static func resultID(_ line: Data) -> Int? {
+        let head = Array(#"{"jsonrpc":"2.0","id":"#.utf8), tail = Array(#","result":"#.utf8)
+        guard line.starts(with: head) else { return nil }
+        var i = line.startIndex + head.count, id = 0, digits = 0
+        while i < line.endIndex, digits < 18, case let b = line[i], b >= 0x30, b <= 0x39 { id = id * 10 + Int(b - 0x30); digits += 1; i += 1 }
+        guard digits > 0, line[i...].starts(with: tail) else { return nil }
+        return id
     }
 
     /// Fire-and-forget, written in call order (keystrokes must not overtake each other).
