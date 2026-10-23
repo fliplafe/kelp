@@ -316,6 +316,7 @@ private final class Flag: @unchecked Sendable {   // the bool under lock
     let path = tmp().appendingPathComponent("s.sock").path
     let listener = try Unix.listen(path); defer { Darwin.close(listener) }   // accepts nothing, reads nothing
     let c = try RPCClient(socket: path)
+    #expect(c.daemonPID == getpid())   // known without an answer: Restart Background Service stops a hung one by it
     let ended = DispatchSemaphore(value: 0)
     c.onClose = { ended.signal() }
     c.notify("x", .string(String(repeating: "x", count: 4 << 20)))   // more than the socket holds: the write blocks

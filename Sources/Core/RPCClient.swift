@@ -47,6 +47,9 @@ public final class RPCClient: Sendable {
 
     deinit { close() }
 
+    /// The daemon's pid, read from the socket: known even when it no longer answers.
+    public var daemonPID: pid_t? { state.withLock { $0.readerDone ? nil : Unix.peerPID(fd) } }
+
     /// Shuts the connection now, what's still queued to write included: a write blocked on a daemon that stopped reading
     /// fails, and the reader's read returns. The reader thread has the fd closed after that. Closing it here could let
     /// that read land on a number already reused by a newer connection, and take its replies.

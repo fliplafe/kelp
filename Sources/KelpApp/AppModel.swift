@@ -234,10 +234,23 @@ final class AppModel {
         if keepingSessions, (try? await old?.call(DaemonUpgrade())) == nil { return false }
         old?.onClose = nil   // this restart reconnects itself: a second client would hear every event twice
         client = nil; connected = false
-        if !keepingSessions { _ = try? await old?.call(DaemonShutdown()) }
+        // One that doesn't answer (hung) is stopped: else the reconnect finds it again, still holding the socket.
+        if !keepingSessions, let old {
+            let pid = old.daemonPID
+            if (try? await old.call(DaemonShutdown(), timeout: 5)) == nil, let pid { await Self.stop(pid) }
+        }
         old?.close()
         try? await Task.sleep(for: .milliseconds(600)); await connect()
         return true
+    }
+
+    /// A kelpd that didn't take daemon.shutdown: SIGTERM, then SIGKILL after 2 s. Only a process still running kelpd (a
+    /// pid reused meanwhile is left alone).
+    static func stop(_ pid: pid_t) async {
+        guard Unix.executable(pid)?.hasSuffix("/kelpd") == true else { return }
+        kill(pid, SIGTERM)
+        for _ in 0..<20 where kill(pid, 0) == 0 { try? await Task.sleep(for: .milliseconds(100)) }
+        if kill(pid, 0) == 0, Unix.executable(pid)?.hasSuffix("/kelpd") == true { kill(pid, SIGKILL) }
     }
 
     private func reconnectSoon() {

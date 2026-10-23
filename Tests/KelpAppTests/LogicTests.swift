@@ -192,3 +192,21 @@ extension OneAtATime {
     #expect(!ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board/../other/index.html"), folder))
     #expect(!ExtWebController.isOwn(URL(fileURLWithPath: "/tmp/ext/board"), folder))
 }
+
+/// Restart Background Service with a kelpd that doesn't answer (stopped here): it's ended by its pid, and a pid that
+/// isn't kelpd's is left alone.
+@Test func aHungDaemonIsStoppedByItsPid() async throws {
+    let kelp = try #require(ProcessInfo.processInfo.environment["KELP_TRAMPOLINE"])
+    let d = Process(), other = Process()
+    d.executableURL = URL(fileURLWithPath: kelp).deletingLastPathComponent().appendingPathComponent("kelpd")
+    d.environment = ProcessInfo.processInfo.environment.merging(["KELP_HOME": tmp().path]) { $1 }
+    other.executableURL = URL(fileURLWithPath: "/bin/sleep"); other.arguments = ["30"]
+    try d.run(); try other.run()
+    defer { for p in [d, other] where p.isRunning { p.terminate() } }   // only what this test started
+    kill(d.processIdentifier, SIGSTOP)
+    await AppModel.stop(other.processIdentifier)
+    #expect(other.isRunning)
+    await AppModel.stop(d.processIdentifier)
+    for _ in 0..<50 where d.isRunning { try await Task.sleep(for: .milliseconds(100)) }
+    #expect(!d.isRunning && d.terminationReason == .uncaughtSignal)
+}
