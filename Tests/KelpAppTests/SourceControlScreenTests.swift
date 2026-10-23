@@ -37,4 +37,17 @@ extension AppOfItsOwn {
     let staged = try #require(shown.firstIndex(of: "staged.txt")), changed = try #require(shown.firstIndex(of: "kept.txt"))
     #expect(staged < changed)   // staged first, then the rest, as VS Code lists them
 }
+
+/// A narrow inspector truncates what doesn't fit (the commit message's hint with the branch in it) instead of clipping
+/// the panel's right edge: the commit button's menu, the counts, the graph's labels.
+@Test func sourceControlFitsANarrowInspector() async throws {
+    let rig = try await AppRig(files: ["kept.txt": "a\n"]); defer { rig.done() }
+    try rig.write("kept.txt", "b\n")
+    let vc = SourceControlController(app: rig.app)
+    rig.show(vc, 260, 700)
+    vc.followWatches()
+    for _ in 0..<100 where !texts(vc.view).contains(where: { $0.hasPrefix("Message") }) { try await Task.sleep(for: .milliseconds(50)) }
+    vc.view.layoutSubtreeIfNeeded()
+    #expect(vc.view.fittingSize.width <= 260, "\(vc.view.fittingSize.width)")
+}
 }

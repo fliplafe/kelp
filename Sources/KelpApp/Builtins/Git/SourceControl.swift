@@ -164,6 +164,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         message.onChange = { [weak self] in self?.messageChanged() }
         let s = NSScrollView(); s.documentView = message; s.drawsBackground = false; s.hasVerticalScroller = false
         placeholder.textColor = .placeholderTextColor; placeholder.font = .ui(13); placeholder.lineBreakMode = .byTruncatingTail
+        placeholder.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)   // a long branch name truncates, not widens the panel
         let field = FieldBox(); field.wantsLayer = true
         commitMenu.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
         commitMenu.add(String(localized: "Commit (Amend)")) { [weak self] in self?.commit(push: false, amend: true) }
