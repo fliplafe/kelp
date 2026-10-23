@@ -49,6 +49,9 @@ extension Git {
             // came in a download, not a clone) would otherwise have every status Kelp runs start its program.
             args = ["-c", "core.quotePath=false", "-c", "core.fsmonitor=false"] + args
             let remote = remotes.of(cwd)
+            if let sub = args.dropFirst(4).first, ["diff", "show", "log"].contains(sub) {   // a repo's diff drivers run nothing either
+                args.insert(contentsOf: ["--no-ext-diff", "--no-textconv"], at: 5)
+            }
             if remote == nil, let sub = args.dropFirst(4).first, readOnly.contains(sub) { args = RepoFilters.off(cwd) + args }
             if let r = remote {   // a remote project: the same git, on its host
                 args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]

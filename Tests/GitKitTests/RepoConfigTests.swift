@@ -25,4 +25,9 @@ import Core
     #expect(!FileManager.default.fileExists(atPath: ran))
     try Git.run(["add", "f.txt"], cwd: repo)   // what the user does keeps the repo's filter
     #expect(FileManager.default.fileExists(atPath: ran))
+    try Git.run(["-c", "filter.x.clean=", "commit", "-qm", "two"], cwd: repo)
+    try FileManager.default.removeItem(atPath: ran)
+    _ = try Git.run(["show", "HEAD"], cwd: repo)   // any patch Kelp reads, not only Diff's
+    _ = try Git.run(["log", "-p", "-1"], cwd: repo)
+    #expect(!FileManager.default.fileExists(atPath: ran))
 }
