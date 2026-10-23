@@ -34,6 +34,8 @@ import Core
     let c = Connection(id: 1, fd: sv[0])
     let reply = Data(repeating: 0x61, count: 4 << 20)   // more than the socket holds: it's still being written
     let fd = sv[1]
+    var t = timeval(tv_sec: 15, tv_usec: 0)   // a lost EOF fails the test instead of hanging the run
+    _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
     c.send(reply)
     let reader = Task.detached { () -> Int in
         try? await Task.sleep(for: .milliseconds(200))   // a client slow to read
