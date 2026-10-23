@@ -3,7 +3,9 @@ import Core
 
 extension Git {
     public static func stage(_ path: String, files: [String], remotes: Remotes = .none) throws { try run(["add", "--"] + literal(files), cwd: path, remotes: remotes) }
-    public static func unstage(_ path: String, files: [String], remotes: Remotes = .none) throws { try run(["reset", "-q", "HEAD", "--"] + literal(files), cwd: path, remotes: remotes) }
+    public static func unstage(_ path: String, files: [String], remotes: Remotes = .none) throws {
+        try run(["reset", "-q", "HEAD", "--"] + literal(files), cwd: path, remotes: remotes)
+    }
 
     /// Stage (or unstage, `reverse`) a single hunk of `diff` via `git apply --cached`.
     public static func applyHunk(_ path: String, diff: FileDiff, hunk: Int, reverse: Bool, remotes: Remotes = .none) throws {

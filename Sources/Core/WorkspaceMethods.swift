@@ -20,7 +20,11 @@ public struct RepoRelocate: RPCMethod {
     public init(id: String, path: String) { self.id = id; self.path = path }
 }
 /// Its workspaces go with it, and their agents stop.
-public struct RepoRemove: RPCMethod { public static let name = "repo.remove"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct RepoRemove: RPCMethod {
+    public static let name = "repo.remove"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 
 public struct WorkspaceCreate: RPCMethod {
     public static let name = "workspace.create"; public typealias Result = Worktree; public var repoId: String
@@ -57,17 +61,33 @@ public struct WorktreeList: RPCMethod {
     public init(repoId: String? = nil, archived: Bool? = nil) { self.repoId = repoId; self.archived = archived }
 }
 /// Out of sight with its folder kept: its agents pause.
-public struct WorktreeArchive: RPCMethod { public static let name = "worktree.archive"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct WorktreeArchive: RPCMethod {
+    public static let name = "worktree.archive"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// `force`: uncommitted changes go too; `dropCommits`: so do commits on no other branch.
 public struct WorktreeRemove: RPCMethod {
     public static let name = "worktree.remove"; public typealias Result = Done
     public var id: String, force: Bool?, dropCommits: Bool?
     public init(id: String, force: Bool? = nil, dropCommits: Bool? = nil) { self.id = id; self.force = force; self.dropCommits = dropCommits }
 }
-public struct WorktreeUnarchive: RPCMethod { public static let name = "worktree.unarchive"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct WorktreeUnarchive: RPCMethod {
+    public static let name = "worktree.unarchive"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// → how many commits on its branch no other branch or remote has (lost if it's deleted).
-public struct WorktreeUnmerged: RPCMethod { public static let name = "worktree.unmerged"; public typealias Result = Int; public var id: String; public init(id: String) { self.id = id } }
-public struct WorktreeDirty: RPCMethod { public static let name = "worktree.dirty"; public typealias Result = Bool; public var id: String; public init(id: String) { self.id = id } }
+public struct WorktreeUnmerged: RPCMethod {
+    public static let name = "worktree.unmerged"; public typealias Result = Int
+    public var id: String
+    public init(id: String) { self.id = id }
+}
+public struct WorktreeDirty: RPCMethod {
+    public static let name = "worktree.dirty"; public typealias Result = Bool
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 
 public struct SessionList: RPCMethod {
     public static let name = "session.list"; public typealias Result = [Session]; public var worktreeId: String?
@@ -79,7 +99,11 @@ public struct SessionAttach: RPCMethod {
     public init(id: String) { self.id = id }
     public struct Result: Codable, Sendable, Equatable { public var history: String; public init(history: String) { self.history = history } }
 }
-public struct SessionDetach: RPCMethod { public static let name = "session.detach"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct SessionDetach: RPCMethod {
+    public static let name = "session.detach"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// The user's keys (`base64`), or `text` as it is.
 public struct SessionWrite: RPCMethod {
     public static let name = "session.write"; public typealias Result = Done; public var id: String, base64: String?, text: String?
@@ -94,7 +118,11 @@ public struct SessionResize: RPCMethod {
     public static let name = "session.resize"; public typealias Result = Done; public var id: String, cols: Int?, rows: Int?
     public init(id: String, cols: Int?, rows: Int?) { self.id = id; self.cols = cols; self.rows = rows }
 }
-public struct SessionKill: RPCMethod { public static let name = "session.kill"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct SessionKill: RPCMethod {
+    public static let name = "session.kill"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// `answer`: allow | deny, to the menu on screen → false when there is none.
 public struct SessionChoose: RPCMethod {
     public static let name = "session.choose"; public typealias Result = Bool; public var id: String, answer: String
@@ -131,7 +159,11 @@ public struct SessionUsage: RPCMethod {
     public typealias Result = [Usage]
 }
 /// The program a shell runs in the foreground (closing it would stop that), or null.
-public struct SessionBusy: RPCMethod { public static let name = "session.busy"; public typealias Result = String?; public var id: String; public init(id: String) { self.id = id } }
+public struct SessionBusy: RPCMethod {
+    public static let name = "session.busy"; public typealias Result = String?
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// The last `bytes` it printed, as text.
 public struct SessionRead: RPCMethod {
     public static let name = "session.read"; public typealias Result = String; public var id: String, bytes: Int?
@@ -142,8 +174,16 @@ public struct SessionContext: RPCMethod {
     public static let name = "session.context"; public typealias Result = String; public var id: String, bytes: Int?
     public init(id: String, bytes: Int? = nil) { self.id = id; self.bytes = bytes }
 }
-public struct SessionMarkRead: RPCMethod { public static let name = "session.markRead"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
-public struct SessionMarkUnread: RPCMethod { public static let name = "session.markUnread"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct SessionMarkRead: RPCMethod {
+    public static let name = "session.markRead"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
+public struct SessionMarkUnread: RPCMethod {
+    public static let name = "session.markUnread"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 /// → {turn, hasBase}: the files its last turn changed and how long it took; null when the session isn't running.
 public struct SessionTurn: RPCMethod {
     public static let name = "session.turn"; public var id: String
@@ -164,7 +204,11 @@ public struct SessionTurn: RPCMethod {
     public typealias Result = Info?
 }
 /// The agent's last message, from its transcript.
-public struct SessionLastReply: RPCMethod { public static let name = "session.lastReply"; public typealias Result = String?; public var id: String; public init(id: String) { self.id = id } }
+public struct SessionLastReply: RPCMethod {
+    public static let name = "session.lastReply"; public typealias Result = String?
+    public var id: String
+    public init(id: String) { self.id = id }
+}
 
 /// Clones `url` into a new folder in `parent` (`folder`, else named after the repository) → the added project; progress
 /// comes as `event.clone` {id, line}.
@@ -181,4 +225,8 @@ public struct RepoClone: RPCMethod {
     }
 }
 /// Stops clone `id` (its half-made folder is removed).
-public struct RepoCloneCancel: RPCMethod { public static let name = "repo.cloneCancel"; public typealias Result = Done; public var id: String; public init(id: String) { self.id = id } }
+public struct RepoCloneCancel: RPCMethod {
+    public static let name = "repo.cloneCancel"; public typealias Result = Done
+    public var id: String
+    public init(id: String) { self.id = id }
+}

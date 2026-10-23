@@ -221,11 +221,15 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case .jira(let j):
             detail.addArrangedSubview(label("\(j.key)  \(j.title)", size: 17, weight: .semibold))
             detail.addArrangedSubview(jiraTransitions(j.key, current: j.status))
-            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(ref: j.key, title: j.title, body: j.description, url: j.url) })
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in
+                self?.startTask(ref: j.key, title: j.title, body: j.description, url: j.url)
+            })
             body(j.description)
         case .issue(let i):
             detail.addArrangedSubview(label("#\(i.number)  \(i.title)", size: 17, weight: .semibold))
-            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in self?.startTask(ref: "#\(i.number)", title: i.title, body: i.body, url: i.url) })
+            detail.addArrangedSubview(button(String(localized: "Start Agent on This"), "sparkles") { [weak self] in
+                self?.startTask(ref: "#\(i.number)", title: i.title, body: i.body, url: i.url)
+            })
             body(i.body)
         case .linear(let l):
             detail.addArrangedSubview(label("\(l.identifier)  \(l.title)", size: 17, weight: .semibold))

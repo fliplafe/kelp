@@ -17,10 +17,11 @@ force_unwrapping:
 # Limits, not style: a line, a function, a type or a file past these is one to split. (A command dispatcher's `switch`
 # counts as one decision.)
 line_length:
-  warning: 200
+  warning: 180
   error: 300
   ignores_comments: true
   ignores_urls: true
+  excluded_lines_patterns: ['"[^"]{100,}"', '#".{100,}"#', "'[^']{100,}'"]   # one long string (UI text, JSON, a script) reads worse cut up
 function_body_length:
   warning: 80
   error: 150

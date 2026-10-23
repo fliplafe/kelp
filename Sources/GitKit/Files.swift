@@ -68,7 +68,8 @@ extension ProjectFiles {
     }
 
     /// The first `limit` matches; what rg or git grep print past `searchOutput` bytes is read and dropped.
-    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = searchLimit, remotes: Remotes = .none) throws -> [SearchMatch] {
+    public static func search(_ root: String, query: String, regex: Bool = false, caseSensitive: Bool = false, limit: Int = searchLimit,
+                              remotes: Remotes = .none) throws -> [SearchMatch] {
         guard !query.isEmpty else { return [] }
         var a: [String], r: (data: Data, truncated: Bool)
         if let rg = ripgrep, remotes.of(root) == nil {   // remote: git grep runs on the host

@@ -467,7 +467,9 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await c.call("files.list", .obj(["id": .string(w.id)]), as: [String].self).contains("a.txt"))
     #expect(try await c.call("files.readRemote", .obj(["path": .string(repo.path + "/a.txt")])).string == "changed\n")
     // Saving writes it there; an edit there since it was read comes back instead, and nothing is written over it.
-    let save = { (text: String, base: String) in try await c.call("files.writeRemote", .obj(["path": .string(repo.path + "/a.txt"), "text": .string(text), "base": .string(base)])) }
+    let save = { (text: String, base: String) in
+        try await c.call("files.writeRemote", .obj(["path": .string(repo.path + "/a.txt"), "text": .string(text), "base": .string(base)]))
+    }
     #expect(try await save("mine\n", "changed\n") == .null)
     #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "mine\n")
     #expect(try await save("again\n", "changed\n") == .obj(["changed": "mine\n"]))

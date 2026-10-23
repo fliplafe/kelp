@@ -238,7 +238,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
             for spec in section.specs {
                 let title = "\(loc(section.title)): \(loc(spec.title))", choices = self.choices(spec)
                 guard !choices.isEmpty else {
-                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { SettingsWindow.show(app, section: section.id) }))
+                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""),
+                                      action: { SettingsWindow.show(app, section: section.id) }))
                     continue
                 }
                 let now = app.settings.value(spec.key)

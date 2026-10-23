@@ -153,6 +153,21 @@ private func codeOnly(_ s: String) -> String {
     // Until a `.terminateLater` reply AppKit runs a modal mode in which the main actor's tasks don't run: an async
     // question asked from there never shows (quitting with an unsaved file closed nothing and asked nothing).
     #expect(try matches(#"\.terminateLater"#, in: ["Sources/KelpApp"]) == [])
+    // One loop of its own, on purpose: a logout's quit needs its answer before applicationShouldTerminate returns.
+    #expect(try matches(#"nextEvent\(matching: \.any"#, in: ["Sources/KelpApp"]).map { $0.split(separator: ":")[0] } == ["Sources/KelpApp/AppDelegate.swift"])
+}
+
+/// A line too long to take in at once: a call, a condition or a chain split over lines reads better. Comment lines and
+/// lines that are one long string (UI text) don't count; lint warns past 180.
+@Test func linesStayShort() throws {
+    let longString = try NSRegularExpression(pattern: ##""[^"]{100,}"|#".{100,}"#|'[^']{100,}'"##)
+    let long = sources(["Sources"]).flatMap { f in
+        f.text.split(separator: "\n").filter { l in
+            l.count > 160 && !l.trimmingCharacters(in: .whitespaces).hasPrefix("//")
+                && longString.firstMatch(in: String(l), range: NSRange(l.startIndex..., in: l)) == nil
+        }.map { _ in f.path }
+    }
+    #expect(long.count <= 301, "lines over 160: \(Dictionary(long.map { ($0, 1) }, uniquingKeysWith: +))")
 }
 
 /// The daemon starts every program (an extension's command, a formatter, a notebook run, an agent's --version:

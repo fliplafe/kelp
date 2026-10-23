@@ -57,7 +57,9 @@ struct SettingsView: View {
             }
             .navigationTitle(loc(registry.all.settings.first { $0.id == selection }?.title ?? (selection == "extensions" ? "Extensions" : "Settings")))
             .toolbar {
-                Button { app.workbench.open(TabURI.file(Paths.root.appendingPathComponent("settings.json").path)) } label: { Label("Open settings.json", systemImage: "curlybraces") }
+                Button { app.workbench.open(TabURI.file(Paths.root.appendingPathComponent("settings.json").path)) } label: {
+                    Label("Open settings.json", systemImage: "curlybraces")
+                }
                     .help("Edit settings.json in the editor")
             }
         }

@@ -133,7 +133,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
         let title = esc(String(localized: "Can't open this page")), hint = esc(String(localized: "Is the dev server running?"))
         web.loadHTMLString("<html><head><meta name='color-scheme' content='light dark'></head><body style='font:14px -apple-system;color:-apple-system-secondary-label;"
-            + "display:flex;height:90vh;align-items:center;justify-content:center;text-align:center'><div><b>\(title)</b><br>\(esc(ns.localizedDescription))<br><br>\(hint)</div></body></html>",
+            + "display:flex;height:90vh;align-items:center;justify-content:center;text-align:center'>"
+            + "<div><b>\(title)</b><br>\(esc(ns.localizedDescription))<br><br>\(hint)</div></body></html>",
             baseURL: nil)
     }
 
@@ -236,7 +237,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
      const box = document.createElement('div');
      box.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #0a84ff;background:rgba(10,132,255,.12);z-index:2147483647;border-radius:3px;display:none';
      const tag = document.createElement('div');
-     tag.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:11px -apple-system;padding:2px 6px;border-radius:4px;display:none';
+     tag.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:11px -apple-system;\
+    padding:2px 6px;border-radius:4px;display:none';
      document.documentElement.append(box, tag);
      const move = e => { const r = e.target.getBoundingClientRect();
        Object.assign(box.style, {left: r.left+'px', top: r.top+'px', width: r.width+'px', height: r.height+'px', display: 'block'});
@@ -252,10 +254,11 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     'line-height','border','border-radius','gap','flex-direction','justify-content','align-items','grid-template-columns','box-shadow','opacity'];
        const styles = {}; keys.forEach(k => styles[k] = cs.getPropertyValue(k));
        const src = __kelpSource(el);
-       window.webkit.messageHandlers.kelp.postMessage({selector: path(el), html: el.outerHTML.slice(0, 4000), styles, rect: {x: r.left, y: r.top, w: r.width, h: r.height}, url: location.href,
-         source: src.source || null, component: src.component || null, alt: e.altKey}); };
+       window.webkit.messageHandlers.kelp.postMessage({selector: path(el), html: el.outerHTML.slice(0, 4000), styles, rect: {x: r.left, y: r.top, w: r.width, h: r.height},
+         url: location.href, source: src.source || null, component: src.component || null, alt: e.altKey}); };
      document.addEventListener('mousemove', move, true); document.addEventListener('click', click, true);
-     window.__kelpOff = () => { document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true); box.remove(); tag.remove(); window.__kelp = false; };
+     window.__kelpOff = () => { document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true);
+       box.remove(); tag.remove(); window.__kelp = false; };
     })();
     """
 }

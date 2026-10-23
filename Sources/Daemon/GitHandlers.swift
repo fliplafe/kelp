@@ -4,7 +4,11 @@ import GitKit
 
 // Source control, files and review comments: everything runs here, off the UI.
 
-extension GitStatus: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.status(workspaces.folder(id), limit: FileChange.limit, remotes: workspaces.remotes) } }
+extension GitStatus: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        try Git.status(workspaces.folder(id), limit: FileChange.limit, remotes: workspaces.remotes)
+    }
+}
 extension GitBranches: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.branches(workspaces.folder(id), remotes: workspaces.remotes) } }
 extension GitLineStats: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.lineStats(workspaces.folder(id), remotes: workspaces.remotes) } }
 /// The branch checked out now (a workspace's record can be stale after a switch).
@@ -41,8 +45,18 @@ extension GitLog: Handled {
     }
 }
 
-extension GitStage: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.stage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
-extension GitUnstage: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.unstage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
+extension GitStage: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.stage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes)
+        return Done()
+    }
+}
+extension GitUnstage: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.unstage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes)
+        return Done()
+    }
+}
 
 extension GitHunk: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
@@ -104,7 +118,12 @@ extension GitCommitFiles: Handled {
 extension GitCommitDetails: Handled {
     func handle(_ workspaces: Workspaces) throws -> Result { try Git.commitDetails(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes) }
 }
-extension GitDiscard: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.discard(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes); return Done() } }
+extension GitDiscard: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.discard(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes)
+        return Done()
+    }
+}
 
 extension GitRemoteOp: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
@@ -113,7 +132,12 @@ extension GitRemoteOp: Handled {
         return Done()
     }
 }
-extension GitStash: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.stash(workspaces.folder(id), pop: pop == true, remotes: workspaces.remotes); return Done() } }
+extension GitStash: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.stash(workspaces.folder(id), pop: pop == true, remotes: workspaces.remotes)
+        return Done()
+    }
+}
 
 extension GitWebURL: Handled {
     func handle(_ workspaces: Workspaces) throws -> String {

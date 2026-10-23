@@ -20,7 +20,8 @@ extension SourceControlController {
                 // A rejected push or a pull that stopped on conflicts is work for the agent; other failures just say why.
                 if op == "push" { GitFix(app).offer(e, recipe: "fixPush", worktree: wid) }
                 else if op == "pull", e.lowercased().contains("conflict") {
-                    GitFix(app).offer(e, recipe: "resolveConflicts", worktree: wid, vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
+                    GitFix(app).offer(e, recipe: "resolveConflicts", worktree: wid,
+                                      vars: ["base": String(localized: "the remote branch"), "files": String(localized: "see git status")])
                 } else { Banner.show(e, style: .error) }
             } else if let done { Banner.show(done) }
             reloadAll()
