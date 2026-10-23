@@ -56,7 +56,7 @@ public final class Daemon: Sendable {
             $0.tell = { [weak self] c in
                 self?.recordChanged(c)   // records go to the clients as they change
                 switch c {   // and a project added, moved or removed is followed (watchHeads) from then on
-                case .repo, .repoRemoved: self?.workspaces.watchHeads()
+                case .repo, .repoRemoved: self?.workspaces.headQueue.async { self?.workspaces.watchHeads() }
                 default: break
                 }
             }

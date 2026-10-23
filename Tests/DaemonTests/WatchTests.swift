@@ -184,3 +184,13 @@ private final class Heard: Sendable {
     #expect(Git.touchesFileList(["/r/src/a.swift"]) && Git.touchesFileList(["/r/.git/index"]) && Git.touchesFileList(["/r/.git/HEAD"]))
     #expect(!Git.touchesFileList(["/r/.git/objects/ab/cd", "/r/.git/logs/HEAD", "/r/.git"]))
 }
+
+/// Once the daemon stopped following folders, a project written after that (a late request) doesn't start watching
+/// its .git again: it did, from the store's change hook on whatever thread wrote.
+@Test func aProjectWrittenAfterStopIsntWatched() async throws {
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    d.workspaces.stopWatching()
+    _ = try await c.call("repo.add", .obj(["path": .string(try makeRepo())]))
+    d.workspaces.headQueue.sync {}
+    #expect(d.workspaces.heads.withLock { $0 ?? [:] }.isEmpty)
+}

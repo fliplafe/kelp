@@ -15,7 +15,8 @@ final class Workspaces: Sendable {
     let clients: Clients
     /// Reading the projects' desks and adding the missing first one is one step: two syncs at once added two "Workspace 1".
     let deskLock = NSLock()   // held across git calls (a blocking run), so not the unfair lock
-    let heads = OSAllocatedUnfairLock<[String: HeadWatch]>(initialState: [:])   // by project: its .git, for desks to follow the branch
+    /// By project: its .git, for desks to follow the branch. nil once stopped: nothing starts watching again.
+    let heads = OSAllocatedUnfairLock<[String: HeadWatch]?>(initialState: [:])
     let headQueue = DispatchQueue(label: "kelp.heads")   // syncs one at a time, off every reader and the pool
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
 
@@ -74,12 +75,14 @@ final class Workspaces: Sendable {
 
     /// Desks follow their folder's branch as it moves, also when it's switched outside Kelp: a watcher on each local
     /// project's .git sees HEAD change, and the sync pushes the desks it updated (event.worktree), so listing only reads.
-    /// Runs at start and whenever a project is written or removed (the store's change hook).
+    /// Runs at start and whenever a project is written or removed (the store's change hook), always on `headQueue`: two
+    /// runs side by side could each drop the other's new watcher, and a store write doesn't wait on FSEvents setup.
     /// Limit: a project that is itself a linked worktree (its .git a file) follows at the next start or new desk.
     func watchHeads() {
+        dispatchPrecondition(condition: .onQueue(headQueue))
         let local = ((try? store.repos()) ?? []).filter { remotes.of($0.path) == nil }
         let want = Dictionary(local.map { ($0.id, $0.path + "/.git") }, uniquingKeysWith: { a, _ in a })
-        let have = heads.withLock { $0.mapValues(\.dir) }
+        guard let have = heads.withLock({ $0?.mapValues(\.dir) }) else { return }
         var made: [String: HeadWatch] = [:]
         for (id, dir) in want where have[id] != dir {
             var isDir: ObjCBool = false
@@ -91,8 +94,9 @@ final class Workspaces: Sendable {
             if let fw { made[id] = HeadWatch(dir: dir, watcher: fw) }
         }
         let gone = heads.withLock { [made] h -> [HeadWatch] in
-            let gone = h.filter { want[$0.key] != $0.value.dir }.map(\.value)
-            h = h.filter { want[$0.key] == $0.value.dir }.merging(made) { old, _ in old }
+            guard let all = h else { return Array(made.values) }   // stopped meanwhile
+            let gone = all.filter { want[$0.key] != $0.value.dir }.map(\.value)
+            h = all.filter { want[$0.key] == $0.value.dir }.merging(made) { old, _ in old }
             return gone
         }
         _ = gone   // their streams stop as they go, out of the lock
@@ -100,7 +104,7 @@ final class Workspaces: Sendable {
 
     /// The daemon stops: the folders aren't followed any more.
     func stopWatching() {
-        let h = heads.withLock { h in defer { h = [:] }; return h }
+        let h = heads.withLock { h in defer { h = nil }; return h }
         _ = h   // the streams stop here, out of the lock
     }
 
