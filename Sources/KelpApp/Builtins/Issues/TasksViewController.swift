@@ -242,7 +242,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             detail.addArrangedSubview(label(i.title, size: 17, weight: .semibold))
             detail.addArrangedSubview(label(String(localized: "Status: \(i.status ?? "—")"), color: .secondaryLabelColor))
         }
-        if let url = r.url, let u = URL(string: url) { detail.addArrangedSubview(button(String(localized: "Open on the Web"), "safari") { NSWorkspace.shared.open(u) }) }
+        if let url = r.url { detail.addArrangedSubview(button(String(localized: "Open on the Web"), "safari") { Forge.open(url) }) }
     }
 
     private func body(_ text: String) {

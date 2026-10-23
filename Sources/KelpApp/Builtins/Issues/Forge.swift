@@ -41,7 +41,14 @@ enum Forge {
     }
 
     /// In the default browser, where the user is signed in to the site.
-    static func open(_ url: String) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
+    static func open(_ url: String) { if let u = webPage(url) { NSWorkspace.shared.open(u) } }
+
+    /// Only a web page: the URL comes from a forge's or tracker's API, and a self-hosted one could hand over a file or
+    /// another app's scheme, which `NSWorkspace` would run.
+    static func webPage(_ url: String) -> URL? {
+        guard let u = URL(string: url), ["http", "https"].contains(u.scheme?.lowercased()) else { return nil }
+        return u
+    }
 
     /// One of the workspace's pages (the palette's commands); a banner when origin isn't on a site.
     static func open(_ app: AppModel, _ page: KeyPath<GitWebPages.Pages, String>) {

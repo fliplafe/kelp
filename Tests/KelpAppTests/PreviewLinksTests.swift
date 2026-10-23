@@ -84,3 +84,13 @@ import PDFKit
     #expect(ExtActions.openableURI("https://example.com/i/1") == "https://example.com/i/1")
     #expect(ExtActions.openableURI("file:///tmp/a.txt") == "file:///tmp/a.txt")
 }
+
+/// A CI run's or an issue's URL comes from a forge's or tracker's API: only a web page opens, not a file or an app's scheme.
+@MainActor
+@Test func aForgesLinkOpensOnlyWebPages() {
+    #expect(Forge.webPage("https://github.com/a/b/actions/runs/1")?.absoluteString == "https://github.com/a/b/actions/runs/1")
+    #expect(Forge.webPage("HTTP://jira.local/browse/X-1") != nil)
+    for refused in ["file:///Applications/Calculator.app", "x-apple.systempreferences:com.apple.preference", "ssh://host", "not a url"] {
+        #expect(Forge.webPage(refused) == nil, "\(refused)")
+    }
+}
