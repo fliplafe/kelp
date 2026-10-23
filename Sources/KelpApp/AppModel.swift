@@ -225,12 +225,18 @@ final class AppModel {
         return true
     }
 
-    func restartDaemon() async {
+    /// Restart Background Service. `keepingSessions`: only by running kelpd again in place (`daemon.upgrade`), every agent
+    /// still running; false, and nothing happened, for one that can't. Otherwise it stops and starts again, ending them.
+    @discardableResult
+    func restartDaemon(keepingSessions: Bool = false) async -> Bool {
         let old = client
+        if keepingSessions, (try? await old?.call(DaemonUpgrade())) == nil { return false }
         old?.onClose = nil   // this restart reconnects itself: a second client would hear every event twice
         client = nil; connected = false
-        _ = try? await old?.call(DaemonShutdown()); old?.close()
+        if !keepingSessions { _ = try? await old?.call(DaemonShutdown()) }
+        old?.close()
         try? await Task.sleep(for: .milliseconds(600)); await connect()
+        return true
     }
 
     private func reconnectSoon() {

@@ -157,9 +157,10 @@ An update replaces the app bundle while kelpd keeps running the old binary. The 
 and runs the new kelpd at the same path in the same process (`posix_spawn` with `POSIX_SPAWN_SETEXEC`). The new kelpd gets
 the listening socket, the home's lock and each session's terminal fd (`Handover`, `kelpd --adopt`). The agents stay this
 process's children and keep working, and their output waits in the terminal for the few hundred milliseconds this takes.
-Connections drop; the app reconnects and its terminals attach again, the history read back from each session's log. A
-kelpd from before `daemon.upgrade` existed is restarted instead, which ends the sessions; the app asks first when any are
-running.
+Connections drop; the app reconnects and its terminals attach again, the history read back from each session's log. The
+new kelpd also reaps the old run's other programs (a git still running) once they end. Restart Background Service works
+the same way, with the same binary. A kelpd from before `daemon.upgrade` existed is restarted instead, which ends the
+sessions; the app asks first when any are running.
 
 ## When the daemon misbehaves
 - **Its log:** `log stream --predicate 'subsystem == "dev.kelp.daemon"'` (or Console.app). It logs what would otherwise
