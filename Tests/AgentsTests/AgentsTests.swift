@@ -49,15 +49,6 @@ import TestSupport
     #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
 }
 
-@Test func stopWithBackgroundAgentsIsNotDone() {
-    func stop(_ types: [String]) -> JSONValue { .obj(["background_tasks": .array(types.map { .obj(["type": .string($0)]) })]) }
-    #expect(Hooks.hasBackgroundWork(stop(["subagent", "shell"])))
-    #expect(Hooks.hasBackgroundWork(stop(["workflow"])))
-    #expect(!Hooks.hasBackgroundWork(stop(["shell", "monitor"])))
-    #expect(!Hooks.hasBackgroundWork(stop([])))
-    #expect(!Hooks.hasBackgroundWork(.obj([:])))   // older Claude Code: no field
-}
-
 @Test func stripKeepsWordGapsFromCursorMoves() {
     let raw = "\u{1B}[2GQuick\u{1B}[8Gsafety\u{1B}[15Gcheck: one\u{1B}[30Gyou trust?\n\u{1B}[2G\u{1B}[38;2;177;185;249m❯\u{1B}[4GNo,\u{1B}[8Gexit\u{1B}[39m\n\u{1B}[4GYes,\u{1B}[9GI\u{1B}[11Gtrust\n"
     let t = StatusDetector.stripANSI(raw)

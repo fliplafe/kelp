@@ -33,6 +33,7 @@ extension LiveSession {
         var sawURL = false, lastLimits: [ClaudeLimits.Reading] = []
         var transcript: String?
         var lastHookAt = Date.distantPast, compactManual = false
+        var turnEnd = TurnEnd()
         /// Esc / ⌃C / an answer while it works or asks: Claude Code sends no hook when a turn is cut short, so the
         /// screen decides ("Interrupted…") within a few seconds. `seen` is the text printed since.
         var interruptArmed: (at: Date, seen: String)?

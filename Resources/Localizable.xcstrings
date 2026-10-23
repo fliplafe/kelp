@@ -10699,6 +10699,56 @@
           }
         }
       }
+    },
+    "goal": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "цель"
+          }
+        }
+      }
+    },
+    "Goal: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цель: %@"
+          }
+        }
+      }
+    },
+    "Waits for its command:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждёт свою команду:"
+          }
+        }
+      }
+    },
+    "Running in the background:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работает в фоне:"
+          }
+        }
+      }
+    },
+    "In the background: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В фоне: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

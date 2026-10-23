@@ -236,12 +236,6 @@ public enum Hooks {
             || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
     }
 
-    /// Stop with subagents or a workflow still running: the turn is paused until they wake it, not done.
-    /// Background shells and monitors don't count (a dev server never finishes).
-    public static func hasBackgroundWork(_ payload: JSONValue) -> Bool {
-        payload["background_tasks"]?.array?.contains { !["shell", "monitor"].contains($0["type"]?.string ?? "") } == true
-    }
-
     public static func writeSettings(to url: URL) throws {
         try Paths.ensure(url.deletingLastPathComponent())
         try settingsJSON().write(to: url, atomically: true, encoding: .utf8)

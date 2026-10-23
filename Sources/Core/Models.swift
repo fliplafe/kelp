@@ -102,6 +102,10 @@ public struct Session: Codable, Sendable, Equatable, Revised {
     /// The tmux session on a remote project's host its agent runs in (`RemoteHost.command(_:inTmux:)`), so the agent outlives a
     /// dropped connection and the daemon; kept so a wake or a restart attaches to it again. nil elsewhere.
     public var tmux: String?
+    /// The /goal it works toward (Claude Code checks it after each turn and goes on until it's met); nil without one.
+    public var goal: String?
+    /// Commands it started in the background that still ran when its turn ended (a test run it waits for, a dev server).
+    public var background: [String]?
     public init(id: String = UUID().uuidString, worktreeId: String? = nil, cwd: String, command: String, agent: String? = nil,
                 status: AgentStatus = .idle, unread: Bool = false, pid: Int32 = 0, createdAt: Date = Date(),
                 title: String = "", titleManual: Bool = false, summary: String = "", argv: [String] = []) {

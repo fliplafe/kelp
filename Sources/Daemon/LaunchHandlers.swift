@@ -101,9 +101,32 @@ extension SessionHook: Handled {
         if let cwd, ls.workIn(cwd) != nil { sessions.publish(ls) }
         if let notification, Hooks.isIdleReminder(notification) { return Done() }
         guard let event else { throw RPCError.invalidParams("missing event") }
-        let background = Hooks.hasBackgroundWork(.obj(["background_tasks": .array(backgroundTasks ?? [])]))
-        ls.hook(event == "done" && background ? "working" : event, trigger: trigger, message: notification?["message"]?.string)
+        guard event == "done" else { ls.hook(event, trigger: trigger, message: notification?["message"]?.string); return Done() }
+        let path = ls.transcriptPath
+        let goal = path.flatMap(GoalStatus.last(inFile:))
+        let (verdict, at) = ls.stop(backgroundTasks ?? [], goal: goal)
+        switch verdict {
+        case .goal: if let path, let goal { Self.watchGoal(ls, path: path, after: goal, stoppedAt: at) }
+        case .command: DispatchQueue.global().asyncAfter(deadline: .now() + Self.commandWait) { ls.release(at) }
+        case .done, .working: break
+        }
         return Done()
+    }
+
+    /// How long a command the agent waits for may run before its row says done anyway (a server TurnEnd took for a test).
+    static let commandWait: TimeInterval = 600
+
+    /// After a Stop with a goal open, Claude Code checks it (a model's answer, seconds): met, the turn is done; not met,
+    /// it goes on and stops again. No answer within a minute: done.
+    /// Limit: these waits live in this kelpd; one replaced by an update leaves the row working until the agent's next hook.
+    static func watchGoal(_ ls: LiveSession, path: String, after: GoalStatus, stoppedAt: Date, tries: Int = 30) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            guard let now = GoalStatus.last(inFile: path), now.id != after.id else {
+                if tries > 1 { watchGoal(ls, path: path, after: after, stoppedAt: stoppedAt, tries: tries - 1) } else { ls.release(stoppedAt) }
+                return
+            }
+            if now.met { ls.release(stoppedAt) }
+        }
     }
 }
 

@@ -14,6 +14,8 @@ final class SidebarCell: NSTableCellView {
     /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
     private let trailing = NSTextField(labelWithString: "")
     private let mark = StatusMark(size: 14)
+    /// What an agent goes on with by itself: its /goal, or a command it started in the background.
+    private let chip = NSButton(title: "", target: nil, action: nil)
     private var add: NSButton?
     /// Lines not committed and the PR, for rows that stand for a folder (RowBadges); they go first when the row is short of room.
     private let changes = NSButton(), pr = NSButton()
@@ -49,7 +51,10 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            layout(row: [icon, title, trailing, mark])
+            chip.bezelStyle = .inline; chip.controlSize = .mini; chip.font = .ui(10); chip.imagePosition = .imageLeading
+            chip.refusesFirstResponder = true; chip.isHidden = true; chip.lineBreakMode = .byTruncatingTail
+            chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)   // the name keeps its room first
+            layout(row: [icon, title, chip, trailing, mark])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         for b in [changes, pr] { b.isBordered = false; b.title = ""; b.target = self }
@@ -153,6 +158,7 @@ final class SidebarCell: NSTableCellView {
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
+            showChip(s)
             showState(s)
         }
     }
@@ -163,6 +169,23 @@ final class SidebarCell: NSTableCellView {
         title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
         trailing.textColor = .secondaryLabelColor
         toolTip = nil
+    }
+
+    /// "◎ goal" while it works toward one; "▷ npm test" while it waits for a command it started; "▷ 2" for what keeps
+    /// running in the background after its turn (a dev server). The full text is the tooltip.
+    private func showChip(_ s: Session) {
+        let running = s.background ?? []
+        chip.isHidden = s.goal == nil && running.isEmpty
+        if let g = s.goal {
+            chip.image = .symbol("scope"); chip.title = String(localized: "goal"); chip.toolTip = String(localized: "Goal: \(g)")
+        } else if !running.isEmpty {
+            let waits = s.status == .working, first = running[0]
+            chip.image = .symbol("apple.terminal")
+            chip.title = waits ? first : "\(running.count)"
+            chip.toolTip = (waits ? String(localized: "Waits for its command:") : String(localized: "Running in the background:"))
+                + "\n" + running.joined(separator: "\n")
+        }
+        chip.setAccessibilityLabel(chip.toolTip)
     }
 
     /// Asks for you, failed, or finished and not looked at yet.

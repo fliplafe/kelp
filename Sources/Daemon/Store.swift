@@ -118,6 +118,9 @@ public final class Store: Sendable {
         m.registerMigration("v13") { db in
             for table in ["repo", "worktree", "session"] { try db.alter(table: table) { t in t.add(column: "revision", .integer) } }
         }
+        m.registerMigration("v14") { db in
+            try db.alter(table: "session") { t in t.add(column: "goal", .text); t.add(column: "background", .text) }
+        }
         return m
     }
 
