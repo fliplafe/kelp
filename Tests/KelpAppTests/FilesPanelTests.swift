@@ -92,4 +92,28 @@ extension AppOfItsOwn {
         #expect(names() == ["f.txt", "g.txt"])
         panel.viewDidDisappear()
     }
+
+    /// What git ignores shows too, its folders closed: one opened is read then, and read again after an operation of the
+    /// panel's in it (New File), which nothing pushes.
+    @Test func ignoredFilesShowAndAnOpenOneFollowsOperations() async throws {
+        let rig = try await AppRig(); defer { rig.done() }
+        try FileManager.default.createDirectory(atPath: rig.repo + "/build", withIntermediateDirectories: true)
+        try rig.write(".gitignore", "build/\n"); try rig.write("build/a.o", "x")
+        let panel = FilesPanel(app: rig.app)
+        rig.show(panel, 300, 500)
+        panel.viewWillAppear()
+        @MainActor func names() -> [String] { (0..<panel.outline.numberOfRows).compactMap { (panel.outline.item(atRow: $0) as? FileNode)?.name } }
+        func until(_ ok: () -> Bool) async throws { for _ in 0..<250 where !ok() { try await Task.sleep(for: .milliseconds(20)) } }
+        try await until { names() == ["build", ".gitignore", "f.txt"] }
+        let build = try #require(panel.outline.item(atRow: 0) as? FileNode)
+        #expect(build.ignored && build.children?.isEmpty == true)
+        panel.outline.expandItem(build)
+        try await until { names().contains("a.o") }
+        #expect(names() == ["build", "a.o", ".gitignore", "f.txt"])
+        #expect(await panel.create(in: rig.repo + "/build", undo: "New File").value == rig.repo + "/build/untitled")
+        panel.reloadTree()
+        try await until { names().contains("untitled") }
+        #expect(names() == ["build", "a.o", "untitled", ".gitignore", "f.txt"])
+        panel.viewDidDisappear()
+    }
 }

@@ -40,6 +40,16 @@ final class FileNode: NSObject {
         Self.sort(self)
     }
 
+    /// The node at `rel` under `nodes`.
+    static func find(_ rel: String, in nodes: [FileNode]) -> FileNode? {
+        var list = nodes, found: FileNode?
+        for part in rel.split(separator: "/") {
+            guard let f = list.first(where: { $0.name == part }) else { return nil }
+            found = f; list = f.children ?? []
+        }
+        return found
+    }
+
     // Keys made once per node: lowercasing inside the comparator did it n log n times (100k files in a big repo).
     private static func sort(_ n: FileNode) {
         n.children = n.children?.map { ($0.children != nil ? 0 : 1, $0.name.lowercased(), $0) }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map(\.2)
@@ -65,6 +75,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private var changedFolders = Set<String>()
     /// The paths the tree was built from (listed, ignored): an edit that adds or removes none only changes badges.
     private var shownPaths: ([String], [String]?)?
+    /// What the open ignored folders hold, by folder: kept when the tree is built again, read again after an operation.
+    private var opened: [String: [String]] = [:]
     private var matches: [SearchMatch] = []
     /// Its files and their git status, pushed by the daemon while the panel is on screen (`WatchTopic.files`, `.git`):
     /// a hidden one costs no listing on every change, and the list comes again when it shows.
@@ -152,7 +164,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard wid != worktree?.id else { return }
         let next = app.worktree(wid)
         // Another folder: drop the old tree now, or a click before the reload would act on its paths under the new root.
-        if next?.path != worktree?.path { nodes = []; status = [:]; shownPaths = nil; outline.reloadData() }
+        if next?.path != worktree?.path { nodes = []; status = [:]; shownPaths = nil; opened = [:]; outline.reloadData() }
         worktree = next
         matches = []; results.reloadData()
         watchShown()
@@ -169,6 +181,13 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard let w = worktree else { nodes = []; outline.reloadData(); return }
         Task {
             let r = await app.tryCall(FilesList(id: w.id))
+            // What it made or moved may be in an open ignored folder, which the list doesn't say: those are read again.
+            for f in opened.keys {
+                let entries = await app.quiet(FilesIgnored(id: w.id, folder: f + "/"))
+                guard worktree?.id == w.id else { return }
+                opened[f] = entries   // gone: nil drops it
+            }
+            shownPaths = nil
             listed(FilesEvent(worktree: w.id, paths: r.value, ignored: await app.quiet(FilesIgnored(id: w.id)), error: r.error))
             done?()
         }
@@ -183,7 +202,9 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         shownPaths = (paths, e.ignored)
         let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
         let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
-        nodes = FileNode.tree(paths, ignored: e.ignored ?? []); outline.reloadData()
+        nodes = FileNode.tree(paths, ignored: e.ignored ?? [])
+        for f in opened.keys.sorted(by: { $0.count < $1.count }) { FileNode.find(f, in: nodes).map { if $0.ignored { $0.read(opened[f] ?? []) } } }   // outer first
+        outline.reloadData()
         @MainActor func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
         expand(nodes)
         if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
@@ -231,13 +252,21 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard let node = n.userInfo?["NSObject"] as? FileNode, node.unread, let w = worktree else { return }
         node.unread = false
         Task {
-            node.read(await app.call(FilesIgnored(id: w.id, folder: node.path + "/")) ?? [])
+            let entries = await app.call(FilesIgnored(id: w.id, folder: node.path + "/")) ?? []
+            guard worktree?.id == w.id else { return }
+            opened[node.path] = entries; node.read(entries)
             outline.reloadItem(node, reloadChildren: true)
         }
     }
     // themes may draw open folders differently
     func outlineViewItemDidExpand(_ n: Notification) { reloadRow(of: n) }
-    func outlineViewItemDidCollapse(_ n: Notification) { reloadRow(of: n) }
+    func outlineViewItemDidCollapse(_ n: Notification) {
+        if let node = n.userInfo?["NSObject"] as? FileNode, node.ignored, node.children != nil {
+            node.unread = true   // read again when it opens: nothing pushes what changed in it
+            opened = opened.filter { $0.key != node.path && !$0.key.hasPrefix(node.path + "/") }
+        }
+        reloadRow(of: n)
+    }
     private func reloadRow(of n: Notification) {
         let row = outline.row(forItem: n.userInfo?["NSObject"])
         if row >= 0 { outline.reloadData(forRowIndexes: [row], columnIndexes: [0]) }
