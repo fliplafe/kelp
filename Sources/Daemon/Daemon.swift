@@ -219,37 +219,10 @@ public final class Daemon: Sendable {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
                 for line in lb.append(Data(buf[0..<n])) {
-                    guard let req = try? JSONDecoder().decode(Request.self, from: line) else {
-                        // Not a request: say so to whoever sent an id, rather than leave it waiting.
-                        if let id = (try? JSONDecoder().decode(JSONValue.self, from: line))?["id"], id != .null, let d = try? Wire.line(
-                            Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) { c.send(d) }
-                        continue
-                    }
+                    guard let req = try? JSONDecoder().decode(Request.self, from: line) else { refuse(line, c); continue }
                     // A JSON-RPC client after all (it came in raw, Clients.add): events from now on.
                     if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(c.id, false) } }
-                    // Quick, and only right in the order they were sent (keystrokes, a setting dragged, two sends; a saved
-                    // layout or a terminal size that finished second must not win over the newer one): applied here, one
-                    // after another, calls and notifications alike (`Answered.inOrder`); a call's reply goes out in that order.
-                    if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder {
-                        let id = req.id ?? .null, notification = req.isNotification, method = req.method
-                        let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { r in
-                            if case .failure(let e) = r { Self.log(method, failed: e, notification: notification) }
-                            guard !notification else { return }
-                            switch r {
-                            case .success(let d): c.send(Self.replyLine(id: id, result: d))
-                            case .failure(let e): if let d = Self.errorLine(id: id, e) { c.send(d) }
-                            }
-                        }
-                        // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
-                        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, sessions, done: reply) }
-                        else {
-                            let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
-                            reply(r)
-                            // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
-                            if t == DaemonUpgrade.self, case .success = r { Thread.detachNewThread { Upgrade.of(self).run() } }
-                        }
-                        continue
-                    }
+                    if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder { answerInOrder(t, req, c); continue }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
                     if req.method == "session.stream" {
                         stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
@@ -258,12 +231,45 @@ public final class Daemon: Sendable {
                     Task { await self.respond(req, conn: c) }
                 }
             }
-            clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
-            watches.drop(c.id)
-            sessions.live.all.forEach { $0.detach(c.id) }
-            lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
-            c.close()
+            hungUp(c)
         }
+    }
+
+    /// Not a request: say so to whoever sent an id, rather than leave it waiting.
+    private func refuse(_ line: Data, _ c: Connection) {
+        guard let id = (try? JSONDecoder().decode(JSONValue.self, from: line))?["id"], id != .null,
+              let d = try? Wire.line(Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) else { return }
+        c.send(d)
+    }
+
+    /// Quick, and only right in the order they were sent (keystrokes, a setting dragged, two sends; a saved layout or a
+    /// terminal size that finished second must not win over the newer one): applied on the reader thread, one after
+    /// another, calls and notifications alike (`Handled.inOrder`); a call's reply goes out in that order.
+    private func answerInOrder(_ t: any Handled.Type, _ req: Request, _ c: Connection) {
+        let id = req.id ?? .null, notification = req.isNotification, method = req.method
+        let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { r in
+            if case .failure(let e) = r { Self.log(method, failed: e, notification: notification) }
+            guard !notification else { return }
+            switch r {
+            case .success(let d): c.send(Self.replyLine(id: id, result: d))
+            case .failure(let e): if let d = Self.errorLine(id: id, e) { c.send(d) }
+            }
+        }
+        // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
+        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, sessions, done: reply); return }
+        let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
+        reply(r)
+        // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
+        if t == DaemonUpgrade.self, case .success = r { Thread.detachNewThread { Upgrade.of(self).run() } }
+    }
+
+    /// The connection ended: what it held goes with it.
+    private func hungUp(_ c: Connection) {
+        clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
+        watches.drop(c.id)
+        sessions.live.all.forEach { $0.detach(c.id) }
+        lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
+        c.close()
     }
 
     /// Raw attach (`kelp attach`, the libghostty terminal): history then live output as plain bytes; whatever the client

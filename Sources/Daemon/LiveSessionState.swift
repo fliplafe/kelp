@@ -1,0 +1,215 @@
+import Foundation
+import os
+import Core
+import Agents
+import GitKit
+
+extension LiveSession {
+    /// What changes, all of it: only ever read or written inside `state.withLock`. The `let`s are fixed at launch.
+    struct State {
+        var record: Session
+        var detector: StatusDetector
+        let hooked: Bool                 // agents with hooks report their state themselves; others may through OSC 7501
+        let selfNames: [String]          // what a title that only names the program or its folder contains (TerminalTitle.topic)
+        let started = Date()
+        let wantsTopic: Bool, wantsURL: Bool, wantsLimits: Bool
+
+        // Output: the last `ringLimit` bytes, the modes in effect where they start (what the ring dropped had set them), the log.
+        var ring = Data(), ringModes = TerminalModes()
+        var logSize: Int
+        var attached = Set<Int>()        // connection ids receiving raw output
+        var lastOutputAt: Date?
+        /// TUIs redraw everything after a resize; that output isn't the agent working.
+        var redrawUntil = Date.distantPast
+        var final = false                // deleted, or its last record saved: nothing it does may save its record again
+        var letGo = false                // out of `live`, its program stopping: no new attach (`letGo()`)
+        var inputs = 0, inputsInFlight = 0   // client input taken (`input`)
+        var ended = false
+
+        // What the output says.
+        var oscCarry = "", titleCarry = "", lastTopic: String?
+        /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
+        var pasteMode = false, pasteCarry = Data()
+        var sawURL = false, lastLimits: [ClaudeLimits.Reading] = []
+        var transcript: String?
+        var lastHookAt = Date.distantPast, compactManual = false
+        /// Esc / ⌃C / an answer while it works or asks: Claude Code sends no hook when a turn is cut short, so the
+        /// screen decides ("Interrupted…") within a few seconds. `seen` is the text printed since.
+        var interruptArmed: (at: Date, seen: String)?
+
+        // Typing into it (LiveSessionInput).
+        var autoAnswers: [(NSRegularExpression, AgentManifest.AutoAnswer)]
+        /// Drawn and quiet once (or 25 s up): text typed before then could land in a program still starting.
+        var startedUp = false
+        /// Text waiting until the program is ready (drawn, quiet, no question open), first in first out: the launch
+        /// prompt, then whatever was sent while it waited.
+        var pendingPrompts: [(text: String, draft: Bool, paste: Bool)] = []
+        /// Someone answered the agent's first question (the user typed, or Kelp's auto-answer pressed its key): from then
+        /// on a trust dialog's words left in the scrollback no longer hold the launch prompt back.
+        var dialogSettled = false
+        /// A draft is typed but not sent (an issue's brief, a hand-off's): the user reads it and presses Return. Until they
+        /// type anything, text sent meanwhile waits behind it — its Enter would submit the draft unread.
+        var draftWaiting = false
+        /// Anything typed into it yet, by the user or by Kelp (a prompt): startup answers are only for what the agent asks
+        /// before that. After it, a matching line is something the agent read or wrote, not its own dialog.
+        var typedYet = false
+        /// Menu answer in progress: move one step at a time, re-reading the screen, and press Enter only on the wanted
+        /// option. `screen`: what must still be on screen for each key (the dialog being answered); nil for a menu the
+        /// user answers from a notification.
+        var steering: (choose: NSRegularExpression, since: Date, lastKey: Date, screen: NSRegularExpression?)?
+        /// What the user typed and hasn't sent, as far as their keys tell (arrows and history recall aren't followed).
+        var typing = ""
+        var sawFirstPrompt = false
+
+        // Turns: written by turnWork, read by requests.
+        var turnTree: String?, turnFolder: String?, turnResult: Turn?, turnStart: Date?, inTurn = false
+
+        init(record: Session, manifest: AgentManifest, logSize: Int, callbacks: Callbacks) {
+            self.record = record
+            detector = StatusDetector(manifest: manifest)
+            hooked = manifest.hooksSettingsFlag != nil
+            selfNames = [manifest.id, manifest.name, (record.cwd as NSString).lastPathComponent]
+            autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
+            self.logSize = logSize
+            wantsTopic = callbacks.topic != nil; wantsURL = callbacks.localURL != nil; wantsLimits = callbacks.limits != nil
+        }
+
+        /// The last `bytes` of what it printed, without escapes: what's on screen, near enough.
+        func screen(_ bytes: Int) -> String { StatusDetector.stripANSI(String(decoding: ring.suffix(bytes), as: UTF8.self)) }
+
+        /// The modes in effect where the history (the ring's last `ringLimit` bytes) starts.
+        var historyModes: TerminalModes {
+            var m = ringModes; m.read(ring.dropLast(LiveSession.ringLimit)); return m
+        }
+
+        // What a chunk of output says. Whether a chunk has a sequence at all is asked of its bytes: String.contains
+        // compares Characters, and on a stream of output that was most of the daemon's time.
+
+        /// OSC 7501 reports (true: the agent asked whether Kelp reads them) and ConEmu progress.
+        mutating func readReports(_ text: String, _ d: Data) -> Bool {
+            var probe = false
+            if !hooked, d.range(of: Data(ProgramStatus.prefix.utf8)) != nil || !oscCarry.isEmpty {
+                for m in ProgramStatus.scan(text, carry: &oscCarry) {
+                    switch m {
+                    case .query: probe = true
+                    case .report(let r) where r.id == nil: apply(r)   // children (subagents) aren't shown
+                    default: break
+                    }
+                }
+            }
+            if d.range(of: Data(ProgramStatus.conEmuPrefix.utf8)) != nil, let p = ProgramStatus.conEmuProgress(text).last { record.progress = p }
+            return probe
+        }
+
+        /// A new topic from the terminal title the agent sets.
+        mutating func readTopic(_ text: String, _ d: Data) -> String? {
+            guard wantsTopic, d.range(of: Data("\u{1B}]".utf8)) != nil || !titleCarry.isEmpty,
+                  let t = TerminalTitle.scan(text, carry: &titleCarry).last.flatMap({ TerminalTitle.topic($0, names: selfNames) }), t != lastTopic else {
+                return nil
+            }
+            lastTopic = t
+            return t
+        }
+
+        /// Bracketed paste switched on or off (the sequence can be split across two reads).
+        mutating func notePasteMode(_ d: Data) {
+            let scan = pasteCarry + d
+            if let on = scan.range(of: Data("\u{1B}[?2004".utf8), options: .backwards), on.upperBound < scan.endIndex { pasteMode = scan[on.upperBound] == UInt8(ascii: "h") }
+            pasteCarry = Data(d.suffix(7))
+        }
+
+        /// The keys that answer a question the manifest knows (a menu is steered instead, see `steer`).
+        mutating func autoAnswer() -> (input: String, asked: NSRegularExpression)? {
+            guard !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 else { return nil }
+            let tail = screen(4000)
+            let r = NSRange(tail.startIndex..., in: tail)
+            guard let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) else { return nil }
+            let a = autoAnswers[i].1
+            if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
+                steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
+                return nil
+            }
+            let asked = autoAnswers.remove(at: i).0; dialogSettled = true
+            return (a.input, asked)
+        }
+
+        /// The first local URL it prints (a dev server), with 0.0.0.0 and [::] as localhost.
+        mutating func localURL(_ plain: String) -> String? {
+            guard !sawURL, wantsURL, let m = LiveSession.urlRegex.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)),
+                  let r = Range(m.range, in: plain) else { return nil }
+            sawURL = true
+            return String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
+        }
+
+        /// Plan limits Claude Code printed, when they changed.
+        mutating func newLimits(_ d: Data) -> [ClaudeLimits.Reading] {
+            guard wantsLimits, d.range(of: Data("limit".utf8)) != nil else { return [] }
+            let found = ClaudeLimits.parse(screen(1200))
+            guard !found.isEmpty, found != lastLimits else { return [] }
+            lastLimits = found
+            return found
+        }
+
+        /// What the program says about itself (OSC 7501 or `kelp report`): its state, a message for its row, how far it got.
+        mutating func apply(_ r: ProgramStatus.Report) {
+            detector.program(r.state); lastHookAt = Date()
+            if let msg = r.msg, !msg.isEmpty { record.summary = msg } else if r.state == "idle" || r.state == "clear" { record.summary = "" }
+            record.progress = r.progress
+        }
+
+        /// The detector's status into the record; the record when it changed. Ended is final: a hook or a keystroke that
+        /// arrives after the exit doesn't bring the session back.
+        mutating func sync() -> Session? {
+            let s = detector.status
+            guard s != record.status, record.status != .exited else { return nil }
+            record.status = s
+            if s == .done || s == .waiting || s == .exited || s == .error { record.unread = true }
+            return record
+        }
+
+        /// The user's keys into `typing`; the first line of 8 characters or more they send (once), which names the session.
+        mutating func noteTyping(_ d: Data) -> String? {
+            let s = String(decoding: d, as: UTF8.self)
+            if s.hasPrefix("\u{1B}[200~") {   // a paste: its newlines are text, not Return
+                typing += s.replacingOccurrences(of: "\u{1B}[200~", with: "").replacingOccurrences(of: "\u{1B}[201~", with: "")
+                    .replacingOccurrences(of: "\r", with: "\n")
+                return nil
+            }
+            if let k = LiveSession.kittyKey(s) {
+                switch (k.key, k.mods) {
+                case (13, 0): return sendLine()   // Return (⇧Return is a new line in the box)
+                case (99, 4), (117, 4): typing = ""   // ⌃C, ⌃U
+                case (119, 4), (127, 2): dropWord()   // ⌃W, ⌥⌫
+                default: break
+                }
+                return nil
+            }
+            if s == "\u{1B}\u{7F}" { dropWord(); return nil }   // ⌥⌫
+            if s.hasPrefix("\u{1B}") { return nil }   // arrows, function keys
+            var sent: String?
+            for ch in s {
+                switch ch {
+                case "\r", "\n", "\r\n": sent = sendLine() ?? sent
+                case "\u{03}", "\u{15}": typing = ""   // ⌃C, ⌃U: the line is dropped
+                case "\u{7F}", "\u{08}": if !typing.isEmpty { typing.removeLast() }
+                case "\u{17}": dropWord()   // ⌃W
+                default: if !ch.isASCII || ch.isLetter || ch.isNumber || ch.isPunctuation || ch.isSymbol || ch == " " { typing.append(ch) }
+                }
+            }
+            return sent
+        }
+
+        /// Return: the line is sent. The first one of 8 characters or more, once.
+        private mutating func sendLine() -> String? {
+            let line = typing.trimmingCharacters(in: .whitespacesAndNewlines); typing = ""
+            guard !sawFirstPrompt, line.count >= 8 else { return nil }
+            sawFirstPrompt = true
+            return line
+        }
+
+        private mutating func dropWord() {
+            while typing.last == " " { typing.removeLast() }
+            while let c = typing.last, c != " " { typing.removeLast() }
+        }
+    }
+}
