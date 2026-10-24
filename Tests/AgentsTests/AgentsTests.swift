@@ -56,6 +56,13 @@ import TestSupport
     #expect(AgentManifest.AutoAnswer.optionAtCursor(t) == "No, exit")
 }
 
+@Test func stripRemovesCharsetSelection() {
+    #expect(StatusDetector.stripANSI("\u{1B}(Bhi") == "hi")
+    #expect(StatusDetector.stripANSI("\u{1B}(B") == "")
+    #expect(StatusDetector.stripANSI("\u{1B}(B\u{1B}(B") == "")
+    #expect(StatusDetector.stripANSI("\u{1B})0hello\u{1B}*B\u{1B}+A") == "hello")
+}
+
 @Test func cursorOptionHandlesCRLF() {
     // Real Claude Code bytes: options separated by "\r\r\n" (one Character in Swift).
     let raw = "\u{1B}[2G\u{1B}[38;2;177;185;249m❯\u{1B}[4GNo,\u{1B}[8Gexit\u{1B}[39m\r\r\n\u{1B}[4GYes,\u{1B}[9GI\u{1B}[11Gtrust\r\r\n"
