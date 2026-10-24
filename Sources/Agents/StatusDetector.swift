@@ -14,6 +14,8 @@ public struct StatusDetector: Sendable {
     private var settledAt: Date?
     /// The user's last keystroke that wasn't Return: a TUI redraws its input line as you type, which isn't work.
     private var typedAt: Date?
+    /// Attached again to a running program: its redraw of the screen is still to come, and starts the quiet seconds.
+    private var redrawDue = false
     private let manifest: AgentManifest
     private let regexes: [NSRegularExpression]
 
@@ -34,6 +36,8 @@ public struct StatusDetector: Sendable {
         guard !hooked, !settled, manifest.quietSeconds < 1e8 else { return }
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
+        // However long the connection took (ssh, then tmux's attach), the redraw is measured from when it starts.
+        if redrawDue { redrawDue = false; settledAt = now }
         // Redraws with no words (spinners, timers, borders) aren't the agent doing anything; a spinner in front of the
         // title is: Codex turns one there every second while it works ("⠋ Fix login | shop"), a long command printing nothing.
         guard active, Self.hasWords(text) || Self.spinsTitle(chunk), now.timeIntervalSince(settledAt ?? .distantPast) > 4,
@@ -94,7 +98,11 @@ public struct StatusDetector: Sendable {
 
     /// Attached again to a program that kept running (tmux): what it prints is its work, typed or not, once tmux's redraw
     /// of the screen in the first seconds is past (that redraw is no turn, and its end no "done").
-    public mutating func attachedToRunning(at now: Date = Date()) { active = true; settledAt = now }
+    public mutating func attachedToRunning(at now: Date = Date()) {
+        active = true
+        settledAt = now
+        redrawDue = true
+    }
 
     /// Taken over from the kelpd an update replaced: its program went on as `status`, past its first input.
     public mutating func adopted(_ status: AgentStatus, at now: Date = Date()) {

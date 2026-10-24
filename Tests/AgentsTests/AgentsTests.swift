@@ -367,3 +367,17 @@ import TestSupport
     d.program("working"); d.hook("done")
     #expect(d.status == .hibernated)
 }
+
+/// Attached again to an agent that kept running (tmux on a host): its redraw is no turn however late it comes (a slow
+/// ssh), and what it prints after the redraw's seconds is work again.
+@Test func aLateRedrawAfterAttachingIsNoTurn() {
+    let m = AgentManifest(id: "w", name: "W", command: "w")
+    var d = StatusDetector(manifest: m)
+    let t0 = Date()
+    d.attachedToRunning(at: t0)
+    d.output("did the work and more words", at: t0.addingTimeInterval(10))   // the redraw, 10 s on
+    d.output("still the redraw's words", at: t0.addingTimeInterval(12))
+    #expect(d.status == .idle)
+    d.output("new work after it", at: t0.addingTimeInterval(16))
+    #expect(d.status == .working)
+}
