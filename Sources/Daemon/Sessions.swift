@@ -284,7 +284,7 @@ final class Sessions: Sendable {
             // As `liveManifest`; past startup, nothing is answered for it.
             m = wiredHooks(m, env: launchEnv(m, rec), argv: rec.argv)
             let ls = LiveSession(record: rec, manifest: m, pty: pty, historyDir: root.appendingPathComponent("history"), callbacks: callbacks(for: rec))
-            ls.adopted(modes: h.modes, bytes: h.bytes)
+            ls.adopted(modes: h.modes, bytes: h.bytes, pending: h.pending ?? [])
             try live.add(ls)
             ls.start()
         } catch {

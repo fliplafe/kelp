@@ -275,7 +275,8 @@ final class LiveSession: Sendable {
             let quiet = Date().timeIntervalSince(s.lastOutputAt ?? s.started) > 1.5   // a program that prints nothing (cat) is quiet too
             let settled = (quiet && Date().timeIntervalSince(s.started) > 2) || Date().timeIntervalSince(s.started) > 25
             if settled { s.startedUp = true }
-            if let p = s.pendingPrompts.first, settled, s.readyForText(submits: !p.draft) {
+            // Not once it's let go: one being handed over takes what waits along (`handedOver`).
+            if let p = s.pendingPrompts.first, settled, !s.letGo, s.readyForText(submits: !p.draft) {
                 s.pendingPrompts.removeFirst()
                 type(p.text, enter: !p.draft, paste: p.paste, &s)   // queued here, under the lock: nothing sent meanwhile gets ahead
             }
@@ -285,15 +286,19 @@ final class LiveSession: Sendable {
     /// Bytes into the program after anything Kelp is still typing (`sends`): a key never lands between a send's text and its Enter.
     func write(_ d: Data) { sends.async { [pty] in pty.write(d) } }
 
-    /// Until what was sent is written to the program (one that doesn't read gives up after `within` seconds).
+    /// For a hand-over: no input is taken from now on (a caller is refused, not told it went in), then waits until what
+    /// was taken is written to the program (one that doesn't read gives up after `within` seconds).
     func drainInput(within seconds: TimeInterval) {
-        sends.sync {}
         let end = Date().addingTimeInterval(seconds)
+        _ = letGo()
+        while state.withLock({ $0.inputsInFlight }) > 0, Date() < end { usleep(10_000) }
+        sends.sync {}
         while pty.queued.withLock({ $0 }) > 0, Date() < end { usleep(10_000) }
     }
 
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
     func userInput(_ d: Data) {
+        guard !state.withLock({ $0.letGo }) else { return }   // its program stopping or handed over: an attach's keys go nowhere
         write(d)
         guard !TerminalReplies.isReply(d) else { return }   // the terminal answering the agent, not the user typing
         let firstPrompt = state.withLock { s -> String? in
@@ -447,15 +452,17 @@ final class LiveSession: Sendable {
     func handedOver(fd: Int32) -> Handover.Session {
         state.withLock { s in
             Handover.Session(id: s.record.id, pid: pty.pid, fd: fd, modes: String(decoding: s.historyModes.restore, as: UTF8.self),
-                             bytes: min(s.ring.count, Self.ringLimit))
+                             bytes: min(s.ring.count, Self.ringLimit), pending: s.pendingPrompts.map { .init(text: $0.text, draft: $0.draft, paste: $0.paste) })
         }
     }
 
     /// Taken over from the kelpd this one replaced: its history is the log's last `bytes` (that one's ring), in `modes`. It's
     /// long past starting up: no launch prompt, startup answer or title from its first prompt comes now.
-    func adopted(modes: String, bytes: Int) {
+    /// What was waiting to be typed (`pending`) is typed here once the agent is ready, as it would have been there.
+    func adopted(modes: String, bytes: Int, pending: [Handover.Prompt] = []) {
         let history = bytes > 0 ? Data(tailOf: logURL, bytes: bytes) ?? Data() : Data()
         state.withLock { s in
+            s.pendingPrompts = pending.map { ($0.text, $0.draft, $0.paste) }
             s.ring = history; s.ringModes.read(Data(modes.utf8))
             s.detector.adopted(s.record.status)
             s.startedUp = true

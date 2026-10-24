@@ -6,8 +6,13 @@ import Core
 /// running session's terminal, all left open across exec in the same process. The programs stay this process's children
 /// and never notice; what they print meanwhile waits in their terminals.
 public struct Handover: Codable, Sendable {
-    /// `modes` and `bytes`: its history, as the last `bytes` of its log in those terminal modes.
-    struct Session: Codable, Sendable { var id: String, pid: Int32, fd: Int32, modes: String, bytes: Int }
+    /// `modes` and `bytes`: its history, as the last `bytes` of its log in those terminal modes. `pending`: text sent
+    /// that waits for the agent to be ready (a launch prompt, a send while a question is open), typed by the next one.
+    struct Session: Codable, Sendable {
+        var id: String, pid: Int32, fd: Int32, modes: String, bytes: Int
+        var pending: [Prompt]?
+    }
+    struct Prompt: Codable, Sendable { var text: String, draft: Bool, paste: Bool }
     var socket: Int32, lock: Int32
     var sessions: [Session]
     // A newer kelpd reads what an older one wrote: fields are only ever added, as optionals.

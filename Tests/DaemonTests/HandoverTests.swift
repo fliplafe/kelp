@@ -151,3 +151,23 @@ private func name(_ pid: pid_t) -> String {
     let c2 = try client(root)
     #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-whole") })
 }
+
+/// Text sent before the agent is ready (it waits for it to start up) is typed by the kelpd that takes over, not lost.
+@Test func aPromptWaitingForTheAgentIsTypedAfterAnUpdate() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
+    _ = try await c.call(SessionSend(id: s.id, text: "waited"))   // right away: it isn't started up yet, so it waits
+    let next = try Daemon(root: root)
+    try next.start(adopting: try #require(d.handOver())); defer { next.stop() }
+    let c2 = try client(root)
+    #expect(try await waitFor(10) { try await c2.call(SessionRead(id: s.id)).contains("got-waited") })
+}
+
+/// Once a hand-over drains a session's input, no more is taken: a write is refused, not answered as done and lost.
+@Test func inputAfterTheHandOverDrainIsRefused() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
+    let ls = try #require(d.sessions.existing(s.id))
+    ls.drainInput(within: 1)
+    #expect(ls.input { 1 } == nil)
+}
