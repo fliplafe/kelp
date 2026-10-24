@@ -24,7 +24,13 @@ private func folder(_ files: [String: String]) throws -> URL {
     let item = JSONValue.object(["name": .string("it's"), "n": .int(3), "pr": .object(["id": .int(7)])])
     let actions = ExtActions(AppModel(builtins: Builtins.all))
     #expect(actions.expand("echo ${name}", item: item, quote: false) == "echo it's")
-    #expect(actions.expand("echo ${name}", item: item, quote: true) == #"KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
+    #expect(actions.expand("echo ${name}", item: item, quote: true) == #"export KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
+    // Exported: a shell the command starts reads it as data too.
+    let cmd = actions.expand(#"true ${name}; sh -c 'printf %s "$KELP_V1"'"#, item: item, quote: true)
+    let sh = Process(), out = Pipe()
+    sh.executableURL = URL(fileURLWithPath: "/bin/sh"); sh.arguments = ["-c", cmd]; sh.standardOutput = out
+    try? sh.run(); sh.waitUntilExit()
+    #expect(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "it's")
     #expect(actions.expand("${pr.id}-${n}-${missing}", item: item, quote: false) == "7-3-")
     #expect(actions.expand("no placeholders $ {x", item: item, quote: false) == "no placeholders $ {x")
 }

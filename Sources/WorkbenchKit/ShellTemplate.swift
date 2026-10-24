@@ -4,6 +4,9 @@ import Core
 /// `${name}` placeholders in a shell command. `fill` never puts a value into the command's text: each one is assigned
 /// to a shell variable first (as one single-quoted word, at the top level where that is always right) and the
 /// placeholder becomes a reference to it, so a value with $(…), quotes or a newline stays data whatever surrounds it.
+/// The variables are exported too, so a command that hands text to another shell can pass `"$KELP_V1"` along as data.
+/// Limit: a placeholder written inside a string another shell runs as code (`sh -c '… ${title}'`, `eval`, `ssh host "…"`)
+/// is that shell's code once expanded, as any shell variable would be there: such a template has to use `$KELP_Vn` in it.
 public enum ShellTemplate {
     /// `value(name)` nil: the placeholder stays as written (the shell's own `${HOME}`).
     public static func fill(_ template: String, _ value: (String) -> String?) -> String {
@@ -19,7 +22,7 @@ public enum ShellTemplate {
             }
             rest = rest[rest.index(after: close)...]
         }
-        return assign.isEmpty ? out + rest : assign.joined(separator: "; ") + "; " + out + rest
+        return assign.isEmpty ? out + rest : "export " + assign.joined(separator: " ") + "; " + out + rest
     }
 
     /// Plain text (a title, a prompt): values put in as they are.
