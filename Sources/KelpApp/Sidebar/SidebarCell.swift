@@ -14,6 +14,8 @@ final class SidebarCell: NSTableCellView {
     /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
     private let trailing = NSTextField(labelWithString: "")
     private let mark = StatusMark(size: 14)
+    /// An agent's mark keeps its column (times line up) unless the row has neither.
+    private let slot = NSView()
     /// What an agent goes on with by itself: its /goal, or a command it started in the background.
     private let chip = NSButton(title: "", target: nil, action: nil)
     private var add: NSButton?
@@ -49,7 +51,8 @@ final class SidebarCell: NSTableCellView {
             detail.font = .ui(12); detail.textColor = .secondaryLabelColor; detail.lineBreakMode = .byTruncatingTail
             detail.setContentCompressionResistancePriority(.init(240), for: .horizontal)   // goes before the project's name
             summary.spacing = 3
-            layout(row: [icon, title, detail, NSView(), summary, changes, pr, trailing, b, f])
+            detail.setContentHuggingPriority(.init(1), for: .horizontal)   // takes the room, the badges sit at the right
+            layout(row: [icon, title, detail, summary, changes, pr, trailing, b, f])
         case .section:
             title.font = .ui(11, weight: .semibold); title.textColor = .secondaryLabelColor
             count.font = .ui(11); count.textColor = .secondaryLabelColor
@@ -57,7 +60,7 @@ final class SidebarCell: NSTableCellView {
             layout(row: [icon, title, count, NSView()])
         case .workspace:
             title.font = .ui(13)
-            layout(row: [title, NSView(), changes, pr, trailing, mark])
+            layout(row: [title, changes, pr, trailing, mark])
         case .agent:
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
@@ -65,14 +68,15 @@ final class SidebarCell: NSTableCellView {
             chip.bezelStyle = .inline; chip.controlSize = .mini; chip.font = .ui(10); chip.imagePosition = .imageLeading
             chip.refusesFirstResponder = true; chip.isHidden = true; chip.lineBreakMode = .byTruncatingTail
             chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)   // the name keeps its room first
-            // What it does sits on the right, as on a workspace's row; the mark keeps its column when it has none.
-            let spacer = NSView(); spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-            let slot = NSView(); slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
+            // What it does sits on the right, as on a workspace's row.
+            slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
             NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 14), slot.heightAnchor.constraint(equalToConstant: 14),
                                          mark.centerXAnchor.constraint(equalTo: slot.centerXAnchor), mark.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
-            layout(row: [icon, title, spacer, chip, trailing, slot])
+            layout(row: [icon, title, chip, trailing, slot])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
+        // The name takes the room up to what's on the right: no spacer views, whose spacing on both sides read as a gap.
+        if case .section = node.kind {} else { title.setContentHuggingPriority(.init(2), for: .horizontal) }
         for b in [changes, pr] { b.isBordered = false; b.title = ""; b.target = self }
         changes.action = #selector(openChanges); pr.action = #selector(openPR)
     }
@@ -188,6 +192,7 @@ final class SidebarCell: NSTableCellView {
             mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
+            slot.isHidden = trailing.stringValue.isEmpty && mark.isHidden
             showChip(s)
             showState(s)
         }
