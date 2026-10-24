@@ -116,3 +116,18 @@ private func name(_ pid: pid_t) -> String {
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: fake)   // replaced
     #expect(upgrade.refused() == nil)
 }
+
+/// An update whose exec fails (the binary went away, a signature the system refuses) doesn't end the agents: this
+/// process takes the sessions back, as the new kelpd would have, and they go on answering.
+@Test func anUpdateWhoseExecFailsKeepsTheSessions() async throws {
+    let kelp = try #require(ProcessInfo.processInfo.environment["KELP_TRAMPOLINE"])
+    let kelpd = URL(fileURLWithPath: kelp).deletingLastPathComponent().appendingPathComponent("kelpd").path
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
+    #expect(try await waitFor { d.sessions.existing(s.id)?.tail(4096).range(of: Data("before".utf8)) != nil })
+    let back = try #require(d.upgrade(to: kelpd) { _, _, _ in throw POSIXError(.ENOEXEC) })
+    #expect(d.sessions.existing(s.id) == nil && back.sessions.existing(s.id)?.snapshot.pid == s.pid)
+    let c2 = try client(root)
+    _ = try await c2.call(SessionWrite(id: s.id, text: "y\n"))
+    #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-y") })
+}

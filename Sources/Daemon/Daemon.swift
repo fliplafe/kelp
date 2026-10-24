@@ -16,6 +16,8 @@ public final class Daemon: Sendable {
     private struct Running: @unchecked Sendable {   // the sources are only set up and cancelled, under `running`'s lock
         var listenFD: Int32 = -1, instanceLock: Int32 = -1
         var accept: DispatchSourceRead?, ticker: DispatchSourceTimer?, prune: DispatchSourceTimer?
+        /// An update whose exec failed: the daemon in this process that took the sessions back (`upgrade`), stopped with it.
+        var successor: Daemon?
     }
     private let running = OSAllocatedUnfairLock(initialState: Running())
     let settings: SettingsStore
@@ -147,6 +149,7 @@ public final class Daemon: Sendable {
 
     public func stop() {
         let r = running.withLock { r in defer { r = Running() }; return r }
+        r.successor?.stop()
         r.accept?.cancel(); r.ticker?.cancel(); r.prune?.cancel()   // the accept source's cancel closes the socket
         if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
         // Every program ends with the daemon, whole trees (a job in a process group of its own, an agent that ignores the
@@ -183,27 +186,39 @@ public final class Daemon: Sendable {
     }
 
     /// `daemon.upgrade`: this process runs the kelpd now at `executable`, which takes every running session over. Returns
-    /// only when the daemon is stopping anyway.
-    func upgrade() {
+    /// only if it couldn't: refused before anything was given up (nil), or with the daemon that took the sessions back
+    /// here after the exec failed. `exec`: the exec itself (tests make it fail).
+    @discardableResult
+    func upgrade(to executable: String = Daemon.executable,
+                 exec: (Handover, _ executable: String, _ file: String) throws -> Void = { try $0.exec($1, file: $2) }) -> Daemon? {
         // Nothing is given up to a kelpd that couldn't take it: every agent would end with this process. The reason is
         // kept, so the app's next daemon.upgrade is refused and it asks the user instead of trying again.
-        guard Handover.adoptable(Self.executable, home: root) else {
-            Log.start.error("not updating in place: \(Self.executable, privacy: .public) doesn't adopt this hand-over")
-            Upgrade.refuse(root: root, executable: Self.executable, "The new background service can't take the running sessions over.")
-            return
+        guard Handover.adoptable(executable, home: root) else {
+            Log.start.error("not updating in place: \(executable, privacy: .public) doesn't adopt this hand-over")
+            Upgrade.refuse(root: root, executable: executable, "The new background service can't take the running sessions over.")
+            return nil
         }
         offloads.waitIdle(seconds: 10)   // a clone or a worktree being made finishes instead of losing its git mid-way
-        guard let h = handOver() else { return }
+        guard let h = handOver() else { return nil }
         let file = root.appendingPathComponent("handover.json")
         do {
             try JSONEncoder().encode(h).write(to: file)
-            try h.exec(Self.executable, file: file.path)
+            try exec(h, executable, file.path)
         } catch {
             Log.start.fault("kelpd couldn't run its update: \(error)")
         }
-        // Limit: the sessions were handed over and nothing here runs them now. They end with this process; the next kelpd
-        // (the app starts one) finds them paused or ended, as after a crash.
-        exit(1)
+        Log.start.attempt("removing the hand-over no kelpd read") { try FileManager.default.removeItem(at: file) }
+        // Still here: this process takes the sessions back, as the new kelpd would have, and every agent goes on.
+        do {
+            let back = try Daemon(root: root)
+            try back.start(adopting: h)
+            running.withLock { $0.successor = back }
+            Log.start.notice("the update didn't run: this kelpd took its sessions back")
+            return back
+        } catch {
+            Log.start.fault("kelpd couldn't take its sessions back: \(error)")
+            exit(1)
+        }
     }
 
     // MARK: connections
