@@ -21,7 +21,8 @@ struct IntegrationsSettings: View {
         Form {
             Section("GitHub") {
                 cliRow(gh)
-                Text("Kelp uses the GitHub CLI and its login. Project boards need `gh auth refresh -s read:project`.").font(.caption).foregroundStyle(.secondary)
+                Text("Kelp uses the GitHub CLI and its login. Project boards need `gh auth refresh -s read:project`.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("GitLab") {
                 cliRow(glab)

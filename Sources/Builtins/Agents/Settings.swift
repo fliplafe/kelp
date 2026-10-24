@@ -78,7 +78,8 @@ struct AgentsSettings: View {
                     Text(a.name).foregroundStyle(version == nil && !versions.isEmpty ? .secondary : .primary)
                     if updates.contains(where: { $0.id == a.id }) { Circle().fill(.orange).frame(width: 6, height: 6).help("Update available") }
                 }
-                Text(version.map { "\($0) · \(a.command)" } ?? (versions.isEmpty ? " " : String(localized: "Not installed"))).font(.caption).foregroundStyle(.secondary)
+                Text(version.map { "\($0) · \(a.command)" } ?? (versions.isEmpty ? " " : String(localized: "Not installed")))
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }.tag(Optional(a.id))
     }
@@ -93,7 +94,9 @@ struct AgentsSettings: View {
             Spacer()
             if v?.version == nil, let cmd = m.install { Button("Install…") { install(m) }.help(cmd) }
             else if let cmd = m.update {
-                Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd)
+                Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) {
+                    run(cmd, String(localized: "Update \(m.name)"))
+                }.help(cmd)
             }
         }
         // The agents of SSH projects run on their hosts: the same command there, one terminal per host.
@@ -147,7 +150,8 @@ struct AgentsSettings: View {
             ("Google Vertex AI", ["CLAUDE_CODE_USE_VERTEX=1", "CLOUD_ML_REGION=us-east5", "ANTHROPIC_VERTEX_PROJECT_ID="]),
             ("Gateway (LiteLLM, Ollama…)", ["ANTHROPIC_BASE_URL=http://localhost:4000", "ANTHROPIC_AUTH_TOKEN="])
         ]
-        case "codex": [("OpenAI API Key", ["OPENAI_API_KEY="]), ("OpenAI-compatible Endpoint (OpenRouter…)", ["OPENAI_BASE_URL=https://openrouter.ai/api/v1", "OPENAI_API_KEY="])]
+        case "codex": [("OpenAI API Key", ["OPENAI_API_KEY="]),
+                       ("OpenAI-compatible Endpoint (OpenRouter…)", ["OPENAI_BASE_URL=https://openrouter.ai/api/v1", "OPENAI_API_KEY="])]
         case "gemini": [("Gemini API Key", ["GEMINI_API_KEY="]),
                         ("Google Vertex AI", ["GOOGLE_GENAI_USE_VERTEXAI=true", "GOOGLE_CLOUD_PROJECT=", "GOOGLE_CLOUD_LOCATION=us-central1"])]
         default: []

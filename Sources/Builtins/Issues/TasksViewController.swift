@@ -57,7 +57,10 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         let col = NSTableColumn(identifier: .init("t")); table.addTableColumn(col); table.headerView = nil
         table.rowHeight = TextSize.of(40); table.dataSource = self; table.delegate = self; table.style = .inset
         let ts = NSScrollView(); ts.documentView = table; ts.hasVerticalScroller = true
-        detail.orientation = .vertical; detail.alignment = .leading; detail.spacing = 10; detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
+        detail.orientation = .vertical
+        detail.alignment = .leading
+        detail.spacing = 10
+        detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
         let ds = NSScrollView(); ds.hasVerticalScroller = true; ds.drawsBackground = false
         let flip = FlippedView(); flip.translatesAutoresizingMaskIntoConstraints = false; ds.documentView = flip
         flip.pin(detail); flip.widthAnchor.constraint(equalTo: ds.contentView.widthAnchor).isActive = true
@@ -208,7 +211,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         l.preferredMaxLayoutWidth = 520; return l
     }
     private func button(_ t: String, _ sym: String, _ action: @escaping () -> Void) -> NSButton {
-        let b = ClosureButton(title: t, action: action); b.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil); b.imagePosition = .imageLeading
+        let b = ClosureButton(title: t, action: action)
+        b.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil)
+        b.imagePosition = .imageLeading
         b.bezelStyle = .rounded; return b
     }
 
@@ -367,7 +372,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
     private func merge(_ n: Int, _ wt: Worktree?) {
         let a = NSAlert()
-        a.messageText = String(localized: "Squash and merge #\(n)?"); a.addButton(withTitle: String(localized: "Merge")); a.addButton(withTitle: String(localized: "Cancel"))
+        a.messageText = String(localized: "Squash and merge #\(n)?")
+        a.addButton(withTitle: String(localized: "Merge"))
+        a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn else { return }
             // The merge runs in a workspace of the project (gh needs a checkout); the PR's own if it has one.

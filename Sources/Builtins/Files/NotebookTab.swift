@@ -27,7 +27,8 @@ final class NotebookTab: NSViewController {
             x.imagePosition = .imageLeading; x.bezelStyle = .texturedRounded; return x
         }
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
-        let bar = NSStackView(views: [b(String(localized: "Run All"), "play.fill", #selector(runAll)), b(String(localized: "Open Kernel"), "server.rack", #selector(openKernel)),
+        let bar = NSStackView(views: [b(String(localized: "Run All"), "play.fill", #selector(runAll)),
+                                      b(String(localized: "Open Kernel"), "server.rack", #selector(openKernel)),
                                       b(String(localized: "Ask Agent"), "text.bubble", #selector(askAgent)), NSView(), status])
         bar.spacing = 6; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         web.navigationDelegate = links
@@ -52,7 +53,8 @@ final class NotebookTab: NSViewController {
     }
 
     private static func jupyter() -> String? {
-        ["/opt/homebrew/bin/jupyter", "/usr/local/bin/jupyter", NSHomeDirectory() + "/.local/bin/jupyter"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        ["/opt/homebrew/bin/jupyter", "/usr/local/bin/jupyter", NSHomeDirectory() + "/.local/bin/jupyter"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     @objc private func runAll() {
@@ -61,7 +63,8 @@ final class NotebookTab: NSViewController {
         let file = url
         Task {
             // A notebook may compute for hours: the timeout is only for one that never ends.
-            let r = await Shell.exec(app, [j, "nbconvert", "--to", "notebook", "--execute", "--inplace", file.path], cwd: file.deletingLastPathComponent().path, timeout: 12 * 3600)
+            let r = await Shell.exec(app, [j, "nbconvert", "--to", "notebook", "--execute", "--inplace", file.path],
+                                     cwd: file.deletingLastPathComponent().path, timeout: 12 * 3600)
             let msg = r.stderr.split(separator: "\n").last.map(String.init) ?? ""
             status.stringValue = r.code == 0 ? String(localized: "Ran all cells") : String(localized: "Failed: \(msg)")
             reload()

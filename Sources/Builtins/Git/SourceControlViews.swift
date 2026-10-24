@@ -99,7 +99,9 @@ final class GraphBar: NSView {
 
     override func mouseEntered(with e: NSEvent) { cell?.setHover(true) }
     override func mouseExited(with e: NSEvent) { cell?.setHover(false) }
-    override func resetCursorRects() { if expanded { addCursorRect(NSRect(x: 0, y: bounds.height - 4, width: bounds.width, height: 4), cursor: .resizeUpDown) } }
+    override func resetCursorRects() {
+        if expanded { addCursorRect(NSRect(x: 0, y: bounds.height - 4, width: bounds.width, height: 4), cursor: .resizeUpDown) }
+    }
     override func accessibilityPerformPress() -> Bool { onToggle?(); return true }
     override func accessibilityValue() -> Any? { expanded }
 
@@ -123,7 +125,9 @@ final class FileCell: NSTableCellView, Hoverable {
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let name = NSTextField(labelWithString: (f.path as NSString).lastPathComponent); name.font = .ui(12)
         name.lineBreakMode = .byTruncatingTail
-        if letter.0 == "D" { name.attributedStringValue = NSAttributedString(string: name.stringValue, attributes: [.strikethroughStyle: 1, .font: NSFont.ui(12)]) }
+        if letter.0 == "D" {
+            name.attributedStringValue = NSAttributedString(string: name.stringValue, attributes: [.strikethroughStyle: 1, .font: NSFont.ui(12)])
+        }
         let dir = NSTextField(labelWithString: (f.path as NSString).deletingLastPathComponent); dir.font = .ui(11)
         dir.textColor = .tertiaryLabelColor; dir.lineBreakMode = .byTruncatingHead
         dir.setContentCompressionResistancePriority(.init(200), for: .horizontal); name.setContentCompressionResistancePriority(.init(400), for: .horizontal)

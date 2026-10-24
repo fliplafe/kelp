@@ -21,7 +21,8 @@ final class CIStatusRow: NSView {
         top.spacing = 6; top.alignment = .centerY
         let col = NSStackView(views: [top, place]); col.orientation = .vertical; col.alignment = .leading; col.spacing = 2
         pin(col, inset: NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8))
-        NSLayoutConstraint.activate([top.widthAnchor.constraint(equalTo: col.widthAnchor), place.trailingAnchor.constraint(lessThanOrEqualTo: col.trailingAnchor)])
+        NSLayoutConstraint.activate([top.widthAnchor.constraint(equalTo: col.widthAnchor),
+                                     place.trailingAnchor.constraint(lessThanOrEqualTo: col.trailingAnchor)])
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
         setAccessibilityElement(true); setAccessibilityRole(.button)
         isHidden = true

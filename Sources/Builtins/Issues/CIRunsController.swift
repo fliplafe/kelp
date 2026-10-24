@@ -46,7 +46,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         branch.font = .ui(12, weight: .semibold); branch.lineBreakMode = .byTruncatingMiddle
         let refresh = button("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reload() }
         workflowsButton.isHidden = true
-        for (b, symbol, tip) in [(workflowsButton, "play.circle", String(localized: "Run Workflow…")), (webButton, "globe", String(localized: "Open in Browser"))] {
+        for (b, symbol, tip) in [(workflowsButton, "play.circle", String(localized: "Run Workflow…")),
+                                 (webButton, "globe", String(localized: "Open in Browser"))] {
             b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip; b.contentTintColor = .secondaryLabelColor; b.target = self
         }
         workflowsButton.action = #selector(runWorkflow); webButton.action = #selector(showPages); webButton.isHidden = true
@@ -154,12 +155,16 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             for run in runs where openRuns.contains(run.id ?? -1) {
                 await expand(run, openFailed: false)
                 for job in run.children ?? [] where openJobs.contains(job.id ?? -1) { outline.expandItem(job) }
-                if let job = run.children?.first(where: { $0.id == selected }) { outline.selectRowIndexes([outline.row(forItem: job)], byExtendingSelection: false) }
+                if let job = run.children?.first(where: { $0.id == selected }) {
+                    outline.selectRowIndexes([outline.row(forItem: job)], byExtendingSelection: false)
+                }
             }
             // A workflow's latest run failed (what Source Control's CI line shows): open it at the first failed job,
             // with its log (once, so closing it sticks).
             let failing = Set(CIRuns.latest(runs.compactMap { if case .run(let r) = $0.kind { r } else { nil } }).filter(\.failed).map(\.id))
-            if let item = runs.first(where: { failing.contains($0.id ?? -1) }), let id = item.id, autoOpened.insert(id).inserted { await expand(item, openFailed: true) }
+            if let item = runs.first(where: { failing.contains($0.id ?? -1) }), let id = item.id, autoOpened.insert(id).inserted {
+                await expand(item, openFailed: true)
+            }
         }
     }
 
@@ -209,7 +214,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     private func askAgent() {
         guard let w = worktree, let j = shownJob else { return }
-        guard FileActions(app).targetAgent != nil else { Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then ask again."), style: .error); return }
+        guard FileActions(app).targetAgent != nil else {
+            Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then ask again."), style: .error)
+            return
+        }
         GitFix(app).send("fixCI", worktree: w, vars: ["check": j.job.name, "error": shownLog])
     }
 
@@ -268,7 +276,9 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         switch item.kind {
         case .run(let r):
             menu.add(String(localized: "Open in Browser"), symbol: "globe") { Forge.open(r.url) }
-            if r.failed, let w = worktree { menu.add(String(localized: "Re-run Failed"), symbol: "arrow.clockwise") { [weak self] in self?.rerun(w, run: r.id) } }
+            if r.failed, let w = worktree {
+                menu.add(String(localized: "Re-run Failed"), symbol: "arrow.clockwise") { [weak self] in self?.rerun(w, run: r.id) }
+            }
         case .job(let j, _): if let u = j.url { menu.add(String(localized: "Open in Browser"), symbol: "globe") { Forge.open(u) } }
         case .step: break
         }
@@ -330,7 +340,8 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     private func row(_ views: [NSView]) -> NSView {
         let r = NSStackView(views: views); r.spacing = 6; r.alignment = .centerY
         let cell = NSTableCellView(); r.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(r)
-        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: cell.leadingAnchor), r.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+                                     r.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
                                      r.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])
         return cell
     }

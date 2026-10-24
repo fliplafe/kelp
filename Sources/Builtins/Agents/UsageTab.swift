@@ -93,7 +93,10 @@ struct UsageReportView: View {
     private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(v < 10 ? 2 : 0))) }
     private func count(_ n: Int) -> String { n.formatted(.number.notation(.compactName)) }
     private func stat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) { Text(value).font(.title2.weight(.semibold).monospacedDigit()); Text(label).font(.caption).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.title2.weight(.semibold).monospacedDigit())
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
     }
     private func section<V: View>(_ title: String, @ViewBuilder _ content: () -> V) -> some View {
         VStack(alignment: .leading, spacing: 8) { Text(title).font(.title3.weight(.semibold)); content() }

@@ -40,8 +40,13 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         let bar = NSStackView(views: [search, fullText, NSView(), status, showAll, copyB, resumeB])
         bar.spacing = 8; bar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 8, right: 12)
         search.widthAnchor.constraint(equalToConstant: 280).isActive = true
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 600), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = String(localized: "Session History"); w.contentView = stacked(bar, sv); w.isReleasedWhenClosed = false; w.setFrameAutosaveName("history"); w.center()
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 600), styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                         backing: .buffered, defer: false)
+        w.title = String(localized: "Session History")
+        w.contentView = stacked(bar, sv)
+        w.isReleasedWhenClosed = false
+        w.setFrameAutosaveName("history")
+        w.center()
         window = w
     }
 

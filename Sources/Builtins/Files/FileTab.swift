@@ -157,7 +157,9 @@ final class FileTab: SavableTab {
         case .missing: String(localized: "It was moved or deleted. Save writes it at its old place again.")
         default: String(localized: "Your changes will be lost if you don't save them.")
         }
-        a.addButton(withTitle: String(localized: "Save")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
+        a.addButton(withTitle: String(localized: "Save"))
+        a.addButton(withTitle: String(localized: "Cancel"))
+        a.addButton(withTitle: String(localized: "Don't Save"))
         switch await runSheet(a) {
         case .alertFirstButtonReturn: return await writeAndClose()
         case .alertThirdButtonReturn: discarded = true; return true
@@ -338,7 +340,8 @@ final class FileTab: SavableTab {
         // edits away. Keep Mine writes them; Cancel leaves the tab and the file as they are.
         let notText: Bool = if case .present(nil) = self.disk { true } else { false }
         if notText { a.informativeText = String(localized: "The file on disk is no longer text (another encoding, or binary). Keep Mine writes your version over it.") }
-        a.addButton(withTitle: String(localized: "Keep Mine")); a.addButton(withTitle: notText ? String(localized: "Cancel") : String(localized: "Use Disk Version"))
+        a.addButton(withTitle: String(localized: "Keep Mine"))
+        a.addButton(withTitle: notText ? String(localized: "Cancel") : String(localized: "Use Disk Version"))
         // Holds the tab until answered: closing it meanwhile mustn't throw away the user's choice (or their edits).
         a.beginSheetModal(for: w) { r in   // AppKit: on main
             MainActor.assumeIsolated {
@@ -357,7 +360,9 @@ final class FileTab: SavableTab {
                   let self, let e = editor else { return }
             lspOpenedOn = app.connections
             e.completionProvider = { line, col in
-                await app.lsp.completion(app, root: r, path: p, line: line, column: col).map { CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert) }
+                await app.lsp.completion(app, root: r, path: p, line: line, column: col).map {
+                    CodeEditor.Completion(label: $0.label, detail: $0.detail, insert: $0.insert)
+                }
             }
         }
     }
@@ -387,7 +392,8 @@ final class FileTab: SavableTab {
             symbol = await app.lsp.symbol(app, root: root, path: path, line: line) ?? LanguageSpec.word(in: editor?.text ?? "", line: line, column: column)
         }
         let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
-        let vars = ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path, "line": String(line), "symbol": symbol, "workspace": root]
+        let vars = ["file": path, "relativeFile": relative, "dir": url.deletingLastPathComponent().path,
+                    "line": String(line), "symbol": symbol, "workspace": root]
         return ShellTemplate.fill(template) { vars[$0] }
     }
 

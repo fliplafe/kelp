@@ -63,7 +63,8 @@ extension SourceControlController {
                                     attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.tertiaryLabelColor]))
         if let fix = FixRecipes.fix(for: message) {   // the command that makes git work again, selectable
             s.append(NSAttributedString(string: String(localized: "\n\nFix it in Terminal:\n") + fix.command,
-                                        attributes: [.font: NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+                                        attributes: [.font: NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular),
+                                                     .foregroundColor: NSColor.secondaryLabelColor]))
         }
         let p = NSMutableParagraphStyle(); p.alignment = .center; p.paragraphSpacing = 4
         s.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: s.length))

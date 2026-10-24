@@ -23,7 +23,8 @@ enum Forge {
     /// `cli`: gh or glab.
     static func install(_ cli: String) -> Setup {
         let site = cli == "glab" ? "GitLab" : "GitHub"
-        return (String(localized: "Install \(site) CLI"), String(localized: "Kelp reaches \(site) through its CLI, \(cli). Install it with Homebrew and sign in."),
+        return (String(localized: "Install \(site) CLI"),
+                String(localized: "Kelp reaches \(site) through its CLI, \(cli). Install it with Homebrew and sign in."),
                 "brew install \(cli) && \(cli) auth login")
     }
     static func signIn(_ cli: String) -> Setup {

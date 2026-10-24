@@ -16,7 +16,8 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
     init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError() }
     let source = NSPopUpButton()
-    private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", String(localized: "Side by Side")), .symbol("rectangle", String(localized: "Inline"))],
+    private let layoutToggle = NSSegmentedControl(images: [.symbol("rectangle.split.2x1", String(localized: "Side by Side")),
+                                                           .symbol("rectangle", String(localized: "Inline"))],
                                                   trackingMode: .selectOne, target: nil, action: nil)
     let files = NSTableView()
     let table = DiffTable()
@@ -114,8 +115,14 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             [pathLabel, status, NSView(), icon("chevron.up", String(localized: "Previous Change (⌥↑)"), #selector(prevChange)),
              icon("chevron.down", String(localized: "Next Change (⌥↓)"), #selector(nextChange)), layoutToggle].forEach { bar.addArrangedSubview($0) }
         } else {
-            func btn(_ t: String, _ a: Selector) -> NSButton { let b = NSButton(title: t, target: self, action: a); b.bezelStyle = .rounded; b.controlSize = .small; return b }
-            [source, layoutToggle, btn(String(localized: "Comment"), #selector(addComment)), btn(String(localized: "Send to Agent"), #selector(sendComments)), NSView(), status]
+            func btn(_ t: String, _ a: Selector) -> NSButton {
+                let b = NSButton(title: t, target: self, action: a)
+                b.bezelStyle = .rounded
+                b.controlSize = .small
+                return b
+            }
+            [source, layoutToggle, btn(String(localized: "Comment"), #selector(addComment)),
+             btn(String(localized: "Send to Agent"), #selector(sendComments)), NSView(), status]
                 .forEach { bar.addArrangedSubview($0) }
         }
     }
@@ -141,7 +148,10 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
         fileList?.isHidden = true
         let dir = (path as NSString).deletingLastPathComponent
         let s = NSMutableAttributedString(string: (path as NSString).lastPathComponent, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)])
-        if !dir.isEmpty { s.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor])) }
+        if !dir.isEmpty {
+            s.append(NSAttributedString(string: "  " + dir,
+                                        attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        }
         pathLabel.attributedStringValue = s
         buildBar()
     }
@@ -214,7 +224,12 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); pop.menu = menu
             let a = NSAlert(); a.messageText = String(localized: "Review which commit?"); a.accessoryView = pop
             a.addButton(withTitle: String(localized: "Show")); a.addButton(withTitle: String(localized: "Cancel"))
-            if await runSheet(a) == .alertFirstButtonReturn { commitHash = pop.selectedItem?.representedObject as? String } else { source.selectItem(at: 0); commitHash = nil }
+            if await runSheet(a) == .alertFirstButtonReturn {
+                commitHash = pop.selectedItem?.representedObject as? String
+            } else {
+                source.selectItem(at: 0)
+                commitHash = nil
+            }
         }
         askCommit = false
         if single == nil, source.indexOfSelectedItem == 5, FileActions(app).targetAgent == nil {
@@ -281,7 +296,8 @@ final class DiffViewController: NSViewController, NSTableViewDataSource, NSTable
             t.append(RowBadges.changes(added: d.additions, removed: d.deletions))
             let full = NSMutableAttributedString(attributedString: t)
             if !dir.isEmpty {
-                full.append(NSAttributedString(string: "  " + dir, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
+                full.append(NSAttributedString(string: "  " + dir,
+                                               attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
             }
             let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingTail
             for s in [t, full] { s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length)) }

@@ -13,7 +13,8 @@ extension Builtins {
         return f
     }
 
-    package static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).", icon: "doc.text", essential: true) { app in
+    package static let files = Builtin("kelp.files", "Files & Editor", "File tree, search and the code editor (tree-sitter, LSP).",
+                                       icon: "doc.text", essential: true) { app in
         var c = Contributions()
         c.tabs = [TabProvider(schemes: ["file"], make: { FileTab(uri: $0, app: app) }, menu: { FileTab.menu(app, $0, uri: $1, workspace: $2, openBeside: $3) }),
                   TabProvider(schemes: ["untitled"]) { UntitledTab(uri: $0, app: app) }]
@@ -23,7 +24,8 @@ extension Builtins {
             s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
-            s("editor.autoSave", "Save automatically", "boolean", false, "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
+            s("editor.autoSave", "Save automatically", "boolean", false,
+              "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
             s("editor.lsp", "Language servers (completion, jump to definition)", "boolean", true),
             s("editor.formatOnSave", "Format on save", "boolean", false, "⌘S runs Format Document first, for languages that have a formatter."),
             s("markdown.defaultMode", "Default Markdown mode", "enum", "preview", options: ["preview", "edit", "split"])
@@ -52,7 +54,9 @@ extension Builtins {
                       cmd("editor.save", "Save", "cmd+s") {
                           guard let t = app.workbench.editor?.focusedContent as? SavableTab else { NSSound.beep(); return }
                           Task {
-                              if let file = t as? FileTab, app.settings.bool("editor.formatOnSave") == true, file.language?.format != nil { await file.format() }
+                              if let file = t as? FileTab, app.settings.bool("editor.formatOnSave") == true, file.language?.format != nil {
+                                  await file.format()
+                              }
                               await t.save()
                           }
                       },

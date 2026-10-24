@@ -41,7 +41,9 @@ final class UntitledTab: SavableTab {
         guard isEdited else { return true }
         let a = NSAlert(); a.messageText = String(localized: "Do you want to save “\(title)”?")
         a.informativeText = String(localized: "It hasn't been saved yet, so its text will be lost if you don't save it.")
-        a.addButton(withTitle: String(localized: "Save…")); a.addButton(withTitle: String(localized: "Cancel")); a.addButton(withTitle: String(localized: "Don't Save"))
+        a.addButton(withTitle: String(localized: "Save…"))
+        a.addButton(withTitle: String(localized: "Cancel"))
+        a.addButton(withTitle: String(localized: "Don't Save"))
         switch await runSheet(a) {
         case .alertFirstButtonReturn: return await save()
         case .alertThirdButtonReturn: return true

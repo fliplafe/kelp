@@ -78,7 +78,8 @@ final class SessionTab: TabContent {
             guard await runSheet(a) == .alertFirstButtonReturn else { return false }
         } else if session?.agent == "shell", let program = await busy(app, sid) {
             let a = NSAlert()
-            a.messageText = String(localized: "Stop “\(program)”?"); a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
+            a.messageText = String(localized: "Stop “\(program)”?")
+            a.informativeText = String(localized: "It is still running in this terminal. Closing the tab stops it.")
             a.addButton(withTitle: String(localized: "Stop and Close")); a.addButton(withTitle: String(localized: "Cancel"))
             guard await runSheet(a) == .alertFirstButtonReturn else { return false }
         }

@@ -60,15 +60,18 @@ final class MarkdownTab: NSViewController {
         }
         mode.selectedSegment = startInPreview ? 2 : defaultSegment; mode.target = self; mode.action = #selector(modeChanged)
         let heading = NSPopUpButton()
-        heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"), String(localized: "Heading 2"), String(localized: "Heading 3")])
+        heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"),
+                                      String(localized: "Heading 2"), String(localized: "Heading 3")])
         heading.target = self; heading.action = #selector(headingPicked(_:))
         heading.bezelStyle = .texturedRounded
-        let bar = NSStackView(views: [heading, b("bold", String(localized: "Bold (⌘B)"), #selector(bold)), b("italic", String(localized: "Italic (⌘I)"), #selector(italic)),
+        let bar = NSStackView(views: [heading, b("bold", String(localized: "Bold (⌘B)"), #selector(bold)),
+                                      b("italic", String(localized: "Italic (⌘I)"), #selector(italic)),
                                       b("chevron.left.forwardslash.chevron.right", String(localized: "Code"), #selector(code)),
                                       b("link", String(localized: "Link (⌘K)"), #selector(link)),
                                       b("list.bullet", String(localized: "Bulleted list"), #selector(bullets)),
                                       b("list.number", String(localized: "Numbered list"), #selector(numbered)),
-                                      b("checklist", String(localized: "Task list"), #selector(tasks)), b("tablecells", String(localized: "Table"), #selector(table)),
+                                      b("checklist", String(localized: "Task list"), #selector(tasks)),
+                                      b("tablecells", String(localized: "Table"), #selector(table)),
                                       NSView(), mode])
         bar.spacing = 4; bar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         split.isVertical = true; split.dividerStyle = .thin
@@ -141,7 +144,11 @@ final class MarkdownTab: NSViewController {
     @objc private func numbered() { edit(MarkdownFormat.toggleNumbered) }
     @objc private func tasks() { edit(MarkdownFormat.toggleTask) }
     @objc private func table() { edit { MarkdownFormat.insertTable($0, $1, columns: 3, rows: 2) } }
-    @objc private func headingPicked(_ p: NSPopUpButton) { let l = p.indexOfSelectedItem; edit { MarkdownFormat.heading($0, $1, level: l) }; p.selectItem(at: 0) }
+    @objc private func headingPicked(_ p: NSPopUpButton) {
+        let l = p.indexOfSelectedItem
+        edit { MarkdownFormat.heading($0, $1, level: l) }
+        p.selectItem(at: 0)
+    }
     @objc func link() {
         Task {
             guard let u = await prompt(String(localized: "Insert link"), "URL", initial: "https://") else { return }

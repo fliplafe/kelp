@@ -12,7 +12,8 @@ extension SourceControlController {
         let m = make(wid), op = (m as? GitRemoteOp)?.op
         busy = true
         if let op {
-            syncing = (op == "push" ? String(localized: "Pushing…") : op == "pull" ? String(localized: "Pulling…") : String(localized: "Fetching…"), op == "push")
+            syncing = (op == "push" ? String(localized: "Pushing…") : op == "pull" ? String(localized: "Pulling…") : String(localized: "Fetching…"),
+                       op == "push")
         }
         Task {
             let r = await app.tryCall(m)
@@ -39,12 +40,15 @@ extension SourceControlController {
         let a = NSAlert(); a.alertStyle = .warning
         let name = (files[0].path as NSString).lastPathComponent
         if files.count == 1, files[0].untracked {
-            a.messageText = String(localized: "Delete “\(name)”?"); a.informativeText = String(localized: "Git doesn't track this file, so it can't be restored.")
+            a.messageText = String(localized: "Delete “\(name)”?")
+            a.informativeText = String(localized: "Git doesn't track this file, so it can't be restored.")
             a.addButton(withTitle: String(localized: "Delete File")).hasDestructiveAction = true
         } else {
             a.messageText = files.count == 1 ? String(localized: "Discard changes in “\(name)”?") : String(localized: "Discard all \(files.count) changes?")
-            a.informativeText = String(localized: "This can't be undone.") + (files.contains(where: \.untracked) ? String(localized: " Untracked files are deleted.") : "")
-            a.addButton(withTitle: files.count == 1 ? String(localized: "Discard Changes") : String(localized: "Discard \(files.count) Changes")).hasDestructiveAction = true
+            a.informativeText = String(localized: "This can't be undone.")
+                + (files.contains(where: \.untracked) ? String(localized: " Untracked files are deleted.") : "")
+            a.addButton(withTitle: files.count == 1 ? String(localized: "Discard Changes") : String(localized: "Discard \(files.count) Changes"))
+                .hasDestructiveAction = true
         }
         a.addButton(withTitle: String(localized: "Cancel"))
         Task {
@@ -125,7 +129,8 @@ extension SourceControlController {
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
             Task {
-                guard let name = await prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
+                guard let name = await prompt(String(localized: "Create Branch"),
+                                              String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
                     !name.isEmpty else { return }
                 self?.run { GitSwitch(id: $0, branch: name, create: true) }
             }
@@ -188,9 +193,14 @@ extension SourceControlController {
         case .commit(let i):
             let c = commits[i]
             menu.add(String(localized: "Copy Commit Hash")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.hash, forType: .string) }
-            menu.add(String(localized: "Copy Commit Message")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c.subject, forType: .string) }
+            menu.add(String(localized: "Copy Commit Message")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(c.subject, forType: .string)
+            }
         case .commitFile(let h, let f):
-            menu.add(String(localized: "Open Changes")) { [weak self] in if let w = self?.worktreeId { app.workbench.open(DiffTab.uri(w, file: f.path, commit: h)) } }
+            menu.add(String(localized: "Open Changes")) { [weak self] in
+                if let w = self?.worktreeId { app.workbench.open(DiffTab.uri(w, file: f.path, commit: h)) }
+            }
             menu.add(String(localized: "Open File")) { [weak self] in self?.openFile(f) }
         default: break
         }

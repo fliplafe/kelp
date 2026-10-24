@@ -23,7 +23,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     var uri: String { previewFile != nil ? start : page.url?.absoluteString ?? start }
     private let start: String
     var title: String {
-        previewFile.map { ($0 as NSString).lastPathComponent } ?? page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url?.host ?? String(localized: "New Page")
+        previewFile.map { ($0 as NSString).lastPathComponent } ?? page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url?.host
+            ?? String(localized: "New Page")
     }
     var icon: NSImage? { .symbol(previewFile == nil ? "safari" : "eye") }
     var toolTip: String? { page.url?.absoluteString }
@@ -36,7 +37,11 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         web = WKWebView(frame: .zero, configuration: cfg)
         web.allowsBackForwardNavigationGestures = true; web.isInspectable = true
         func b(_ sym: String, _ tip: String) -> NSButton {
-            let x = NSButton(image: .symbol(sym, tip), target: nil, action: nil); x.bezelStyle = .texturedRounded; x.isBordered = false; x.toolTip = tip; return x
+            let x = NSButton(image: .symbol(sym, tip), target: nil, action: nil)
+            x.bezelStyle = .texturedRounded
+            x.isBordered = false
+            x.toolTip = tip
+            return x
         }
         let back = b("chevron.left", String(localized: "Back")), fwd = b("chevron.right", String(localized: "Forward"))
         let reload = b("arrow.clockwise", String(localized: "Reload (⌘R)")), ext = b("safari", String(localized: "Open in Safari"))
@@ -77,7 +82,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         let s = raw.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty, s != "https:", !s.hasPrefix("about:blank") else { ports.isHidden = false; return }
         let text = s.contains("://") ? s : (s.hasPrefix("localhost") || s.first?.isNumber == true ? "http://" + s
-            : s.contains(".") && !s.contains(" ") ? "https://" + s : "https://duckduckgo.com/?q=" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s))
+            : s.contains(".") && !s.contains(" ") ? "https://" + s
+            : "https://duckduckgo.com/?q=" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s))
         guard let url = URL(string: text) else { NSSound.beep(); return }
         web.load(URLRequest(url: url)); address.stringValue = url.absoluteString
     }
@@ -99,7 +105,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         m.addItem(.separator())
         m.add(String(localized: "Clear Cookies and Data for This Site")) { [weak self] in self?.clearSiteData() }
         m.addItem(.separator())
-        let tip = m.addItem(withTitle: String(localized: "Inspect: right-click the page › Inspect Element"), action: nil, keyEquivalent: ""); tip.isEnabled = false
+        let tip = m.addItem(withTitle: String(localized: "Inspect: right-click the page › Inspect Element"), action: nil, keyEquivalent: "")
+        tip.isEnabled = false
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
@@ -157,7 +164,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
 
     private func sendDesign(_ d: [String: Any], image: NSImage?) {
         var shot = ""
-        if let img = image, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) {
+        if let img = image, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
             let u = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-design-\(UUID().uuidString.prefix(6)).png")
             try? png.write(to: u); shot = u.path
         }
@@ -255,7 +263,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     'line-height','border','border-radius','gap','flex-direction','justify-content','align-items','grid-template-columns','box-shadow','opacity'];
        const styles = {}; keys.forEach(k => styles[k] = cs.getPropertyValue(k));
        const src = __kelpSource(el);
-       window.webkit.messageHandlers.kelp.postMessage({selector: path(el), html: el.outerHTML.slice(0, 4000), styles, rect: {x: r.left, y: r.top, w: r.width, h: r.height},
+       window.webkit.messageHandlers.kelp.postMessage({selector: path(el), html: el.outerHTML.slice(0, 4000), styles,
+         rect: {x: r.left, y: r.top, w: r.width, h: r.height},
          url: location.href, source: src.source || null, component: src.component || null, alt: e.altKey}); };
      document.addEventListener('mousemove', move, true); document.addEventListener('click', click, true);
      window.__kelpOff = () => { document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true);

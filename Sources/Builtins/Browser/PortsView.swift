@@ -22,7 +22,8 @@ final class PortsView: NSView {
         let stack = NSStackView(views: [title, list, hint]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([stack.topAnchor.constraint(equalTo: topAnchor, constant: 40), stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-                                     stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460), stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -40),
+                                     stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
+                                     stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -40),
                                      hint.widthAnchor.constraint(lessThanOrEqualToConstant: 460)])
         track(owner: self) { [weak self, app] in self?.ports.key.flatMap { app.ports[$0] } } changed: { [weak self] in self?.show($0) }
     }
@@ -55,7 +56,10 @@ final class PortsView: NSView {
         let link = ClosureButton(title: "localhost:\(port)") { [weak self] in self?.onOpen?(address) }
         link.isBordered = false; link.contentTintColor = .linkColor; link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         let what = NSTextField(labelWithString: p.command); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
-        let copy = ClosureButton(title: String(localized: "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(address, forType: .string) }
+        let copy = ClosureButton(title: String(localized: "Copy")) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(address, forType: .string)
+        }
         let stop = ClosureButton(title: String(localized: "Stop")) { [app] in
             Task {
                 if await app.call(PortsStop(worktreeId: wid, pid: Int(p.pid))) != nil { app.watchAgain(.ports, wid) }

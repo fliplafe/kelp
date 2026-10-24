@@ -328,7 +328,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         case .section(let s):
             return SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n))
         case .file(let f, let s):
-            return FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, s), indent: 16, actions: fileActions(f, s))
+            return FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, s),
+                            indent: 16, actions: fileActions(f, s))
         case .commit(let i):
             if more, !loadingMore, i >= commits.count - 30 { loadMore() }
             let c = commits[i]
@@ -340,7 +341,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             }
             return cell
         case .commitFile(let h, let f):
-            let cell = FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, .graph), indent: graphWidth + 4, actions: [])
+            let cell = FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, .graph),
+                                indent: graphWidth + 4, actions: [])
             // The lanes below the commit run on through its expanded files, as in VS Code.
             let g = GraphView(); g.through = Array(Set(commits.first { $0.hash == h }?.bottom.compactMap(\.last) ?? []))
             g.frame = NSRect(x: 6, y: 0, width: graphWidth, height: 22); g.autoresizingMask = [.height]

@@ -37,7 +37,9 @@ final class FileNode: NSObject {
     /// An ignored folder's files as `files.ignored` lists them (each path from the root).
     func read(_ entries: [String]) {
         unread = false
-        children = entries.map { e in FileNode(name: (e as NSString).lastPathComponent, path: String(e.dropLast(e.hasSuffix("/") ? 1 : 0)), dir: e.hasSuffix("/"), ignored: true) }
+        children = entries.map { e in
+            FileNode(name: (e as NSString).lastPathComponent, path: String(e.dropLast(e.hasSuffix("/") ? 1 : 0)), dir: e.hasSuffix("/"), ignored: true)
+        }
         Self.sort(self)
     }
 
@@ -101,8 +103,10 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         for group in [[("Open", #selector(openSelected))],
                       [("New File", #selector(newFile)),
                        (String(localized: "New Folder…"), #selector(newFolder)), (String(localized: "New from Template…"), #selector(newFromTemplate))],
-                      [("Rename", #selector(rename)), (String(localized: "Move to Trash"), #selector(trashSelected)), (String(localized: "Quick Look"), #selector(togglePreview))],
-                      [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)), (String(localized: "Copy Relative Path"), #selector(copyRelativePath))],
+                      [("Rename", #selector(rename)), (String(localized: "Move to Trash"), #selector(trashSelected)),
+                       (String(localized: "Quick Look"), #selector(togglePreview))],
+                      [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)),
+                       (String(localized: "Copy Relative Path"), #selector(copyRelativePath))],
                       [("Send to Agent", #selector(insertPath)), ("Copy Web Link", #selector(copyWebLink))]] {
             if !m.items.isEmpty { m.addItem(.separator()) }
             for (t, a) in group { m.addItem(withTitle: loc(t), action: a, keyEquivalent: "").target = self }
@@ -119,7 +123,10 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         search.delegate = self
         resultsScroll.documentView = results; resultsScroll.hasVerticalScroller = true; resultsScroll.isHidden = true; resultsScroll.drawsBackground = false
         // One field, like Finder's: empty shows the tree, a search (↩) shows matches in their place, clearing it goes back.
-        search.placeholderString = String(localized: "Search in Files"); search.target = self; search.action = #selector(runSearch); search.sendsSearchStringImmediately = false
+        search.placeholderString = String(localized: "Search in Files")
+        search.target = self
+        search.action = #selector(runSearch)
+        search.sendsSearchStringImmediately = false
         search.controlSize = .small
         let v = NSView()
         noMatches.textColor = .secondaryLabelColor; noMatches.alignment = .center
@@ -132,7 +139,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         noResults = empty
         loadError.textColor = .secondaryLabelColor; loadError.alignment = .center; loadError.isHidden = true
         for x in [search, leftScroll, resultsScroll, empty, loadError] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
+        NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: v.centerXAnchor),
+                                     empty.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
                                      empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32),
                                      loadError.centerXAnchor.constraint(equalTo: v.centerXAnchor),
                                      loadError.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
@@ -199,14 +207,23 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         // Another workspace's (switched meanwhile), or a rename in place, which a reload would end (it reads after).
         guard let e, e.worktree == worktree?.id, renaming == nil else { return }
         showLoadError(e.error)
-        guard let paths = e.paths, shownPaths.map({ $0 != paths || $1 != e.ignored }) ?? true else { return }   // an agent saving a file changes its badge, not the tree
+        // an agent saving a file changes its badge, not the tree
+        guard let paths = e.paths, shownPaths.map({ $0 != paths || $1 != e.ignored }) ?? true else { return }
         shownPaths = (paths, e.ignored)
-        let expanded = Set((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil } })
+        let expanded = Set((0..<outline.numberOfRows).compactMap {
+            (outline.item(atRow: $0) as? FileNode).flatMap { outline.isItemExpanded($0) ? $0.path : nil }
+        })
         let selected = (outline.item(atRow: outline.selectedRow) as? FileNode)?.path
         nodes = FileNode.tree(paths, ignored: e.ignored ?? [])
-        for f in opened.keys.sorted(by: { $0.count < $1.count }) { FileNode.find(f, in: nodes).map { if $0.ignored { $0.read(opened[f] ?? []) } } }   // outer first
+        // outer first
+        for f in opened.keys.sorted(by: { $0.count < $1.count }) { FileNode.find(f, in: nodes).map { if $0.ignored { $0.read(opened[f] ?? []) } } }
         outline.reloadData()
-        @MainActor func expand(_ ns: [FileNode]) { for n in ns where n.children != nil && expanded.contains(n.path) { outline.expandItem(n); expand(n.children ?? []) } }
+        @MainActor func expand(_ ns: [FileNode]) {
+            for n in ns where n.children != nil && expanded.contains(n.path) {
+                outline.expandItem(n)
+                expand(n.children ?? [])
+            }
+        }
         expand(nodes)
         if let selected, let n = node(at: selected) { outline.selectRowIndexes([outline.row(forItem: n)], byExtendingSelection: false) }
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { QLPreviewPanel.shared().reloadData() }
@@ -378,7 +395,8 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
                 localized: "Add Markdown files to .kelp/templates in the repo or ~/.kelp/templates. Placeholders: {{date}}, {{time}}, {{branch}}, {{title}}, {{repo}}.")
             Task { _ = await runSheet(a) }; return
         }
-        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26)); for t in all { pop.addItem(withTitle: t.deletingPathExtension().lastPathComponent) }
+        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
+        for t in all { pop.addItem(withTitle: t.deletingPathExtension().lastPathComponent) }
         let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); name.placeholderString = String(localized: "File name, e.g. plan-login.md")
         let box = NSStackView(views: [pop, name]); box.orientation = .vertical; box.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
         let a = NSAlert(); a.messageText = String(localized: "New from Template"); a.accessoryView = box

@@ -27,7 +27,9 @@ final class EditorStatusBar: NSView {
         line.translatesAutoresizingMaskIntoConstraints = false; addSubview(line)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 24),
-            line.topAnchor.constraint(equalTo: topAnchor), line.leadingAnchor.constraint(equalTo: leadingAnchor), line.trailingAnchor.constraint(equalTo: trailingAnchor)
+            line.topAnchor.constraint(equalTo: topAnchor),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: trailingAnchor)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
