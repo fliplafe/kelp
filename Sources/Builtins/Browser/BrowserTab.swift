@@ -15,6 +15,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     private let ports: PortsView
     let app: AppModel
     private var designOn = false
+    @ObservationIgnored private var clicks = DesignClicks()
+    @ObservationIgnored private var clickWatch: Any?
     /// `preview:/path/page.html`: a local page shown as the browser sees it, reloaded whenever a file next to it changes.
     private var previewFile: String? { start.hasPrefix("preview:") ? String(start.dropFirst("preview:".count)) : nil }
     private var watcher: FileWatcher?
@@ -147,15 +149,28 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     }
 
     // MARK: Design Mode
+    /// The click watch goes with the tab (a closed tab in Design Mode would leave it on every click).
+    func close() async -> Bool {
+        if let w = clickWatch { NSEvent.removeMonitor(w); clickWatch = nil }
+        return true
+    }
+
     @objc func toggleDesign() {
         designOn.toggle(); designButton.state = designOn ? .on : .off
+        // The user's own clicks on the page, as AppKit sees them: a page can post without one, it can't make one.
+        if designOn, clickWatch == nil {
+            clickWatch = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+                if let self, e.window === web.window, web.bounds.contains(web.convert(e.locationInWindow, from: nil)) { clicks.note() }
+                return e
+            }
+        } else if !designOn, let w = clickWatch { NSEvent.removeMonitor(w); clickWatch = nil }
         designButton.contentTintColor = designOn ? .controlAccentColor : nil
         web.evaluateJavaScript(designOn ? Self.designJS : "window.__kelpOff && window.__kelpOff()")
     }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-        // Any site can post to this handler: only a click made while the user has Design Mode on counts.
-        guard designOn, m.frameInfo.isMainFrame, let d = m.body as? [String: Any] else { return }
+        // Any site can post to this handler: only one message per click the user made while Design Mode is on counts.
+        guard designOn, m.frameInfo.isMainFrame, clicks.take(), let d = m.body as? [String: Any] else { return }
         let r = d["rect"] as? [String: Double] ?? [:]
         let rect = CGRect(x: r["x"] ?? 0, y: r["y"] ?? 0, width: max(1, r["w"] ?? 1), height: max(1, r["h"] ?? 1)).insetBy(dx: -8, dy: -8)
         let cfg = WKSnapshotConfiguration(); cfg.rect = rect.intersection(web.bounds)
@@ -271,4 +286,14 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
        box.remove(); tag.remove(); window.__kelp = false; };
     })();
     """
+}
+
+/// The user's clicks on the page in Design Mode: each one lets one element's message through, within a second of it.
+struct DesignClicks {
+    private var at: Date?
+    mutating func note(_ now: Date = Date()) { at = now }
+    mutating func take(_ now: Date = Date()) -> Bool {
+        defer { at = nil }
+        return at.map { now.timeIntervalSince($0) < 1 } ?? false
+    }
 }

@@ -117,3 +117,14 @@ import PDFKit
     #expect(actions.runAction("terminal:?tmux=${title}", item: item) == nil)
     #expect(actions.runAction("https://example.com/${title}", item: item) == nil)
 }
+
+/// Design Mode takes one element per click the user made: a page posting on its own, or again, gets nothing through.
+@Test func designModeTakesOneMessagePerClick() {
+    var c = DesignClicks(), t = Date()
+    #expect(!c.take(t))                            // no click
+    c.note(t)
+    #expect(c.take(t.addingTimeInterval(0.2)))     // the click's own message
+    #expect(!c.take(t.addingTimeInterval(0.3)))    // a second one from the page
+    c.note(t)
+    #expect(!c.take(t.addingTimeInterval(2)))      // long after
+}
