@@ -75,7 +75,8 @@ final class AgentUsage: Sendable {
     /// Opus 4.7 and later, every Claude 5 model and later (Haiku 5.5, Sonnet 5, Fable…): "claude-opus-4-7", "claude-sonnet-5".
     static func nativeMillion(_ model: String) -> Bool {
         let parts = model.lowercased().split(separator: "-")
-        guard parts.count >= 3, parts[0] == "claude", let major = Int(parts[2]) else { return false }
+        // "claude-3-7-sonnet": the old order puts the version before the family, and no 3.x model has 1M.
+        guard parts.count >= 3, parts[0] == "claude", Int(parts[1]) == nil, let major = Int(parts[2]) else { return false }
         let minor = parts.count > 3 ? Int(parts[3]) ?? 0 : 0   // "claude-sonnet-4-20250514": a date, not a minor version
         return major >= 5 || (parts[1] == "opus" && major == 4 && (7..<100).contains(minor))
     }
