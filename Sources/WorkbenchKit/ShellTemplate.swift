@@ -14,7 +14,9 @@ public enum ShellTemplate {
         var assign: [String] = [], out = "", rest = Substring(template), quotes = ShellQuotes()
         while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
             out += rest[..<open.lowerBound]; quotes.read(rest[..<open.lowerBound])
-            if let v = value(String(rest[open.upperBound..<close])) {
+            if let v = value(String(rest[open.upperBound..<close])), let remote = quotes.remoteLiteral(v) {
+                out += remote; quotes.inserted()   // for a shell on another machine: the value, quoted for that shell
+            } else if let v = value(String(rest[open.upperBound..<close])) {
                 let name = "KELP_V\(assign.count + 1)"
                 assign.append("\(name)=\(IDE.shellWord(v))")
                 out += quotes.reference(name); quotes.inserted()
@@ -37,14 +39,18 @@ public enum ShellTemplate {
     }
 }
 
-/// Where a shell would be at this point of a template (inside quotes, a comment, a here-document). Only decides how a
-/// variable reference is written; a wrong guess garbles the text, it can't make a value run.
+/// Where a shell would be at this point of a template (inside quotes, a comment, a here-document), and whether that
+/// string is code another program runs (`sh -c '…'`, `/bin/bash -c "…"`, `eval`, a here-document fed to `sh`, `python
+/// -c`…). Decides how a variable reference is written: in code, as the variable's name for that program to read (a
+/// shell expands it as data; an interpreter that doesn't is handed the name, not the value).
 struct ShellQuotes {
     var inSingle = false, inDouble = false, inComment = false
-    /// The single-quoted string open now is code for another shell (`sh -c '…'`, `eval '…'`).
-    var codeQuote = false
-    /// A here-document's end word once `<<WORD` was read; `expands`: unquoted WORD, so $(…) inside it runs.
-    var pendingDoc: (word: String, expands: Bool)?, inDoc: (word: String, expands: Bool)?
+    /// The quoted string open now is code for another program; `remoteQuote`: for a shell on another machine (`ssh host
+    /// "…"`), which this one's variables don't reach.
+    var codeQuote = false, remoteQuote = false
+    /// A here-document's end word once `<<WORD` was read; `expands`: unquoted WORD, so $(…) inside it runs; `code`: fed
+    /// to a shell, which runs its text.
+    var pendingDoc: (word: String, expands: Bool, code: Bool)?, inDoc: (word: String, expands: Bool, code: Bool)?
     private var line = "", last: Character = "\n", outer: [(Bool, Bool)] = []
 
     mutating func read(_ s: Substring) {
@@ -67,14 +73,17 @@ struct ShellQuotes {
             if c == ")", !inSingle, !inDouble, let o = outer.popLast() { (inSingle, inDouble) = o; continue }
             if c == "'", !inDouble {
                 inSingle.toggle()
-                if inSingle { codeQuote = Self.runsCode(line.dropLast()) }
-            } else if c == "\"", !inSingle { inDouble.toggle() }
+                if inSingle { codeQuote = Self.runsCode(line.dropLast()); remoteQuote = Self.runsRemotely(line.dropLast()) }
+            } else if c == "\"", !inSingle {
+                inDouble.toggle()
+                if inDouble { codeQuote = Self.runsCode(line.dropLast()); remoteQuote = Self.runsRemotely(line.dropLast()) }
+            }
             if c == "<", !inSingle, !inDouble, s[i...].hasPrefix("<<"), !s[i...].hasPrefix("<<<") {
                 var rest = s[s.index(i, offsetBy: 2)...].drop { $0 == "-" || $0 == " " }
                 let quoted = rest.first == "'" || rest.first == "\""
                 if quoted { rest = rest.dropFirst() }
                 let word = String(rest.prefix { !" \t\n'\";<>|&".contains($0) })
-                if !word.isEmpty { pendingDoc = (word, !quoted) }
+                if !word.isEmpty { pendingDoc = (word, !quoted, Self.feedsShell(line + s[s.index(after: i)...].prefix { $0 != "\n" })) }
                 i = s.index(after: i)   // the second <
             }
         }
@@ -83,14 +92,42 @@ struct ShellQuotes {
     /// `name`'s value as this spot needs it: bare it gets quotes, in '…' they close around it, in "…" or a here-document
     /// it goes in as is.
     func reference(_ name: String) -> String {
-        if inDoc != nil || inComment || inDouble { return "${\(name)}" }
+        if let d = inDoc, d.code, d.expands { return "\"\\${\(name)}\"" }   // the shell it's fed to expands it, as data
+        if inDoc != nil || inComment { return "${\(name)}" }
+        if inDouble && codeQuote { return "\\\"\\${\(name)}\\\"" }   // \"\${KELP_V1}\": left for the inner shell, quoted
+        if inDouble { return "${\(name)}" }
         if inSingle && codeQuote { return "\"${\(name)}\"" }   // the inner shell expands it, quoted: data there too
         return inSingle ? "'\"${\(name)}\"'" : "\"${\(name)}\""
     }
 
-    /// What comes before a quote hands it to a shell as code: `sh -c`, `bash -lc`, `zsh -c`, `eval`.
+    /// What comes before a quote hands it to a program as code: `sh -c`, `/bin/bash -lc`, `env zsh -c`, `eval`,
+    /// `python3 -c`, `perl -e`, `ruby -e`, `node -e`, `osascript -e`.
     static func runsCode(_ before: Substring) -> Bool {
-        before.range(of: #"(^|[\s;|&(])(eval|(ba|z|da|k)?sh(\s+-[a-z]+)*\s+-[a-z]*c[a-z]*)\s*$"#, options: .regularExpression) != nil
+        let shell = #"(eval|(ba|z|da|k)?sh(\s+-[A-Za-z]+)*\s+-[A-Za-z]*c[A-Za-z]*)"#
+        let other = #"((python3?|perl|ruby|node|osascript)(\s+-[A-Za-z]+)*\s+-[A-Za-z]*[ce][A-Za-z]*)"#
+        return before.range(of: #"(^|[\s;|&(/])("# + shell + "|" + other + #")\s*$"#, options: .regularExpression) != nil
+    }
+
+    /// What comes before a quote hands it to ssh as a command for the host.
+    static func runsRemotely(_ before: Substring) -> Bool {
+        before.range(of: #"(^|[\s;|&(/])ssh\b[^'"]*$"#, options: .regularExpression) != nil
+    }
+
+    /// In a string ssh runs on a host: `v` quoted for the host's shell, then for the quotes it sits in here, so this
+    /// shell hands that quoted word on unchanged. nil anywhere else.
+    func remoteLiteral(_ v: String) -> String? {
+        guard remoteQuote, inDoc == nil, !inComment else { return nil }
+        let word = IDE.shellWord(v)
+        if inSingle { return "'" + IDE.shellWord(word) + "'" }
+        if inDouble {
+            return word.reduce(into: "") { out, ch in if "\\\"$`".contains(ch) { out.append("\\") }; out.append(ch) }
+        }
+        return nil
+    }
+
+    /// A line whose here-document a shell runs: `sh <<EOF`, `bash -s <<EOF`, `cat <<EOF | sh`.
+    static func feedsShell(_ line: Substring) -> Bool {
+        line.range(of: #"(^|[\s;|&(/])(ba|z|da|k)?sh\b"#, options: .regularExpression) != nil
     }
 
     mutating func inserted() { last = "x" }   // a value just went in: a # right after it doesn't start a comment

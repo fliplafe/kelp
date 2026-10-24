@@ -62,8 +62,10 @@ Both take the same view definitions; `editors` also appear in the editor area's 
 - `${Field}` reads a field of the row (`${a.b}` for nested), `${setting:key}` a setting,
   `${workspace.path}`, `${workspace.branch}`, `${project.path}`, `${file}` (the focused file).
   Inside commands, values are shell-quoted for you: each becomes an exported variable (`$KELP_V1`, …) the command
-  reads. In `sh -c '…'`, `bash -c '…'` or `eval '…'` the inner shell reads it from there too. A command that hands text
-  to a shell on another machine (`ssh host "…"`) quotes the value for that shell itself.
+  reads. Code another program runs keeps it data too: in `sh -c '…'` / `"…"` (any path to the shell, after `env` too),
+  `eval`, a here-document fed to `sh`, it's that shell's variable; in `ssh host '…'` / `"…"` it arrives quoted for the
+  host's shell. In `python3 -c`, `perl -e`, `node -e` or `osascript -e` code, `${Field}` is left as the variable's name:
+  read it there as the environment variable `KELP_V1` (the first placeholder, `KELP_V2` the next…).
 - `status` maps a field to a status dot: `working`, `waiting`, `done`, `idle`, `ended`.
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
 - `refresh`: seconds between reloads (0 = only on open and after actions).

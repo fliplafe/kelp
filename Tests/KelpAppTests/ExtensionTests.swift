@@ -122,9 +122,15 @@ extension OneAtATime {
 @MainActor @Test func aValueInANestedShellStaysData() {
     let item = JSONValue.object(["title": .string("x$(echo PWNED)")])
     let actions = ExtActions(AppModel(builtins: Builtins.all))
-    for template in [#"sh -c 'printf %s ${title}'"#, #"bash -lc 'printf %s ${title}'"#, #"eval 'printf %s ${title}'"#] {
+    let shapes = [#"sh -c 'printf %s ${title}'"#, #"bash -lc 'printf %s ${title}'"#, #"eval 'printf %s ${title}'"#,
+                  #"/bin/sh -c 'printf %s ${title}'"#, #"env bash -c 'printf %s ${title}'"#, #"sh -c "printf %s ${title}""#,
+                  #"/bin/bash -c "printf %s ${title}""#, "sh <<EOF\nprintf %s ${title}\nEOF", "cat <<EOF | sh\nprintf %s ${title}\nEOF",
+                  #"ssh -o x=y host 'printf %s ${title}'"#, #"ssh host "printf %s ${title}""#]
+    for template in shapes {
         let sh = Process(), out = Pipe()
-        sh.executableURL = URL(fileURLWithPath: "/bin/zsh"); sh.arguments = ["-c", actions.expand(template, item: item, quote: true)]
+        // ssh is a stand-in that runs its command with sh here, as a host's shell would.
+        let shim = "ssh() { for a; do last=$a; done; sh -c \"$last\"; }; "
+        sh.executableURL = URL(fileURLWithPath: "/bin/zsh"); sh.arguments = ["-c", shim + actions.expand(template, item: item, quote: true)]
         sh.standardOutput = out
         try? sh.run(); sh.waitUntilExit()
         #expect(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "x$(echo PWNED)", "\(template)")
