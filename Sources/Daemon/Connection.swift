@@ -19,11 +19,14 @@ final class Connection: Sendable {
 
     /// The program that connected (`Unix.peerExecutable`), for what only Kelp's window may do.
     let peer: String?
+    /// Its process, to tell which session a report comes from (`Answered.reportsFor`).
+    let peerPID: pid_t?
 
     init(id: Int, fd: Int32) {
         self.id = id
         self.fd = fd
         peer = Unix.peerExecutable(fd)
+        peerPID = Unix.peerPID(fd)
         var t = Self.stall
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
     }

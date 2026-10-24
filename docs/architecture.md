@@ -186,7 +186,9 @@ agents run as the user and can run commands anyway. Kelp doesn't try to contain 
 
 What only Kelp's window may do — publish what's on screen (`ui.publish`), trust a project's commands (`scripts.trust`) or
 its language servers (`state.set` of `lsp.*`) — each method says itself (`Answered.onlyFromKelp`), and the dispatcher
-checks it for every call, by the program at the other end of the socket. Every other method is open to any client.
+checks it for every call, by the program at the other end of the socket. A status report (hooks, `kelp report`, herdr's)
+from a program running inside a session is for that session only (`Answered.reportsFor`), so one agent can't mark another
+done or asking. Every other method is open to any client.
 
 **Not trusted: what came from someone else** — a cloned repository's files and branches, a pull request, an issue or
 review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the user:

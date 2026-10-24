@@ -101,6 +101,18 @@ final class Sessions: Sendable {
         }
     }
 
+    /// The live session whose program `pid` is, or runs under (its own child, a shell's job…).
+    func session(running pid: pid_t) -> String? {
+        let mine = Dictionary(live.all.map { ($0.pty.pid, $0.snapshot.id) }) { a, _ in a }
+        var p = pid
+        for _ in 0..<64 {
+            if let id = mine[p] { return id }
+            guard let up = Subprocess.parent(p), up > 1, up != p else { return nil }
+            p = up
+        }
+        return nil
+    }
+
     @discardableResult
     func spawn(cwd: String, manifest: AgentManifest, worktreeId: String?, _ o: Launch = Launch()) throws -> Session {
         var argv = o.argv ?? manifest.argv(model: o.model, effort: o.effort, resume: o.resume)

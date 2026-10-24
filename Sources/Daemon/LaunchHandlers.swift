@@ -98,6 +98,7 @@ extension HistoryResume: Handled {
 
 /// A late one (it was paused or ended since) wakes nothing.
 extension SessionHook: Handled {
+    var reportsFor: String? { id }
     static var quick: Bool { true }   // the agent waits for its hook
     func handle(_ sessions: Sessions) throws -> Done {
         guard let ls = sessions.existing(id) else { return Done() }

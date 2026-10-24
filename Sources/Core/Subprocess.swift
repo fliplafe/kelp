@@ -120,6 +120,13 @@ public enum Subprocess {
         return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
+    /// Its parent's pid; nil once there's no such process.
+    public static func parent(_ pid: pid_t) -> pid_t? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size ? pid_t(info.pbi_ppid) : nil
+    }
+
     /// Ended, not reaped yet: nothing left to stop.
     public static func isZombie(_ pid: pid_t) -> Bool {
         var info = proc_bsdinfo()

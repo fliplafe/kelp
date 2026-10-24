@@ -246,3 +246,18 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     #expect(Sessions.semver("codex-cli v0.4.12-beta") == "0.4.12")
     #expect(Sessions.semver("version 3.1") == nil && Sessions.semver("") == nil)
 }
+
+/// A program in one session reports only that session's status: an agent can't mark another one done or asking. From
+/// outside every session (the app, the CLI in a terminal elsewhere), any.
+@Test func aSessionReportsOnlyItsOwnStatus() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let other = try await session(r, "cat")
+    let say = #"r() { zsocket $KELP_SOCKET; print -u $REPLY "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.report\",\"params\":"#
+        + #"{\"id\":\"$1\",\"state\":\"$2\"}}"; read -u $REPLY line; print -r -- "$line"; exec {REPLY}>&-; }"#
+    let me = try await session(r, "/bin/zsh -c 'zmodload zsh/net/socket; \(say); r \(other.id) blocked; r $KELP_SESSION done; cat'")
+    #expect(try await waitFor(10) { try await sessions(r).first { $0.id == me.id }?.status == .done })
+    #expect(try await r.c.call(SessionRead(id: me.id)).contains("only its own status"))
+    #expect(try await sessions(r).first { $0.id == other.id }?.status != .waiting)
+    _ = try await r.c.call(SessionReport(id: other.id, state: "blocked"))   // this test process is in no session
+    #expect(try await waitFor { try await sessions(r).first { $0.id == other.id }?.status == .waiting })
+}

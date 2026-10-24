@@ -23,15 +23,22 @@ protocol Answered: RPCMethod {
     /// Who may call it: nil for any client of the socket (the app, the CLI, agents and their scripts), else what anyone
     /// but Kelp's window is told (`Clients.requireApp`). Its params may decide (`state.set` of an `lsp.` key).
     var onlyFromKelp: String? { get }
+    /// The session whose status it reports (hooks, `kelp report`, herdr's): a program running inside one session may
+    /// report only for that one. From outside every session (the app, a terminal elsewhere), for any.
+    var reportsFor: String? { get }
 }
 
 extension Answered {
     var onlyFromKelp: String? { nil }
+    var reportsFor: String? { nil }
 
     /// The method's params as its type, from a client allowed to call it: checked here, for every method.
     static func checked(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Self {
         let m = try decoded(p)
         if let refusal = m.onlyFromKelp { try d.clients.requireApp(conn, refusal) }
+        if let id = m.reportsFor, let pid = d.clients.peerPID(conn), let own = d.sessions.session(running: pid), own != id {
+            throw RPCError.invalidParams("A session reports only its own status.")
+        }
         return m
     }
 }
@@ -321,6 +328,7 @@ extension RepoRemoveWorktrees: Handled {
 }
 
 extension SessionReport: Handled {
+    var reportsFor: String? { id }
     static var quick: Bool { true }   // `kelp report`: the agent waits for it
     func handle(_ sessions: Sessions) throws -> Done {
         guard ProgramStatus.states.contains(state) else { throw RPCError.invalidParams("state is one of idle, working, blocked, done, error, clear") }
@@ -334,6 +342,7 @@ extension SessionReport: Handled {
 
 /// herdr has no "done": idle after work is a finished turn.
 extension PaneReportAgent: Handled {
+    var reportsFor: String? { paneId }
     static var quick: Bool { true }   // fx waits for the reply
     func handle(_ sessions: Sessions) throws -> Done {
         guard ["idle", "working", "blocked"].contains(state) else { throw RPCError.invalidParams("state is one of idle, working, blocked") }
