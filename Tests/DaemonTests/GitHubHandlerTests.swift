@@ -157,7 +157,6 @@ private let fakeGlab: String = {
 @Test func onGitLabAPullRequestIsAMergeRequestNotAGhCall() async throws {
     let log = fakeGlab
     let r = try await rig(); defer { r.d.stop() }
-    let ghBefore = calls().count   // the gh log is every test's: only what this one led to counts
     let wt = try await desk(r, "feat/mr")
     // origin looks like GitLab; pushes go to a bare repository here.
     let bare = tmp().path
@@ -172,7 +171,8 @@ private let fakeGlab: String = {
     #expect(sent.contains("source_branch=feat/mr") && sent.contains("title=Draft: Add x") && sent.contains("target_branch=main"))
     _ = try await r.c.call("github.pr-merge", .obj(["worktreeId": .string(wt.id)]))
     #expect(((try? String(contentsOfFile: log, encoding: .utf8)) ?? "").contains("merge_requests/12/merge --raw-field squash=true"))
-    #expect(!calls().dropFirst(ghBefore).contains { $0.hasPrefix("pr create") || $0.hasPrefix("pr merge") })   // gh, which can't talk to GitLab, was never asked
+    // The gh log is every test's (they run at once): this one's PR is the one titled "Add x".
+    #expect(!calls().contains { ($0.hasPrefix("pr create") && $0.contains("Add x")) || $0.hasPrefix("pr merge 12") })   // gh, which can't talk to GitLab, was never asked
 }
 
 @Test func aWorkspaceLinksToItsProjectsPagesFromOrigin() async throws {
@@ -212,12 +212,12 @@ private let fakeGlab: String = {
     try Git.run(["remote", "add", "origin", bare], cwd: wt.path)
     try "x\n".write(toFile: wt.path + "/x.txt", atomically: true, encoding: .utf8)
     try Git.run(["add", "x.txt"], cwd: wt.path)
-    try Git.run(["commit", "-qm", "Add x"], cwd: wt.path)
+    try Git.run(["commit", "-qm", "Add gh"], cwd: wt.path)
     let made = try await r.c.call("github.pr-create", .obj(["worktreeId": .string(wt.id), "draft": true]))
     #expect(made["url"]?.string == "https://github.com/o/r/pull/8")
     #expect(Git.branchExists(bare, "feat/gh"))   // pushed before gh was asked
     let create = calls().last { $0.hasPrefix("pr create") } ?? ""
-    #expect(create.contains("--title Add x") && create.contains("--base main") && create.hasSuffix("--draft"))
+    #expect(create.contains("--title Add gh") && create.contains("--base main") && create.hasSuffix("--draft"))
     _ = try await r.c.call("github.pr-merge", .obj(["worktreeId": .string(wt.id), "pr": 8, "method": "rebase"]))
-    #expect(calls().contains("pr merge 8 --rebase"))
+    #expect(calls().contains("pr merge 8 --rebase"))   // the GitLab test's merge is #12, through glab
 }
