@@ -136,35 +136,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return m
     }
 
-    /// A finished agent counts as read once its pane has been on screen in the front window for a second: a glance,
-    /// not a click. Opening a workspace in passing doesn't clear anything; questions and failures wait for an answer.
-    private var glanced: [String: Date] = [:]
+    /// Finished agents read at a glance (`Glances`): timed only while one is unread, so no clock runs the rest of the time.
+    private var glances = Glances()
     private var glanceClock: Timer?
-    /// Marked read and not heard back yet: asked once, not again every second until the record says so.
-    private var markedRead: Set<String> = []
     private static func readOnSight(_ s: Session) -> Bool { s.unread && (s.status == .done || (s.status == .exited && !s.endedWithError)) }
     private func timeGlances(_ on: Bool) {
-        glanceClock?.invalidate(); glanceClock = nil; glanced = [:]; markedRead = []
+        glanceClock?.invalidate()
+        glanceClock = nil
+        glances = Glances()
         guard on else { return }
         // Main run loop: AppKit runs the timer on the main thread.
         glanceClock = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.trackGlances() } }
     }
     private func trackGlances() {
-        guard NSApp.isActive, let w = main?.window, w.isKeyWindow, w.occlusionState.contains(.visible), let e = app.workbench.editor else {
-            glanced = [:]
-            return
-        }
-        markedRead = markedRead.filter { app.session($0)?.unread == true }   // heard back: it may finish unread again later
-        let shown = Set(e.visibleSessions)
-        glanced = glanced.filter { shown.contains($0.key) }
-        for sid in shown {
-            guard let s = app.session(sid), Self.readOnSight(s), !markedRead.contains(sid) else { glanced[sid] = nil; continue }
-            let since = glanced[sid] ?? Date()
-            glanced[sid] = since
-            guard Date().timeIntervalSince(since) >= 1 else { continue }
-            glanced[sid] = nil
-            markedRead.insert(sid)
-            Task { [weak self] in if await self?.app.call(SessionMarkRead(id: sid)) == nil { self?.markedRead.remove(sid) } }   // failed: try again
+        let w = main?.window, e = app.workbench.editor
+        let front = NSApp.isActive && w?.isKeyWindow == true && w?.occlusionState.contains(.visible) == true && e != nil
+        let app = app
+        let mark = glances.tick(front: front, shown: e?.visibleSessions ?? [], readable: { app.session($0).map(Self.readOnSight) ?? false },
+                                unread: { app.session($0)?.unread == true }, now: Date())
+        for sid in mark {
+            Task { [weak self] in if await self?.app.call(SessionMarkRead(id: sid)) == nil { self?.glances.failed(sid) } }   // try again later
         }
     }
 
