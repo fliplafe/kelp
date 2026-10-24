@@ -246,7 +246,13 @@ public final class Daemon: Sendable {
             reading: while true {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
-                for line in lb.append(Data(buf[0..<n])) {
+                let lines = lb.append(Data(buf[0..<n]))
+                // A line past any request's size (a 50 MB file saved, escaped) isn't one: hang up rather than keep it all.
+                guard lb.pending <= Self.lineLimit else {
+                    Log.rpc.error("hung up on a client whose line passed \(Self.lineLimit) bytes with no end")
+                    break reading
+                }
+                for line in lines {
                     guard let req = try? JSONDecoder().decode(Request.self, from: line) else { refuse(line, c); continue }
                     // A JSON-RPC client after all (it came in raw, Clients.add): events from now on.
                     if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(c.id, false) } }
@@ -344,7 +350,7 @@ public final class Daemon: Sendable {
         // queued inside the session's lock, which `Handled` can't express.
         if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: c.id))?.id,
            sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
-           let ls = try? await offload({ [self] in try sessions.liveSession(sid) }) {
+           let ls = try? await offloads.runNow({ [self] in try sessions.liveSession(sid) }) {
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
             var attached = true

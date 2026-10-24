@@ -36,3 +36,13 @@ import Testing
     let fd = try #require(p.handOver())
     kill(p.pid, SIGKILL); close(fd)
 }
+
+/// Input to a program that never reads is kept only up to the limit; what's past it is dropped, not held for good.
+@Test func inputToAProgramThatDoesntReadIsCapped() async throws {
+    let p = try PTY(argv: ["/bin/sh", "-c", "exec sleep 30"], cwd: "/tmp", env: [:], trampoline: nil)
+    p.start()
+    defer { _ = p.terminate(grace: 0) }
+    let chunk = Data(repeating: 0x61, count: 1 << 20)
+    for _ in 0..<(PTY.queueLimit >> 20) + 16 { p.write(chunk) }
+    #expect(p.queued.withLock { $0 } <= PTY.queueLimit)
+}

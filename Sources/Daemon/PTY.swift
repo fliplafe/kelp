@@ -36,6 +36,9 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     /// never reaches a reused fd number. A write waiting for room stops once the terminal isn't open.
     let writes = DispatchQueue(label: "kelp.pty.write")
     let writeFD: Int32
+    /// Bytes given to `write` and not yet written (or given up on), at most `queueLimit` (64 MiB).
+    let queued = OSAllocatedUnfairLock(initialState: 0)
+    static let queueLimit = 64 << 20
     /// Closes the terminal's fd from the read source's cancel handler, once GCD is done with it: closing right after
     /// `cancel()` could pull the fd from under a read still running (which would then read whatever reuses the number).
     private let closer: FDCloser
@@ -235,7 +238,13 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     /// Typing into the program; dropped once it has exited (the fd may be another terminal's by then).
     public func write(_ d: Data) {
         guard phase.withLock({ $0.open }) else { return }
+        // A program that stops reading doesn't make the daemon keep whatever is pasted at it: past the limit, it's dropped.
+        guard queued.withLock({ q -> Bool in guard q + d.count <= Self.queueLimit else { return false }; q += d.count; return true }) else {
+            Log.session.error("dropped \(d.count) bytes of input: \(self.pid) isn't reading what it was sent")
+            return
+        }
         writes.async { [self] in
+            defer { queued.withLock { $0 -= d.count } }
             var rest = d[...]
             while !rest.isEmpty, phase.withLock({ $0.open }) {
                 let n = rest.withUnsafeBytes { Darwin.write(writeFD, $0.baseAddress, $0.count) }

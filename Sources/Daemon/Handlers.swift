@@ -183,6 +183,9 @@ extension Daemon {
         try await offloads.run(quick: quick, work)
     }
 
+    /// The longest request line read from a client (256 MiB).
+    static let lineLimit = 256 << 20
+
     /// 128 at once: wider than any fan-out Kelp makes itself (the sidebar's PR per folder, every watched folder's status),
     /// and than the slow ones that once stalled every request (aRequestIsAnsweredWhileManySlowOnesRun holds 80): the next
     /// request still runs while that many wait on hosts that don't answer. Past it, a runaway client queues instead of
@@ -219,6 +222,12 @@ final class Slots: Sendable {
             return s.waiting.removeFirst()
         }
         next?.resume()
+    }
+
+    /// `work` on a thread of its own at once, programs allowed: what the user is waiting to see (a paused agent's tab
+    /// waking) doesn't queue behind slow git or ssh. User-driven and rare, so uncapped.
+    func runNow<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
     }
 
     /// Waits until no slot is held (what's running has finished), for at most `seconds`.
