@@ -55,7 +55,10 @@ extension Git {
             if let sub = args.dropFirst(4).first, ["diff", "show", "log"].contains(sub) {   // a repo's diff drivers run nothing either
                 args.insert(contentsOf: ["--no-ext-diff", "--no-textconv"], at: 5)
             }
-            if remote == nil, let sub = args.dropFirst(4).first, readOnly.contains(sub) { args = RepoFilters.off(cwd) + args }
+            // Reads verify no signature either: a repo's `log.showSignature` would run its own `gpg.program` on every log.
+            if let sub = args.dropFirst(4).first, readOnly.contains(sub) {
+                args = Self.noSignatures + (remote == nil ? RepoFilters.off(cwd) : []) + args
+            }
             if let r = remote {   // a remote project: the same git, on its host
                 args = r.sshArgs(tty: false) + ["cd \(RemoteHost.cdArg(r.path)) && git " + args.map(RemoteHost.quote).joined(separator: " ")]
                 executable = r.ssh; cwd = NSHomeDirectory()
@@ -74,6 +77,7 @@ extension Git {
     }
 
     /// What Kelp runs by itself (watches, panels): these read, and never run a repository's own filters (`RepoFilters`).
+    static let noSignatures = ["-c", "log.showSignature=false", "-c", "gpg.program=false", "-c", "gpg.ssh.program=false", "-c", "gpg.x509.program=false"]
     static let readOnly: Set<String> = ["status", "diff", "show", "log", "blame", "ls-files", "grep", "diff-files", "diff-index"]
 
     /// `d` up to its last `separator`, inclusive: the whole entries of output cut off mid-entry.
