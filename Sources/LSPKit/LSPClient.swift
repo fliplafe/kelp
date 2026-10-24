@@ -70,12 +70,15 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)   // a server that died fails the write, not the app
         // Weak: the reader must not keep the client (and so the server) alive; deinit terminates the server, which ends the loop.
         // read(2), not FileHandle.availableData, which raises on a read error and would take the daemon down.
-        let fd = output.fileHandleForReading.fileDescriptor
+        // The reader holds the read end: let go of with the client, its number could be someone else's by the next read.
+        let reading = output.fileHandleForReading
         Thread.detachNewThread { [weak self] in
             var framer = LSPFramer(), buf = [UInt8](repeating: 0, count: 1 << 16)
-            while case let n = read(fd, &buf, buf.count), n > 0 || (n < 0 && errno == EINTR) {
-                guard n > 0 else { continue }
-                for body in framer.append(Data(buf[0..<n])) { self?.handle(body) }
+            withExtendedLifetime(reading) {
+                while case let n = read(reading.fileDescriptor, &buf, buf.count), n > 0 || (n < 0 && errno == EINTR) {
+                    guard n > 0 else { continue }
+                    for body in framer.append(Data(buf[0..<n])) { self?.handle(body) }
+                }
             }
             self?.fail(RPCError.internalError("language server exited"))
         }
