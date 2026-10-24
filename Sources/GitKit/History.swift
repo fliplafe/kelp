@@ -111,6 +111,12 @@ extension Git {
             b.current = Git.isRevision(c) ? c : nil
             b.head = (try? run(["rev-parse", "--short", "HEAD"], cwd: path, remotes: remotes))?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        // No upstream (never pushed, or its branch deleted): ahead is what's on no remote yet, as the graph marks it.
+        if b.upstream == nil, b.current != nil, b.head != nil, !b.remote.isEmpty,
+           let n = Int((try? run(["rev-list", "--count", "HEAD", "--not", "--remotes"], cwd: path, remotes: remotes))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") {
+            b.ahead = n
+        }
         b.merging = (try? run(["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd: path, remotes: remotes)) != nil
         return b
     }

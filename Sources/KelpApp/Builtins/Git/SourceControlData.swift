@@ -150,7 +150,7 @@ extension SourceControlController {
             syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = String(localized: "Pull from and push to \(up)")
         } else if info.current != nil, !info.remote.isEmpty {
             syncButton.isHidden = false; syncButton.image = .symbol("icloud.and.arrow.up", String(localized: "Publish Branch"))
-            syncButton.title = ""; syncButton.toolTip = String(localized: "Publish Branch")
+            syncButton.title = (info.ahead ?? 0) > 0 ? "\(info.ahead ?? 0)↑" : ""; syncButton.toolTip = String(localized: "Publish Branch")
         } else { syncButton.isHidden = true }
     }
 }

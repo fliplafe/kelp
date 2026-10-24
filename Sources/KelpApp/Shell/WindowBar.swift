@@ -92,7 +92,8 @@ final class WindowBar: NSView {
         branch.isHidden = info == nil
         if let info {
             let ahead = info.ahead ?? 0, behind = info.behind ?? 0
-            branch.title = (info.current ?? info.head ?? "HEAD") + (ahead + behind > 0 ? "  \(behind)↓ \(ahead)↑" : "")
+            let sync = info.upstream == nil ? (ahead > 0 ? "  \(ahead)↑" : "") : (ahead + behind > 0 ? "  \(behind)↓ \(ahead)↑" : "")
+            branch.title = (info.current ?? info.head ?? "HEAD") + sync   // no upstream: only what publishing would push
         }
         let p = badgeFolder.flatMap { RowBadges.pr(app.rowBadges.prs[$0.id]) }
         pr.isHidden = p == nil

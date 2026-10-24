@@ -174,6 +174,7 @@ public struct BranchInfo: Codable, Sendable, Equatable {
     public var local: [String]
     public var remote: [String]
     public var upstream: String?
+    /// Commits to push: past the upstream, or with none, on no remote branch (what the graph marks "not pushed yet").
     public var ahead: Int?
     public var behind: Int?
     public var merging: Bool

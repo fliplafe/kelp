@@ -27,12 +27,14 @@ import TestSupport
     // A branch without an upstream, and one whose upstream was deleted.
     try Git.run(["switch", "-q", "-c", "feat/a"], cwd: repo)
     b = try Git.branches(repo)
-    #expect(b.current == "feat/a" && b.upstream == nil && b.ahead == nil && b.local == ["feat/a", "main"])
+    #expect(b.current == "feat/a" && b.upstream == nil && b.local == ["feat/a", "main"])
+    #expect(b.ahead == 2)   // x and y are on no remote: what the graph marks unpushed
     try Git.run(["push", "-q", "-u", "origin", "feat/a"], cwd: repo)
     #expect(try Git.branches(repo).upstream == "origin/feat/a")
     try Git.run(["branch", "-q", "-D", "feat/a"], cwd: origin); try Git.run(["fetch", "-q", "--prune"], cwd: repo)
     b = try Git.branches(repo)
     #expect(b.current == "feat/a" && b.upstream == nil && b.remote == ["origin/main"])
+    #expect(b.ahead == 2)   // origin/feat/a, which had them, is gone
 
     // Detached: no current branch, HEAD still named.
     try Git.run(["switch", "-q", "--detach", "HEAD~1"], cwd: repo)
