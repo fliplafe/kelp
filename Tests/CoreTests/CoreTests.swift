@@ -40,7 +40,12 @@ private extension Data {
     await #expect(throws: RPCError.self) { try await client.call("usage.get", timeout: 0.2) }
     // The late reply finds nobody waiting (no second resume), and the next call still gets its own.
     let late = try Wire.line(JSONValue.obj(["id": 1, "result": .null])), next = try Wire.line(JSONValue.obj(["id": 2, "result": "ok"]))
-    DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { Unix.writeAll(peer, late + next) }
+    // Sent once both requests came (usage.get, then ping): ahead of the ping it would find no call waiting for it.
+    DispatchQueue.global().async {
+        var byte: UInt8 = 0, lines = 0
+        while lines < 2, read(peer, &byte, 1) == 1 { if byte == 0x0A { lines += 1 } }
+        Unix.writeAll(peer, late + next)
+    }
     #expect(try await client.call("ping", timeout: 5).string == "ok")
 }
 
