@@ -218,7 +218,7 @@ extension Daemon {
 /// Limit: a waiter whose task is cancelled still takes its turn; nothing here cancels (a client's deadline is its own).
 final class Slots: Sendable {
     let limit: Int
-    private struct State { var held = 0; var waiting: [CheckedContinuation<Void, Never>] = [] }
+    private struct State { var held = 0, closed = false; var waiting: [CheckedContinuation<Bool, Never>] = [] }
     private let state = OSAllocatedUnfairLock(initialState: State())
     /// Quick work's own cap (a thread each): it never waits behind slow work, only behind this much quick work at once,
     /// so a client looping on `kelp hook` can't make thousands of threads.
@@ -231,23 +231,33 @@ final class Slots: Sendable {
         nowSlots = quick.map { Slots($0 / 2, quick: nil) }
     }
 
-    func acquire() async {
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            let now = state.withLock { s -> Bool in
-                guard s.held < limit else { s.waiting.append(c); return false }
+    /// False once closed (`close`): no slot is given from then on.
+    func acquire() async -> Bool {
+        await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            let now = state.withLock { s -> Bool? in
+                if s.closed { return false }
+                guard s.held < limit else { s.waiting.append(c); return nil }
                 s.held += 1; return true
             }
-            if now { c.resume() }
+            if let now { c.resume(returning: now) }
         }
     }
 
     /// The slot passes straight to the longest waiter, if there is one.
     func release() {
-        let next = state.withLock { s -> CheckedContinuation<Void, Never>? in
+        let next = state.withLock { s -> CheckedContinuation<Bool, Never>? in
             guard !s.waiting.isEmpty else { s.held -= 1; return nil }
             return s.waiting.removeFirst()
         }
-        next?.resume()
+        next?.resume(returning: true)
+    }
+
+    /// An update is on its way: work that has a slot finishes (`waitIdle`), none starts, what waits is refused.
+    func close() {
+        let refused = state.withLock { s in defer { s.waiting = [] }; s.closed = true; return s.waiting }
+        refused.forEach { $0.resume(returning: false) }
+        quickSlots?.close()
+        nowSlots?.close()
     }
 
     /// `work` on a thread of its own, programs allowed: what the user is waiting to see (a paused agent's tab waking)
@@ -261,13 +271,16 @@ final class Slots: Sendable {
     /// update (the one caller) can afford. Work that keeps coming keeps it waiting to the end, as it should.
     func waitIdle(seconds: Double) {
         let end = Date().addingTimeInterval(seconds)
-        while state.withLock({ $0.held > 0 }), Date() < end { usleep(50_000) }
+        while busy, Date() < end { usleep(50_000) }
+    }
+    /// A slot is held here or by a wake (`runNow`: it starts programs too).
+    private var busy: Bool { state.withLock { $0.held > 0 } || nowSlots?.busy == true
     }
 
     /// `work` on a thread of its own once it has a slot (`Daemon.offload`); `quick`, at once, with no slot and no program.
     func run<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
         let slots = quick ? quickSlots : self
-        await slots?.acquire()
+        if let slots, await !slots.acquire() { throw RPCError.internalError("Kelp's background service is updating; try again in a moment.") }
         return try await withCheckedThrowingContinuation { c in
             Thread.detachNewThread {
                 let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)

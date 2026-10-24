@@ -221,7 +221,9 @@ public final class Daemon: Sendable {
             Upgrade.refuse(root: root, executable: executable, "The new background service can't take the running sessions over.")
             return nil
         }
-        if !checked { offloads.waitIdle(seconds: 5) }   // a clone or a worktree being made finishes, not cut off mid-way
+        // A clone or a worktree being made finishes, not cut off mid-way; none starts from here (a client is told why).
+        offloads.close()
+        offloads.waitIdle(seconds: checked ? 3 : 5)
         guard let h = handOver() else { return nil }
         let file = root.appendingPathComponent("handover.json")
         do {

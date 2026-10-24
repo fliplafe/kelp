@@ -86,3 +86,17 @@ import Core
     }
     #expect(running.withLock { $0.most } == 2)
 }
+
+/// Closed for an update: what has a slot finishes, what waits for one and what comes later is refused, not started.
+@Test func closedSlotsFinishWhatRunsAndStartNothing() async throws {
+    let slots = Slots(1), held = DispatchSemaphore(value: 0)
+    let running = Task { try await slots.run { held.wait(); return 1 } }
+    try await Task.sleep(for: .milliseconds(50))   // the one slot is taken
+    let waiting = Task { try await slots.run { 2 } }
+    try await Task.sleep(for: .milliseconds(50))   // queued behind the one running (refused either way)
+    slots.close()
+    held.signal()
+    #expect(try await running.value == 1)
+    await #expect(throws: RPCError.self) { _ = try await waiting.value }
+    await #expect(throws: RPCError.self) { _ = try await slots.run { 3 } }
+}
