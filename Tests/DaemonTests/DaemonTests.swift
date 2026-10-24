@@ -100,8 +100,10 @@ func desk(_ w: World, _ branch: String) async throws -> Worktree {
     // session: output, history on re-attach, hook status, send
     let notes = NoteBox(); c.onNotification = { m, p in notes.add(m, p) }
     let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(wt.id), "command": "echo ready; cat"]), as: Session.self)
-    _ = try await c.call("session.attach", .obj(["id": .string(s.id)]))
-    #expect(try await waitFor { notes.output(s.id).contains("ready") })
+    let attached = try await c.call("session.attach", .obj(["id": .string(s.id)]))
+    // Printed before the attach, it's in the history the attach answers with; after it, an event.
+    let before = String(decoding: Data(base64Encoded: attached["history"]?.string ?? "") ?? Data(), as: UTF8.self)
+    #expect(try await waitFor { (before + notes.output(s.id)).contains("ready") })
     _ = try await c.call("session.send", .obj(["id": .string(s.id), "text": "ping-pong"]))
     #expect(try await waitFor { notes.output(s.id).contains("ping-pong") })
 
