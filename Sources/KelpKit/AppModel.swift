@@ -174,8 +174,8 @@ package final class AppModel {
         }
         retryDelay = 1; failing = false
         // Before anything that waits (the version check can show a sheet): a daemon that drops meanwhile is still noticed.
-        listen(c)
-        c.onClose = { [weak self] in Task { @MainActor in
+        let stopListening = listen(c)
+        c.onClose = { [weak self] in stopListening(); Task { @MainActor in
             guard let self, self.client === c else { return }   // a newer connection took over: nothing to undo
             self.client = nil; self.connected = false; self.reconnectSoon()
         } }
@@ -315,7 +315,16 @@ package final class AppModel {
     }
 
     /// The daemon's events, decoded as their types on the client's reader thread, handled on the main actor.
-    func listen(_ c: RPCClient) { c.onEvent = { [weak self] e in Task { @MainActor in self?.handle(e) } } }
+    /// One stream and one reader: events are handled in the order the daemon sent them, by construction (a task each
+    /// would rely on the main queue running tasks in the order they were made).
+    /// Returns what ends the reader once the connection is gone.
+    @discardableResult
+    func listen(_ c: RPCClient) -> @Sendable () -> Void {
+        let (events, feed) = AsyncStream<any RPCEvent>.makeStream()
+        c.onEvent = { feed.yield($0) }
+        Task { @MainActor [weak self] in for await e in events { self?.handle(e) } }
+        return { feed.finish() }
+    }
 
     func handle(_ event: any RPCEvent) {
         switch event {
