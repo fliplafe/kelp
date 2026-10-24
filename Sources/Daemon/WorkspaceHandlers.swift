@@ -135,7 +135,11 @@ extension WorktreeRemove: Handled {
         guard let w = try workspaces.store.worktree(id), let r = try workspaces.store.repo(w.repoId) else { throw RPCError.invalidParams("no worktree") }
         if workspaces.isMain(w, r) { try workspaces.removeDesk(w, r); return Done() }
         let force = force == true, drop = dropCommits == true
-        if FileManager.default.fileExists(atPath: w.path) {
+        // A remote project's folder is on its host: looked for there.
+        let host = workspaces.remotes.of(w.path)
+        let exists = try host.map { String(decoding: try $0.run("[ -e \(RemoteHost.quote(w.path)) ] && echo yes || true"), as: UTF8.self).hasPrefix("yes") }
+            ?? FileManager.default.fileExists(atPath: w.path)
+        if exists {
             // Refuse before anything stops; then stop its agents and only then remove, checking again: an agent still
             // writing can't have its work deleted under it.
             try Git.checkRemovable(repo: r.path, path: w.path, branch: w.branch, force: force, dropCommits: drop, remotes: workspaces.remotes)
