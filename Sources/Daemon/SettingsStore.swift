@@ -103,7 +103,9 @@ final class SettingsEvents: Sendable {
     }
 
     /// Hand edits of settings.json, as they're saved: FSEvents on the folder of the file it resolves to (a symlink into
-    /// someone's dotfiles too). Limit: a symlink pointed elsewhere later is followed after the daemon restarts.
+    /// someone's dotfiles too). Limit: a symlink pointed elsewhere later is followed after the daemon restarts; FSEvents
+    /// watches a folder with what's under it, so the home's other writes (history, the store) wake this too, coalesced
+    /// and dropped by name at once.
     private let watcher = OSAllocatedUnfairLock<FileWatcher?>(initialState: nil)
     func watch() {
         let file = store.url.resolvingSymlinksInPath(), name = "/" + file.lastPathComponent

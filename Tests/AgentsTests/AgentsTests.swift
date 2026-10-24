@@ -381,3 +381,15 @@ import TestSupport
     d.output("new work after it", at: t0.addingTimeInterval(16))
     #expect(d.status == .working)
 }
+
+/// A title split across two reads (a program setting its window title as it works) isn't words: the half sequence is
+/// kept until the rest of it comes.
+@Test func aTitleSplitAcrossReadsIsNoWork() {
+    var d = StatusDetector(manifest: AgentManifest(id: "w", name: "W", command: "w"))
+    let t0 = Date()
+    d.input(at: t0)
+    d.output("\u{1B}]0;Building the", at: t0.addingTimeInterval(5))
+    d.output(" whole app\u{07}", at: t0.addingTimeInterval(5.1))
+    #expect(d.status == .idle)
+    #expect(StatusDetector.wholeSequences("ok\u{1B}[31").rest == "\u{1B}[31" && StatusDetector.wholeSequences("ok\u{1B}[31m").rest.isEmpty)
+}

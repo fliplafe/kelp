@@ -16,6 +16,9 @@ public struct StatusDetector: Sendable {
     private var typedAt: Date?
     /// Attached again to a running program: its redraw of the screen is still to come, and starts the quiet seconds.
     private var redrawDue = false
+    /// An escape sequence a chunk ended in the middle of (a title split across two reads): read with the next one, so
+    /// its letters aren't taken for words.
+    private var carry = ""
     private let manifest: AgentManifest
     private let regexes: [NSRegularExpression]
 
@@ -34,6 +37,8 @@ public struct StatusDetector: Sendable {
     public mutating func output(_ chunk: String, at now: Date = Date()) {
         // The agent reports itself: nothing here is read (tick checks the same). Plain shells don't track status.
         guard !hooked, !settled, manifest.quietSeconds < 1e8 else { return }
+        let (chunk, rest) = Self.wholeSequences(carry + chunk)
+        carry = rest.count > 4096 ? "" : rest   // a sequence that never ends isn't kept for good
         let text = Self.stripANSI(chunk)
         tail = String((tail + text).suffix(600))
         // However long the connection took (ssh, then tmux's attach), the redraw is measured from when it starts.
@@ -44,6 +49,19 @@ public struct StatusDetector: Sendable {
               now.timeIntervalSince(typedAt ?? .distantPast) > 2 else { return }
         lastOutput = now
         status = .working
+    }
+
+    /// `s` up to an escape sequence it ends inside of, and that unfinished sequence.
+    static func wholeSequences(_ s: String) -> (whole: String, rest: String) {
+        guard let esc = s.lastIndex(of: "\u{1B}") else { return (s, "") }
+        let seq = Array(s[esc...].unicodeScalars)
+        let done: Bool = switch seq.count > 1 ? seq[1] : "\u{0}" {
+        case "\u{0}": false
+        case "[": seq.dropFirst(2).contains { (0x40...0x7E).contains($0.value) }   // CSI: its final byte
+        case "]", "P", "_", "^": seq.contains("\u{07}")   // OSC and the like: BEL (an ESC \ ending is its own ESC)
+        default: true
+        }
+        return done ? (s, "") : (String(s[..<esc]), String(s[esc...]))
     }
 
     private static let letters = CharacterSet.letters
