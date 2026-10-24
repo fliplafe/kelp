@@ -114,8 +114,9 @@ extension IDE {
         !name.isEmpty && !name.contains("/") && !name.contains("\0") && !name.hasPrefix(".") && name.count <= 255
     }
 
-    /// What an extension's manifest can run, for a look before it's installed: the shell commands (every "command",
-    /// "terminal", "run", "test", "format" and "install" text) and the web pages, which can run any.
+    /// What an extension's manifest can run, for a look before it's installed: the shell commands (every "command" with
+    /// its "args", "terminal", "run", "test", "format" and "install" text, an "open" of a terminal: or agent: URI) and the
+    /// web pages, which can run any.
     public static func commandsIn(_ manifest: JSONValue) -> (commands: [String], pages: [String]) {
         var commands: [String] = [], pages: [String] = []
         func walk(_ v: JSONValue) {
@@ -123,7 +124,11 @@ extension IDE {
             guard case .object(let o) = v else { return }
             for (k, x) in o.sorted(by: { $0.key < $1.key }) {
                 guard let s = x.string else { walk(x); continue }
-                if ["command", "terminal", "run", "test", "format", "install"].contains(k), !commands.contains(s) { commands.append(s) }
+                var run: String?
+                if ["command", "terminal", "run", "test", "format", "install"].contains(k) { run = s }
+                if k == "command", let args = o["args"]?.array?.compactMap(\.string), !args.isEmpty { run = ([s] + args).joined(separator: " ") }
+                if k == "open", s.hasPrefix("terminal:") || s.hasPrefix("agent:") { run = s }
+                if let run, !commands.contains(run) { commands.append(run) }
                 if k == "web", !pages.contains(s) { pages.append(s) }
             }
         }

