@@ -194,9 +194,12 @@ final class LiveSession: Sendable {
     }
 
     /// `kelp report`: the record to publish when only what it says changed (a new state goes out through `callbacks.status`).
-    func report(_ r: ProgramStatus.Report) -> Session? {
+    func report(_ r: ProgramStatus.Report) -> Session? { report { _ in r } }
+
+    /// The report made from the status it lands on, under the same lock.
+    func report(_ make: @Sendable (AgentStatus) -> ProgramStatus.Report) -> Session? {
         state.withLock { s in
-            s.apply(r)
+            s.apply(make(s.record.status))
             let changed = s.sync()
             emit(changed)
             return changed == nil ? s.record : nil

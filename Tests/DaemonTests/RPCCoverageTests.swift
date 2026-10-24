@@ -169,6 +169,11 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     try await enter(); #expect(try await waitFor(5) { try await status() == .working })
     try await enter(); #expect(try await waitFor(5) { try await status() == .waiting })
     try await enter(); #expect(try await waitFor(5) { try await status() == .done })
+    // A state herdr doesn't have is refused, whether or not the pane is still there.
+    await #expect(throws: (any Error).self) { _ = try await w.c.call(PaneReportAgent(paneId: s.id, state: "done")) }
+    await #expect(throws: (any Error).self) { _ = try await w.c.call(PaneReportAgent(paneId: "gone", state: "sleeping")) }
+    _ = try await w.c.call(PaneReportAgent(paneId: s.id, state: "idle"))
+    #expect(try await status() == .done)   // idle again after the turn: still finished
 }
 
 @Test func aCommandThatEndsKeepsItsExitCode() async throws {
