@@ -126,7 +126,7 @@ extension LiveSession {
         }
 
         /// The keys that answer a question the manifest knows (a menu is steered instead, see `steer`).
-        mutating func autoAnswer() -> (input: String, asked: NSRegularExpression)? {
+        mutating func autoAnswer() -> (input: String, asked: NSRegularExpression, after: Double)? {
             guard !autoAnswers.isEmpty, !typedYet, Date().timeIntervalSince(started) < 90 else { return nil }
             let tail = screen(4000)
             let r = NSRange(tail.startIndex..., in: tail)
@@ -137,7 +137,7 @@ extension LiveSession {
                 return nil
             }
             let asked = autoAnswers.remove(at: i).0; dialogSettled = true
-            return (a.input, asked)
+            return (a.input, asked, a.after ?? 0.4)
         }
 
         /// The first local URL it prints (a dev server), with 0.0.0.0 and [::] as localhost.

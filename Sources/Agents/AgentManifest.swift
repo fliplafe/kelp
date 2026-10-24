@@ -8,7 +8,14 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         public var pattern: String; public var input: String
         /// For arrow-key menus: regex of the option to pick; the keys are computed from where the cursor (❯ / >) is.
         public var choose: String?
-        public init(pattern: String, input: String, choose: String? = nil) { self.pattern = pattern; self.input = input; self.choose = choose }
+        /// Seconds the question has to stay on screen, untouched by the user, before it's answered (0.4 when not given).
+        public var after: Double?
+        public init(pattern: String, input: String, choose: String? = nil, after: Double? = nil) {
+            self.pattern = pattern
+            self.input = input
+            self.choose = choose
+            self.after = after
+        }
 
         /// Text of the option under a TUI menu's cursor. TUIs redraw only changed lines, so it's what follows the last ❯ in the stream.
         public static func optionAtCursor(_ screen: String) -> String? {

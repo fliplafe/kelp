@@ -529,12 +529,12 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let script = #"stty -icanon -echo; echo 'Press Enter to continue'; "#
         + #"while IFS= read -rsn1 -t 3 k; do if [[ -z "$k" ]]; then echo KEY-ENTER; else echo "KEY-$k"; fi; done; echo QUIET; sleep 30"#
     let m = AgentManifest(id: "asks2", name: "Asks", command: "/bin/bash", args: ["-c", script, "x"],
-                          autoAnswers: [AgentManifest.AutoAnswer(pattern: "Press Enter to continue", input: "\r")])
+                          autoAnswers: [AgentManifest.AutoAnswer(pattern: "Press Enter to continue", input: "\r", after: 5)])
     let w = try await world(agents: [m]); defer { w.d.stop() }
     let wt = try await desk(w, "typed")
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "asks2"]), as: Session.self)
     func screen() async throws -> String { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string ?? "" }
-    let end = Date().addingTimeInterval(10)   // watched closely: the user must come within Kelp's 0.4 s
+    let end = Date().addingTimeInterval(10)   // the user comes well within the 5 s the answer waits (not a race with a busy machine)
     while Date() < end, !(try await screen()).contains("Press Enter") { try await Task.sleep(for: .milliseconds(5)) }
     w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("x".utf8).base64EncodedString())]))   // the user, at once
     #expect(try await waitFor(15) { try await screen().contains("QUIET") })

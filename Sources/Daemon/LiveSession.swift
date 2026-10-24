@@ -131,7 +131,7 @@ final class LiveSession: Sendable {
     /// What a chunk of output asked for, done after the lock.
     private struct Heard: Sendable {
         var probe = false, topic: String?, url: String?, limits: [ClaudeLimits.Reading] = []
-        var answer: (input: String, asked: NSRegularExpression)?
+        var answer: (input: String, asked: NSRegularExpression, after: Double)?
         var attached = Set<Int>(), id = ""
         var trimLog = false
     }
@@ -150,7 +150,9 @@ final class LiveSession: Sendable {
         if !heard.limits.isEmpty { callbacks.limits?(heard.limits) }
         if let url = heard.url { callbacks.localURL?(url) }
         if let topic = heard.topic { callbacks.topic?(topic) }
-        if let answer = heard.answer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pressIfStillAsked(answer) } }
+        if let answer = heard.answer {
+            DispatchQueue.global().asyncAfter(deadline: .now() + answer.after) { [weak self] in self?.pressIfStillAsked(answer) }
+        }
         callbacks.output(heard.id, d, heard.attached)
     }
 
@@ -180,7 +182,7 @@ final class LiveSession: Sendable {
 
     /// The auto-answer's key, once the question has had time to draw: only if it's still the one on screen and nobody
     /// typed meanwhile (the key would land in their text, or answer whatever came next).
-    private func pressIfStillAsked(_ a: (input: String, asked: NSRegularExpression)) {
+    private func pressIfStillAsked(_ a: (input: String, asked: NSRegularExpression, after: Double)) {
         let still = state.withLock { s -> Bool in
             guard !s.typedYet else { return false }
             let tail = s.screen(4000)
