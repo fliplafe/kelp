@@ -218,11 +218,15 @@ package final class AppModel {
         restartAttempted = true   // one try per launch: a daemon too old to shut down is left running rather than looping
         // One that runs the new binary at its path in place keeps every agent running; an older one (or another copy of
         // Kelp's) has to restart.
-        let upgrading = samePath ? (try? await c.call(DaemonUpgrade())) != nil : false
+        // A refusal says why (the new kelpd can't take the sessions over): the user hears it with the question.
+        var upgrading = false, refusal: String?
+        if samePath {
+            do { _ = try await c.call(DaemonUpgrade()); upgrading = true } catch { refusal = (error as? RPCError)?.message ?? "\(error)" }
+        }
         if !upgrading {
             if info.liveSessions > 0 {
                 let a = NSAlert(); a.messageText = String(localized: "Kelp was updated")
-                a.informativeText = String(
+                a.informativeText = (refusal.map { $0 + "\n\n" } ?? "") + String(
                     localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
                 a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
                 // Return keeps the agents running: ending them takes a deliberate click.

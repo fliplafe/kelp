@@ -267,7 +267,7 @@ private func codeOnly(_ s: String) -> String {
 /// A `try?` turns a failure into nothing, unseen: right for a probe ("is it there", "does it parse"), wrong for a write,
 /// a cleanup or a store change, which say what failed with `Log.attempt` instead. Each module's count is a ceiling.
 @Test func failuresAreNotSwallowed() throws {
-    let ceilings = ["Daemon": 108, "KelpKit": 66, "Core": 31, "GitKit": 30, "AgentData": 32, "Agents": 23, "kelp": 20, "Builtins": 13,
+    let ceilings = ["Daemon": 108, "KelpKit": 65, "Core": 31, "GitKit": 30, "AgentData": 32, "Agents": 23, "kelp": 20, "Builtins": 13,
                     "Integrations": 11, "LSPKit": 7, "Markdown": 4, "TerminalKit": 3]
     for (module, ceiling) in ceilings {
         let n = try matches(#"\btry\?"#, in: ["Sources/" + module]).count
