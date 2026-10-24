@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import Core
 @testable import Daemon
@@ -26,6 +27,18 @@ private let readAndEcho = "echo before; while read l; do echo got-$l; done"
     #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-x") })
     _ = try await c2.call(SessionWrite(id: s.id, text: "\u{4}"))   // ⌃D: read ends, and so does the program
     #expect(try await waitFor { try await c2.call(SessionList()).first { $0.id == s.id }?.status == .exited })
+}
+
+/// A terminal made as the upgrade began, before anything read from it, is handed over too: its program isn't left to
+/// a hang-up.
+@Test func aTerminalNotStartedYetIsHandedOver() async throws {
+    let p = try PTY(argv: ["/bin/sh", "-c", "echo ready; cat"], cwd: "/tmp", env: [:])
+    let fd = try #require(p.handOver())
+    let next = PTY(adopting: p.pid, fd: fd)
+    let seen = OSAllocatedUnfairLock(initialState: false)
+    next.onOutput = { d in if String(decoding: d, as: UTF8.self).contains("ready") { seen.withLock { $0 = true } } }
+    next.start(); defer { _ = next.terminate() }
+    #expect(try await waitFor { seen.withLock { $0 } })
 }
 
 /// kelpd itself: `daemon.upgrade` runs the binary at its path again in the same process, and the session's program never

@@ -57,11 +57,12 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     func handOver() -> Int32? {
         q.sync {
             let fd = io.withLock { () -> Int32? in
-                guard !closed, !exited, let s = source else { return nil }
+                // One not started yet (a session made as the upgrade began) goes too: nothing has read from it.
+                guard !closed, !exited, source != nil || !started else { return nil }
                 // Already being reaped here: it has ended, and the new kelpd would find no such child.
                 guard life.withLock({ () -> Bool in if reaped { return false }; handedOver = true; return true }) else { return nil }
                 closed = true; stopWrites = true
-                s.cancel(); source = nil   // `closer` isn't asked: the fd stays open
+                source?.cancel(); source = nil   // `closer` isn't asked: the fd stays open
                 return primaryFD
             }
             if fd != nil { exited = true; let w = writeFD; writes.async { close(w) } }
