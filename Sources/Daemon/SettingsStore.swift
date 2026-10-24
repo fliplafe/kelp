@@ -93,9 +93,21 @@ final class SettingsEvents: Sendable {
         }
     }
 
-    /// From the ticker: hand edits of settings.json.
-    func poll() {
-        if store.reloadIfChanged() { changed() }
+    /// Hand edits of settings.json, as they're saved: FSEvents on the folder of the file it resolves to (a symlink into
+    /// someone's dotfiles too). Limit: a symlink pointed elsewhere later is followed after the daemon restarts.
+    private let watcher = OSAllocatedUnfairLock<FileWatcher?>(initialState: nil)
+    func watch() {
+        let file = store.url.resolvingSymlinksInPath(), name = "/" + file.lastPathComponent
+        let fw = FileWatcher(root: file.deletingLastPathComponent().path, deliver: queue) { [weak self] paths in
+            guard let self, paths.contains(where: { $0.hasSuffix(name) }), store.reloadIfChanged() else { return }
+            changed()
+        }
+        let old = watcher.withLock { w in defer { w = fw }; return w }
+        _ = old   // stopped here, off the lock (its deinit waits on its own queue)
+    }
+    func stopWatching() {
+        let old = watcher.withLock { w in defer { w = nil }; return w }
+        _ = old
     }
 }
 

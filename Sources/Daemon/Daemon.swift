@@ -128,9 +128,10 @@ public final class Daemon: Sendable {
             }
             if Unix.peerIsUs(fd) { Unix.noSigPipe(fd); serve(fd) } else { close(fd) }
         }
+        settingsEvents.watch()
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle(); settingsEvents.poll() }
+        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle() }
         let prune = DispatchSource.makeTimerSource(queue: .global(qos: .background))
         prune.schedule(deadline: .now() + 60, repeating: 86400)   // ended sessions past `keepEnded`
         prune.setEventHandler { [self] in sessions.pruneEnded() }
@@ -154,6 +155,7 @@ public final class Daemon: Sendable {
         lsp.stopAll()
         watches.stopAll()
         workspaces.stopWatching()
+        settingsEvents.stopWatching()
         clients.everyone().forEach { $0.hangUp() }
         unlink(socketPath)
         if r.instanceLock >= 0 { close(r.instanceLock) }
@@ -170,6 +172,7 @@ public final class Daemon: Sendable {
         lsp.stopAll()
         watches.stopAll()
         workspaces.stopWatching()
+        settingsEvents.stopWatching()
         // daemon.upgrade's own reply is out first: an app that never got it would think the upgrade failed and offer a
         // restart that ends the agents just handed over.
         let everyone = clients.everyone()
