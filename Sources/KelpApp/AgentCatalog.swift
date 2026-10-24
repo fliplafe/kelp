@@ -63,6 +63,7 @@ struct AgentCatalog {
         case "crush": String(localized: "Charm’s open source agent, any model")
         case "aider": String(localized: "Pair programming in git, any model")
         case "droid": String(localized: "Factory’s agent")
+        case "omp": String(localized: "Pi with an IDE’s tools wired in, any model")
         default: nil
         }
     }

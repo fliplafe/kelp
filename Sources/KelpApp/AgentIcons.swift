@@ -17,7 +17,8 @@ final class AgentIcons {
         "antigravity": (["Antigravity"], "antigravity.google"), "kiro": (["Kiro"], "kiro.dev"), "gemini": ([], "gemini.google.com"),
         "grok": (["Grok"], "grok.com"), "qwen": ([], "qwen.ai"), "kimi": (["Kimi"], "kimi.com"), "kilo": ([], "kilo.ai"),
         "crush": ([], "charm.land"), "droid": (["Factory"], "factory.ai"), "opencode": ([], "opencode.ai"), "amp": ([], "ampcode.com"),
-        "copilot": ([], "github.com"), "aider": ([], "aider.chat"), "auggie": ([], "augmentcode.com")
+        "copilot": ([], "github.com"), "aider": ([], "aider.chat"), "auggie": ([], "augmentcode.com"),
+        "omp": ([], "omp.sh")
     ]
 
     func image(_ id: String) -> NSImage? {

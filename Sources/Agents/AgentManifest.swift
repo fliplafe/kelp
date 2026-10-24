@@ -125,7 +125,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
             "auggie": ("npm install -g @augmentcode/auggie", "npm install -g @augmentcode/auggie@latest", "@augmentcode/auggie"),
             "crush": ("brew install charmbracelet/tap/crush", "brew upgrade crush", nil),
             "aider": ("python3 -m pip install aider-install && aider-install", nil, nil),
-            "droid": ("curl -fsSL https://app.factory.ai/cli | sh", nil, nil)
+            "droid": ("curl -fsSL https://app.factory.ai/cli | sh", nil, nil),
+            "omp": ("curl -fsSL https://omp.sh/install | sh", "omp update", "@oh-my-pi/pi-coding-agent")
         ]
         guard let k = known[m.id] else { return m }
         var m = m
@@ -193,6 +194,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         // their variables make them report anyway.
         .init(id: "pi", name: "Pi", command: "pi", env: ["PI_PROGRAM_STATUS": "1"]),
         .init(id: "amp", name: "Amp", command: "amp"),
+        .init(id: "omp", name: "oh-my-pi", command: "omp", modelFlag: "--model", resumeArgs: ["--continue"]),
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy", env: ["AGY_CLI_OSC7501": "on"]),
