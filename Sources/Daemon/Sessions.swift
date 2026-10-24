@@ -122,7 +122,7 @@ final class Sessions: Sendable {
         // A remote agent runs in a tmux session of its own on the host: a dropped connection or a daemon restart leaves it working.
         if !local, !["shell", "custom"].contains(manifest.id) { rec.tmux = o.tmux ?? Tmux.own() }
         let env = launchEnv(manifest, rec)
-        let ls = try LiveSession(record: rec, manifest: liveManifest(manifest, cwd: cwd, worktreeId: worktreeId, env: env),
+        let ls = try LiveSession(record: rec, manifest: liveManifest(manifest, cwd: cwd, worktreeId: worktreeId, env: env, argv: argv),
                                  argv: try launchArgv(argv, cwd: cwd, manifest: manifest, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: o.cols, rows: o.rows,
                                  callbacks: callbacks(for: rec, devServerIn: o.openURLs ? worktreeId : nil))   // e.g. Jupyter Lab's URL
@@ -242,6 +242,7 @@ final class Sessions: Sendable {
             var m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
             // As `liveManifest`; past startup, nothing is answered for it.
             if remotes.of(rec.cwd) != nil { m.dropHooks() }
+            m = wiredHooks(m, env: launchEnv(m, rec), argv: rec.argv)
             let ls = LiveSession(record: rec, manifest: m, pty: pty, historyDir: root.appendingPathComponent("history"), callbacks: callbacks(for: rec))
             ls.adopted(modes: h.modes, bytes: h.bytes)
             try live.add(ls)

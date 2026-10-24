@@ -66,9 +66,20 @@ extension Sessions {
 
     /// The manifest its live session reads. A remote agent gets no hooks (they're files on this Mac): its status comes
     /// from the screen, which an agent that has hooks elsewhere would never get read.
-    func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
+    func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String], argv: [String]) -> AgentManifest {
         var out = trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env)
         if remotes.of(cwd) != nil { out.dropHooks() }
+        return wiredHooks(out, env: env, argv: argv)
+    }
+
+    /// Only the hooks this launch really wired: one whose variable the user set themselves, whose file couldn't be written,
+    /// or whose flag a custom command line left out never reports, and the screen has to be read instead.
+    func wiredHooks(_ m: AgentManifest, env: [String: String], argv: [String]) -> AgentManifest {
+        var out = m
+        let hooks = root.appendingPathComponent("hooks-\(m.id)")
+        if let key = out.hooksConfigDirEnv, env[key] != hooks.path { out.hooksConfigDirEnv = nil }
+        if let key = out.hooksSettingsEnv, env[key] != hooks.appendingPathExtension("json").path { out.hooksSettingsEnv = nil }
+        if let flag = out.hooksSettingsFlag, !argv.contains(flag) { out.hooksSettingsFlag = nil }
         return out
     }
 
@@ -148,7 +159,7 @@ extension Sessions {
         rec.argv = argv   // the conversation it found is this session's from now on
         let env = launchEnv(m, rec)
         rec.status = .idle
-        let ls = try LiveSession(record: rec, manifest: liveManifest(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env),
+        let ls = try LiveSession(record: rec, manifest: liveManifest(m, cwd: rec.cwd, worktreeId: rec.worktreeId, env: env, argv: argv),
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows, callbacks: callbacks(for: rec))
         if rec.tmux != nil { ls.attachedToRunning() }

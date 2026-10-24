@@ -589,3 +589,24 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     for k in ["\u{1B}", "\u{03}", "\u{1B}[27u", "\u{1B}[99;5u", "\u{1B}[1089::99;5u"] { #expect(LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
     for k in ["\u{1B}[A", "\u{1B}[99u", "\u{1B}[199;5u", "\u{1B}[27;2u", "q"] { #expect(!LiveSession.isStopKey(Data(k.utf8)), "\(k.debugDescription)") }
 }
+
+/// An agent whose hooks Kelp couldn't wire (the user set the variable to a folder of their own) has its screen read:
+/// it would otherwise sit at idle for good. One whose hooks are wired doesn't.
+@Test func unwiredHooksLeaveTheScreenRead() async throws {
+    let script = "echo ready; read -r; while :; do echo working on the next step; sleep 0.2; done"
+    var own = AgentManifest(id: "own", name: "Own", command: "/bin/bash", args: ["-c", script], hooksConfigDirEnv: "KELP_TEST_HOOKS_DIR")
+    own.env = ["KELP_TEST_HOOKS_DIR": tmp().path]
+    let wired = AgentManifest(id: "wired", name: "Wired", command: "/bin/bash", args: ["-c", script], hooksConfigDirEnv: "KELP_TEST_HOOKS_DIR")
+    let w = try await world(agents: [own, wired]); defer { w.d.stop() }
+    let wt = try await firstDesk(w)
+    var ids: [String: String] = [:]
+    for agent in ["own", "wired"] {
+        let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": .string(agent)]), as: Session.self)
+        #expect(try await waitFor(10) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("ready") == true })
+        w.c.notify("session.write", .obj(["id": .string(s.id), "base64": .string(Data("go\r".utf8).base64EncodedString())]))
+        ids[agent] = s.id
+    }
+    #expect(try await waitFor(10) { w.d.sessions.existing(ids["own"] ?? "")?.snapshot.status == .working })
+    try await Task.sleep(for: .seconds(1))
+    #expect(w.d.sessions.existing(ids["wired"] ?? "")?.snapshot.status == .idle)
+}
