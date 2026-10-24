@@ -50,9 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await app.connect()
             app.extensions.reload()   // settings (disabled extensions) are known now
             app.availability.refresh(force: true)
+            #if DEBUG
             let pick = ProcessInfo.processInfo.environment["KELP_SNAPSHOT_WORKTREE"].flatMap { b in
                 app.worktrees.first { $0.id == b || $0.branch == b || $0.note == b }
             }
+            #else
+            let pick: Worktree? = nil
+            #endif
             let last = app.uiState["workbench.lastWorkspace"]?.string.flatMap { app.worktree($0) }
             // Next turn of the run loop: the sidebar lays out its new rows before it gets a selection.
             try? await Task.sleep(for: .milliseconds(30))
@@ -62,7 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] == nil { OnboardingSheet.showIfFirstLaunch(app) }
         }
         NSApp.activate()
+        // Snapshots and the input they drive (KELP_CLICK, KELP_TYPE…) are a debug build's: in a release, any program the
+        // user runs could start the real app and have it click its own Trust button.
+        #if DEBUG
         if let out = ProcessInfo.processInfo.environment["KELP_SNAPSHOT"] { snapshotLater(out) }
+        #endif
     }
 
     /// Agents installed while Kelp was in the background show up when it comes back.
