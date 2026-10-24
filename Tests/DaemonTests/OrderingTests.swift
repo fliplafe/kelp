@@ -183,7 +183,7 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     let s = try await w.c.call(SessionCreate(worktreeId: desk.id, command: "exec cat"))
     let quick = Daemon.methods.values.compactMap { $0 as? any Handled.Type }.filter { $0.quick }
     #expect(quick.count >= 10)
-    let p = JSONValue.obj(["id": .string(s.id), "event": "working", "state": "working", "summary": "x", "key": "k", "cwd": .string(desk.path),
+    let p = JSONValue.obj(["id": .string(s.id), "pane_id": .string(s.id), "event": "working", "state": "working", "summary": "x", "key": "k", "cwd": .string(desk.path),
                            "transcript": .string("/tmp/\(UUID().uuidString.lowercased()).jsonl")])
     for t in quick {
         let ordered = t.inOrder; #expect(!ordered, "\(t.name)")
