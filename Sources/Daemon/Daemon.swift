@@ -255,146 +255,146 @@ public final class Daemon: Sendable {
     }
 
     private func serve(_ fd: Int32) {
-        let c = clients.add(fd: fd)
+        let client = clients.add(fd: fd)
         Thread.detachNewThread { [self] in
-            var lb = LineBuffer()
+            var received = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
             var spoke = false
             reading: while true {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
-                let lines = lb.append(Data(buf[0..<n]))
-                // A line past any request's size (a 50 MB file saved, escaped) isn't one: hang up rather than keep it all.
-                guard lb.pending <= Self.lineLimit else {
+                let lines = received.append(Data(buf[0..<n]))
+                // A line past any request's size (a 50 MB file saved, escaped) isn'handler one: hang up rather than keep it all.
+                guard received.pending <= Self.lineLimit else {
                     Log.rpc.error("hung up on a client whose line passed \(Self.lineLimit) bytes with no end")
                     break reading
                 }
                 for (i, line) in lines.enumerated() {
-                    guard let req = try? JSONDecoder().decode(Request.self, from: line) else { refuse(line, c); continue }
+                    guard let req = try? JSONDecoder().decode(Request.self, from: line) else { refuse(line, client); continue }
                     // A JSON-RPC client after all (it came in raw, Clients.add): events from now on.
-                    if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(c.id, false) } }
-                    if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder { answerInOrder(t, req, c); continue }
+                    if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(client.id, false) } }
+                    if let handler = Self.methods[req.method] as? any Handled.Type, handler.inOrder { answerInOrder(handler, req, client); continue }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
                     if req.method == "session.stream" {
                         // What came after its line in the same read is the stream's already: its whole lines, then the rest.
                         let after = lines[(i + 1)...].reduce(Data()) { $0 + $1 + Data("\n".utf8) }
-                        stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: after + lb.takeRemainder())
+                        stream(client, session: req.params?["id"]?.string ?? "", size: req.params, leftover: after + received.takeRemainder())
                         break reading
                     }
-                    Task { await self.respond(req, conn: c) }
+                    Task { await self.respond(req, conn: client) }
                 }
             }
-            hungUp(c)
+            hungUp(client)
         }
     }
 
     /// Not a request: say so to whoever sent an id, rather than leave it waiting.
-    private func refuse(_ line: Data, _ c: Connection) {
+    private func refuse(_ line: Data, _ client: Connection) {
         guard let id = (try? JSONDecoder().decode(JSONValue.self, from: line))?["id"], id != .null,
-              let d = try? Wire.line(Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) else { return }
-        c.send(d)
+              let refusal = try? Wire.line(Reply(id: id, result: nil, error: RPCError(code: -32600, message: "invalid request"))) else { return }
+        client.send(refusal)
     }
 
     /// Quick, and only right in the order they were sent (keystrokes, a setting dragged, two sends; a saved layout or a
     /// terminal size that finished second must not win over the newer one): applied on the reader thread, one after
     /// another, calls and notifications alike (`Handled.inOrder`); a call's reply goes out in that order.
-    private func answerInOrder(_ t: any Handled.Type, _ req: Request, _ c: Connection) {
+    private func answerInOrder(_ handler: any Handled.Type, _ req: Request, _ client: Connection) {
         let id = req.id ?? .null, notification = req.isNotification, method = req.method
-        let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { r in
-            if case .failure(let e) = r { Self.log(method, failed: e, notification: notification) }
+        let reply: @Sendable (Swift.Result<Data, Error>) -> Void = { result in
+            if case .failure(let e) = result { Self.log(method, failed: e, notification: notification) }
             guard !notification else { return }
-            switch r {
-            case .success(let d): c.send(Self.replyLine(id: id, result: d))
-            case .failure(let e): if let d = Self.errorLine(id: id, e) { c.send(d) }
+            switch result {
+            case .success(let data): client.send(Self.replyLine(id: id, result: data))
+            case .failure(let e): if let line = Self.errorLine(id: id, e) { client.send(line) }
             }
         }
         // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
-        if let s = t as? any SessionInput.Type {
-            let conn = c.id
-            s.answerInOrder(req.params ?? .null, sessions, allowed: { [self] in try allow($0, conn: conn) }, done: reply)
+        if let input = handler as? any SessionInput.Type {
+            let conn = client.id
+            input.answerInOrder(req.params ?? .null, sessions, allowed: { [self] in try allow($0, conn: conn) }, done: reply)
             return
         }
-        let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
-        reply(r)
+        let answered = Swift.Result { try answerNow(handler, req.params ?? .null, conn: client.id) }
+        reply(answered)
         // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
-        if t == DaemonUpgrade.self, case .success = r { Thread.detachNewThread { Upgrade.of(self).run() } }
+        if handler == DaemonUpgrade.self, case .success = answered { Thread.detachNewThread { Upgrade.of(self).run() } }
     }
 
     /// The connection ended: what it held goes with it.
-    private func hungUp(_ c: Connection) {
-        clients.remove(c.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
-        watches.drop(c.id)
-        sessions.live.all.forEach { $0.detach(c.id) }
-        lsp.closeAll(conn: c.id)   // its files: a server left with none stops a while later
-        c.close()
+    private func hungUp(_ client: Connection) {
+        clients.remove(client.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
+        watches.drop(client.id)
+        sessions.live.all.forEach { $0.detach(client.id) }
+        lsp.closeAll(conn: client.id)   // its files: a server left with none stops a while later
+        client.close()
     }
 
     /// Raw attach (`kelp attach`, the libghostty terminal): history then live output as plain bytes; whatever the client
     /// writes is the user's typing. Terminal replies (DA, kitty keyboard) flow back the same way, so the agent sees a real terminal.
     /// `size`: the attaching terminal's cols / rows, so a paused agent wakes at the size it's shown at.
     /// An ended session shows what it last printed (from its log), then the attach ends.
-    private func stream(_ c: Connection, session: String, size: JSONValue?, leftover: Data) {
+    private func stream(_ client: Connection, session: String, size: JSONValue?, leftover: Data) {
         // Before waking: its status events must not land in the byte stream. It stays raw until `hungUp` removes it.
-        clients.setRaw(c.id, true)
+        clients.setRaw(client.id, true)
         if sessions.existing(session) == nil, (try? store.session(session))?.status == .exited {
-            c.send(TerminalReplies.withoutQueries((try? sessions.liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
+            client.send(TerminalReplies.withoutQueries((try? sessions.liveSessionOrLog(session, bytes: LiveSession.ringLimit)) ?? Data())); return
         }
         let (cols, rows) = Sessions.Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
         let ls: LiveSession
         do { ls = try sessions.liveSession(session, cols: cols, rows: rows) } catch {
-            // One Kelp has that didn't wake says why (its agent's CLI gone, its folder deleted), here and in the log.
-            guard (try? store.session(session)) != nil else { c.send(Data("kelp: no such session\r\n".utf8)); return }
+            // One Kelp has that didn'handler wake says why (its agent's CLI gone, its folder deleted), here and in the log.
+            guard (try? store.session(session)) != nil else { client.send(Data("kelp: no such session\r\n".utf8)); return }
             let why = (error as? RPCError)?.message ?? "\(error)"
-            Log.session.error("\(session, privacy: .public) didn't wake for a terminal: \(why)")
-            c.send(Data("kelp: \(why)\r\n".utf8)); return
+            Log.session.error("\(session, privacy: .public) didn'handler wake for a terminal: \(why)")
+            client.send(Data("kelp: \(why)\r\n".utf8)); return
         }
         // Queued under the session's lock: no live output gets ahead of it. One paused at this moment ends the attach,
         // as the pause does for those already attached (`letGo`).
-        guard ls.attach(c.id, send: { c.send($0) }) != nil else { return }
+        guard ls.attach(client.id, send: { client.send($0) }) != nil else { return }
         if !leftover.isEmpty { ls.userInput(leftover) }
         var buf = [UInt8](repeating: 0, count: 65536)
         while true {
-            let n = read(c.fd, &buf, buf.count)
+            let n = read(client.fd, &buf, buf.count)
             if n <= 0 { break }
             ls.userInput(Data(buf[0..<n]))
         }
-        ls.detach(c.id)
+        ls.detach(client.id)
     }
 
-    private func respond(_ req: Request, conn c: Connection) async {
+    private func respond(_ req: Request, conn client: Connection) async {
         let id = req.id ?? .null
         // Attach: the reply with the history is queued in the same step that subscribes, so no live output can reach this
         // connection ahead of it (the screen would show the newest bytes before the history they follow).
         // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
-        // queued inside the session's lock, which `Handled` can't express.
-        if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: c.id))?.id,
+        // queued inside the session's lock, which `Handled` can'handler express.
+        if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: client.id))?.id,
            sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated {
             // A wake that fails says why, once: falling through would wake it a second time, in the slow lane.
             let ls: LiveSession
             do { ls = try await offloads.runNow({ [self] in try sessions.liveSession(sid) }) } catch {
                 Self.log(req.method, failed: error, notification: false)
-                if let d = Self.errorLine(id: id, error) { c.send(d) }
+                if let line = Self.errorLine(id: id, error) { client.send(line) }
                 return
             }
-            // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
+            // Only while it's still connected: one that closed while the session woke isn'handler subscribed (it would count as
             // watching for good, and the session would never pause).
             var attached = true
-            clients.ifConnected(c.id) {
-                attached = ls.attach(c.id) { history in
-                    if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
-                        c.send(Self.replyLine(id: id, result: r))
+            clients.ifConnected(client.id) {
+                attached = ls.attach(client.id) { history in
+                    if let history = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
+                        client.send(Self.replyLine(id: id, result: history))
                     }
                 } != nil
             }
-            if !attached, let d = Self.errorLine(id: id, Sessions.pausedAsAttached) { c.send(d) }
+            if !attached, let line = Self.errorLine(id: id, Sessions.pausedAsAttached) { client.send(line) }
             return
         }
         do {
-            let r = try await answer(req.method, req.params ?? .null, conn: c.id)
-            if !req.isNotification { c.send(Self.replyLine(id: id, result: r)) }
+            let answered = try await answer(req.method, req.params ?? .null, conn: client.id)
+            if !req.isNotification { client.send(Self.replyLine(id: id, result: answered)) }
         } catch {
             Self.log(req.method, failed: error, notification: req.isNotification)
-            if !req.isNotification, let d = Self.errorLine(id: id, error) { c.send(d) }
+            if !req.isNotification, let line = Self.errorLine(id: id, error) { client.send(line) }
         }
     }
 
