@@ -1,197 +1,6 @@
 import AppKit
 import GhosttyKit
 
-/// Colors and font from the IDE's theme and settings (nil = keep Ghostty's config / defaults).
-public struct TerminalAppearance: Equatable, Sendable {
-    public var useGhosttyConfig = true
-    public var background: String?, foreground: String?, cursor: String?, selection: String?
-    public var palette: [String] = []
-    public var fontFamily: String?, fontSize: Double?
-    public var cursorStyle: String?
-    public var optionAsAlt = false
-    public init() {}
-
-    var configText: String {
-        var lines: [String] = []
-        if let v = background { lines.append("background = \(v)") }
-        if let v = foreground { lines.append("foreground = \(v)") }
-        if let v = cursor { lines.append("cursor-color = \(v)") }
-        if let v = selection { lines.append("selection-background = \(v)") }
-        for (i, c) in palette.prefix(16).enumerated() { lines.append("palette = \(i)=\(c)") }
-        if let v = fontFamily, !v.isEmpty { lines.append("font-family = \(v)") }
-        if let v = fontSize { lines.append("font-size = \(v)") }
-        if let v = cursorStyle { lines.append("cursor-style = \(v)") }
-        if optionAsAlt { lines.append("macos-option-as-alt = true") }
-        return lines.joined(separator: "\n")
-    }
-}
-
-// Terminal backend on libghostty (Metal rendering, Ghostty's input and selection). Input handling follows
-// Ghostty's own macOS SurfaceView (MIT): https://github.com/ghostty-org/ghostty/tree/main/macos/Sources/Ghostty
-
-/// One libghostty app per process; surfaces (terminal views) hang off it.
-@MainActor
-public final class GhosttyRuntime {
-    public static let shared = GhosttyRuntime()
-    public private(set) var app: ghostty_app_t?
-    private let surfaces = NSHashTable<GhosttyTerminalView>.weakObjects()
-    /// Set before the first terminal opens; `configure` changes it later.
-    public static var appearance = TerminalAppearance()
-    public private(set) static var started = false
-    /// Copying from a terminal drops what TUIs draw around text: borders, the agent's gutter, trailing spaces.
-    public static var cleanCopy = true
-    /// The pasteboard's `changeCount` after a program in a terminal last wrote it (OSC 52), while nothing else has.
-    static var programCopy: Int?
-
-    /// Applies a new appearance to every open terminal.
-    public func configure(_ a: TerminalAppearance) {
-        Self.appearance = a
-        guard let app else { return }
-        let cfg = Self.makeConfig()
-        ghostty_app_update_config(app, cfg)
-        for v in surfaces.allObjects { if let s = v.surface { ghostty_surface_update_config(s, cfg) } }
-        ghostty_config_free(cfg)
-    }
-
-    func register(_ v: GhosttyTerminalView) { surfaces.add(v) }
-
-    private static func makeConfig() -> ghostty_config_t? {
-        let cfg = ghostty_config_new()
-        let d = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-ghostty-defaults-\(getpid()).conf")
-        try? defaults.write(to: d, atomically: true, encoding: .utf8)
-        ghostty_config_load_file(cfg, d.path)   // first: the user's Ghostty config may change them
-        if appearance.useGhosttyConfig { ghostty_config_load_default_files(cfg) }   // the user's Ghostty theme, font, cursor…
-        let f = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-ghostty-\(getpid()).conf")
-        try? (overrides + "\n" + appearance.configText).write(to: f, atomically: true, encoding: .utf8)
-        ghostty_config_load_file(cfg, f.path)
-        ghostty_config_finalize(cfg)
-        return cfg
-    }
-
-    private init() {
-        guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else { return }
-        Self.started = true
-        let cfg = Self.makeConfig()
-        setUp(cfg)
-    }
-
-    /// Under the user's Ghostty config: text keeps 3:1 contrast with its background, so colours picked for a dark
-    /// terminal (Claude Code's near-white greys) stay readable on a light one, and dark ones on a dark one.
-    private static let defaults = "minimum-contrast = 3\n"
-
-    // App shortcuts (⌘T, ⌘D, ⌘W…) belong to Kelp; Ghostty keeps only terminal ones.
-    // ⇧↩ types a line feed: a new line in agent prompts (Claude Code, Codex) instead of sending the message.
-    static let overrides = """
-        keybind = clear
-        keybind = super+c=copy_to_clipboard
-        keybind = super+v=paste_from_clipboard
-        keybind = super+a=select_all
-        keybind = super+equal=increase_font_size:1
-        keybind = super+plus=increase_font_size:1
-        keybind = super+minus=decrease_font_size:1
-        keybind = super+zero=reset_font_size
-        keybind = super+k=clear_screen
-        keybind = shift+page_up=scroll_page_up
-        keybind = shift+page_down=scroll_page_down
-        keybind = shift+enter=text:\n
-        keybind = super+home=scroll_to_top
-        keybind = super+end=scroll_to_bottom
-        confirm-close-surface = false
-        clipboard-paste-protection = true
-        clipboard-write = ask
-        window-padding-x = 12
-        window-padding-y = 8
-        """
-
-    private func setUp(_ cfg: ghostty_config_t?) {
-        var rt = ghostty_runtime_config_s()
-        rt.userdata = nil
-        rt.supports_selection_clipboard = false
-        rt.wakeup_cb = { _ in DispatchQueue.main.async { MainActor.assumeIsolated { if let a = GhosttyRuntime.shared.app { ghostty_app_tick(a) } } } }
-        rt.action_cb = { _, target, action in
-            MainActor.assumeIsolated { GhosttyRuntime.shared.handle(target, action) }
-        }
-        rt.read_clipboard_cb = { ud, _, state, mimes, count, _ in
-            MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.readClipboard(state: state, mimes: mimes, count: count) ?? GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
-        }
-        rt.confirm_read_clipboard_cb = { ud, confirm, state, request in
-            MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.confirmClipboard(confirm, state: state, request: request) }
-        }
-        // `fromProgram`: an OSC 52 write (Claude Code copies that way over ssh), which `clipboard-write = ask` flags.
-        rt.write_clipboard_cb = { ud, _, contents, count, fromProgram in
-            guard let contents, count > 0 else { return }
-            var text: String?
-            for i in 0..<count {
-                let c = contents[i]
-                guard let mime = c.mime.map({ String(cString: $0) }), mime.hasPrefix("text/plain"), let data = c.data else { continue }
-                text = String(bytes: UnsafeRawBufferPointer(start: data, count: c.len), encoding: .utf8)
-            }
-            if let raw = text {
-                let view = MainActor.assumeIsolated { GhosttyTerminalView.from(ud) }   // Ghostty writes on the main thread
-                // Later: the selection is read under the lock Ghostty holds while it writes.
-                DispatchQueue.main.async { [weak view] in MainActor.assumeIsolated {
-                    let text = GhosttyRuntime.cleanCopy && !fromProgram
-                        ? TerminalCopy.clean(raw, from: view?.selectionColumn ?? 0, columns: view?.gridSize?.cols) : raw
-                    let pb = NSPasteboard.general
-                    pb.clearContents(); pb.setString(text, forType: .string)
-                    GhosttyRuntime.programCopy = fromProgram ? pb.changeCount : nil
-                } }
-            }
-        }
-        rt.close_surface_cb = { ud, _ in
-            MainActor.assumeIsolated { GhosttyTerminalView.from(ud)?.onExit?() }
-        }
-        app = ghostty_app_new(&rt, cfg)
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { if let a = GhosttyRuntime.shared.app { ghostty_app_set_focus(a, true) } }
-        }
-        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { if let a = GhosttyRuntime.shared.app { ghostty_app_set_focus(a, false) } }
-        }
-    }
-
-    private func handle(_ target: ghostty_target_s, _ action: ghostty_action_s) -> Bool {
-        let view: GhosttyTerminalView? = target.tag == GHOSTTY_TARGET_SURFACE
-            ? target.target.surface.flatMap { GhosttyTerminalView.from(ghostty_surface_userdata($0)) } : nil
-        switch action.tag {
-        case GHOSTTY_ACTION_SET_TITLE:
-            if let t = action.action.set_title.title { view?.onTitle?(String(cString: t)) }
-            return true
-        case GHOSTTY_ACTION_OPEN_URL:
-            let u = action.action.open_url
-            guard let p = u.url else { return false }
-            if let s = String(bytes: UnsafeRawBufferPointer(start: p, count: Int(u.len)), encoding: .utf8), let url = URL(string: s) { if let h = view?.onOpenURL { h(url) } else { NSWorkspace.shared.open(url) } }
-            return true
-        case GHOSTTY_ACTION_MOUSE_SHAPE:
-            if let view { view.cursor = GhosttyTerminalView.cursor(for: action.action.mouse_shape); view.window?.invalidateCursorRects(for: view) }
-            return true
-        case GHOSTTY_ACTION_CELL_SIZE:
-            view?.cellSize = NSSize(width: Double(action.action.cell_size.width), height: Double(action.action.cell_size.height))
-            return true
-        case GHOSTTY_ACTION_RING_BELL:
-            return true   // agents ring constantly; status dots carry that signal
-        case GHOSTTY_ACTION_START_SEARCH:
-            view?.onSearch?(.started(action.action.start_search.needle.map { String(cString: $0) } ?? ""))
-            return true
-        case GHOSTTY_ACTION_END_SEARCH:
-            view?.onSearch?(.ended)
-            return true
-        case GHOSTTY_ACTION_SEARCH_TOTAL:
-            view?.onSearch?(.total(Int(action.action.search_total.total)))
-            return true
-        case GHOSTTY_ACTION_SEARCH_SELECTED:
-            view?.onSearch?(.selected(Int(action.action.search_selected.selected)))
-            return true
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let s = action.action.scrollbar
-            view?.scrollIndicator.show(total: Double(s.total), offset: Double(s.offset), length: Double(s.len))
-            return true
-        default:
-            return false
-        }
-    }
-}
-
 @MainActor
 public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClient {
     public private(set) var surface: ghostty_surface_t?
@@ -292,7 +101,8 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         if let o = occlusionObserver { NotificationCenter.default.removeObserver(o); occlusionObserver = nil }
         updateOcclusion()
         guard let w = window else { return }
-        occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w, queue: .main) { [weak self] _ in
+        let center = NotificationCenter.default
+        occlusionObserver = center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateOcclusion() }
         }
     }
@@ -441,10 +251,14 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         ghostty_surface_mouse_pressure(surface, 0, 0)
     }
     public override func rightMouseDown(with e: NSEvent) {
-        guard let surface, ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, Self.mods(e.modifierFlags)) else { return super.rightMouseDown(with: e) }
+        guard let surface, ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, Self.mods(e.modifierFlags)) else {
+            return super.rightMouseDown(with: e)
+        }
     }
     public override func rightMouseUp(with e: NSEvent) {
-        guard let surface, ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, Self.mods(e.modifierFlags)) else { return super.rightMouseUp(with: e) }
+        guard let surface, ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, Self.mods(e.modifierFlags)) else {
+            return super.rightMouseUp(with: e)
+        }
     }
     public override func otherMouseDown(with e: NSEvent) {
         guard let surface else { return }
@@ -493,9 +307,9 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         let rowText = { (y: Int) -> String? in
             guard y >= 0, y < Int(s.rows) else { return nil }
             var t = ghostty_text_s()
-            let sel = ghostty_selection_s(top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: UInt32(y)),
-                                          bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: UInt32(s.columns - 1), y: UInt32(y)),
-                                          rectangle: false)
+            let left = ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: UInt32(y))
+            let right = ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: UInt32(s.columns - 1), y: UInt32(y))
+            let sel = ghostty_selection_s(top_left: left, bottom_right: right, rectangle: false)
             guard ghostty_surface_read_text(surface, sel, &t) else { return nil }
             defer { ghostty_surface_free_text(surface, &t) }
             return String(cString: t.text)
@@ -552,7 +366,8 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
     }
 
     @discardableResult
-    private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, translationEvent: NSEvent? = nil, text: String? = nil, composing: Bool = false) -> Bool {
+    private func keyAction(_ action: ghostty_input_action_e, event: NSEvent, translationEvent: NSEvent? = nil, text: String? = nil,
+                           composing: Bool = false) -> Bool {
         guard let surface else { return false }
         var k = keyEvent(event, action, translationMods: translationEvent?.modifierFlags)
         k.composing = composing
@@ -575,7 +390,9 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         // Option-as-alt and friends: let Ghostty say which modifiers take part in translating to text.
         let tm = ghostty_surface_key_translation_mods(surface, Self.mods(event.modifierFlags))
         var translationMods = event.modifierFlags
-        for (flag, bit) in [(NSEvent.ModifierFlags.shift, GHOSTTY_MODS_SHIFT), (.control, GHOSTTY_MODS_CTRL), (.option, GHOSTTY_MODS_ALT), (.command, GHOSTTY_MODS_SUPER)] {
+        let bits: [(NSEvent.ModifierFlags, ghostty_input_mods_e)] = [(.shift, GHOSTTY_MODS_SHIFT), (.control, GHOSTTY_MODS_CTRL),
+                                                                     (.option, GHOSTTY_MODS_ALT), (.command, GHOSTTY_MODS_SUPER)]
+        for (flag, bit) in bits {
             if tm.rawValue & bit.rawValue != 0 { translationMods.insert(flag) } else { translationMods.remove(flag) }
         }
         let translationEvent: NSEvent = translationMods == event.modifierFlags ? event : (NSEvent.keyEvent(
@@ -689,39 +506,5 @@ public final class GhosttyTerminalView: NSView, @preconcurrency NSTextInputClien
         } else if clearIfNeeded {
             ghostty_surface_preedit(surface, nil, 0)
         }
-    }
-
-    // MARK: clipboard
-
-    func readClipboard(state: UnsafeMutableRawPointer?, mimes: UnsafePointer<UnsafePointer<CChar>?>?, count: Int) -> ghostty_clipboard_read_result_e {
-        guard let surface, let text = TerminalPaste.text(from: .general) else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
-        let data = text.utf8CString   // its length goes along: a NUL inside the text must not cut it short
-        data.withUnsafeBufferPointer { d in
-            "text/plain;charset=utf-8".withCString { mime in
-                var content = ghostty_clipboard_content_s(mime: mime, data: d.baseAddress, len: d.count - 1)
-                withUnsafePointer(to: &content) { cp in
-                    var done = ghostty_clipboard_complete_s()
-                    // Not confirmed: Ghostty applies its policy (`clipboard-read = ask` for OSC 52 / Kitty reads, paste
-                    // protection) and asks `confirmClipboard`.
-                    done.contents = cp; done.contents_len = 1; done.confirmed = false
-                    ghostty_surface_complete_clipboard_request(surface, &done, state)
-                }
-            }
-        }
-        return GHOSTTY_CLIPBOARD_READ_STARTED
-    }
-
-    /// Ghostty asks before a paste that would run as typed (a line break, no bracketed paste) and before a program reads
-    /// the clipboard or writes it the Kitty way. The paste goes through, unless a program put that text there: lines you
-    /// never saw mustn't run on ⌘V. The rest is refused.
-    func confirmClipboard(_ c: UnsafePointer<ghostty_clipboard_confirm_s>?, state: UnsafeMutableRawPointer?, request: ghostty_clipboard_request_e) {
-        guard let surface else { return }
-        guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE, let c else { ghostty_surface_deny_clipboard_request(surface, state); return }
-        if GhosttyRuntime.programCopy == NSPasteboard.general.changeCount {
-            ghostty_surface_deny_clipboard_request(surface, state); onPasteRefused?(); return
-        }
-        var done = ghostty_clipboard_complete_s()
-        done.contents = c.pointee.contents; done.contents_len = c.pointee.contents_len; done.confirmed = true
-        ghostty_surface_complete_clipboard_request(surface, &done, state)
     }
 }

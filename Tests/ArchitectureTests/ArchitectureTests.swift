@@ -132,8 +132,7 @@ private func codeOnly(_ s: String) -> String {
 }
 
 /// A line too long to take in at once: a call, a condition or a chain split over lines reads better. Comment lines and
-/// lines that are one long string (UI text) don't count; lint warns past 180. TerminalKit, which wraps libghostty and is
-/// changed only when asked, keeps its own.
+/// lines that are one long string (UI text) don't count; lint warns past 180.
 @Test func linesStayShort() throws {
     let longString = try NSRegularExpression(pattern: ##""[^"]{100,}"|#".{100,}"#|'[^']{100,}'"##)
     let long = sources(["Sources"]).flatMap { f in
@@ -142,9 +141,7 @@ private func codeOnly(_ s: String) -> String {
                 && longString.firstMatch(in: String(l), range: NSRange(l.startIndex..., in: l)) == nil
         }.map { _ in f.path }
     }
-    let terminal = long.filter { $0.hasPrefix("Sources/TerminalKit/") }
-    #expect(long.count == terminal.count, "lines over 160: \(Dictionary(long.map { ($0, 1) }, uniquingKeysWith: +))")
-    #expect(terminal.count <= 8)
+    #expect(long == [], "lines over 160: \(Dictionary(long.map { ($0, 1) }, uniquingKeysWith: +))")
 }
 
 /// Three statements on one line (`a; b; c`) are read as one: the daemon's code has one or two a line. String and regex
@@ -161,9 +158,9 @@ private func codeOnly(_ s: String) -> String {
     #expect(dense == [])
 }
 
-/// A file past 450 lines of code (blank and comment lines aside) is two things: split it. TerminalKit's view is its own.
+/// A file past 450 lines of code (blank and comment lines aside) is two things: split it.
 @Test func filesStaySmall() {
-    let big = sources(["Sources"]).filter { !$0.path.hasPrefix("Sources/TerminalKit/") }.compactMap { f -> String? in
+    let big = sources(["Sources"]).compactMap { f -> String? in
         let code = f.text.split(separator: "\n").filter { l in
             let t = l.trimmingCharacters(in: .whitespaces)
             return !t.isEmpty && !t.hasPrefix("//")
