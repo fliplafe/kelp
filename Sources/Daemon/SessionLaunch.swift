@@ -36,6 +36,7 @@ extension Sessions {
             if let key = m.hooksConfigDirEnv, env[key] == nil, (try? Hooks.writePlugin(dir: hooks)) != nil { env[key] = hooks.path }
             let file = hooks.appendingPathExtension("json")
             if let key = m.hooksSettingsEnv, env[key] == nil, (try? Hooks.writeSettings(to: file)) != nil { env[key] = file.path }
+            if m.hooksHerdr { env["HERDR_SOCKET_PATH"] = socketPath; env["HERDR_PANE_ID"] = rec.id }
         }
         env["PATH"] = Self.childPath
         return env

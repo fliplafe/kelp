@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import Core
 import GitKit
+import Agents
 @testable import Daemon
 
 /// A daemon with one repo and one desk (workspace) cut from it, set up the way the app does.
@@ -151,6 +152,23 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     _ = try await r.c.call(SessionReport(id: s.id, state: "done", message: "Deployed to staging"))
     #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }.map { $0.status == .done && $0.progress == nil } == true })
     await #expect(throws: (any Error).self) { _ = try await r.c.call(SessionReport(id: s.id, state: "sleeping")) }
+}
+
+/// fx reports to herdr: the socket and pane come from its environment, the line is fx's own (a string id, no "jsonrpc").
+@Test func anAgentReportingToHerdrReportsToKelp() async throws {
+    let report = #"r() { zsocket $HERDR_SOCKET_PATH; print -u $REPLY "{\"id\":\"$1\",\"method\":\"pane.report_agent\",\"params\":"#
+        + #"{\"pane_id\":\"$HERDR_PANE_ID\",\"source\":\"custom:fx\",\"agent\":\"fx\",\"state\":\"$2\"}}"; read -u $REPLY; exec {REPLY}>&-; }"#
+    let fx = AgentManifest(id: "fx", name: "fx", command: "/bin/zsh", hooksHerdr: true, resumeArgs: ["--continue"])
+    var m = fx; m.args = ["-c", "zmodload zsh/net/socket; \(report); r 1 idle; echo ready; read; r 2 working; read; r 3 blocked; read; r 4 idle; cat"]
+    let w = try await world(agents: [m]); defer { w.d.stop() }
+    let s = try await w.c.call(SessionCreate(worktreeId: try await desk(w, "herdr").id, agent: "fx"))
+    func status() async throws -> AgentStatus? { try await w.c.call(SessionList()).first { $0.id == s.id }?.status }
+    func enter() async throws { _ = try await w.c.call(SessionWrite(id: s.id, base64: Data("\r".utf8).base64EncodedString())) }
+    #expect(try await waitFor(10) { try await w.c.call(SessionRead(id: s.id)).contains("ready") })
+    #expect(try await status() == .idle)   // idle before any work isn't a finished turn
+    try await enter(); #expect(try await waitFor(5) { try await status() == .working })
+    try await enter(); #expect(try await waitFor(5) { try await status() == .waiting })
+    try await enter(); #expect(try await waitFor(5) { try await status() == .done })
 }
 
 @Test func aCommandThatEndsKeepsItsExitCode() async throws {

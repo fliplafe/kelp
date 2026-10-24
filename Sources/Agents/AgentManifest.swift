@@ -34,10 +34,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var hooksConfigDirEnv: String?
     /// If set, the same hooks file as `hooksSettingsFlag`'s goes in `{hooksSettingsEnv}=<file>` (Qwen Code's system settings).
     public var hooksSettingsEnv: String?
+    /// The agent reports to herdr (fx): `HERDR_SOCKET_PATH` is kelpd's socket, `HERDR_PANE_ID` the session (`pane.report_agent`).
+    public var hooksHerdr = false
     /// The agent reports its own status (hooks): heuristics stay off.
-    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil || hooksSettingsEnv != nil }
+    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil || hooksSettingsEnv != nil || hooksHerdr }
     /// A remote session's: Kelp's hook files are on this Mac.
-    public mutating func dropHooks() { hooksSettingsFlag = nil; hooksConfigDirEnv = nil; hooksSettingsEnv = nil }
+    public mutating func dropHooks() { hooksSettingsFlag = nil; hooksConfigDirEnv = nil; hooksSettingsEnv = nil; hooksHerdr = false }
     /// `--model`-style flag and suggested models for the picker.
     public var modelFlag: String?
     public var models: [String] = []
@@ -61,13 +63,13 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3,
-                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil, hooksSettingsEnv: String? = nil,
+                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil, hooksSettingsEnv: String? = nil, hooksHerdr: Bool = false,
                 modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
                 autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil, contextFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
-        self.hooksConfigDirEnv = hooksConfigDirEnv; self.hooksSettingsEnv = hooksSettingsEnv
+        self.hooksConfigDirEnv = hooksConfigDirEnv; self.hooksSettingsEnv = hooksSettingsEnv; self.hooksHerdr = hooksHerdr
         self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag; self.contextFlag = contextFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
@@ -85,6 +87,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         hooksSettingsFlag = try c.decodeIfPresent(String.self, forKey: .hooksSettingsFlag)
         hooksConfigDirEnv = try c.decodeIfPresent(String.self, forKey: .hooksConfigDirEnv)
         hooksSettingsEnv = try c.decodeIfPresent(String.self, forKey: .hooksSettingsEnv)
+        hooksHerdr = try c.decodeIfPresent(Bool.self, forKey: .hooksHerdr) ?? false
         modelFlag = try c.decodeIfPresent(String.self, forKey: .modelFlag)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
@@ -126,7 +129,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
             "crush": ("brew install charmbracelet/tap/crush", "brew upgrade crush", nil),
             "aider": ("python3 -m pip install aider-install && aider-install", nil, nil),
             "droid": ("curl -fsSL https://app.factory.ai/cli | sh", nil, nil),
-            "omp": ("curl -fsSL https://omp.sh/install | sh", "omp update", "@oh-my-pi/pi-coding-agent")
+            "omp": ("curl -fsSL https://omp.sh/install | sh", "omp update", "@oh-my-pi/pi-coding-agent"),
+            "fx": ("curl -fsSL https://fx.sh/setup.sh | bash", "fx upgrade", nil)
         ]
         guard let k = known[m.id] else { return m }
         var m = m
@@ -195,6 +199,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "pi", name: "Pi", command: "pi", env: ["PI_PROGRAM_STATUS": "1"]),
         .init(id: "amp", name: "Amp", command: "amp"),
         .init(id: "omp", name: "oh-my-pi", command: "omp", modelFlag: "--model", resumeArgs: ["--continue"]),
+        .init(id: "fx", name: "fx", command: "fx", hooksHerdr: true, modelFlag: "--model", resumeArgs: ["--continue"]),
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy", env: ["AGY_CLI_OSC7501": "on"]),

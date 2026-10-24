@@ -127,6 +127,15 @@ public struct SessionReport: RPCMethod {
     }
 }
 
+/// herdr's agent report, which fx sends to `HERDR_SOCKET_PATH` (kelpd's socket for it): `pane_id` is the session, `state`
+/// idle, working or blocked. herdr's other calls (`pane.rename`…) aren't Kelp's: refused.
+public struct PaneReportAgent: RPCMethod {
+    public static let name = "pane.report_agent"; public typealias Result = Done
+    public var paneId: String, state: String
+    enum CodingKeys: String, CodingKey { case paneId = "pane_id", state }
+    public init(paneId: String, state: String) { self.paneId = paneId; self.state = state }
+}
+
 /// Whether this connection wants the daemon's broadcast events. `kelp attach`'s control connection only sends sizes:
 /// without this, every open terminal would be one more reader of every event.
 public struct ClientEvents: RPCMethod {

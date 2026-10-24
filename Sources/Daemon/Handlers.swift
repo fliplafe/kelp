@@ -104,7 +104,7 @@ extension Daemon {
     static let methods: [String: any Answered.Type] = {
         let sync: [any Handled.Type] = [DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
                                         WorktreeNote.self, RepoWorktreeSizes.self, RepoRemoveWorktrees.self, GitDiscardHunk.self,
-                                        RemoteListFolders.self, SessionReport.self, ClientEvents.self, WatchStart.self, WatchStop.self]
+                                        RemoteListFolders.self, SessionReport.self, PaneReportAgent.self, ClientEvents.self, WatchStart.self, WatchStop.self]
             + Methods.gitMethods + Methods.workspaceMethods + Methods.sessionMethods + Methods.integrationMethods + Methods.projectMethods
             + Methods.launchMethods + Methods.uiMethods + Methods.lspMethods + Methods.extensionMethods
         let all = sync.map { $0 as any Answered.Type } + (Methods.asyncMethods + Methods.lspAsyncMethods).map { $0 as any Answered.Type }
@@ -292,6 +292,18 @@ extension SessionReport: Handled {
         let r = ProgramStatus.Report(state: state, kind: state == "blocked" ? kind : nil, msg: message,
                                      progress: state == "working" ? progress.map { min(100, max(0, $0)) } : nil)
         if ls.report(r) != nil { sessions.publish(ls) }
+        return Done()
+    }
+}
+
+/// herdr has no "done": idle after work is a finished turn.
+extension PaneReportAgent: Handled {
+    static var quick: Bool { true }   // fx waits for the reply
+    func handle(_ sessions: Sessions) throws -> Done {
+        guard let ls = sessions.existing(paneId) else { return Done() }
+        let s = state == "idle" && ls.snapshot.status == .working ? "done" : state
+        guard ["idle", "working", "blocked", "done"].contains(s) else { throw RPCError.invalidParams("state is one of idle, working, blocked") }
+        if ls.report(ProgramStatus.Report(state: s)) != nil { sessions.publish(ls) }
         return Done()
     }
 }

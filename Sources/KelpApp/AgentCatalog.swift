@@ -64,6 +64,7 @@ struct AgentCatalog {
         case "aider": String(localized: "Pair programming in git, any model")
         case "droid": String(localized: "Factory’s agent")
         case "omp": String(localized: "Pi with an IDE’s tools wired in, any model")
+        case "fx": String(localized: "Vercel’s small native agent, any model")
         default: nil
         }
     }

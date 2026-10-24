@@ -82,6 +82,7 @@ lsp.completion
 lsp.definition
 lsp.open
 lsp.symbol
+pane.report_agent
 ping
 ports.list
 ports.stop
