@@ -62,6 +62,13 @@ jobs:
       - name: Link .build/debug   # Xcode 27's Swift Build makes it (the tests find kelp there); Xcode 26's doesn't
         run: '[ -e .build/debug ] || ln -s out/Products/Debug .build/debug'
       - run: ${{ matrix.test }}
+      # The app itself, on a few scenes (start page, Settings, a file, a terminal that ran a command), as pictures.
+      - name: UI smoke
+        if: matrix.name == 'Build and test'
+        run: scripts/ui-smoke.sh ui-smoke
+      - if: always() && matrix.name == 'Build and test'
+        uses: actions/upload-artifact@v4
+        with: { name: ui-smoke, path: ui-smoke, if-no-files-found: ignore }
   lint:
     runs-on: macos-26
     steps:
