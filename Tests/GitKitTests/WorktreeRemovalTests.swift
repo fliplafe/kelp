@@ -19,3 +19,14 @@ import TestSupport
     #expect(throws: GitError.self) { try Git.removeWorktree(repo: repo, path: other, branch: nil, force: true) }
     #expect(FileManager.default.fileExists(atPath: other))
 }
+
+/// A locked worktree isn't removed: neither its folder nor its record, rather than the folder in the Trash and git's
+/// record left behind.
+@Test func aLockedWorktreeStays() throws {
+    let repo = try tempRepo()
+    let p = try Git.addWorktree(repo: repo, branch: "kept", base: "main", into: URL(fileURLWithPath: repo + "-kept"), copyFiles: [])
+    try Git.run(["worktree", "lock", p], cwd: repo)
+    #expect(throws: GitError.self) { try Git.removeWorktree(repo: repo, path: p, branch: "kept", force: true) }
+    #expect(FileManager.default.fileExists(atPath: p))
+    #expect(try Git.linkedWorktrees(repo).map(\.branch) == ["kept"])
+}

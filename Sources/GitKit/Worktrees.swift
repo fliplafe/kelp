@@ -85,9 +85,11 @@ extension Git {
         if remotes.of(path) == nil, FileManager.default.fileExists(atPath: path) {
             // Only a folder git lists as this repo's worktree goes to the Trash, whatever the record says.
             let real = { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
-            guard try linkedWorktrees(repo).contains(where: { real($0.path) == real(path) }) else {
+            guard let entry = try linkedWorktrees(repo).first(where: { real($0.path) == real(path) }) else {
                 throw GitError(args: ["worktree", "remove"], status: 1, stderr: "\(path) is not a worktree of this repository")
             }
+            // Locked (`git worktree lock`: kept on purpose): git wouldn't remove its record, so the folder stays too.
+            guard !entry.locked else { throw GitError(args: ["worktree", "remove"], status: 1, stderr: "\(path) is locked (git worktree unlock)") }
             try Trash.move(URL(fileURLWithPath: path))
         }
         // Its record only: `worktree prune` would also drop worktrees whose folder is just away (an unmounted disk).
