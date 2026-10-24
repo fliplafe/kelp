@@ -558,8 +558,7 @@ func trustQuestionStandIn() -> String {
     let (d, c, _) = try daemon(); defer { d.stop() }
     let there = try makeRepo()
     let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
-    let made = try await c.call(WorktreeCreate(repoId: repo.id, branch: "aside"))
-    let wt = made.worktree
+    let wt = try remoteWorktree(d, repo, "aside")
     try ".env.local\n".write(toFile: there + "/.git/info/exclude", atomically: true, encoding: .utf8)
     try "SECRET=1\n".write(toFile: wt.path + "/.env.local", atomically: true, encoding: .utf8)
     _ = try await c.call(WorktreeRemove(id: wt.id, force: true, dropCommits: true))
@@ -578,8 +577,25 @@ func trustQuestionStandIn() -> String {
     let (d, c, _) = try daemon(); defer { d.stop() }
     let there = try makeRepo()
     let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
-    let wt = try await c.call(WorktreeCreate(repoId: repo.id, branch: "kept")).worktree
+    let wt = try remoteWorktree(d, repo, "kept")
     try Git.run(["worktree", "lock", wt.path], cwd: there)
     await #expect(throws: RPCError.self) { try await c.call(WorktreeRemove(id: wt.id, force: true, dropCommits: true)) }
     #expect(FileManager.default.fileExists(atPath: wt.path))
+}
+
+/// A remote project's worktree as an older Kelp made it (new ones are refused): on the host, beside its folder.
+private func remoteWorktree(_ d: Daemon, _ repo: Repo, _ branch: String) throws -> Worktree {
+    let path = try Git.addWorktree(repo: repo.path, branch: branch, base: "main", into: Workspaces.worktreesDir(d.root, repo),
+                                   copyFiles: [], remotes: d.workspaces.remotes)
+    let w = Worktree(repoId: repo.id, branch: branch, path: path, note: "", base: "main")
+    try d.store.save(w)
+    return w
+}
+
+/// A remote project gets no new worktree: its git would run on this Mac, not the host.
+@Test func aRemoteProjectGetsNoNewWorktree() async throws {
+    _ = localSSH
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let repo = try await c.call(RepoAddRemote(host: "box", path: try makeRepo()))
+    await #expect(throws: RPCError.self) { _ = try await c.call(WorktreeCreate(repoId: repo.id, branch: "x")) }
 }

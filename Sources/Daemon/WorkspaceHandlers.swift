@@ -84,6 +84,10 @@ extension WorkspaceCreate: Handled {
 extension WorktreeCreate: Handled {
     func handle(_ workspaces: Workspaces) throws -> Result {
         guard let r = try workspaces.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
+        // Its git would run on this Mac, not the host: a remote project's workspaces are desks in its folder.
+        guard workspaces.remotes.of(r.path) == nil else {
+            throw RPCError.invalidParams("Remote projects work in their folder (New Workspace); branches in worktrees aren't available there yet.")
+        }
         let auto = try workspaces.nextWorkspace(in: r)
         let branch = try clientRef(branch.flatMap { $0.isEmpty ? nil : $0 }) ?? auto.branch
         let base = try clientRef(base.flatMap { $0.isEmpty ? nil : $0 }) ?? r.baseBranch
