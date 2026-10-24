@@ -303,4 +303,20 @@ public enum Hooks {
         try Paths.ensure(url.deletingLastPathComponent())
         try settingsJSON().write(to: url, atomically: true, encoding: .utf8)
     }
+
+    /// The file a `hooksSettingsEnv` would stand in for, where it has one: Qwen Code's system settings are an admin's
+    /// policy, read above the user's own.
+    public static let replacedSettings = ["QWEN_CODE_SYSTEM_SETTINGS_PATH": "/Library/Application Support/QwenCode/settings.json"]
+
+    /// Kelp's hooks over what `base` holds (kept as it is, its own hooks run too): the file stands in for that one.
+    public static func writeSettings(to url: URL, over base: URL) throws {
+        guard let data = FileManager.default.contents(atPath: base.path),
+              case .object(var all)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return try writeSettings(to: url) }
+        guard case .object(let ours)? = try JSONDecoder().decode(JSONValue.self, from: Data(settingsJSON().utf8))["hooks"] else { return }
+        var hooks: [String: JSONValue] = if case .object(let h)? = all["hooks"] { h } else { [:] }
+        for (event, list) in ours { hooks[event] = .array((hooks[event]?.array ?? []) + (list.array ?? [])) }
+        all["hooks"] = .object(hooks)
+        try Paths.ensure(url.deletingLastPathComponent())
+        try JSONEncoder().encode(JSONValue.object(all)).write(to: url, options: .atomic)
+    }
 }

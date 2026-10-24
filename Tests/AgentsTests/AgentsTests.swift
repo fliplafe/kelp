@@ -44,6 +44,18 @@ import TestSupport
     #expect(v["hooks"]?["PreToolUse"]?.array?.first?["matcher"]?.string == "AskUserQuestion")
 }
 
+/// Qwen Code's system settings (an admin's policy) stay in force with Kelp's file in their place, their hooks too.
+@Test func hooksSettingsKeepTheFileTheyStandFor() throws {
+    let dir = tmp(), base = dir.appendingPathComponent("system.json"), out = dir.appendingPathComponent("hooks.json")
+    try Data(#"{"tools":{"sandbox":true},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"audit"}]}]}}"#.utf8).write(to: base)
+    try Hooks.writeSettings(to: out, over: base)
+    let v = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: out))
+    #expect(v["tools"]?["sandbox"]?.bool == true)
+    #expect(v["hooks"]?["Stop"]?.array?.count == 2 && v["hooks"]?["Notification"] != nil)
+    try Hooks.writeSettings(to: out, over: dir.appendingPathComponent("none.json"))   // no such file: Kelp's hooks alone
+    #expect(try String(contentsOf: out, encoding: .utf8) == Hooks.settingsJSON())
+}
+
 @Test func idleReminderIsNotAQuestion() {
     #expect(Hooks.isIdleReminder(.obj(["notification_type": "idle_prompt", "message": "Claude is waiting for your input"])))
     #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
