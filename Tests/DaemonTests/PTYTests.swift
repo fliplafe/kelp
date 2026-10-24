@@ -80,7 +80,9 @@ final class Box: @unchecked Sendable {
     defer { term.kill() }
     #expect(try await waitFor(10) { box.text.contains("\u{1B}[3J") })   // it asked for the session (it clears the screen next)
     term.resize(cols: 100, rows: 30)
-    try await Task.sleep(for: .milliseconds(500))   // that size reached the daemon, with the session not running yet
+    // The new size goes out while the wake is held, and the daemon drops it (nothing runs yet): what's tested is that
+    // the agent still gets it once it runs (attach sends it again), not when it was sent. Half a second lets it go out.
+    try await Task.sleep(for: .milliseconds(500))
     release.signal()
     #expect(try await waitFor(10) { box.text.contains("SIZE=30 100") }, "\(box.text.debugDescription)")
 }
