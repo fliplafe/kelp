@@ -54,6 +54,9 @@ import TestSupport
     #expect(v["hooks"]?["Stop"]?.array?.count == 2 && v["hooks"]?["Notification"] != nil)
     try Hooks.writeSettings(to: out, over: dir.appendingPathComponent("none.json"))   // no such file: Kelp's hooks alone
     #expect(try String(contentsOf: out, encoding: .utf8) == Hooks.settingsJSON())
+    // There but not plain JSON (comments): not stood in for, so the caller wires no hooks.
+    try Data("// policy\n{\"tools\":{}}".utf8).write(to: base)
+    #expect(throws: (any Error).self) { try Hooks.writeSettings(to: out, over: base) }
 }
 
 @Test func idleReminderIsNotAQuestion() {

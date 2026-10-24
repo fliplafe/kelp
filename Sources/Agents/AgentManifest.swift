@@ -314,8 +314,13 @@ public enum Hooks {
 
     /// Kelp's hooks over what `base` holds (kept as it is, its own hooks run too): the file stands in for that one.
     public static func writeSettings(to url: URL, over base: URL) throws {
+        guard FileManager.default.fileExists(atPath: base.path) else { return try writeSettings(to: url) }
+        // There but unreadable (root's only) or not plain JSON: standing in for it would drop an admin's policy. No hooks
+        // then (the caller reads the screen).
         guard let data = FileManager.default.contents(atPath: base.path),
-              case .object(var all)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return try writeSettings(to: url) }
+              case .object(var all)? = try? JSONDecoder().decode(JSONValue.self, from: data) else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: base.path])
+        }
         guard case .object(let ours)? = try JSONDecoder().decode(JSONValue.self, from: Data(settingsJSON().utf8))["hooks"] else { return }
         var hooks: [String: JSONValue] = if case .object(let h)? = all["hooks"] { h } else { [:] }
         for (event, list) in ours { hooks[event] = .array((hooks[event]?.array ?? []) + (list.array ?? [])) }
