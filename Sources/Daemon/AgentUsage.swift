@@ -60,14 +60,24 @@ final class AgentUsage: Sendable {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    /// Claude Code's window for `model`. Transcripts don't name it, so a model seen past 200k tokens here (in the newest
-    /// transcripts, then in any reading) has 1M and the rest 200k.
-    /// Limit: a 1M model that never went past 200k on this Mac reads as 200k until it does.
+    /// Claude Code's window for `model`. Transcripts don't name it: 1M for the models that have it natively (Claude Code's
+    /// catalog says `native_1m`), else 1M once the model was seen past 200k tokens here (an older model with the [1m] opt-in;
+    /// in the newest transcripts, then in any reading), else 200k.
+    /// Limit: an older model with the opt-in that never went past 200k on this Mac reads as 200k until it does.
     func contextWindow(model: String, peak: Int) -> Int {
+        if Self.nativeMillion(model) { return 1_000_000 }
         var long = longContextModels.withLock { $0 } ?? Self.longContextModels(in: agentRoots().claude)
         if peak > 200_000 { long.insert(model) }
         longContextModels.withLock { [long] in $0 = long }
         return long.contains(model) ? 1_000_000 : 200_000
+    }
+
+    /// Opus 4.7 and later, every Claude 5 model and later (Haiku 5.5, Sonnet 5, Fable…): "claude-opus-4-7", "claude-sonnet-5".
+    static func nativeMillion(_ model: String) -> Bool {
+        let parts = model.lowercased().split(separator: "-")
+        guard parts.count >= 3, parts[0] == "claude", let major = Int(parts[2]) else { return false }
+        let minor = parts.count > 3 ? Int(parts[3]) ?? 0 : 0   // "claude-sonnet-4-20250514": a date, not a minor version
+        return major >= 5 || (parts[1] == "opus" && major == 4 && (7..<100).contains(minor))
     }
 
     /// Models past 200k tokens at the end of the `count` newest transcripts.
@@ -109,8 +119,8 @@ final class AgentUsage: Sendable {
         return o
     }
 
-    /// Tokens in the context of a Claude Code conversation: the last reply's input (with cache) plus its output, or what a
-    /// newer compaction left. `peak` is the most it held (a compaction's starting size counts), for telling the window.
+    /// Tokens in the context of a Claude Code conversation: the last reply's input with cache, as Claude Code's own
+    /// statusline counts it (the reply's output isn't in it until it's sent back), or what a newer compaction left. `peak` is the most it held (a compaction's starting size counts), for telling the window.
     static func contextUsage(transcript url: URL) -> (used: Int, peak: Int, model: String)? {
         guard let data = Data(tailOf: url, bytes: 1 << 20) else { return nil }   // a turn's tool results can be hundreds of KB
         var compacted: (pre: Int, post: Int)?
@@ -122,7 +132,7 @@ final class AgentUsage: Sendable {
                 compacted = (m["preTokens"] as? Int ?? 0, post); continue
             }
             guard o["type"] as? String == "assistant", let m = o["message"] as? [String: Any], let u = m["usage"] as? [String: Any] else { continue }
-            let used = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"].reduce(0) { $0 + ((u[$1] as? Int) ?? 0) }
+            let used = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].reduce(0) { $0 + ((u[$1] as? Int) ?? 0) }
             guard used > 0 else { continue }   // API errors and other synthetic replies carry no usage
             return (compacted?.post ?? used, max(used, compacted?.pre ?? 0), m["model"] as? String ?? "")
         }
