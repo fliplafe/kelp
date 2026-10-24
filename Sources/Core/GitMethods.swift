@@ -80,7 +80,9 @@ public struct GitMerge: RPCMethod {
 public struct GitSwitch: RPCMethod {
     public static let name = "git.switch"; public typealias Result = Done
     public var id: String, branch: String, create: Bool?, remote: Bool?
-    public init(id: String, branch: String, create: Bool? = nil, remote: Bool? = nil) { self.id = id; self.branch = branch; self.create = create; self.remote = remote }
+    public init(id: String, branch: String, create: Bool? = nil, remote: Bool? = nil) {
+        self.id = id; self.branch = branch; self.create = create; self.remote = remote
+    }
 }
 public struct GitGraph: RPCMethod {
     public static let name = "git.graph"

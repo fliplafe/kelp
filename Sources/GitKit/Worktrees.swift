@@ -28,7 +28,8 @@ extension Git {
     public static func includedIgnoredFiles(repo: String, remotes: Remotes = .none) -> [String] {
         guard let text = try? String(contentsOfFile: repo + "/.worktreeinclude", encoding: .utf8) else { return [] }
         let pats = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        let ignored = ((try? run(["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], cwd: repo, remotes: remotes)) ?? "").split(separator: "\0").map(String.init)
+        let ignored = ((try? run(["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], cwd: repo, remotes: remotes)) ?? "")
+            .split(separator: "\0").map(String.init)
         return ignored.filter { f in pats.contains { fnmatch($0, f, 0) == 0 || fnmatch($0, (f as NSString).lastPathComponent, 0) == 0 } }
     }
 
@@ -116,7 +117,8 @@ extension Git {
     /// Commits on `branch` that no other local branch and no remote branch has: what deleting it would lose.
     public static func onlyOnBranch(repo: String, _ branch: String, remotes: Remotes = .none) throws -> Int {
         // --exclude before --branches takes the branch's name without refs/heads/ (with it, nothing is excluded).
-        let out = try run(["rev-list", "--count", "refs/heads/" + branch, "--not", "--exclude=" + branch, "--branches", "--remotes"], cwd: repo, remotes: remotes)
+        let out = try run(["rev-list", "--count", "refs/heads/" + branch, "--not", "--exclude=" + branch, "--branches", "--remotes"],
+                          cwd: repo, remotes: remotes)
         return Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 }

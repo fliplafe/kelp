@@ -92,7 +92,8 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     }
 
     // swiftlint:disable:next function_parameter_count
-    private static func launch(argv: [String], cwd: String, env: [String: String], cols: UInt16, rows: UInt16, trampoline: String?) throws -> (pid: pid_t, fd: Int32) {
+    private static func launch(argv: [String], cwd: String, env: [String: String], cols: UInt16, rows: UInt16,
+                               trampoline: String?) throws -> (pid: pid_t, fd: Int32) {
         var m: Int32 = 0, s: Int32 = 0
         var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
         guard openpty(&m, &s, nil, nil, &ws) == 0 else { throw PTYError(step: "openpty", code: errno) }

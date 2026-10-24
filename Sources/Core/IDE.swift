@@ -32,7 +32,8 @@ public enum IDE {
     }
 
     /// The workspace a command run in `cwd` means (`workspace(cwd:among:own:)`), from the daemon's lists.
-    public static func workspace(cwd: String, session: String? = ProcessInfo.processInfo.environment["KELP_SESSION"], client c: RPCClient) async throws -> Worktree? {
+    public static func workspace(cwd: String, session: String? = ProcessInfo.processInfo.environment["KELP_SESSION"],
+                                 client c: RPCClient) async throws -> Worktree? {
         let all = try await c.call(WorktreeList())
         let own = session == nil ? nil : (try? await c.call(SessionList()))?.first { $0.id == session }?.worktreeId
         return workspace(cwd: cwd, among: all, own: own)
@@ -96,7 +97,8 @@ public enum IDE {
         try Paths.ensure(folder)
         try writeGuide(in: dir)
         let name = name ?? id.replacingOccurrences(of: "-", with: " ").capitalized
-        try starterManifest(id: id, name: name, description: description ?? "").write(to: folder.appendingPathComponent("extension.json"), atomically: true, encoding: .utf8)
+        try starterManifest(id: id, name: name, description: description ?? "")
+            .write(to: folder.appendingPathComponent("extension.json"), atomically: true, encoding: .utf8)
         try starterReadme(name: name, description: description ?? "").write(to: folder.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         return folder
     }
@@ -106,7 +108,9 @@ public enum IDE {
     public static let extensionGuide: String = {
         let exe = Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent()
         let dirs = [Bundle.main.resourceURL, Bundle(for: BundleToken.self).resourceURL, exe?.appendingPathComponent("../Resources"), exe]
-        let doc = dirs.lazy.compactMap { $0.flatMap { Bundle(url: $0.appendingPathComponent("Kelp_Core.bundle")) }?.url(forResource: "extensions", withExtension: "md") }
+        let doc = dirs.lazy.compactMap {
+            $0.flatMap { Bundle(url: $0.appendingPathComponent("Kelp_Core.bundle")) }?.url(forResource: "extensions", withExtension: "md")
+        }
         return doc.first.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
     }()
     private final class BundleToken {}

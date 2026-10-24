@@ -41,8 +41,9 @@ public struct Worktree: Codable, Sendable, Equatable, Revised {
     public var prURL: String
     /// Branch this one was cut from; when it isn't the repo's base the worktree is part of a PR stack.
     public var base: String
-    public init(id: String = UUID().uuidString, repoId: String, branch: String, path: String, note: String = "", archived: Bool = false, createdAt: Date = Date(),
-                issue: String = "", issueURL: String = "", linearIssueId: String = "", prNumber: Int? = nil, prURL: String = "", base: String = "") {
+    public init(id: String = UUID().uuidString, repoId: String, branch: String, path: String, note: String = "", archived: Bool = false,
+                createdAt: Date = Date(), issue: String = "", issueURL: String = "", linearIssueId: String = "",
+                prNumber: Int? = nil, prURL: String = "", base: String = "") {
         self.base = base
         self.id = id; self.repoId = repoId; self.branch = branch; self.path = path
         self.note = note; self.archived = archived; self.createdAt = createdAt
@@ -128,7 +129,8 @@ public struct DiffComment: Codable, Sendable, Equatable, Identifiable {
     public var quote: String
     public var text: String
     public var state: State
-    public init(id: String = UUID().uuidString, worktreeId: String, file: String, startLine: Int, endLine: Int, quote: String, text: String, state: State = .open) {
+    public init(id: String = UUID().uuidString, worktreeId: String, file: String, startLine: Int, endLine: Int, quote: String, text: String,
+                state: State = .open) {
         self.id = id; self.worktreeId = worktreeId; self.file = file; self.startLine = startLine
         self.endLine = endLine; self.quote = quote; self.text = text; self.state = state
     }

@@ -16,7 +16,8 @@ public struct LSPFramer: Sendable {
             let header = String(decoding: buf[buf.startIndex..<r.lowerBound], as: UTF8.self)
             // A missing, negative or absurd length is a broken header: skip it rather than trap or wait forever.
             guard let len = header.split(separator: "\r\n").compactMap({ l -> Int? in
-                let p = l.split(separator: ":", maxSplits: 1); return p.count == 2 && p[0].lowercased() == "content-length" ? Int(p[1].trimmingCharacters(in: .whitespaces)) : nil
+                let p = l.split(separator: ":", maxSplits: 1)
+                return p.count == 2 && p[0].lowercased() == "content-length" ? Int(p[1].trimmingCharacters(in: .whitespaces)) : nil
             }).first, (0...Self.maxBody).contains(len) else { buf.removeSubrange(buf.startIndex..<r.upperBound); continue }
             guard buf.distance(from: r.upperBound, to: buf.endIndex) >= len else { break }
             let end = buf.index(r.upperBound, offsetBy: len)
@@ -170,12 +171,14 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
     public func open(_ path: String, text: String, languageId: String) {
         let n = state.withLock { s in let n = s.opened[path, default: 0]; s.opened[path] = n + 1; if n == 0 { s.versions[path] = 1 }; return n }
         guard n == 0 else { return }
-        notify("textDocument/didOpen", .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(languageId), "version": 1, "text": .string(text)])]))
+        notify("textDocument/didOpen",
+               .obj(["textDocument": .obj(["uri": Self.uri(path), "languageId": .string(languageId), "version": 1, "text": .string(text)])]))
     }
     public func change(_ path: String, text: String) {
         let v = state.withLock { s in let v = s.versions[path].map { $0 + 1 }; if let v { s.versions[path] = v }; return v }
         guard let v else { return }   // not open here (a server started after the tab)
-        let params = JSONValue.obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]), "contentChanges": .array([.obj(["text": .string(text)])])])
+        let params = JSONValue.obj(["textDocument": .obj(["uri": Self.uri(path), "version": .int(v)]),
+                                    "contentChanges": .array([.obj(["text": .string(text)])])])
         let write = state.withLock { s -> Int? in
             if let w = s.changes[path]?.write { s.changes[path] = (w, params); return nil }   // the queued write sends this, in its place
             s.nextWrite += 1; s.changes[path] = (s.nextWrite, params); return s.nextWrite
@@ -202,7 +205,9 @@ public final class LSPClient: @unchecked Sendable {   // Process and Pipe aren't
         idle?()
     }
 
-    private func at(_ path: String, _ line: Int, _ col: Int) -> JSONValue { .obj(["textDocument": .obj(["uri": Self.uri(path)]), "position": Self.pos(line, col)]) }
+    private func at(_ path: String, _ line: Int, _ col: Int) -> JSONValue {
+        .obj(["textDocument": .obj(["uri": Self.uri(path)]), "position": Self.pos(line, col)])
+    }
 
     public func definition(_ path: String, line: Int, column: Int) async throws -> CodeLocation? {
         let r = try await request("textDocument/definition", at(path, line, column))

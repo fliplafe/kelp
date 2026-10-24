@@ -34,7 +34,8 @@ extension Git {
     /// The first `limit` commits of every branch, tag and remote, newest first, with graph lanes.
     public static func graph(_ path: String, limit: Int, remotes: Remotes = .none) throws -> (commits: [GraphCommit], more: Bool) {
         let fmt = "%H%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e"
-        let raw = try run(["log", "--topo-order", "--format=\(fmt)", "-n\(limit + 1)", "--branches", "--tags", "--remotes", "HEAD"], cwd: path, remotes: remotes)
+        let raw = try run(["log", "--topo-order", "--format=\(fmt)", "-n\(limit + 1)", "--branches", "--tags", "--remotes", "HEAD"],
+                          cwd: path, remotes: remotes)
         var rows: [(String, [String], String, Double, [String], String)] = []
         for rec in raw.split(separator: "\u{1e}") {
             let f = rec.trimmingCharacters(in: .newlines).split(separator: "\u{1f}", omittingEmptySubsequences: false).map(String.init)

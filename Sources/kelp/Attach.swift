@@ -9,7 +9,9 @@ enum Attach {
         guard let fd = try? Unix.connect(socket) else { fail("kelp attach: daemon not reachable at \(socket)") }
         var ws = winsize()   // a paused agent wakes at this size, so its first screen isn't drawn for another width
         let size: [String: JSONValue] = ioctl(1, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 ? ["cols": .int(Int(ws.ws_col)), "rows": .int(Int(ws.ws_row))] : [:]
-        guard let req = try? Wire.line(RPCRequest(id: nil, method: "session.stream", params: .object(["id": .string(sessionId)].merging(size) { a, _ in a }))) else { exit(1) }
+        guard let req = try? Wire.line(RPCRequest(id: nil, method: "session.stream",
+                                                  params: .object(["id": .string(sessionId)].merging(size) { a, _ in a })))
+        else { exit(1) }
         Unix.writeAll(fd, req)
 
         // Raw mode: every key goes to the agent as typed; the agent's terminal handles echo and line editing.

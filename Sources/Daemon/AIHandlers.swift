@@ -9,7 +9,8 @@ extension Sessions {
     /// What a short command prints (stdout, then stderr), or nil if it fails or takes longer than `timeout`.
     static func run(_ argv: [String], path: String, timeout: Double) -> String? {
         var env = ProcessInfo.processInfo.environment; env["PATH"] = path; env["NO_COLOR"] = "1"
-        guard let r = try? Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeout), r.status == 0, !r.timedOut, !r.truncated else { return nil }
+        guard let r = try? Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeout),
+              r.status == 0, !r.timedOut, !r.truncated else { return nil }
         return String(decoding: r.stdout + r.stderr, as: UTF8.self)
     }
 

@@ -11,7 +11,8 @@ public enum Keychain {
     public static func set(_ value: String, account: String) throws {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         let data = Data(value.utf8)
-        var s = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
+        var s = SecItemUpdate(q as CFDictionary,
+                              [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
         if s == errSecItemNotFound {
             var add = q; add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock

@@ -163,7 +163,9 @@ extension WorktreeUnmerged: Handled {
     }
 }
 
-extension WorktreeDirty: Handled { func handle(_ workspaces: Workspaces) throws -> Bool { try Git.isDirty(workspaces.folder(id), remotes: workspaces.remotes) } }
+extension WorktreeDirty: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Bool { try Git.isDirty(workspaces.folder(id), remotes: workspaces.remotes) }
+}
 
 extension Workspaces {
     /// Archiving keeps the folder, ignored files (.env, node_modules, builds) and all: its agents pause, and unarchiving

@@ -239,7 +239,8 @@ final class LiveSession: Sendable {
                 let tree = try? Git.snapshotTree(cwd, remotes: remotes)
                 self?.state.withLock { $0.turnTree = tree }
             } else if let start, let base = self?.turnBase {
-                let files = ((try? Git.changesSince(tree: base, cwd: cwd, remotes: remotes)) ?? []).map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
+                let files = ((try? Git.changesSince(tree: base, cwd: cwd, remotes: remotes)) ?? [])
+                    .map { Turn.File(path: $0.path, added: $0.added, removed: $0.removed) }
                 self?.state.withLock { $0.turnResult = Turn(files: files, seconds: Date().timeIntervalSince(start)) }
             }
         }

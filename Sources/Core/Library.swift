@@ -31,7 +31,9 @@ extension IDE {
 
     /// The library's index; `index` is an https URL, or a file URL for a local one.
     public static func library(index: String = libraryIndex) throws -> [ExtensionLibrary.Entry] {
-        guard index.hasPrefix("https://") || index.hasPrefix("file://") else { throw RPCError.invalidParams("The library's index must be an https URL: \(index)") }
+        guard index.hasPrefix("https://") || index.hasPrefix("file://") else {
+            throw RPCError.invalidParams("The library's index must be an https URL: \(index)")
+        }
         do { return try JSONDecoder().decode([ExtensionLibrary.Entry].self, from: download(index)) }
         catch let e as RPCError { throw e }
         catch { throw RPCError.internalError("The extension library's index isn't readable: \(error.localizedDescription)") }

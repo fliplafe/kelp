@@ -9,10 +9,19 @@ extension GitStatus: Handled {
         try Git.status(workspaces.folder(id), limit: FileChange.limit, remotes: workspaces.remotes)
     }
 }
-extension GitBranches: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.branches(workspaces.folder(id), remotes: workspaces.remotes) } }
-extension GitLineStats: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try Git.lineStats(workspaces.folder(id), remotes: workspaces.remotes) } }
+extension GitBranches: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result { try Git.branches(workspaces.folder(id), remotes: workspaces.remotes) }
+}
+extension GitLineStats: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result { try Git.lineStats(workspaces.folder(id), remotes: workspaces.remotes) }
+}
 /// The branch checked out now (a workspace's record can be stale after a switch).
-extension GitPush: Handled { func handle(_ workspaces: Workspaces) throws -> Done { try Git.remote(workspaces.folder(id), .push, remotes: workspaces.remotes); return Done() } }
+extension GitPush: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Done {
+        try Git.remote(workspaces.folder(id), .push, remotes: workspaces.remotes)
+        return Done()
+    }
+}
 
 extension GitDiff: Handled {
     func handle(_ workspaces: Workspaces) throws -> Result {
@@ -66,7 +75,8 @@ extension GitHunk: Handled {
         let i = fingerprint.map { f in diff?.hunks.firstIndex { $0.fingerprint == f } ?? -1 }
             ?? header.map { h in diff?.hunks.firstIndex { $0.header == h } ?? -1 } ?? hunk ?? -1
         guard let diff, diff.hunks.indices.contains(i) else {
-            throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged." : "The file changed since it was shown; nothing was staged.")
+            throw RPCError.invalidParams(rev ? "The file changed since it was shown; nothing was unstaged."
+                                             : "The file changed since it was shown; nothing was staged.")
         }
         try Git.applyHunk(w.path, diff: diff, hunk: i, reverse: rev, remotes: workspaces.remotes)
         return Done()
@@ -85,8 +95,12 @@ extension GitMerge: Handled {
         guard let r = try workspaces.store.repo(w.repoId) else { throw RPCError.invalidParams("no repo") }
         if try Git.isDirty(w.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("worktree has uncommitted changes") }
         // The main checkout too: a merge (and the abort a conflict brings) must never touch the user's own work there.
-        if Git.isMerging(r.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.") }
-        if try Git.isDirty(r.path, remotes: workspaces.remotes) { throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.") }
+        if Git.isMerging(r.path, remotes: workspaces.remotes) {
+            throw RPCError.invalidParams("The main checkout is in the middle of a merge. Finish or abort it first.")
+        }
+        if try Git.isDirty(r.path, remotes: workspaces.remotes) {
+            throw RPCError.invalidParams("The main checkout has uncommitted changes. Commit or stash them first.")
+        }
         // The branch checked out in the desk now (a switch makes the record stale), into the base and only the base.
         let branch = (try? Git.currentBranch(w.path, remotes: workspaces.remotes)) ?? w.branch
         // Detached: "HEAD" would merge the main checkout into itself ("Already up to date") and report success.
@@ -113,10 +127,14 @@ extension GitGraph: Handled {
 }
 
 extension GitCommitFiles: Handled {
-    func handle(_ workspaces: Workspaces) throws -> Result { try Git.commitFiles(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes) }
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        try Git.commitFiles(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes)
+    }
 }
 extension GitCommitDetails: Handled {
-    func handle(_ workspaces: Workspaces) throws -> Result { try Git.commitDetails(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes) }
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        try Git.commitDetails(workspaces.folder(id), commit: clientRef(commit) ?? "", remotes: workspaces.remotes)
+    }
 }
 extension GitDiscard: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
@@ -149,12 +167,15 @@ extension GitWebURL: Handled {
 extension GitWebPages: Handled {
     func handle(_ workspaces: Workspaces) throws -> Pages? {
         let path = try workspaces.store.repoPath(worktreeId: worktreeId, repoId: repoId).1
-        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: workspaces.remotes) else { return nil }   // no origin: nothing to link to
+        // no origin: nothing to link to
+        guard let origin = try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: workspaces.remotes) else { return nil }
         return Git.webPages(remote: origin.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
-extension FilesList: Handled { func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.list(workspaces.folder(id), remotes: workspaces.remotes) } }
+extension FilesList: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.list(workspaces.folder(id), remotes: workspaces.remotes) }
+}
 extension FilesIgnored: Handled {
     func handle(_ workspaces: Workspaces) throws -> Result { try ProjectFiles.ignored(workspaces.folder(id), folder: folder, remotes: workspaces.remotes) }
 }

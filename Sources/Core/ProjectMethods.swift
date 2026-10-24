@@ -109,7 +109,9 @@ public struct UsageGet: RPCMethod {
         public var account: String, today: Block, week: Block
         /// The 5-hour block now, if one is running.
         public var block: Block?
-        public init(account: String, today: Block, week: Block, block: Block?) { self.account = account; self.today = today; self.week = week; self.block = block }
+        public init(account: String, today: Block, week: Block, block: Block?) {
+            self.account = account; self.today = today; self.week = week; self.block = block
+        }
     }
     /// Codex's own limits from its latest log line (percent used, resets as seconds since 1970).
     public struct Codex: Codable, Sendable, Equatable {

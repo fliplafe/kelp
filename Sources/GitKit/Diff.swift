@@ -147,7 +147,9 @@ extension Git {
         if out.truncated {
             let shown = Set(diffs.map(\.path))
             let names = try run(a + ["--name-only", "-z"] + only, cwd: path, remotes: remotes).split(separator: "\0").map(String.init)
-            diffs += names.filter { !shown.contains($0) }.map { FileDiff(path: $0, header: "diff --git a/\($0) b/\($0)", hunks: [], binary: false, tooLarge: true) }
+            diffs += names.filter { !shown.contains($0) }.map {
+                FileDiff(path: $0, header: "diff --git a/\($0) b/\($0)", hunks: [], binary: false, tooLarge: true)
+            }
         }
         // Untracked files are invisible to `git diff`; show them as all-added for working-tree sources.
         if case .unstaged = source { diffs += try untrackedDiffs(path, only: file, budget: &budget, remotes: remotes) }
@@ -182,8 +184,10 @@ extension Git {
             }
             // A symlink is shown as git stores it, its target path; following it could read /dev/zero or a huge file.
             if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: full) {
-                let h = Hunk(header: "@@ -0,0 +1 @@", oldStart: 0, newStart: 1, lines: [DiffLine(kind: .add, text: target, oldLine: nil, newLine: 1, noNewline: true)])
-                return FileDiff(path: f.path, header: hdr.replacingOccurrences(of: "new file mode \(mode)", with: "new file mode 120000"), hunks: [h], binary: false)
+                let h = Hunk(header: "@@ -0,0 +1 @@", oldStart: 0, newStart: 1,
+                             lines: [DiffLine(kind: .add, text: target, oldLine: nil, newLine: 1, noNewline: true)])
+                return FileDiff(path: f.path, header: hdr.replacingOccurrences(of: "new file mode \(mode)", with: "new file mode 120000"),
+                                hunks: [h], binary: false)
             }
             guard let size = (try? FileManager.default.attributesOfItem(atPath: full))?[.size] as? Int else { return nil }
             guard size <= 1_000_000 else { return asBinary }   // a log, a dataset, a folder that should be ignored: not read

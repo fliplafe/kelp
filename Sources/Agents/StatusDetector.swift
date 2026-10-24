@@ -113,7 +113,8 @@ public struct StatusDetector: Sendable {
     // each word at its own row;col ("Trust␛[5;9Hthis␛[5;14Hfolder?").
     private static let cursorMoves = try? NSRegularExpression(pattern: #"\x{1B}\[[\d;]*[GCHf]"#)
     // Character set selections too (ESC ( B, ESC ) 0…): Grok ends each redraw with one, and its "B"s read as words, a redraw as work.
-    private static let escapes = try? NSRegularExpression(pattern: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]|\x{1B}[()*+]."#)
+    private static let escapes = try? NSRegularExpression(
+        pattern: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]|\x{1B}[()*+]."#)
 
     /// Runs on every chunk of every session: compiled once, and text without an escape is returned as is.
     public static func stripANSI(_ s: String) -> String {

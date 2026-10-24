@@ -33,7 +33,9 @@ public struct GitLabStatus: RPCMethod {
 public struct GitHubIssues: RPCMethod {
     public static let name = "github.issues"; public typealias Result = [GitHub.Issue]
     public var worktreeId: String?, repoId: String?, filter: String?
-    public init(worktreeId: String? = nil, repoId: String? = nil, filter: String? = nil) { self.worktreeId = worktreeId; self.repoId = repoId; self.filter = filter }
+    public init(worktreeId: String? = nil, repoId: String? = nil, filter: String? = nil) {
+        self.worktreeId = worktreeId; self.repoId = repoId; self.filter = filter
+    }
 }
 public struct GitHubChecks: RPCMethod {
     public static let name = "github.checks"; public typealias Result = [GitHub.Check]
@@ -65,7 +67,9 @@ public struct GitHubProjectItems: RPCMethod {
 public struct GitHubPRs: RPCMethod {
     public static let name = "github.prs"; public typealias Result = [GitHub.PullRequest]
     public var worktreeId: String?, repoId: String?, filter: String?
-    public init(worktreeId: String? = nil, repoId: String? = nil, filter: String? = nil) { self.worktreeId = worktreeId; self.repoId = repoId; self.filter = filter }
+    public init(worktreeId: String? = nil, repoId: String? = nil, filter: String? = nil) {
+        self.worktreeId = worktreeId; self.repoId = repoId; self.filter = filter
+    }
 }
 /// Push, title and body from the commits if not given, open the PR (a draft with `draft`), link it → {url, title}.
 public struct GitHubPRCreate: RPCMethod {

@@ -47,7 +47,8 @@ public struct WorktreeCreate: RPCMethod {
         public init(from d: Decoder) throws {
             worktree = try Worktree(from: d)
             let c = try d.container(keyedBy: Extra.self)
-            setupNeedsTrust = try c.decodeIfPresent(Bool.self, forKey: .setupNeedsTrust); setupSession = try c.decodeIfPresent(String.self, forKey: .setupSession)
+            setupNeedsTrust = try c.decodeIfPresent(Bool.self, forKey: .setupNeedsTrust)
+            setupSession = try c.decodeIfPresent(String.self, forKey: .setupSession)
         }
         public func encode(to e: Encoder) throws {
             try worktree.encode(to: e)
@@ -139,7 +140,9 @@ public struct PortsList: RPCMethod {
     /// A port a process of one of the workspace's sessions listens on.
     public struct Port: Codable, Sendable, Equatable {
         public var port: Int, pid: Int32, command: String, session: String
-        public init(port: Int, pid: Int32, command: String, session: String) { self.port = port; self.pid = pid; self.command = command; self.session = session }
+        public init(port: Int, pid: Int32, command: String, session: String) {
+            self.port = port; self.pid = pid; self.command = command; self.session = session
+        }
     }
     public typealias Result = [Port]
 }
@@ -154,7 +157,9 @@ public struct SessionUsage: RPCMethod {
     /// CPU (ps's %, summed over the session's processes; 100 = one core) and resident memory of a live session.
     public struct Usage: Codable, Sendable, Equatable {
         public var session: String, cpu: Double, memory: Int, processes: Int
-        public init(session: String, cpu: Double, memory: Int, processes: Int) { self.session = session; self.cpu = cpu; self.memory = memory; self.processes = processes }
+        public init(session: String, cpu: Double, memory: Int, processes: Int) {
+            self.session = session; self.cpu = cpu; self.memory = memory; self.processes = processes
+        }
     }
     public typealias Result = [Usage]
 }
@@ -215,7 +220,9 @@ public struct SessionLastReply: RPCMethod {
 public struct RepoClone: RPCMethod {
     public static let name = "repo.clone"; public typealias Result = Repo; public var url: String, parent: String, folder: String?, id: String?
     public static var timeout: TimeInterval? { nil }   // a big repository takes as long as it takes; Cancel stops it
-    public init(url: String, parent: String, folder: String? = nil, id: String? = nil) { self.url = url; self.parent = parent; self.folder = folder; self.id = id }
+    public init(url: String, parent: String, folder: String? = nil, id: String? = nil) {
+        self.url = url; self.parent = parent; self.folder = folder; self.id = id
+    }
 
     /// "git@github.com:me/app.git", "https://gitlab.com/me/app" → "app".
     public static func folderName(_ url: String) -> String {

@@ -68,13 +68,16 @@ public enum GitLab {
     }
 
     public static func mergeRequests(cwd: String, mine: Bool) throws -> [GitHub.PullRequest] {
-        try JSONDecoder().decode([RawMR].self, from: api("projects/:id/merge_requests?state=opened&per_page=50" + (mine ? "&scope=created_by_me" : ""), cwd: cwd)).map(pr)
+        try JSONDecoder().decode([RawMR].self, from: api("projects/:id/merge_requests?state=opened&per_page=50" + (mine ? "&scope=created_by_me" : ""),
+                                                         cwd: cwd)).map(pr)
     }
 
     /// The newest MR from `branch`, with its pipeline's state.
     public static func mergeRequest(cwd: String, branch: String) throws -> GitHub.PullRequest? {
         let b = queryValue(branch)
-        guard let m = try JSONDecoder().decode([RawMR].self, from: api("projects/:id/merge_requests?source_branch=\(b)&state=all&per_page=1&order_by=updated_at", cwd: cwd)).first
+        guard let m = try JSONDecoder().decode([RawMR].self,
+                                               from: api("projects/:id/merge_requests?source_branch=\(b)&state=all&per_page=1&order_by=updated_at", cwd: cwd))
+            .first
         else { return nil }
         return pr((try? JSONDecoder().decode(RawMR.self, from: api("projects/:id/merge_requests/\(m.iid)", cwd: cwd))) ?? m)
     }
@@ -108,7 +111,8 @@ public enum GitLab {
     }
 
     public static func issues(cwd: String, mine: Bool) throws -> [GitHub.Issue] {
-        try JSONDecoder().decode([RawIssue].self, from: api("projects/:id/issues?state=opened&per_page=50" + (mine ? "&scope=assigned_to_me" : ""), cwd: cwd)).map {
+        try JSONDecoder().decode([RawIssue].self, from: api("projects/:id/issues?state=opened&per_page=50" + (mine ? "&scope=assigned_to_me" : ""),
+                                                            cwd: cwd)).map {
             GitHub.Issue(number: $0.iid, title: $0.title, body: $0.description ?? "", url: $0.web_url, labels: $0.labels,
                          assignees: $0.assignees.map(\.username), state: $0.state == "opened" ? "OPEN" : $0.state.uppercased())
         }

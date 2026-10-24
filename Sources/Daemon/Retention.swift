@@ -14,7 +14,8 @@ extension Sessions {
                 discard(s, keepTmux: true)   // a remote one's host isn't asked: nothing waits on ssh here
             }
             let known = Set(try store.sessions().map(\.id)), fm = FileManager.default
-            let logs = (try? fm.contentsOfDirectory(at: root.appendingPathComponent("history"), includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            let logs = (try? fm.contentsOfDirectory(at: root.appendingPathComponent("history"),
+                                                    includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
             for f in logs where f.pathExtension == "log" && !known.contains(f.deletingPathExtension().lastPathComponent) {
                 // A day old at least: a new session opens its log just before its record is saved.
                 guard let at = try f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, at < now - 86400 else { continue }

@@ -9,9 +9,11 @@ extension CIRuns {
     public static func runs(cwd: String, branch: String) throws -> [Run] {
         if GitLab.isGitLab(cwd: cwd) { return try gitlabRuns(cwd: cwd, branch: branch) }
         struct RawRun: Decodable {
-            var databaseId: Int, displayTitle: String, workflowName: String?, name: String?, status: String, conclusion: String?, event: String, url: String, createdAt: String
+            var databaseId: Int, displayTitle: String, workflowName: String?, name: String?, status: String, conclusion: String?
+            var event: String, url: String, createdAt: String
         }
-        let d = try GitHub.gh(["run", "list", "--branch", branch, "-L", "20", "--json", "databaseId,displayTitle,workflowName,name,status,conclusion,event,url,createdAt"],
+        let d = try GitHub.gh(["run", "list", "--branch", branch, "-L", "20", "--json",
+                               "databaseId,displayTitle,workflowName,name,status,conclusion,event,url,createdAt"],
             cwd: cwd)
         return try JSONDecoder().decode([RawRun].self, from: d).map {
             Run(id: $0.databaseId, title: $0.displayTitle, workflow: $0.workflowName ?? $0.name ?? "", status: $0.status,
@@ -33,7 +35,9 @@ extension CIRuns {
 
     /// The failed steps' output of a job (the whole log if nothing failed), its last ~12 KB.
     public static func log(cwd: String, job: Int) throws -> String {
-        if GitLab.isGitLab(cwd: cwd) { return GitHub.tail(readable(String(bytes: try GitLab.api("projects/:id/jobs/\(job)/trace", cwd: cwd), encoding: .utf8) ?? "")) }
+        if GitLab.isGitLab(cwd: cwd) {
+            return GitHub.tail(readable(String(bytes: try GitLab.api("projects/:id/jobs/\(job)/trace", cwd: cwd), encoding: .utf8) ?? ""))
+        }
         let failed = (try? GitHub.gh(["run", "view", "--job", String(job), "--log-failed"], cwd: cwd)).flatMap { String(bytes: $0, encoding: .utf8) } ?? ""
         if !failed.isEmpty { return GitHub.tail(readable(failed)) }
         return GitHub.tail(readable(String(bytes: try GitHub.gh(["run", "view", "--job", String(job), "--log"], cwd: cwd), encoding: .utf8) ?? ""))
@@ -115,7 +119,8 @@ extension CIRuns {
         let b = GitLab.queryValue(branch)
         return try JSONDecoder().decode([RawPipeline].self, from: GitLab.api("projects/:id/pipelines?ref=\(b)&per_page=20", cwd: cwd)).map {
             let (s, c) = gitlabState($0.status)
-            return Run(id: $0.id, title: "Pipeline #\($0.id)", workflow: $0.ref, status: s, conclusion: c, event: $0.source ?? "", url: $0.web_url, createdAt: $0.created_at)
+            return Run(id: $0.id, title: "Pipeline #\($0.id)", workflow: $0.ref, status: s, conclusion: c, event: $0.source ?? "",
+                       url: $0.web_url, createdAt: $0.created_at)
         }
     }
 

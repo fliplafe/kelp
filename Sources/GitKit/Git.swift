@@ -20,7 +20,8 @@ extension Git {
     @discardableResult
     public static func run(_ args: [String], cwd: String, stdin: String? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
                            env extra: [String: String] = [:], remotes: Remotes = .none) throws -> String {
-        String(decoding: try runData(args, cwd: cwd, stdin: stdin.map { Data($0.utf8) }, executable: executable, ok: ok, env: extra, remotes: remotes), as: UTF8.self)
+        String(decoding: try runData(args, cwd: cwd, stdin: stdin.map { Data($0.utf8) }, executable: executable, ok: ok, env: extra,
+                                     remotes: remotes), as: UTF8.self)
     }
 
     /// `run`, its output as the bytes git wrote (a diff of a file that isn't UTF-8 goes back to `git apply` unchanged).
@@ -28,7 +29,8 @@ extension Git {
     @discardableResult
     public static func runData(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
                                env extra: [String: String] = [:], timeLimit: TimeInterval = 300, remotes: Remotes = .none) throws -> Data {
-        let r = try runPart(args, cwd: cwd, stdin: stdin, executable: executable, ok: ok, env: extra, timeLimit: timeLimit, limit: Subprocess.outputLimit, remotes: remotes)
+        let r = try runPart(args, cwd: cwd, stdin: stdin, executable: executable, ok: ok, env: extra, timeLimit: timeLimit,
+                            limit: Subprocess.outputLimit, remotes: remotes)
         guard !r.truncated else { throw tooMuch(args) }
         return r.data
     }
@@ -40,7 +42,8 @@ extension Git {
     /// `runData` keeping the first `limit` bytes of the output: `truncated` says there was more (read and dropped), for a
     /// caller that shows a part (a long status, a huge diff) and says so.
     static func runPart(_ args: [String], cwd: String, stdin: Data? = nil, executable: String = "/usr/bin/git", ok: Set<Int32> = [0],
-                        env extra: [String: String] = [:], timeLimit: TimeInterval = 300, limit: Int, remotes: Remotes = .none) throws -> (data: Data, truncated: Bool) {
+                        env extra: [String: String] = [:], timeLimit: TimeInterval = 300, limit: Int,
+                        remotes: Remotes = .none) throws -> (data: Data, truncated: Bool) {
         // timeLimit: longest a git / gh / ssh run may take before it's stopped (it then fails like any other error). Five
         // minutes: far past any real fetch or push, short of a thread lost for good.
         var args = args, executable = executable, cwd = cwd

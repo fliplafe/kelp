@@ -26,7 +26,8 @@ extension Sessions {
 
     /// The first program running in the session's panes other than their shells.
     func tmuxBusy(_ name: String, cwd: String) -> String? {
-        guard let r = try? tmux(["list-panes", "-s", "-t", "=" + name, "-F", "#{pane_current_command}"], cwd: cwd, timeLimit: 2), r.status == 0 else { return nil }
+        guard let r = try? tmux(["list-panes", "-s", "-t", "=" + name, "-F", "#{pane_current_command}"], cwd: cwd, timeLimit: 2),
+              r.status == 0 else { return nil }
         return String(decoding: r.stdout, as: UTF8.self).split(whereSeparator: \.isNewline).map(String.init).first { !Tmux.shells.contains($0) }
     }
 }

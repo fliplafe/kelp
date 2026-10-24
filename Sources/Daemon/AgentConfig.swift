@@ -10,7 +10,8 @@ enum AgentConfig {
     static let specs = files.flatMap { [":(glob)**/" + $0, ":(glob)**/" + $0 + "/**"] }
     static func changed(_ path: String, base: String, remotes: Remotes) -> Bool {
         guard Git.isRevision(base) else { return true }   // a base that reads as an option can't be compared: the user is asked
-        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + specs, cwd: path, remotes: remotes)) == nil   // exit 1: differs (base: checked above)
+        // exit 1: differs (base: checked above)
+        let committed = (try? Git.run(["diff", "--quiet", base, "HEAD", "--"] + specs, cwd: path, remotes: remotes)) == nil
         let pending = (try? Git.run(["status", "--porcelain", "--"] + specs, cwd: path, remotes: remotes))?.isEmpty != true
         return committed || pending
     }

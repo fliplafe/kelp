@@ -178,7 +178,8 @@ public struct BranchInfo: Codable, Sendable, Equatable {
     public var ahead: Int?
     public var behind: Int?
     public var merging: Bool
-    public init(current: String?, head: String?, local: [String], remote: [String], upstream: String? = nil, ahead: Int? = nil, behind: Int? = nil, merging: Bool) {
+    public init(current: String?, head: String?, local: [String], remote: [String], upstream: String? = nil, ahead: Int? = nil,
+                behind: Int? = nil, merging: Bool) {
         self.current = current; self.head = head; self.local = local; self.remote = remote
         self.upstream = upstream; self.ahead = ahead; self.behind = behind; self.merging = merging
     }

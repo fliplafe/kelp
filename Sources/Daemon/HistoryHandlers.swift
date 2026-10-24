@@ -46,7 +46,9 @@ extension UsageReport: Handled {
             repos.first { cwd == $0.path || cwd.hasPrefix($0.path + "/") }?.name ?? (cwd.isEmpty ? "Other" : (cwd as NSString).lastPathComponent)
         }
         func group(_ key: (UsageIndex.Row) -> String) -> [Group] {
-            Dictionary(grouping: rows, by: key).map { k, rs in Group(name: k, cost: rs.reduce(0) { $0 + $1.tally.cost }, tokens: rs.reduce(0) { $0 + $1.tally.tokens.total }) }
+            Dictionary(grouping: rows, by: key).map { k, rs in
+                Group(name: k, cost: rs.reduce(0) { $0 + $1.tally.cost }, tokens: rs.reduce(0) { $0 + $1.tally.tokens.total })
+            }
                 .sorted { $0.cost > $1.cost }
         }
         return Result(days: group(\.day), models: group(\.model), projects: group { project($0.cwd) }, since: since.timeIntervalSince1970)

@@ -3,7 +3,9 @@ import Foundation
 /// CI runs of one branch, the same for GitHub Actions (`gh run`) and GitLab pipelines (`glab api`).
 public enum CIRuns {
     /// Finished without success (failed, timed out, cancelled…).
-    public static func failed(_ status: String, _ conclusion: String?) -> Bool { status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion) }
+    public static func failed(_ status: String, _ conclusion: String?) -> Bool {
+        status == "completed" && !["success", "skipped", "neutral", nil].contains(conclusion)
+    }
     public struct Step: Codable, Sendable, Equatable {
         public var name: String; public var status: String; public var conclusion: String?
         public init(name: String, status: String, conclusion: String?) { self.name = name; self.status = status; self.conclusion = conclusion }

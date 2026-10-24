@@ -56,7 +56,8 @@ final class Forges: Sendable {
 
     /// Jira issues linked to a worktree ("ENG-12") move along with the PR, like Linear.
     func moveJira(_ w: Worktree, toName hint: String, category: String) async {
-        guard let j = await jiraClient(), w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil, w.linearIssueId.isEmpty else { return }
+        guard let j = await jiraClient(), w.issue.range(of: #"^[A-Z][A-Z0-9]+-\d+$"#, options: .regularExpression) != nil,
+              w.linearIssueId.isEmpty else { return }
         do { try await j.move(key: w.issue, toName: hint, category: category) }
         catch { Log.rpc.notice("Jira issue \(w.issue, privacy: .public) didn't move to \(hint, privacy: .public): \(error)") }
     }

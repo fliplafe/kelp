@@ -11,7 +11,9 @@ extension Forges {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { throw RPCError.invalidParams("Enter a name for the project folder.") }
         var dir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: parent, isDirectory: &dir), dir.boolValue else { throw RPCError.invalidParams("Choose the folder it goes in.") }
+        guard FileManager.default.fileExists(atPath: parent, isDirectory: &dir), dir.boolValue else {
+            throw RPCError.invalidParams("Choose the folder it goes in.")
+        }
         let dest = (parent as NSString).appendingPathComponent(name)
         guard !FileManager.default.fileExists(atPath: dest) else {
             throw RPCError.invalidParams("“\(name)” already exists in \((parent as NSString).abbreviatingWithTildeInPath).")

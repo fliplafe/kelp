@@ -60,7 +60,8 @@ public struct JiraClient: Sendable {
             return JiraIssue(key: key, title: f["summary"] as? String ?? "", description: adfText(f["description"]),
                              url: site.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/browse/" + key,
                              status: st?["name"] as? String ?? "", statusCategory: (st?["statusCategory"] as? [String: Any])?["key"] as? String ?? "",
-                             type: (f["issuetype"] as? [String: Any])?["name"] as? String ?? "", project: (f["project"] as? [String: Any])?["key"] as? String ?? "")
+                             type: (f["issuetype"] as? [String: Any])?["name"] as? String ?? "",
+                             project: (f["project"] as? [String: Any])?["key"] as? String ?? "")
         }
     }
 

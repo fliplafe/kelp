@@ -43,8 +43,8 @@ public struct SessionRestart: RPCMethod, LaunchOptions {
     public static let name = "session.restart"; public typealias Result = Session
     public var id: String, resume: Bool?
     public var model: String?, effort: String?, prompt: String?, title: String?, profile: String?, draft: Bool?, openURLs: Bool?, cols: Int?, rows: Int?
-    public init(id: String, resume: Bool? = nil, model: String? = nil, effort: String? = nil, prompt: String? = nil, title: String? = nil, profile: String? = nil,
-                draft: Bool? = nil, openURLs: Bool? = nil, cols: Int? = nil, rows: Int? = nil) {
+    public init(id: String, resume: Bool? = nil, model: String? = nil, effort: String? = nil, prompt: String? = nil, title: String? = nil,
+                profile: String? = nil, draft: Bool? = nil, openURLs: Bool? = nil, cols: Int? = nil, rows: Int? = nil) {
         self.id = id; self.resume = resume
         self.model = model; self.effort = effort; self.prompt = prompt; self.title = title; self.profile = profile; self.draft = draft
         self.openURLs = openURLs; self.cols = cols; self.rows = rows

@@ -277,7 +277,11 @@ final class Renderer {
             }
             var inner = blocks(body, tight: !loose)
             if !box.isEmpty {
-                if inner.hasPrefix("<p"), let gt = inner.firstIndex(of: ">") { inner.insert(contentsOf: box, at: inner.index(after: gt)) } else { inner = box + inner }
+                if inner.hasPrefix("<p"), let gt = inner.firstIndex(of: ">") {
+                    inner.insert(contentsOf: box, at: inner.index(after: gt))
+                } else {
+                    inner = box + inner
+                }
             }
             html += "<li\(box.isEmpty ? "" : " class=\"task-list-item\"")>\(inner)</li>\n"
         }
@@ -372,7 +376,8 @@ final class Renderer {
         let sp = s[k...].prefix { $0 == " " }.count
         let rest = String(s[(k + sp)...])
         if rest.isEmpty || sp > 4 {
-            return Marker(indent: ind, kind: kind, ordered: ordered, start: start, content: ind + k + 1, rest: rest.isEmpty ? "" : String(s[min(k + 1, s.count)...]))
+            return Marker(indent: ind, kind: kind, ordered: ordered, start: start, content: ind + k + 1,
+                          rest: rest.isEmpty ? "" : String(s[min(k + 1, s.count)...]))
         }
         return Marker(indent: ind, kind: kind, ordered: ordered, start: start, content: ind + k + sp, rest: rest)
     }

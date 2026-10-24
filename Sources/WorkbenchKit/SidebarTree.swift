@@ -52,7 +52,8 @@ public struct SidebarTree {
             let agents = sessions.filter { $0.worktreeId == w.id && $0.status != .exited && $0.agent != "shell" }
             guard passes(w, agents) else { return nil }
             let whole = hit(w.displayName, w.branch, r.name)
-            let kept = whole ? agents : agents.filter { hit($0.title, $0.agent ?? "", $0.summary, statusLabel($0.status)) }   // "needs", "working", "done" act as filters
+            // "needs", "working", "done" act as filters
+            let kept = whole ? agents : agents.filter { hit($0.title, $0.agent ?? "", $0.summary, statusLabel($0.status)) }
             guard whole || !kept.isEmpty else { return nil }
             return SidebarItem(kind: .workspace(w.id), children: kept.map { SidebarItem(kind: .agent($0.id)) })
         }

@@ -327,7 +327,10 @@ extension Sessions {
         if id == "custom", let a = fallbackArgv { return .init(id: "custom", name: "Custom", command: a.first ?? "/bin/zsh", args: Array(a.dropFirst())) }
         let id = id ?? "shell"
         // A plain shell has no meaningful "done": keep the heuristic quiet.
-        if id == "shell" { return .init(id: "shell", name: "Shell", command: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh", args: ["-l"], quietSeconds: 1e9) }
+        if id == "shell" {
+            return .init(id: "shell", name: "Shell", command: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh",
+                         args: ["-l"], quietSeconds: 1e9)
+        }
         guard let m = AgentManifest.load(dir: root.appendingPathComponent("agents")).first(where: { $0.id == id }) else {
             throw RPCError.invalidParams("unknown agent \(id)")
         }

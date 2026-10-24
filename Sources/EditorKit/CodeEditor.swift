@@ -34,7 +34,8 @@ public final class CodeEditor: NSObject {
         // A big file: empty first, the text once the view sits in its scroll view. A text view outside one lays out
         // every line (a 50k-line file was 24 s of main thread); inside, only what's on screen. (The minimap would keep
         // the first, empty text, hence none for these.)
-        controller = TextViewController(string: big ? "" : text, language: lang, configuration: cfg, cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
+        controller = TextViewController(string: big ? "" : text, language: lang, configuration: cfg,
+                                        cursorPositions: [CursorPosition(line: 1, column: 1)], coordinators: [relay])
         super.init()
         relay.owner = self
         if big { _ = controller.view; suppress = true; controller.setText(text); suppress = false }
@@ -55,7 +56,8 @@ public final class CodeEditor: NSObject {
 
     public var selectedText: String? {
         guard let tv = controller.textView else { return nil }
-        let parts = tv.selectionManager.textSelections.map(\.range).filter { $0.length > 0 }.compactMap { tv.textStorage.attributedSubstring(from: $0).string as String? }
+        let parts = tv.selectionManager.textSelections.map(\.range).filter { $0.length > 0 }
+            .compactMap { tv.textStorage.attributedSubstring(from: $0).string as String? }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
     public var selectedLines: ClosedRange<Int>? {
@@ -91,7 +93,8 @@ public final class CodeEditor: NSObject {
         guard let tv = controller.textView, let c = controller.cursorPositions.first else { return }
         let ns = tv.string as NSString
         var start = c.range.location
-        while start > 0, let u = UnicodeScalar(ns.character(at: start - 1)), CharacterSet.alphanumerics.union(.init(charactersIn: "_$")).contains(u) { start -= 1 }
+        while start > 0, let u = UnicodeScalar(ns.character(at: start - 1)),
+              CharacterSet.alphanumerics.union(.init(charactersIn: "_$")).contains(u) { start -= 1 }
         tv.replaceCharacters(in: NSRange(location: start, length: c.range.location - start), with: text)
     }
 
@@ -160,7 +163,9 @@ public final class CodeEditor: NSObject {
     static var theme: EditorTheme {
         let base = defaultTheme
         guard let p = palette, let bg = hex(p.background), let fg = hex(p.text) else { return base }
-        func a(_ s: String?, _ fallback: EditorTheme.Attribute, bold: Bool = false) -> EditorTheme.Attribute { hex(s).map { .init(color: $0, bold: bold) } ?? fallback }
+        func a(_ s: String?, _ fallback: EditorTheme.Attribute, bold: Bool = false) -> EditorTheme.Attribute {
+            hex(s).map { .init(color: $0, bold: bold) } ?? fallback
+        }
         return EditorTheme(text: .init(color: fg), insertionPoint: fg, invisibles: base.invisibles, background: bg,
                            lineHighlight: hex(p.lineHighlight) ?? bg.blended(withFraction: 0.06, of: fg) ?? bg,
                            selection: hex(p.selection) ?? bg.blended(withFraction: 0.25, of: .controlAccentColor) ?? bg,
@@ -179,7 +184,9 @@ public final class CodeEditor: NSObject {
     /// Xcode-like default themes; colors must be concrete RGB (the editor reads brightness components).
     static var defaultTheme: EditorTheme {
         let dark = (NSApp?.effectiveAppearance ?? NSAppearance.currentDrawing()).bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        func c(_ hex: UInt32) -> NSColor { NSColor(srgbRed: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1) }
+        func c(_ hex: UInt32) -> NSColor {
+            NSColor(srgbRed: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1)
+        }
         func a(_ hex: UInt32, bold: Bool = false) -> EditorTheme.Attribute { .init(color: c(hex), bold: bold) }
         if dark {
             return EditorTheme(text: a(0xDFDFE0), insertionPoint: c(0xFFFFFF), invisibles: a(0x53606E), background: c(0x1F1F24),
@@ -206,7 +213,8 @@ private final class Relay: TextViewCoordinator {
 private final class Completer: CodeSuggestionDelegate {
     weak var owner: CodeEditor?
     func completionTriggerCharacters() -> Set<String> { [".", ":"] }
-    func completionSuggestionsRequested(textView: TextViewController, cursorPosition: CursorPosition) async -> (windowPosition: CursorPosition, items: [CodeSuggestionEntry])? {
+    func completionSuggestionsRequested(textView: TextViewController,
+                                        cursorPosition: CursorPosition) async -> (windowPosition: CursorPosition, items: [CodeSuggestionEntry])? {
         guard let o = await MainActor.run(body: { owner }), let p = await MainActor.run(body: { o.completionProvider }) else { return nil }
         let items = await p(cursorPosition.start.line, cursorPosition.start.column)
         return items.isEmpty ? nil : (cursorPosition, items)

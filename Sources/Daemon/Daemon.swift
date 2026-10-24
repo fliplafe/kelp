@@ -35,7 +35,8 @@ public final class Daemon: Sendable {
     /// `lspDelays`: how soon a broken language server is started again, and how long one with no open file keeps running
     /// (tests shorten them).
     init(root: URL, store: Store?, lspDelays: (retry: TimeInterval, idle: TimeInterval)) throws {
-        signal(SIGPIPE, SIG_IGN)   // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
+        // a client that hangs up mid-write fails that write; it must not end the process (kelpd does this too, tests host a Daemon themselves)
+        signal(SIGPIPE, SIG_IGN)
         self.root = root
         try Paths.ensure(root)
         self.store = try store ?? Store(path: root.appendingPathComponent("kelp.sqlite").path)
@@ -137,7 +138,10 @@ public final class Daemon: Sendable {
         prune.setEventHandler { [self] in sessions.pruneEnded() }
         running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t; $0.prune = prune }
         src.resume(); t.resume(); prune.resume()
-        workspaces.headQueue.async { [weak self] in if self?.running.withLock({ $0.accept != nil }) == true { self?.workspaces.followHeads() } }   // not once stopped
+        // not once stopped
+        workspaces.headQueue.async { [weak self] in
+            if self?.running.withLock({ $0.accept != nil }) == true { self?.workspaces.followHeads() }
+        }
         try? FileManager.default.removeItem(at: Paths.daemonError(in: root))   // an earlier failure is over
         Log.start.info("kelpd \(getpid()) serves \(self.socketPath, privacy: .public)")
     }
@@ -318,7 +322,9 @@ public final class Daemon: Sendable {
             var attached = true
             clients.ifConnected(c.id) {
                 attached = ls.attach(c.id) { history in
-                    if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) { c.send(Self.replyLine(id: id, result: r)) }
+                    if let r = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
+                        c.send(Self.replyLine(id: id, result: r))
+                    }
                 } != nil
             }
             if !attached, let d = Self.errorLine(id: id, Sessions.pausedAsAttached) { c.send(d) }

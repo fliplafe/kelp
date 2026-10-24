@@ -138,7 +138,8 @@ public final class RPCClient: Sendable {
             if let timeout {
                 // Weak: every typed call has one now, and a dropped connection's client mustn't wait them out.
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
-                    self?.state.withLock { $0.pending.removeValue(forKey: id) }?.resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
+                    self?.state.withLock { $0.pending.removeValue(forKey: id) }?
+                        .resume(throwing: RPCError.internalError("no reply to \(method) in \(Int(timeout)) s"))
                 }
             }
             do { write(try Wire.line(RPCRequest(id: id, method: method, params: params))) }

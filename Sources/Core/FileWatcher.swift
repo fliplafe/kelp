@@ -31,7 +31,8 @@ public final class FileWatcher: @unchecked Sendable {   // holds an FSEventStrea
             sink.deliver.async { handler(kept) }
         }
         guard let s = FSEventStreamCreate(nil, cb, &ctx, [root] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency,
-                                          FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer))
+                                          FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
+                                                                   | kFSEventStreamCreateFlagNoDefer))
         else { return nil }
         stream = s
         FSEventStreamSetDispatchQueue(s, queue)

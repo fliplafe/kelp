@@ -206,7 +206,11 @@ func plist() -> String {
         case ("worktree", "remove"), ("worktree", "archive"):
             let force = has("--force"), drop = has("--drop-commits")   // two separate losses, each asked for by name
             let id = try await resolve(c, args.first ?? "", "worktree.list")
-            if sub == "remove" { show(try await c.call(WorktreeRemove(id: id, force: force, dropCommits: drop))) } else { show(try await c.call(WorktreeArchive(id: id))) }
+            if sub == "remove" {
+                show(try await c.call(WorktreeRemove(id: id, force: force, dropCommits: drop)))
+            } else {
+                show(try await c.call(WorktreeArchive(id: id)))
+            }
         default: print(usage)
         }
     }
@@ -231,7 +235,8 @@ func plist() -> String {
         case ("wait", let target?):   // until the session stops working, or reaches one of --for; prints the state it reached
             let want = flag("--for").map { Set($0.split(separator: ",").map(String.init)) }, timeout = flag("--timeout").map(duration)
             let id = try await resolve(c, target, "session.list")
-            guard let s = try await waitFor(c, id, timeout: timeout, until: { want?.contains($0.status.rawValue) ?? ($0.status != .working) }) else { fail("timed out") }
+            guard let s = try await waitFor(c, id, timeout: timeout, until: { want?.contains($0.status.rawValue) ?? ($0.status != .working) })
+            else { fail("timed out") }
             print(s.status.rawValue)
             if s.status == .exited { exit(Int32(s.exitCode ?? 0)) }   // its command's exit code
         case ("report", let state?):   // inside a session: what this program is doing, on its row and tab
@@ -239,7 +244,8 @@ func plist() -> String {
             let progress = flag("--progress").flatMap { Int($0) }, kind = flag("--kind"), msg = args.joined(separator: " ")
             _ = try await c.call(SessionReport(id: id, state: state, message: msg.isEmpty ? nil : msg, progress: progress, kind: kind))
         case ("terminal", "read"):
-            show(try await c.call(SessionRead(id: try await resolve(c, args.first ?? "", "session.list"), bytes: args.dropFirst().first.flatMap(Int.init) ?? 8192)))
+            show(try await c.call(SessionRead(id: try await resolve(c, args.first ?? "", "session.list"),
+                                              bytes: args.dropFirst().first.flatMap(Int.init) ?? 8192)))
         case ("terminal", "send"):
             let enter = !has("--no-enter")
             guard args.count >= 2 else { fail("terminal send <session> <text>") }
@@ -285,7 +291,9 @@ func plist() -> String {
         case ("github", "prs"):
             for x in try await c.call(GitHubPRs(repoId: try await currentRepoID(c), filter: flag("--filter"))) { print("#\(x.number)  \(x.title)  \(x.url)") }
         case ("github", "issues"):
-            for x in try await c.call(GitHubIssues(repoId: try await currentRepoID(c), filter: flag("--filter"))) { print("#\(x.number)  \(x.title)  \(x.url)") }
+            for x in try await c.call(GitHubIssues(repoId: try await currentRepoID(c), filter: flag("--filter"))) {
+                print("#\(x.number)  \(x.title)  \(x.url)")
+            }
         case ("github", "checks"):
             let w = try await currentWorktree(c)
             let pr = args.first.flatMap(Int.init) ?? w.prNumber ?? 0
@@ -363,7 +371,8 @@ func plist() -> String {
         case "path": print(Paths.extensions.path)
         case "search":
             let q = args.joined(separator: " ").lowercased()
-            for e in try await c.call(ExtensionLibrary()) where q.isEmpty || [e.id, e.name, e.description ?? ""].contains(where: { $0.lowercased().contains(q) }) {
+            for e in try await c.call(ExtensionLibrary())
+                where q.isEmpty || [e.id, e.name, e.description ?? ""].contains(where: { $0.lowercased().contains(q) }) {
                 print([e.id, e.version, e.name, e.description ?? ""].joined(separator: "\t"))
             }
         case "install":

@@ -45,8 +45,12 @@ extension CIRunsList: Handled {
                       workflows: GitLab.isGitLab(cwd: w.path) ? [] : CIRuns.dispatchable(repo: w.path))
     }
 }
-extension CIJobs: Handled { func handle(_ forges: Forges) throws -> [CIRuns.Job] { try CIRuns.jobs(cwd: forges.store.worktree(named: worktreeId).path, run: run ?? 0) } }
-extension CILog: Handled { func handle(_ forges: Forges) throws -> String { try CIRuns.log(cwd: forges.store.worktree(named: worktreeId).path, job: job ?? 0) } }
+extension CIJobs: Handled {
+    func handle(_ forges: Forges) throws -> [CIRuns.Job] { try CIRuns.jobs(cwd: forges.store.worktree(named: worktreeId).path, run: run ?? 0) }
+}
+extension CILog: Handled {
+    func handle(_ forges: Forges) throws -> String { try CIRuns.log(cwd: forges.store.worktree(named: worktreeId).path, job: job ?? 0) }
+}
 extension CIRerun: Handled {
     func handle(_ forges: Forges) throws -> Done { try CIRuns.rerunFailed(cwd: forges.store.worktree(named: worktreeId).path, run: run ?? 0); return Done() }
 }
@@ -77,13 +81,19 @@ extension GitHubIssues: Handled {
     }
 }
 extension GitHubChecks: Handled {
-    func handle(_ forges: Forges) throws -> [GitHub.Check] { try GitHub.checks(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, pr: pr ?? 0) }
+    func handle(_ forges: Forges) throws -> [GitHub.Check] {
+        try GitHub.checks(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, pr: pr ?? 0)
+    }
 }
 extension GitHubFailedLog: Handled {
-    func handle(_ forges: Forges) throws -> String { try GitHub.failedLog(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, runId: runId ?? 0) }
+    func handle(_ forges: Forges) throws -> String {
+        try GitHub.failedLog(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, runId: runId ?? 0)
+    }
 }
 extension GitHubReviewComments: Handled {
-    func handle(_ forges: Forges) throws -> [GitHub.ReviewComment] { try GitHub.reviewComments(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, pr: pr ?? 0) }
+    func handle(_ forges: Forges) throws -> [GitHub.ReviewComment] {
+        try GitHub.reviewComments(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1, pr: pr ?? 0)
+    }
 }
 extension GitHubProjects: Handled {
     func handle(_ forges: Forges) throws -> [GitHub.Project] { try GitHub.projects(cwd: forges.store.repoPath(worktreeId: worktreeId, repoId: repoId).1) }
@@ -101,7 +111,8 @@ extension GitAuthorAvatar: AsyncHandled {
         let path = try forges.store.worktree(named: id).path, email = email
         // The forge the project's origin is on; elsewhere only a GitHub noreply address tells its account.
         let url = try? await forges.offloads.run { () throws -> URL? in
-            let origin = (try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: forges.remotes))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let origin = (try? Git.run(["remote", "get-url", "origin"], cwd: path, remotes: forges.remotes))?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? ""
             if GitLab.isGitLab(remote: origin) { return try GitLab.avatarURL(email: email, cwd: path) }
             if Git.webRepo(origin)?.0.lowercased().contains("github") == true { return try GitHub.avatarURL(email: email, cwd: path) }
             return GitHub.noreplyAvatar(email)
@@ -231,7 +242,8 @@ extension JiraSetCredentials: AsyncHandled {
     func handle(_ forges: Forges) async throws -> Account? {
         if token.isEmpty { try await forges.keepSecret("", account: Forges.jiraAccount); return nil }
         let name = try await JiraClient(site: site, email: email, token: token).myself()   // validate before saving
-        try await forges.keepSecret(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self), account: Forges.jiraAccount)
+        try await forges.keepSecret(String(decoding: try JSONEncoder().encode(["site": site, "email": email, "token": token]), as: UTF8.self),
+                                    account: Forges.jiraAccount)
         return Account(name: name)
     }
 }
@@ -249,7 +261,10 @@ extension JiraIssues: AsyncHandled {
     }
 }
 extension JiraTransitions: AsyncHandled {
-    func handle(_ forges: Forges) async throws -> [JiraTransition] { guard let j = await forges.jiraClient() else { return [] }; return try await j.transitions(key: key) }
+    func handle(_ forges: Forges) async throws -> [JiraTransition] {
+        guard let j = await forges.jiraClient() else { return [] }
+        return try await j.transitions(key: key)
+    }
 }
 extension JiraTransitionIssue: AsyncHandled {
     func handle(_ forges: Forges) async throws -> Done {

@@ -10,7 +10,8 @@ public enum ClaudeLimits {
     }
 
     private static let used = try? NSRegularExpression(pattern: #"(\d{1,3})% of your ([A-Za-z0-9\- ]{1,30}?) limit(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#)
-    private static let reached = try? NSRegularExpression(pattern: #"([A-Za-z0-9\- ]{1,30}?) limit reached(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#, options: .caseInsensitive)
+    private static let reached = try? NSRegularExpression(pattern: #"([A-Za-z0-9\- ]{1,30}?) limit reached(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#,
+                                                          options: .caseInsensitive)
 
     public static func parse(_ text: String) -> [Reading] {
         let r = NSRange(text.startIndex..., in: text)

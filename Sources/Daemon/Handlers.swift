@@ -287,7 +287,8 @@ extension RepoRemoveWorktrees: Handled {
                 out.kept[p] = "Not one of the project's other worktrees."; continue
             }
             do {
-                try Git.run(["worktree", "remove", p], cwd: r.path, remotes: workspaces.remotes)   // no --force: git keeps one with changes, untracked files or a lock
+                // no --force: git keeps one with changes, untracked files or a lock
+                try Git.run(["worktree", "remove", p], cwd: r.path, remotes: workspaces.remotes)
                 if let b = w.branch, Git.isRevision(b) {   // -d: only if its commits are on another branch
                     _ = Log.store.attempt("deleting merged branch \(b)") { try Git.run(["branch", "-d", b], cwd: r.path, remotes: workspaces.remotes) }
                 }

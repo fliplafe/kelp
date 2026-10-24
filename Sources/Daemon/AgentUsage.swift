@@ -162,7 +162,10 @@ final class AgentUsage: Sendable {
                   type == "user" || type == "assistant", let msg = o["message"] as? [String: Any] else { continue }
             let text: String
             if let s = msg["content"] as? String { text = s }
-            else { text = ((msg["content"] as? [[String: Any]]) ?? []).compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n") }
+            else {
+                text = ((msg["content"] as? [[String: Any]]) ?? []).compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                    .joined(separator: "\n")
+            }
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !t.isEmpty, !t.hasPrefix("<") else { continue }   // tool results and system notes aren't the conversation
             turns.append("## \(type == "user" ? "You" : "Agent")\n\n\(t)")

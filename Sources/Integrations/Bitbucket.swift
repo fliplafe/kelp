@@ -30,7 +30,8 @@ public struct BitbucketClient: Sendable {
             "source": ["branch": ["name": source]], "destination": ["branch": ["name": destination]]
         ])
         guard let o = try JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let html = ((o["links"] as? [String: Any])?["html"] as? [String: Any])?["href"] as? String else { throw IntegrationError(description: "unexpected create response") }
+              let html = ((o["links"] as? [String: Any])?["html"] as? [String: Any])?["href"] as? String
+        else { throw IntegrationError(description: "unexpected create response") }
         return html
     }
 

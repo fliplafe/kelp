@@ -34,7 +34,13 @@ extension SessionWrite: SessionInput {
     static var inOrder: Bool { true }   // keystrokes
     func apply(to s: LiveSession) throws -> Done {
         let data: Data
-        if let base64, let b = Data(base64Encoded: base64) { data = b } else if let text { data = Data(text.utf8) } else { throw RPCError.invalidParams("missing text") }
+        if let base64, let b = Data(base64Encoded: base64) {
+            data = b
+        } else if let text {
+            data = Data(text.utf8)
+        } else {
+            throw RPCError.invalidParams("missing text")
+        }
         // Keystrokes count as the user's typing; text goes to the program as it is.
         if base64 != nil { s.userInput(data) } else { s.write(data) }
         return Done()

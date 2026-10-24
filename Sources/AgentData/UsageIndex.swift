@@ -40,7 +40,8 @@ public final class UsageIndex: Sendable {
     /// The 5-hour block `now` falls in (nil when the last one reset), from transcripts changed in the last 10 hours.
     public func currentBlock(roots: [URL], now: Date = Date()) -> ClaudeUsage.Block? {
         let since = now.addingTimeInterval(-10 * 3600).timeIntervalSince1970
-        let hours = files.withLock { update(&$0, roots: roots, since: Date(timeIntervalSince1970: since)) }.flatMap { $0.hours ?? [:] }.compactMap { key, t -> Hour? in
+        let hours = files.withLock { update(&$0, roots: roots, since: Date(timeIntervalSince1970: since)) }
+            .flatMap { $0.hours ?? [:] }.compactMap { key, t -> Hour? in
             let p = key.split(separator: "|", maxSplits: 1)
             guard p.count == 2, let h = Double(p[0]), h > since - 3600 else { return nil }
             return Hour(start: Date(timeIntervalSince1970: h), model: String(p[1]), tally: t)
@@ -66,7 +67,8 @@ public final class UsageIndex: Sendable {
         var changed = false
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey, .fileSizeKey]
         for root in roots {
-            for case let f as URL in FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys)) ?? NSEnumerator() where f.pathExtension == "jsonl" {
+            for case let f as URL in FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys)) ?? NSEnumerator()
+                where f.pathExtension == "jsonl" {
                 guard let v = try? f.resourceValues(forKeys: keys), (v.contentModificationDate ?? .distantPast) >= since else { continue }
                 let size = UInt64(v.fileSize ?? 0)
                 var st = known[f.path] ?? FileState(offset: 0, born: (v.creationDate ?? .distantPast).timeIntervalSince1970)
@@ -127,7 +129,8 @@ public final class UsageIndex: Sendable {
         func n(_ k: String) -> Int { (u[k] as? NSNumber)?.intValue ?? 0 }
         let id = [field(line, "id"), field(line, "requestId")].compactMap { $0 }.joined(separator: ":")
         return (ts, model, field(line, "cwd") ?? "", id.isEmpty ? nil : id,
-                TokenCounts(input: n("input_tokens"), output: n("output_tokens"), cacheWrite: n("cache_creation_input_tokens"), cacheRead: n("cache_read_input_tokens")))
+                TokenCounts(input: n("input_tokens"), output: n("output_tokens"), cacheWrite: n("cache_creation_input_tokens"),
+                            cacheRead: n("cache_read_input_tokens")))
     }
 
     /// The first `"name":"value"` in the line (string values only).

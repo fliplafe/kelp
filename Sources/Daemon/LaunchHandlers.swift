@@ -146,7 +146,9 @@ extension RecipeRender: Handled {
         let cfg = workspaces.trustedConfig(try workspaces.store.repo(w.repoId)?.path ?? w.path)   // the repo's own prompts only once trusted
         var all: [String: String] = ["branch": w.branch, "base": try workspaces.store.repo(w.repoId)?.baseBranch ?? "main"]
         all.merge(vars ?? [:]) { $1 }
-        if all["stagedPatch"] == nil { all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path, remotes: workspaces.remotes)) ?? "").prefix(4000)) }
+        if all["stagedPatch"] == nil {
+            all["stagedPatch"] = String(((try? Git.run(["diff", "--cached", "--stat"], cwd: w.path, remotes: workspaces.remotes)) ?? "").prefix(4000))
+        }
         return Recipes.render(name, config: cfg, vars: all)
     }
 }
@@ -198,7 +200,8 @@ extension AgentsVersions: AsyncHandled {
                         guard let exe = try? LoginPath.resolve(m.command) else { return nil }
                         let v = Sessions.run([exe, "--version"], path: path, timeout: 4).flatMap(Sessions.semver)
                         let npm = try? LoginPath.resolve("npm")
-                        let latest = m.npm.flatMap { pkg in npm.flatMap { Sessions.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }.flatMap(Sessions.semver)
+                        let latest = m.npm.flatMap { pkg in npm.flatMap { Sessions.run([$0, "view", pkg, "version"], path: path, timeout: 8) } }
+                            .flatMap(Sessions.semver)
                         return Item(id: m.id, version: v, latest: latest)
                     }
                 }
@@ -214,14 +217,17 @@ extension TaskFromIssue: AsyncHandled {
     func handle(_ work: ForgeWork) async throws -> Result {
         guard let r = try work.workspaces.store.repo(repoId) else { throw RPCError.invalidParams("no repo") }
         let body = body ?? "", url = url ?? ""
-        var branch = branch.flatMap { $0.isEmpty ? nil : $0 } ?? IssueRef.branchName(ref.hasPrefix("#") ? String(ref.dropFirst()) : ref.lowercased(), title: title)
+        var branch = branch.flatMap { $0.isEmpty ? nil : $0 }
+            ?? IssueRef.branchName(ref.hasPrefix("#") ? String(ref.dropFirst()) : ref.lowercased(), title: title)
         if let branchPrefix, !branchPrefix.isEmpty, !branch.hasPrefix(branchPrefix) { branch = branchPrefix + branch }
         let unique = try await work.forges.offloads.run { [branch] in
             var unique = branch, n = 2
             while Git.branchExists(r.path, unique, remotes: work.workspaces.remotes) { unique = "\(branch)-\(n)"; n += 1 }
             return unique
         }
-        let created = try await work.forges.offloads.run { try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(work.workspaces) }
+        let created = try await work.forges.offloads.run {
+            try WorktreeCreate(repoId: r.id, branch: unique, note: "\(ref) \(title)", tabs: false).handle(work.workspaces)
+        }
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
         let (w, s) = try await work.forges.offloads.run { () throws -> (Worktree, Session) in
             guard let w = try work.workspaces.store.update(Worktree.self, created.worktree.id, {
@@ -236,7 +242,8 @@ extension TaskFromIssue: AsyncHandled {
             o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
             (o.cols, o.rows) = Sessions.Launch.size(cols: cols, rows: rows)
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
-            return (w, try work.workspaces.sessions.spawn(cwd: w.path, manifest: work.workspaces.sessions.manifest(agent ?? "claude", command: nil), worktreeId: w.id, o))
+            return (w, try work.workspaces.sessions.spawn(cwd: w.path, manifest: work.workspaces.sessions.manifest(agent ?? "claude", command: nil),
+                                                          worktreeId: w.id, o))
         }
         await work.forges.moveLinear(w, to: .inProgress)
         await work.forges.moveJira(w, toName: "progress", category: "indeterminate")
@@ -286,7 +293,8 @@ extension Sessions {
     /// list left open after turning it off can't run it any more. `id` is its folder's name; the manifest has its id.
     func requireEnabledExtension(_ id: String) throws {
         struct Manifest: Decodable { var id: String; var name: String? }
-        let file = root.appendingPathComponent("extensions").appendingPathComponent(id).appendingPathComponent("extension.json")   // Paths.extensions of this home
+        // Paths.extensions of this home
+        let file = root.appendingPathComponent("extensions").appendingPathComponent(id).appendingPathComponent("extension.json")
         guard !id.isEmpty, (id as NSString).lastPathComponent == id, id != "..", id != ".",
               let data = FileManager.default.contents(atPath: file.path),
               let m = try? JSONDecoder().decode(Manifest.self, from: data) else { throw RPCError.invalidParams("No extension \"\(id)\".") }

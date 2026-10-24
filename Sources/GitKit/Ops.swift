@@ -2,14 +2,17 @@ import Foundation
 import Core
 
 extension Git {
-    public static func stage(_ path: String, files: [String], remotes: Remotes = .none) throws { try run(["add", "--"] + literal(files), cwd: path, remotes: remotes) }
+    public static func stage(_ path: String, files: [String], remotes: Remotes = .none) throws {
+        try run(["add", "--"] + literal(files), cwd: path, remotes: remotes)
+    }
     public static func unstage(_ path: String, files: [String], remotes: Remotes = .none) throws {
         try run(["reset", "-q", "HEAD", "--"] + literal(files), cwd: path, remotes: remotes)
     }
 
     /// Stage (or unstage, `reverse`) a single hunk of `diff` via `git apply --cached`.
     public static func applyHunk(_ path: String, diff: FileDiff, hunk: Int, reverse: Bool, remotes: Remotes = .none) throws {
-        try runData(["apply", "--cached", "--recount", "--unidiff-zero"] + (reverse ? ["-R"] : []) + ["-"], cwd: path, stdin: diff.patch(hunk: hunk), remotes: remotes)
+        try runData(["apply", "--cached", "--recount", "--unidiff-zero"] + (reverse ? ["-R"] : []) + ["-"], cwd: path,
+                    stdin: diff.patch(hunk: hunk), remotes: remotes)
     }
 
     /// Throw away one unstaged hunk of `diff` (the working tree's version of `git restore -p`): its reverse, applied to the files.
@@ -41,7 +44,8 @@ extension Git {
     /// Merge `branch` into the branch checked out in `target` (usually the main checkout). Aborts on conflict
     /// unless `keepConflicts`, so the caller can show them and hand them to an agent.
     /// `onto`: the branch `target` must have checked out (the base); anything else is refused rather than merged into.
-    public static func merge(branch: String, into target: String, onto: String? = nil, keepConflicts: Bool = false, remotes: Remotes = .none) throws -> MergeResult {
+    public static func merge(branch: String, into target: String, onto: String? = nil, keepConflicts: Bool = false,
+                             remotes: Remotes = .none) throws -> MergeResult {
         if let onto {
             let here = try currentBranch(target, remotes: remotes)
             guard here == onto else {
@@ -50,7 +54,9 @@ extension Git {
             guard branch != onto else { throw GitError(args: ["merge", branch], status: 1, stderr: "\(branch) is the branch being merged into") }
         }
         // Only a merge started here is ever aborted here: one the user had under way is refused, untouched.
-        guard !isMerging(target, remotes: remotes) else { throw GitError(args: ["merge", branch], status: 1, stderr: "a merge is already in progress in \(target)") }
+        guard !isMerging(target, remotes: remotes) else {
+            throw GitError(args: ["merge", branch], status: 1, stderr: "a merge is already in progress in \(target)")
+        }
         do {
             try run(["merge", "--no-edit", rev(branch)], cwd: target, remotes: remotes)
             return MergeResult(merged: true, conflicts: [])

@@ -37,7 +37,9 @@ public struct FilesWrite: RPCMethod {
     }
     public struct Result: Codable, Sendable, Equatable {
         public var stamp: FileStamp?, conflict: Conflict?, missing: Bool?
-        public init(stamp: FileStamp? = nil, conflict: Conflict? = nil, missing: Bool? = nil) { self.stamp = stamp; self.conflict = conflict; self.missing = missing }
+        public init(stamp: FileStamp? = nil, conflict: Conflict? = nil, missing: Bool? = nil) {
+            self.stamp = stamp; self.conflict = conflict; self.missing = missing
+        }
     }
     public var path: String, text: String, base: FileStamp?
     public init(path: String, text: String, base: FileStamp?) { self.path = path; self.text = text; self.base = base }

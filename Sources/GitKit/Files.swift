@@ -9,7 +9,11 @@ extension ProjectFiles {
     public static func list(_ root: String, limit: Int = listLimit, remotes: Remotes = .none) throws -> [String] {
         let a = ["ls-files", "-t", "--cached", "--others", "--deleted", "--exclude-standard", "-z"]
         let r: (data: Data, truncated: Bool)
-        do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit, remotes: remotes) } catch where outsideGit(error) { return walk(root, limit: limit) }
+        do {
+            r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit, remotes: remotes)
+        } catch where outsideGit(error) {
+            return walk(root, limit: limit)
+        }
         let lines: [Substring] = String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self)
             .split(separator: "\0").filter { $0.count > 2 }
         let gone = Set(lines.filter { $0.hasPrefix("R ") }.map { $0.dropFirst(2) })
@@ -30,10 +34,13 @@ extension ProjectFiles {
             let a = ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]
             let r: (data: Data, truncated: Bool)
             do { r = try Git.runPart(a, cwd: root, limit: Subprocess.outputLimit, remotes: remotes) } catch where outsideGit(error) { return [] }
-            return Array(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self).split(separator: "\0").prefix(limit).map(String.init))
+            return Array(String(decoding: r.truncated ? Git.wholeEntries(r.data, 0) : r.data, as: UTF8.self)
+                .split(separator: "\0").prefix(limit).map(String.init))
         }
         let dir = folder.hasSuffix("/") ? folder : folder + "/"
-        guard !dir.hasPrefix("/"), !dir.split(separator: "/").contains("..") else { throw GitError(args: [dir], status: 1, stderr: "“\(dir)” isn't in the workspace.") }
+        guard !dir.hasPrefix("/"), !dir.split(separator: "/").contains("..") else {
+            throw GitError(args: [dir], status: 1, stderr: "“\(dir)” isn't in the workspace.")
+        }
         let names: [String]
         if let r = remotes.of(root) {
             names = String(decoding: try r.run("cd \(RemoteHost.cdArg(r.path + "/" + dir)) && ls -1Ap"), as: UTF8.self).split(separator: "\n").map(String.init)
