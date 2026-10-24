@@ -317,6 +317,18 @@ import TestSupport
     #expect(e.tick(at: t0.addingTimeInterval(5)) == .waiting)
 }
 
+/// After an update the new kelpd reads a question it inherited again, with its own patterns; one the agent reported stays.
+@Test func anInheritedGuessIsReadAgainAReportIsNot() throws {
+    let grok = try #require(AgentManifest.presets.first { $0.id == "grok" })
+    let banner = "Worked for 4m0s. Opt-in to allow SpaceXAI to retain coding data, for training and debugging purposes."
+    var guessed = StatusDetector(manifest: grok)
+    guessed.adopted(.waiting, screen: banner)
+    #expect(guessed.status == .done)
+    var reported = StatusDetector(manifest: grok)
+    reported.adopted(.waiting, screen: "\u{1B}]7501;state=blocked:kind=permission\u{07}" + banner)
+    #expect(reported.status == .waiting)
+}
+
 /// A redraw of borders and a spinner, each ended by ESC ( B, has no words.
 @Test func characterSetSwitchesAreNotWords() {
     let redraw = "\u{1B}[23;3H┃\u{1B}[2C◆\u{1B}[55;7H\u{1B}(B\u{1B}[m┃\u{1B}(B┃⠴\u{1B}(B"

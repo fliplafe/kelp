@@ -2,6 +2,7 @@ import Foundation
 import os
 import Testing
 import Core
+import Agents
 @testable import Daemon
 import TestSupport
 
@@ -39,6 +40,27 @@ private let readAndEcho = "echo before; while read l; do echo got-$l; done"
     next.onOutput = { d in if String(decoding: d, as: UTF8.self).contains("ready") { seen.withLock { $0 = true } } }
     next.start(); defer { _ = next.terminate() }
     #expect(try await waitFor { seen.withLock { $0 } })
+}
+
+/// A question the kelpd before read off the screen is read again by the next one: Grok's opt-in banner, which the old
+/// "allow .* to" took for one, doesn't keep it in Needs You after the update that fixed that. Read stays read.
+@Test func aQuestionGuessedBeforeAnUpdateIsGuessedAgain() async throws {
+    let screen = "Worked for 4m0s\nHelp improve Grok [Opt out] [Opt in]\nOff by default. Opt-in to allow SpaceXAI to retain coding data, "
+        + "e.g., prompts, traces, & metrics, for training and debugging purposes. Change anytime via settings.\n"
+    let grok = AgentManifest(id: "grok", name: "Grok", command: "/bin/sh", args: ["-c", "printf '\(screen)'; cat"])
+    let (d, c, root) = try daemon(agents: [grok])
+    defer { d.stop() }
+    let s = try await c.call(SessionCreate(cwd: root.path, agent: "grok"))
+    #expect(try await waitFor { d.sessions.existing(s.id)?.tail(4096).range(of: Data("SpaceXAI".utf8)) != nil })
+    _ = try await c.call(SessionAnnotate(id: s.id, status: "waiting"))   // what the old kelpd made of it
+    _ = try await c.call(SessionMarkRead(id: s.id))
+
+    let next = try Daemon(root: root)
+    try next.start(adopting: try #require(d.handOver()))
+    defer { next.stop() }
+    let c2 = try client(root)
+    #expect(try await waitFor { try await c2.call(SessionList()).first { $0.id == s.id }?.status == .done })
+    #expect(try await c2.call(SessionList()).first { $0.id == s.id }?.unread == false)
 }
 
 /// kelpd itself: `daemon.upgrade` runs the binary at its path again in the same process, and the session's program never
