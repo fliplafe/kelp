@@ -20,6 +20,20 @@ protocol Answered: RPCMethod {
     static var inOrder: Bool { get }
     /// The result as the reply's JSON.
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data
+    /// Who may call it: nil for any client of the socket (the app, the CLI, agents and their scripts), else what anyone
+    /// but Kelp's window is told (`Clients.requireApp`). Its params may decide (`state.set` of an `lsp.` key).
+    var onlyFromKelp: String? { get }
+}
+
+extension Answered {
+    var onlyFromKelp: String? { nil }
+
+    /// The method's params as its type, from a client allowed to call it: checked here, for every method.
+    static func checked(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Self {
+        let m = try decoded(p)
+        if let refusal = m.onlyFromKelp { try d.clients.requireApp(conn, refusal) }
+        return m
+    }
 }
 
 /// What a method's handler is given (`Handled.Service`): one of the daemon's services, never the daemon itself, so it
@@ -65,7 +79,7 @@ extension Handled {
 
     /// On the calling thread: an in-order method's, on the reader thread.
     static func answerNow(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Data {
-        try JSONEncoder().encode(decoded(p).handle(Service.of(d), conn: conn))
+        try JSONEncoder().encode(checked(p, d, conn: conn).handle(Service.of(d), conn: conn))
     }
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data { try await d.offload(quick: quick) { try answerNow(p, d, conn: conn) } }
 }
@@ -83,7 +97,7 @@ extension AsyncHandled {
     func handle(_ s: Service, conn: Int) async throws -> Result { try await handle(s) }
 
     static func answer(_ p: JSONValue, _ d: Daemon, conn: Int) async throws -> Data {
-        try JSONEncoder().encode(await decoded(p).handle(Service.of(d), conn: conn))
+        try JSONEncoder().encode(await checked(p, d, conn: conn).handle(Service.of(d), conn: conn))
     }
 }
 

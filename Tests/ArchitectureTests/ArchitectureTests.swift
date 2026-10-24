@@ -239,6 +239,14 @@ private func codeOnly(_ s: String) -> String {
     #expect(taking == [], "handlers that take the daemon")
 }
 
+/// Who may call a method is the method's to say (`onlyFromKelp`), checked in one place for every call: a handler that
+/// checked for itself could forget, or check after it had already acted.
+@Test func whoMayCallAMethodIsCheckedInOnePlace() throws {
+    let checks = try matches(#"\.requireApp\("#, in: ["Sources/Daemon"])
+    #expect(checks.count == 1 && checks.allSatisfy { $0.hasPrefix("Sources/Daemon/Handlers.swift:") }, "who-may-call checks outside the dispatcher: \(checks)")
+    #expect(try matches(#"var onlyFromKelp: String\? \{ (?!nil \}|get \})"#, in: ["Sources/Daemon"]).count == 3)   // ui.publish, scripts.trust, state.set
+}
+
 /// What the daemon runs on is handed to it (`Daemon(root:)`, its `Remotes`, `LSPHost`'s delays): nothing in the code it
 /// runs reads KELP_HOME's folders from the environment, keeps state in a static or opts out of the isolation checks. Two
 /// daemons in one process (tests) shared those, and the one set last won. And GitKit runs git on a remote project's host

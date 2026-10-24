@@ -6,11 +6,11 @@ import Core
 /// (each workspace's layout, the sidebar's order…) in the database with `state.*`, so every KELP_HOME has its own.
 extension UIPublish: Handled {
     static var inOrder: Bool { true }
+    /// Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
+    var onlyFromKelp: String? { "Only Kelp's window publishes its state." }
     func handle(_ clients: Clients) throws -> Done { try handle(clients, conn: -1) }
     func handle(_ clients: Clients, conn: Int) throws -> Done {
         guard case .object = state else { throw RPCError.invalidParams("state must be an object") }
-        // Only Kelp's window says what's on screen (and gets event.ui): an agent can't stand in for it.
-        try clients.requireApp(conn, "Only Kelp's window publishes its state.")
         clients.publishUI(state, from: conn)
         return Done()
     }
@@ -57,13 +57,10 @@ extension StateGet: Handled {
 
 extension StateSet: Handled {
     static var inOrder: Bool { true }
-    func handle(_ ui: UIStore) throws -> Done { try handle(ui, conn: -1) }
-    func handle(_ ui: UIStore, conn: Int) throws -> Done {
-        // Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window
-        // (as `scripts.trust`); an agent's call or a repository's script can't record it.
-        if key.hasPrefix("lsp.") { try ui.clients.requireApp(conn, "Only Kelp's window can trust a project for language servers.") }
-        try ui.store.setUIState(key, value); return Done()
-    }
+    /// Which projects may run their own code in language servers and formatters: the user's say, in Kelp's window
+    /// (as `scripts.trust`); an agent's call or a repository's script can't record it.
+    var onlyFromKelp: String? { key.hasPrefix("lsp.") ? "Only Kelp's window can trust a project for language servers." : nil }
+    func handle(_ ui: UIStore) throws -> Done { try ui.store.setUIState(key, value); return Done() }
 }
 
 extension ClientEvents: Handled {

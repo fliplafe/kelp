@@ -178,6 +178,10 @@ script — can do what the user can: start a session with any command, read term
 agents run as the user and can run commands anyway. Kelp doesn't try to contain a hostile process of the same user
 (it could edit `~/.kelp`, drive the app with synthetic events, or skip Kelp entirely).
 
+What only Kelp's window may do — publish what's on screen (`ui.publish`), trust a project's commands (`scripts.trust`) or
+its language servers (`state.set` of `lsp.*`) — each method says itself (`Answered.onlyFromKelp`), and the dispatcher
+checks it for every call, by the program at the other end of the socket. Every other method is open to any client.
+
 **Not trusted: what came from someone else** — a cloned repository's files and branches, a pull request, an issue or
 review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the user:
 - `.kelp.yaml` runs nothing (setup, tabs, shared links, recipes, issueCommand) until the user trusts that exact text,

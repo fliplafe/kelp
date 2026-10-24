@@ -53,15 +53,14 @@ extension ScriptsList: Handled {
 }
 
 extension ScriptsTrust: Handled {
-    func handle(_ workspaces: Workspaces) throws -> Done { try handle(workspaces, conn: -1) }
-    func handle(_ workspaces: Workspaces, conn: Int) throws -> Done {
+    /// Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
+    /// Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
+    /// program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
+    /// process of this user can drive the app (synthetic key events) or write trusted-configs.json itself.
+    var onlyFromKelp: String? { "Only Kelp's window can trust a project's commands: open the project there and run one." }
+    func handle(_ workspaces: Workspaces) throws -> Done {
         let (_, repo) = try workspaces.configRepo(worktreeId)
         let now = Workspaces.digest(workspaces.configText(repo))
-        // Only from Kelp's window: the program on the other end of the socket must be the KelpApp next to this daemon.
-        // Agents and scripts reach this socket too (KELP_SOCKET) and could read the digest; they can't become that
-        // program. What this guards against is a cloned repository's .kelp.yaml running unseen, not a hostile agent: a
-        // process of this user can drive the app (synthetic key events) or write trusted-configs.json itself.
-        try workspaces.clients.requireApp(conn, "Only Kelp's window can trust a project's commands: open the project there and run one.")
         // The digest from scripts.list: a file changed since it was shown (an agent, a pull) isn't what was trusted.
         guard let digest else { throw RPCError.invalidParams("scripts.trust needs the digest of the .kelp.yaml that was shown.") }
         guard digest == now else { throw RPCError.invalidParams(".kelp.yaml changed since it was shown. Look at it again before trusting it.") }
