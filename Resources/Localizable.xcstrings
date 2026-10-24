@@ -1,7 +1,9 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "": {},
+    "": {
+      "shouldTranslate": false
+    },
     "\n\nFix it in Terminal:\n": {
       "localizations": {
         "ru": {
@@ -22,7 +24,9 @@
         }
       }
     },
-    " ": {},
+    " ": {
+      "shouldTranslate": false
+    },
     " Untracked files are deleted.": {
       "localizations": {
         "ru": {
@@ -123,7 +127,9 @@
         }
       }
     },
-    "#%lld": {},
+    "#%lld": {
+      "shouldTranslate": false
+    },
     "%@ %@: %lld%% used": {
       "localizations": {
         "en": {
@@ -376,8 +382,12 @@
         }
       }
     },
-    "%lld%%": {},
-    "+%lld": {},
+    "%lld%%": {
+      "shouldTranslate": false
+    },
+    "+%lld": {
+      "shouldTranslate": false
+    },
     "1 running agent stops. Files in the project are not touched.": {
       "localizations": {
         "ru": {
@@ -550,7 +560,16 @@
         }
       }
     },
-    "Aa  ~ $": {},
+    "Aa  ~ $": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aa  ~ $"
+          }
+        }
+      }
+    },
     "About Kelp": {
       "extractionState": "manual",
       "localizations": {
@@ -1012,7 +1031,9 @@
         }
       }
     },
-    "Bitbucket": {},
+    "Bitbucket": {
+      "shouldTranslate": false
+    },
     "Bold (⌘B)": {
       "localizations": {
         "ru": {
@@ -1280,7 +1301,9 @@
         }
       }
     },
-    "Claude Code": {},
+    "Claude Code": {
+      "shouldTranslate": false
+    },
     "Claude Code can read and change these settings (theme, fonts, extensions…) when you ask.": {
       "extractionState": "manual",
       "localizations": {
@@ -1493,7 +1516,9 @@
         }
       }
     },
-    "Codex": {},
+    "Codex": {
+      "shouldTranslate": false
+    },
     "Color Theme: %@": {
       "localizations": {
         "ru": {
@@ -2102,7 +2127,8 @@
       }
     },
     "Cursor": {
-      "extractionState": "manual"
+      "extractionState": "manual",
+      "shouldTranslate": false
     },
     "Custom JQL…": {
       "localizations": {
@@ -2163,6 +2189,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Агент по умолчанию"
+          }
+        }
+      }
+    },
+    "Default Markdown mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режим Markdown по умолчанию"
           }
         }
       }
@@ -2913,7 +2950,8 @@
       }
     },
     "Git": {
-      "extractionState": "manual"
+      "extractionState": "manual",
+      "shouldTranslate": false
     },
     "Git Isn't Available": {
       "localizations": {
@@ -2968,7 +3006,9 @@
         }
       }
     },
-    "GitHub": {},
+    "GitHub": {
+      "shouldTranslate": false
+    },
     "GitHub, Linear, Jira and Bitbucket: start work from an issue, review PRs.": {
       "extractionState": "manual",
       "localizations": {
@@ -3442,7 +3482,9 @@
         }
       }
     },
-    "Jira": {},
+    "Jira": {
+      "shouldTranslate": false
+    },
     "Jira search": {
       "localizations": {
         "ru": {
@@ -3547,7 +3589,9 @@
         }
       }
     },
-    "Kelp": {},
+    "Kelp": {
+      "shouldTranslate": false
+    },
     "Kelp can reach you": {
       "localizations": {
         "ru": {
@@ -3729,7 +3773,9 @@
         }
       }
     },
-    "Linear": {},
+    "Linear": {
+      "shouldTranslate": false
+    },
     "Lines starting with # are left out. ⌘↩ commits.": {
       "localizations": {
         "ru": {
@@ -8256,7 +8302,16 @@
         }
       }
     },
-    "acme.atlassian.net": {},
+    "acme.atlassian.net": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "acme.atlassian.net"
+          }
+        }
+      }
+    },
     "an area screenshot to the clipboard": {
       "localizations": {
         "ru": {
@@ -8527,7 +8582,9 @@
         }
       }
     },
-    "−%lld": {},
+    "−%lld": {
+      "shouldTranslate": false
+    },
     "⋯  %lld unchanged lines": {
       "localizations": {
         "ru": {
@@ -10629,7 +10686,9 @@
         }
       }
     },
-    "GitLab": {},
+    "GitLab": {
+      "shouldTranslate": false
+    },
     "%@ is too large to show here": {
       "localizations": {
         "ru": {

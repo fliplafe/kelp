@@ -8,6 +8,7 @@ import EditorKit
 final class MarkdownTab: NSViewController {
     let editor: CodeEditor
     let url: URL
+    private let app: AppModel
     private let web = WKWebView()
     private let links: PreviewLinks
     private let mode = NSSegmentedControl(labels: [String(localized: "Edit"), String(localized: "Split"), String(localized: "Preview")],
@@ -17,10 +18,34 @@ final class MarkdownTab: NSViewController {
     /// Edited while the preview was hidden (Edit mode): rendered when it shows.
     private var dirty = false
     /// Documents to read (Kelp's help) open as the preview.
-    var startInPreview = false
+    var startInPreview = false {
+        didSet {
+            if isViewLoaded {
+                mode.selectedSegment = startInPreview ? 2 : defaultSegment
+                applyMode()
+            }
+        }
+    }
     private var narrow = false
 
+    var currentMode: String {
+        switch mode.selectedSegment {
+        case 0: "edit"
+        case 1: "split"
+        default: "preview"
+        }
+    }
+
+    private var defaultSegment: Int {
+        switch app.settings.string("markdown.defaultMode") {
+        case "edit": 0
+        case "split": 1
+        default: 2
+        }
+    }
+
     init(editor: CodeEditor, url: URL, app: AppModel) {
+        self.app = app
         links = PreviewLinks(app: app)
         self.editor = editor; self.url = url
         super.init(nibName: nil, bundle: nil)
@@ -32,7 +57,7 @@ final class MarkdownTab: NSViewController {
             let x = NSButton(image: .symbol(sym, tip), target: self, action: sel)
             x.bezelStyle = .texturedRounded; x.toolTip = tip; return x
         }
-        mode.selectedSegment = startInPreview ? 2 : 1; mode.target = self; mode.action = #selector(modeChanged)
+        mode.selectedSegment = startInPreview ? 2 : defaultSegment; mode.target = self; mode.action = #selector(modeChanged)
         let heading = NSPopUpButton()
         heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"), String(localized: "Heading 2"), String(localized: "Heading 3")])
         heading.target = self; heading.action = #selector(headingPicked(_:))

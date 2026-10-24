@@ -3,6 +3,7 @@ import Foundation
 import Testing
 import Core
 import Daemon
+import EditorKit
 @testable import KelpApp
 
 /// Settings as the app and everything else share them: a change made in the app lands in settings.json through the
@@ -30,6 +31,52 @@ extension OneAtATime {
         _ = try await cli.call("settings.set", .obj(["key": "editor.lsp", "value": false]))   // elsewhere
         for _ in 0..<100 where s.bool("editor.lsp") != false { try await Task.sleep(for: .milliseconds(50)) }
         #expect(s.bool("editor.lsp") == false && s.bool("editor.autoSave") == true)
+    }
+
+    @Test func markdownDefaultModeGoesBothWaysThroughTheDaemon() async throws {
+        _ = testHome
+        _ = NSApplication.shared
+        let root = URL(fileURLWithPath: "/tmp/kst-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let d = try Daemon(root: root); try d.start(); defer { d.stop() }
+        let app = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+        let cli = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
+        let m = AppModel(), s = m.settings
+        m.client = app; m.listen(app)
+        m.extensions.reload()
+        await s.load()
+
+        let editorSection = m.extensions.all.settings.first { $0.id == "editor" }
+        let spec = editorSection?.specs.first { $0.key == "markdown.defaultMode" }
+        #expect(spec?.type == "enum")
+        #expect(spec?.default == "preview")
+        #expect(spec?.options == ["preview", "edit", "split"])
+        #expect(s.string("markdown.defaultMode") == "preview")
+
+        let testURL = URL(fileURLWithPath: "/tmp/test.md")
+        let editor = CodeEditor(text: "# Preview", url: testURL)
+        let tabPreview = MarkdownTab(editor: editor, url: testURL, app: m)
+        _ = tabPreview.view
+        #expect(tabPreview.currentMode == "preview")
+
+        s.set("markdown.defaultMode", .string("split"))   // in the app
+        let file = root.appendingPathComponent("settings.json")
+        func onDisk() -> JSONValue? { (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) } }
+        for _ in 0..<100 where onDisk()?["markdown.defaultMode"]?.string != "split" { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(onDisk()?["markdown.defaultMode"]?.string == "split")
+
+        let tabSplit = MarkdownTab(editor: editor, url: testURL, app: m)
+        _ = tabSplit.view
+        #expect(tabSplit.currentMode == "split")
+
+        _ = try await cli.call("settings.set", .obj(["key": "markdown.defaultMode", "value": "edit"]))   // elsewhere
+        for _ in 0..<100 where s.string("markdown.defaultMode") != "edit" { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(s.string("markdown.defaultMode") == "edit")
+
+        let tabEdit = MarkdownTab(editor: editor, url: testURL, app: m)
+        _ = tabEdit.view
+        #expect(tabEdit.currentMode == "edit")
     }
 
     /// A stepper held sends 14 then 15: the daemon's answer to 14 arriving after 15 was shown doesn't put 14 back.
