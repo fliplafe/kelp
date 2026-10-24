@@ -219,7 +219,13 @@ final class Slots: Sendable {
     /// Quick work's own cap (a thread each): it never waits behind slow work, only behind this much quick work at once,
     /// so a client looping on `kelp hook` can't make thousands of threads.
     private let quickSlots: Slots?
-    init(_ limit: Int, quick: Int? = 64) { self.limit = limit; quickSlots = quick.map { Slots($0, quick: nil) } }
+    /// `runNow`'s own cap: never behind slow work, and a client looping on attach can't make a thread per call.
+    private let nowSlots: Slots?
+    init(_ limit: Int, quick: Int? = 64) {
+        self.limit = limit
+        quickSlots = quick.map { Slots($0, quick: nil) }
+        nowSlots = quick.map { Slots($0 / 2, quick: nil) }
+    }
 
     func acquire() async {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
@@ -240,10 +246,11 @@ final class Slots: Sendable {
         next?.resume()
     }
 
-    /// `work` on a thread of its own at once, programs allowed: what the user is waiting to see (a paused agent's tab
-    /// waking) doesn't queue behind slow git or ssh. User-driven and rare, so uncapped.
+    /// `work` on a thread of its own, programs allowed: what the user is waiting to see (a paused agent's tab waking)
+    /// doesn't queue behind slow git or ssh, only behind as much of its own kind as its cap allows.
     func runNow<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
+        if let nowSlots { return try await nowSlots.run(work) }
+        return try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
     }
 
     /// Waits until no slot is held (what's running has finished), for at most `seconds`.

@@ -67,3 +67,22 @@ import Core
     d.watches.start(.init(topic: .activity, key: ""), conn: 1)
     #expect(d.watches.count == 0)
 }
+
+/// What the user waits on has a cap of its own too (a client looping on attach), apart from slow work's and quick work's.
+@Test func workRunNowHasACapOfItsOwn() async throws {
+    let slots = Slots(8, quick: 4)   // runNow: 2 at once
+    let running = OSAllocatedUnfairLock(initialState: (now: 0, most: 0))
+    try await withThrowingTaskGroup(of: Void.self) { g in
+        for _ in 0..<5 {
+            g.addTask {
+                try await slots.runNow {
+                    running.withLock { $0.now += 1; $0.most = max($0.most, $0.now) }
+                    usleep(100_000)
+                    running.withLock { $0.now -= 1 }
+                }
+            }
+        }
+        try await g.waitForAll()
+    }
+    #expect(running.withLock { $0.most } == 2)
+}

@@ -272,3 +272,15 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     _ = try await r.c.call("session.markRead", .obj(["id": .string(s.id)]))
     #expect(try await sessions(r).first { $0.id == s.id }?.unread == false)
 }
+
+/// Whatever a `kelp attach` sends right behind its session.stream line, in the same write, reaches the session: the
+/// lines after it are the stream's as much as the bytes after the last line end.
+@Test func linesRightAfterAStreamRequestReachTheSession() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "cat")
+    let fd = try Unix.connect(r.d.socketPath)
+    defer { close(fd) }
+    let start = #"{"jsonrpc":"2.0","method":"session.stream","params":{"id":"\#(s.id)"}}"# + "\nfirst-line\nsecond"
+    #expect(Unix.writeAll(fd, Data(start.utf8)))
+    #expect(try await waitFor { try await r.c.call(SessionRead(id: s.id)).contains("first-line") })
+}

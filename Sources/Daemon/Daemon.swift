@@ -269,14 +269,16 @@ public final class Daemon: Sendable {
                     Log.rpc.error("hung up on a client whose line passed \(Self.lineLimit) bytes with no end")
                     break reading
                 }
-                for line in lines {
+                for (i, line) in lines.enumerated() {
                     guard let req = try? JSONDecoder().decode(Request.self, from: line) else { refuse(line, c); continue }
                     // A JSON-RPC client after all (it came in raw, Clients.add): events from now on.
                     if !spoke { spoke = true; if req.method != "session.stream" { clients.setRaw(c.id, false) } }
                     if let t = Self.methods[req.method] as? any Handled.Type, t.inOrder { answerInOrder(t, req, c); continue }
                     // The one method by name: it ends JSON-RPC on this connection, which becomes a raw byte pipe (kelp attach).
                     if req.method == "session.stream" {
-                        stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: lb.takeRemainder())
+                        // What came after its line in the same read is the stream's already: its whole lines, then the rest.
+                        let after = lines[(i + 1)...].reduce(Data()) { $0 + $1 + Data("\n".utf8) }
+                        stream(c, session: req.params?["id"]?.string ?? "", size: req.params, leftover: after + lb.takeRemainder())
                         break reading
                     }
                     Task { await self.respond(req, conn: c) }
