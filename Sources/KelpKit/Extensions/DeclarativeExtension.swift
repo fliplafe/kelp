@@ -196,14 +196,36 @@ struct ExtActions {
         return quote ? ShellTemplate.fill(template, value) : ShellTemplate.substitute(template) { value($0) ?? "" }
     }
 
-    /// An `open` action's URI: the extension's template with the item's values put in. A URI that runs something
-    /// (terminal:, agent:) has to say so in the extension's own words, never through a value (someone else's: an issue's
-    /// link field set to terminal://…?cmd=…). nil then.
+    /// An `open` action's URI: the extension's template with the item's values put in, for one that opens something. A
+    /// URI that runs something (terminal:, agent:) never comes through a value (someone else's: an issue's link field set
+    /// to terminal://…?cmd=…): nil then. The extension's own terminal: or agent: template is `runAction`'s.
     func openURI(_ template: String, item: JSONValue?) -> String? {
-        let uri = TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.of(app).workspace?.path)
-        return ExtActions.runs.contains { template.hasPrefix($0 + ":") } ? uri : Self.openableURI(uri)
+        Self.openableURI(TabURI.normalize(expand(template, item: item, quote: false), cwd: IDEContext.of(app).workspace?.path))
     }
     private static let runs = ["terminal", "agent"]
+
+    /// What an `open` of the extension's own terminal: or agent: URI does, with the item's values put in the way the
+    /// `terminal` and `agent` actions put them: a command's as shell variables (never text in it), a prompt typed for
+    /// the user to send (never sent). A tmux session's name comes from the template alone. nil for another URI.
+    enum RunAction: Equatable { case agent(String?, prompt: String?), terminal(command: String?, title: String?), tmux(String) }
+    func runAction(_ template: String, item: JSONValue?) -> RunAction? {
+        guard let colon = template.firstIndex(of: ":"), Self.runs.contains(String(template[..<colon])) else { return nil }
+        var rest = template[template.index(after: colon)...]
+        if rest.hasPrefix("//") { rest = rest.dropFirst(2) }
+        let target = String(rest.prefix { $0 != "?" }).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var query: [String: String] = [:]
+        if let q = rest.firstIndex(of: "?") {
+            for pair in rest[rest.index(after: q)...].split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? String($0) }
+                if kv.count == 2 { query[kv[0]] = kv[1] }
+            }
+        }
+        if template.hasPrefix("agent:") {
+            return .agent(target.isEmpty ? nil : target, prompt: query["prompt"].map { expand($0, item: item, quote: false) })
+        }
+        if let name = query["tmux"] { return name.contains("${") ? nil : .tmux(name) }
+        return .terminal(command: query["cmd"].map { expand($0, item: item, quote: true) }, title: query["title"].map { expand($0, item: item, quote: false) })
+    }
 
     /// A URI that opens something (a page, a file, a diff, a tab) rather than running a command or an agent; nil else.
     static func openableURI(_ uri: String) -> String? { runs.contains(TabURI.scheme(uri)) ? nil : uri }
@@ -228,6 +250,13 @@ struct ExtActions {
 
     private func act(_ a: ExtManifest.ActionDef, item: JSONValue?, folder: URL, after: (() -> Void)?) {
         if let t = a.terminal { app.workbench.editor?.run(command: expand(t, item: item, quote: true), title: a.title) }
+        else if let o = a.open, let run = runAction(o, item: item) {
+            switch run {
+            case .agent(let agent, let prompt): app.workbench.editor?.newAgent(agent, prompt: prompt, draft: true)
+            case .terminal(let command, let title): app.workbench.editor?.run(command: command, title: title ?? a.title)
+            case .tmux(let name): app.workbench.open("terminal:?tmux=" + (name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name))
+            }
+        }
         else if let o = a.open {
             if let u = openURI(o, item: item) { app.workbench.open(u) }
             else { Banner.show(String(localized: "“\(a.title)” would run a command or an agent from its data; it opens links and files only.")) }

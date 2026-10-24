@@ -221,7 +221,8 @@ review comment, a project's `.kelp.yaml`. Kelp keeps that from acting as the use
   banner while the clipboard still holds the program's text. Pastes into other apps aren't guarded. OSC 52 reads and
   Kitty clipboard writes are refused; replayed history drops old OSC 52 copies. The user's own copy is unaffected.
 - An extension's `open` action (and `kelp.open` in its page) can't turn data (an issue's fields) into a `terminal:` or
-  `agent:` URI; only the extension's own template can name those. Its agent prompts are typed, for the user to send.
+  `agent:` URI; only the extension's own template can name those, and values go into one as into its other actions: a
+  command's as shell variables, an agent's prompt typed for the user to send, never into a tmux session's name.
 - A repository's own git config (a folder that came as a download carries one) runs nothing on what Kelp runs by
   itself: no fsmonitor, no external diff or textconv in diffs, and its own `filter.*` drivers are off for reads (status,
   diff, log…). What the user does (add, commit, checkout, fetch) runs git as a terminal would, hooks and filters included.
