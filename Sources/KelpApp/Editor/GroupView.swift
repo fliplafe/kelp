@@ -9,13 +9,14 @@ final class GroupView: NSView {
     private let hint = GroupView.dropHint()
     private weak var shown: NSView?
     private let veil = Veil()
-    private let ring = Veil()
-    /// A ring around the content when its agent calls for you (it clears once you've looked or answered).
+    private let ring = Glow()
+    /// A glow inside the content's edges when its agent calls for you (it clears once you've looked or answered).
     var attention: NSColor? {
-        didSet {
-            guard attention != oldValue else { return }
-            ring.layer?.borderColor = attention?.cgColor; ring.isHidden = attention == nil
-        }
+        didSet { if attention != oldValue { ring.show(attention, breathing: breathing) } }
+    }
+    /// The glow breathes while the agent waits for an answer (it stays still with Reduce Motion).
+    var breathing = false {
+        didSet { if breathing != oldValue { ring.show(attention, breathing: breathing) } }
     }
     var onDropTab: ((String, NSRectEdge?) -> Void)?   // nil edge = into this group
     /// Files from Finder or the Files panel, dropped on a tab that isn't a terminal (a terminal types their paths).
@@ -40,7 +41,6 @@ final class GroupView: NSView {
         self.groupId = groupId; self.themes = themes
         super.init(frame: .zero)
         veil.wantsLayer = true; veil.isHidden = true
-        ring.wantsLayer = true; ring.isHidden = true; ring.layer?.borderWidth = 2; ring.layer?.cornerRadius = 5
         for v in [strip, container, veil, ring] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(hint)
         NSLayoutConstraint.activate([
@@ -129,6 +129,42 @@ final class GroupView: NSView {
 }
 
 /// Paints over the content without taking its clicks.
-private final class Veil: NSView {
+private class Veil: NSView {
     override func hitTest(_ p: NSPoint) -> NSView? { nil }
+}
+
+/// A hairline and a soft glow inward from the edges: the shadow of a frame drawn just outside, clipped to the bounds.
+private final class Glow: Veil {
+    private let frameLayer = CAShapeLayer()
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true; isHidden = true
+        layer?.masksToBounds = true; layer?.cornerRadius = 5; layer?.borderWidth = 1
+        frameLayer.fillRule = .evenOdd; frameLayer.shadowOffset = .zero; frameLayer.shadowRadius = 14; frameLayer.shadowOpacity = 0.6
+        layer?.addSublayer(frameLayer)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(_ color: NSColor?, breathing: Bool) {
+        isHidden = color == nil
+        frameLayer.removeAllAnimations(); frameLayer.opacity = 1
+        guard let color else { return }
+        layer?.borderColor = color.withAlphaComponent(0.5).cgColor
+        frameLayer.fillColor = color.cgColor; frameLayer.shadowColor = color.cgColor
+        guard breathing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 0.35; a.toValue = 1; a.duration = 1.2; a.autoreverses = true; a.repeatCount = .infinity
+        a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        frameLayer.add(a, forKey: "breathe")
+    }
+
+    override func layout() {
+        super.layout()
+        let path = CGMutablePath()
+        path.addRect(bounds.insetBy(dx: -40, dy: -40)); path.addRect(bounds)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        frameLayer.frame = bounds; frameLayer.path = path
+        CATransaction.commit()
+    }
 }

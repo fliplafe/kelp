@@ -209,6 +209,7 @@ final class EditorArea: NSViewController {
         // that calls for you: it's the pane to look at.
         g.dimmed = !g.strip.focused && zoomed == nil && (layout.root?.sessions.count ?? 0) > 1 && visible?.badge.map { $0.attention == nil } == true
         g.attention = visible?.badge?.attention
+        g.breathing = visible?.badge?.status == .waiting
         showEdited()
     }
 
