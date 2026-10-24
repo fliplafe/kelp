@@ -187,7 +187,9 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
                            "transcript": .string("/tmp/\(UUID().uuidString.lowercased()).jsonl")])
     for t in quick {
         let ordered = t.inOrder; #expect(!ordered, "\(t.name)")
-        do { _ = try await w.d.answer(t.name, p, conn: -1) } catch { Issue.record("\(t.name): \(error)") }
+        do { _ = try await w.d.answer(t.name, p, conn: -1) } catch let e as RPCError where e.message.hasPrefix("Only Kelp's window") {
+            continue   // refused before anything ran: only the window may call it
+        } catch { Issue.record("\(t.name): \(error)") }
     }
     let status = JSONValue.obj(["id": .string(desk.id)])   // and one that runs git can't go that way
     await #expect(throws: RPCError.self) { _ = try await w.d.offload(quick: true) { try GitStatus.answerNow(status, w.d, conn: -1) } }

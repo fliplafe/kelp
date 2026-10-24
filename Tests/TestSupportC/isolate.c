@@ -27,6 +27,7 @@ __attribute__((constructor)) static void kelp_isolate(void) {
     put("CLAUDE_CONFIG_DIR", "/claude");
     put("CODEX_HOME", "/codex");
     put("KELP_TRASH", "/trash");   // Trash.move: never the user's own Trash
+    unsetenv("KELP_SESSION"); unsetenv("KELP_SOCKET");   // run from a Kelp terminal: not one of its sessions here
     const char *path = getenv("PATH");
     setenv("KELP_LOGIN_PATH", path ? path : "/usr/bin:/bin", 1);   // no login shell, so no profile runs
     setenv("TMUX_TMPDIR", root, 1); unsetenv("TMUX");   // a tmux server of the tests' own, never the user's sessions

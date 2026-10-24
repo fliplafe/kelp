@@ -124,6 +124,17 @@ extension RPCMethod {
 enum Methods {}
 
 extension Daemon {
+    /// Whether the client on `conn` may make this call: the one place every path asks (`checked`, a session's input).
+    /// A report comes from inside a session for that session only, by its process tree. Limit: a program that left the
+    /// tree (a double fork, `nohup … &`) is taken for one outside every session; macOS doesn't show another process's
+    /// environment (its KELP_SESSION) to tell, and any program of the user's may report anyway (the socket is theirs).
+    func allow(_ m: any Answered, conn: Int) throws {
+        if let refusal = m.onlyFromKelp { try clients.requireApp(conn, refusal) }
+        if let id = m.reportsFor, let pid = clients.peerPID(conn), let own = sessions.session(running: pid), own != id {
+            throw RPCError.invalidParams("A session reports only its own status.")
+        }
+    }
+
     /// Every method the daemon answers, by name: one list, so none is answered twice (a second entry traps at launch).
     static let methods: [String: any Answered.Type] = {
         let sync: [any Handled.Type] = [DaemonInfo.self, StateGet.self, StateSet.self, SessionRename.self, SessionContextWindow.self,
@@ -187,14 +198,6 @@ extension Daemon {
     /// time limits, so a thread is held only while its program runs; at most `offloadLimit` run at once, the rest wait
     /// their turn in the order they came, holding no thread meanwhile. `quick` work (`Handled.quick`) takes no slot and
     /// starts no program.
-    /// Whether the client on `conn` may make this call: the one place every path asks (`checked`, a session's input).
-    func allow(_ m: any Answered, conn: Int) throws {
-        if let refusal = m.onlyFromKelp { try clients.requireApp(conn, refusal) }
-        if let id = m.reportsFor, let pid = clients.peerPID(conn), let own = sessions.session(running: pid), own != id {
-            throw RPCError.invalidParams("A session reports only its own status.")
-        }
-    }
-
     func offload<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await offloads.run(quick: quick, work)
     }

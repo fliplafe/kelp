@@ -286,7 +286,7 @@ private func codeOnly(_ s: String) -> String {
     // checks `onlyFromKelp` itself right after (SessionLanes).
     let reads = try matches(#"\bdecoded\("#, in: ["Sources/Daemon"]).filter { !$0.hasPrefix("Sources/Daemon/Handlers.swift:") }
     #expect(reads.map { $0.split(separator: ":")[0] } == ["Sources/Daemon/SessionLanes.swift"], "params read without the caller check: \(reads)")
-    #expect(try matches(#"var onlyFromKelp: String\? \{ (?!nil \}|get \})"#, in: ["Sources/Daemon"]).count == 3)   // ui.publish, scripts.trust, state.set
+    #expect(try matches(#"var onlyFromKelp: String\? \{ (?!nil \}|get \})"#, in: ["Sources/Daemon"]).count == 4)   // ui.publish, scripts.trust, state.set, session.annotate
 }
 
 /// What the daemon runs on is handed to it (`Daemon(root:)`, its `Remotes`, `LSPHost`'s delays): nothing in the code it
