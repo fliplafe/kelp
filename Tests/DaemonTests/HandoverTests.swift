@@ -137,3 +137,17 @@ private func name(_ pid: pid_t) -> String {
     _ = try await c2.call(SessionWrite(id: s.id, text: "y\n"))
     #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-y") })
 }
+
+/// A send right before an update reaches the program whole, its Enter included (it comes 0.3 s behind the text): the
+/// hand-over waits for what was sent, as the next kelpd couldn't send it.
+@Test func aSendJustBeforeAnUpdateArrivesWithItsEnter() async throws {
+    let (d, c, root) = try daemon(); defer { d.stop() }
+    let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
+    #expect(try await waitFor { d.sessions.existing(s.id)?.tail(4096).range(of: Data("before".utf8)) != nil })
+    try await Task.sleep(for: .seconds(2.5))   // started up: a send goes straight in
+    _ = try await c.call(SessionSend(id: s.id, text: "whole"))
+    let next = try Daemon(root: root)
+    try next.start(adopting: try #require(d.handOver())); defer { next.stop() }
+    let c2 = try client(root)
+    #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-whole") })
+}

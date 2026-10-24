@@ -259,7 +259,11 @@ final class Sessions: Sendable {
     /// wakes from now on.
     func handOver() -> [Handover.Session] {
         sleepAssertion.withLock { if $0.id != 0 { IOPMAssertionRelease($0.id); $0 = (0, nil) } }   // the next one takes its own
-        return live.close().compactMap { ls in
+        let all = live.close()
+        // What was sent and isn't written yet goes in first (a send's Enter comes 0.3 s behind its text): the program has
+        // it before the next kelpd takes over, which couldn't send it.
+        DispatchQueue.concurrentPerform(iterations: all.count) { all[$0].drainInput(within: 2) }
+        return all.compactMap { ls in
             guard live.remove(ls.snapshot.id) != nil, let fd = ls.pty.handOver() else { return nil }
             publishLast(ls)
             return ls.handedOver(fd: fd)

@@ -285,6 +285,13 @@ final class LiveSession: Sendable {
     /// Bytes into the program after anything Kelp is still typing (`sends`): a key never lands between a send's text and its Enter.
     func write(_ d: Data) { sends.async { [pty] in pty.write(d) } }
 
+    /// Until what was sent is written to the program (one that doesn't read gives up after `within` seconds).
+    func drainInput(within seconds: TimeInterval) {
+        sends.sync {}
+        let end = Date().addingTimeInterval(seconds)
+        while pty.queued.withLock({ $0 }) > 0, Date() < end { usleep(10_000) }
+    }
+
     /// Keystrokes from a UI: the first submitted line becomes the source of the tab title.
     func userInput(_ d: Data) {
         write(d)
