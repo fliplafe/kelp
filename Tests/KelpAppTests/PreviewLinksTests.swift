@@ -120,11 +120,13 @@ import PDFKit
 
 /// Design Mode takes one element per click the user made: a page posting on its own, or again, gets nothing through.
 @Test func designModeTakesOneMessagePerClick() {
-    var c = DesignClicks(), t = Date()
-    #expect(!c.take(t))                            // no click
+    var c = DesignClicks()
+    let t = Date()
+    let none = c.take(t)                                  // no click
     c.note(t)
-    #expect(c.take(t.addingTimeInterval(0.2)))     // the click's own message
-    #expect(!c.take(t.addingTimeInterval(0.3)))    // a second one from the page
+    let own = c.take(t.addingTimeInterval(0.2))           // the click's own message
+    let again = c.take(t.addingTimeInterval(0.3))         // a second one from the page
     c.note(t)
-    #expect(!c.take(t.addingTimeInterval(2)))      // long after
+    let late = c.take(t.addingTimeInterval(2))            // long after
+    #expect(!none && own && !again && !late)
 }
