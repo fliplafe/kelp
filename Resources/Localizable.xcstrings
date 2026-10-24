@@ -10808,6 +10808,26 @@
           }
         }
       }
+    },
+    "Collapse": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свернуть"
+          }
+        }
+      }
+    },
+    "Expand": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Развернуть"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

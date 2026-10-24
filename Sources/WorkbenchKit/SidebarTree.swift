@@ -2,7 +2,7 @@ import Foundation
 import Core
 
 /// What the sidebar lists, decided without a window: projects → workspaces → agents, narrowed by a filter and a search,
-/// with what you pinned lifted above the projects. What needs you is in the line over the list (`Inbox`).
+/// with what you pinned lifted above the projects; a project with one workspace skips that level. What needs you is in the line over the list (`Inbox`).
 /// The raw values are the menu's English titles (and what UserDefaults keeps).
 public enum SidebarFilter: String, Sendable, CaseIterable {
     case all = "All Workspaces", working = "Working", needsYou = "Needs You", withPR = "With a Pull Request"
@@ -13,6 +13,8 @@ public struct SidebarItem: Equatable, Sendable {
     public enum Kind: Equatable, Sendable { case project(String), workspace(String), agent(String), section(String) }
     public var kind: Kind
     public var children: [SidebarItem] = []
+    /// On a project with one workspace: that workspace. The project's row stands for it, its agents right under the name.
+    public var workspace: String?
 }
 
 public struct SidebarTree {
@@ -61,8 +63,11 @@ public struct SidebarTree {
         }
         if !pinnedItems.isEmpty { out.append(SidebarItem(kind: .section("Pinned"), children: pinnedItems)) }
         out += projects.compactMap { r in
-            let kids = live.filter { $0.repoId == r.id && !pinned.contains($0.id) }.compactMap { workspace($0, r) }
-            return kids.isEmpty && narrowed ? nil : SidebarItem(kind: .project(r.id), children: kids)
+            let mine = live.filter { $0.repoId == r.id && !pinned.contains($0.id) }
+            let kids = mine.compactMap { workspace($0, r) }
+            if kids.isEmpty && narrowed { return nil }
+            if mine.count == 1, let only = kids.first { return SidebarItem(kind: .project(r.id), children: only.children, workspace: mine[0].id) }
+            return SidebarItem(kind: .project(r.id), children: kids)
         }
         return out
     }

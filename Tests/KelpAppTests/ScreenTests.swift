@@ -62,7 +62,7 @@ extension OneAtATime {
     try withSidebar(repos: [project], worktrees: [desk("w1", "main")], sessions: [ended, shell]) { _, o in
         let all = rows(of: o).flatMap { $0 }
         #expect(!all.contains("Old chat") && !all.contains("zsh"))
-        #expect(o.numberOfRows == 2)                            // the project and its workspace, nothing else
+        #expect(o.numberOfRows == 1)                            // the project, standing for its one workspace: nothing else
     }
 }
 

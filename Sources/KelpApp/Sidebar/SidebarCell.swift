@@ -17,6 +17,11 @@ final class SidebarCell: NSTableCellView {
     /// What an agent goes on with by itself: its /goal, or a command it started in the background.
     private let chip = NSButton(title: "", target: nil, action: nil)
     private var add: NSButton?
+    /// A project's: the name of the one workspace it stands for (grey), what its agents do while it's folded, and the fold.
+    private let detail = NSTextField(labelWithString: "")
+    private let summary = NSStackView()
+    private var fold: NSButton?
+    private var hovering = false
     /// Lines not committed and the PR, for rows that stand for a folder (RowBadges); they go first when the row is short of room.
     private let changes = NSButton(), pr = NSButton()
 
@@ -35,10 +40,16 @@ final class SidebarCell: NSTableCellView {
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
             b.image = .symbol("plus", String(localized: "New Workspace")); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
             b.toolTip = String(localized: "New workspace (⌘N)"); b.isHidden = true; add = b   // on hover, like Finder's sidebar
+            let f = ClosureButton(title: "") { [weak owner, node] in owner?.toggle(node) }
+            f.isBordered = false; f.contentTintColor = .secondaryLabelColor; f.isHidden = true; fold = f
+            f.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
             addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            layout(row: [icon, title, NSView(), changes, pr, trailing, b])
+            detail.font = .ui(12); detail.textColor = .secondaryLabelColor; detail.lineBreakMode = .byTruncatingTail
+            detail.setContentCompressionResistancePriority(.init(240), for: .horizontal)   // goes before the project's name
+            summary.spacing = 3
+            layout(row: [icon, title, detail, NSView(), summary, changes, pr, trailing, b, f])
         case .section:
             title.font = .ui(11, weight: .semibold); title.textColor = .secondaryLabelColor
             count.font = .ui(11); count.textColor = .secondaryLabelColor
@@ -67,8 +78,16 @@ final class SidebarCell: NSTableCellView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseEntered(with e: NSEvent) { add?.isHidden = false; fitBadges() }
-    override func mouseExited(with e: NSEvent) { add?.isHidden = true; fitBadges() }
+    override func mouseEntered(with e: NSEvent) { hovering = true; add?.isHidden = false; showFold(); fitBadges() }
+    override func mouseExited(with e: NSEvent) { hovering = false; add?.isHidden = true; showFold(); fitBadges() }
+
+    /// The fold shows on hover, like Finder's sections, and stays while folded: the row says there's more under it.
+    private func showFold() {
+        guard let fold else { return }
+        let folded = owner?.isCollapsed(node) ?? false
+        fold.isHidden = node.children.isEmpty || !(hovering || folded)
+        fold.image = .symbol(folded ? "chevron.right" : "chevron.down", folded ? String(localized: "Expand") : String(localized: "Collapse"))
+    }
 
     private func layout(row: [NSView]) {
         let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
@@ -132,8 +151,13 @@ final class SidebarCell: NSTableCellView {
             icon.contentTintColor = .secondaryLabelColor
             title.stringValue = r?.name ?? ""
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
-            // Who needs you is on the agents' own rows and in the line above the projects, not repeated here.
+            // Who needs you is on the agents' own rows and in the line above the projects; folded, the row sums them up.
             trailing.stringValue = missing ? String(localized: "Folder missing") : ""
+            let w = owner?.renaming == nil ? node.workspace.flatMap(m.worktree) : nil
+            detail.stringValue = w.flatMap { Self.isDefaultName($0) ? nil : $0.displayName } ?? ""
+            detail.isHidden = detail.stringValue.isEmpty
+            showSummary(owner?.isCollapsed(node) == true ? node : nil)
+            showFold()
         case .section:
             icon.image = .symbol("pin.fill"); icon.contentTintColor = .secondaryLabelColor
             title.stringValue = String(localized: "Pinned")
@@ -166,6 +190,30 @@ final class SidebarCell: NSTableCellView {
             showChip(s)
             showState(s)
         }
+    }
+
+    /// "Workspace 2", as a new desk is named: nothing to tell beside the project's name.
+    static func isDefaultName(_ w: Worktree) -> Bool { w.note.range(of: #"^Workspace \d+$"#, options: .regularExpression) != nil }
+
+    /// A folded project's agents, by what they want: asking (or failed), working, done and not looked at.
+    private func showSummary(_ folded: SidebarController.Node?) {
+        summary.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let ids = folded.map { n in n.children.flatMap { $0.children.isEmpty ? [$0] : $0.children } } ?? []
+        let agents = ids.compactMap { n -> Session? in if case .agent(let id) = n.kind { app.session(id) } else { nil } }
+        let shown = agents.map(Self.shownStatus)
+        let asking = shown.filter { [.waiting, .error].contains($0) }
+        let groups: [(AgentStatus?, Int)] = [(AgentStatus.mostUrgent(asking), asking.count), (.working, shown.filter { $0 == .working }.count),
+                                             (.done, agents.filter { Self.isNews($0) && Self.shownStatus($0) == .done }.count)]
+        var tip: [String] = []
+        for case let (status?, n) in groups where n > 0 {
+            let mark = StatusMark(size: 12); mark.status = status; mark.unread = true
+            let count = NSTextField(labelWithString: "\(n)"); count.font = .uiDigits(11, weight: .medium); count.textColor = .secondaryLabelColor
+            summary.addArrangedSubview(mark); summary.addArrangedSubview(count)
+            summary.setCustomSpacing(6, after: count)
+            tip.append("\(n) · \(status.words)")
+        }
+        summary.isHidden = tip.isEmpty
+        summary.toolTip = tip.joined(separator: ", "); summary.setAccessibilityLabel(summary.toolTip)
     }
 
     /// One line, as Mail lists mailboxes: an agent asking for you or done unseen is bold (isNews) and its mark says which;
@@ -205,10 +253,13 @@ final class SidebarCell: NSTableCellView {
     /// Something to look at: finished or asking, and not opened since (bold, like unread mail).
     static func isNews(_ s: Session) -> Bool { s.unread && [.done, .waiting, .error].contains(shownStatus(s)) }
 
+    /// The workspace's name: its own row's title, or the grey name beside its project's.
     func beginEditing(delegate: NSTextFieldDelegate) {
-        title.isEditable = true; title.isSelectable = true; title.drawsBackground = true; title.delegate = delegate
-        window?.makeFirstResponder(title)
-        title.currentEditor()?.selectAll(nil)
+        let field = node.workspace == nil ? title : detail
+        if let w = node.workspace.flatMap(app.worktree) { detail.stringValue = w.displayName; detail.isHidden = false }
+        field.isEditable = true; field.isSelectable = true; field.drawsBackground = true; field.delegate = delegate
+        window?.makeFirstResponder(field)
+        field.currentEditor()?.selectAll(nil)
     }
 }
 
@@ -241,28 +292,32 @@ final class SidebarOutline: NSOutlineView {
 final class SidebarRowView: NSTableRowView {
     /// Where this row is in the workspace's card: nil outside it.
     var card: (first: Bool, last: Bool)? { didSet { if card?.first != oldValue?.first || card?.last != oldValue?.last { needsDisplay = true } } }
-    /// Where this row is in its project's card; the outline leaves 4 pt over a first row and 8 under a last (SidebarOutline.pads).
+    /// Where this row is in its project's card; the outline leaves room for its ends (`pads`).
     var group: (first: Bool, last: Bool)? { didSet { if group?.first != oldValue?.first || group?.last != oldValue?.last { needsDisplay = true } } }
+
+    /// A project's card: 2 pt over its first row and under its last (4 between cards), 4 more inside under the rows below its name.
+    static func pads(_ g: (first: Bool, last: Bool)) -> (top: CGFloat, bottom: CGFloat) { (g.first ? 2 : 0, g.last ? (g.first ? 2 : 6) : 0) }
 
     static let groupFill = NSColor.labelColor.withAlphaComponent(0.045)
     static let cardFill = NSColor.labelColor.withAlphaComponent(0.075)
     static let pillFill = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.black.withAlphaComponent(0.32) : .white }
 
     override func drawBackground(in r: NSRect) {
-        // Each card is 6 pt in from the one around it, the pill 4 pt inside its card (corners 12, 10, 6).
+        // Each card is 6 pt in from the one around it, the pill 4 pt inside its card (corners 10, 8, 6).
         // Rows in the middle extend past their bounds, so only a card's ends are rounded. Flipped: y grows down.
+        let pad = group.map(Self.pads) ?? (top: 0, bottom: 0)
         if let group {
-            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 4, last: group.last, bottom: 4, radius: 12, Self.groupFill)
+            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 2, last: group.last, bottom: 2, radius: 10, Self.groupFill)
         }
         let side: CGFloat = group == nil ? 6 : 12
         if let card {
-            fill(bounds.insetBy(dx: side, dy: 0), first: card.first, top: 0, last: card.last, bottom: group?.last == true ? 8 : 0, radius: 10, Self.cardFill)
+            fill(bounds.insetBy(dx: side, dy: 0), first: card.first, top: 0, last: card.last, bottom: pad.bottom, radius: 8, Self.cardFill)
         }
         guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
-        var pill = bounds.insetBy(dx: (card == nil ? 6 : side) + 4, dy: 3)
+        var pill = bounds.insetBy(dx: (card == nil ? 6 : side) + 4, dy: 2)
         if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }
         if card?.last == true { pill.size.height -= 1 }
-        if group?.last == true { pill.size.height -= 8 }
+        pill.origin.y += pad.top; pill.size.height -= pad.top + pad.bottom
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow(); shadow.shadowColor = .black.withAlphaComponent(0.12); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .init(width: 0, height: -0.5)
         shadow.set()

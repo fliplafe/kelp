@@ -16,7 +16,7 @@ extension SidebarController {
 
     /// Inline rename, like Finder.
     func startRename(_ workspace: String) {
-        guard let n = node("w:" + workspace) else { return }
+        guard let n = workspaceNode(workspace) else { return }
         let row = outline.row(forItem: n)
         guard row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCell else { return }
         renaming = workspace
@@ -29,7 +29,7 @@ extension SidebarController {
         let name = field.stringValue.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty, name != app.worktree(id)?.displayName {
             Task { await app.call(WorktreeNote(id: id, note: name)) }
-        } else { refreshCell("w:" + id) }
+        } else if let n = workspaceNode(id) { refreshCell(n.key) }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -50,36 +50,17 @@ extension SidebarController {
                 menu.add(String(localized: "Remove from Kelp…")) { WorkspaceActions(app).removeProject(r) }
                 return
             }
+            // Standing for its only workspace: that workspace's items first, then the project's.
+            if let w = n.workspace { workspaceMenu(menu, w); menu.addItem(.separator()) }
             menu.add(String(localized: "New Workspace")) { [weak self] in self?.newWorkspace(id) }
-            menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: r.path)]) }
+            if n.workspace == nil {
+                menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: r.path)]) }
+            }
             menu.addItem(.separator())
             if RemoteHost.of(r.path) == nil { menu.add(String(localized: "Remove Clean Worktrees…")) { WorkspaceActions(app).removeCleanWorktrees(r) } }
             menu.add(String(localized: "Remove Project…")) { WorkspaceActions(app).removeProject(r) }
         case .section: return
-        case .workspace(let id):
-            guard let w = m.worktree(id) else { return }
-            let pinned = self.pinned.contains(id)
-            menu.add(pinned ? String(localized: "Unpin") : String(localized: "Pin to Top")) { [weak self] in
-                guard let self else { return }
-                self.pinned = pinned ? self.pinned.filter { $0 != id } : self.pinned + [id]; refresh()
-            }
-            menu.add(String(localized: "Rename")) { [weak self] in self?.startRename(id) }
-            menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
-            menu.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
-            WorkspaceActions.addOpenIn(to: menu, path: w.path)
-            menu.addItem(.separator())
-            if w.path == m.repo(w.repoId)?.path {
-                // A desk: archiving pauses its agents and keeps its tabs (Window › Archived Workspaces brings it back);
-                // with ⌥ the item closes it instead, ending its agents. The project's folder is untouched either way.
-                let more = m.worktrees.filter { $0.repoId == w.repoId && $0.path == w.path && !$0.archived }.count > 1
-                let archive = menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
-                archive.isEnabled = more
-                let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions(app).close(w) }
-                close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
-            } else {
-                menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
-                menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions(app).delete(w) }
-            }
+        case .workspace(let id): workspaceMenu(menu, id)
         case .agent(let sid):
             menu.add(String(localized: "Show")) { app.workbench.focus(session: sid) }
             menu.add(String(localized: "Rename…")) { AgentActions(app).rename(sid) }
@@ -92,6 +73,34 @@ extension SidebarController {
             }
             menu.addItem(.separator())
             menu.add(String(localized: "Stop")) { [app] in Task { await app.call(SessionKill(id: sid)) } }
+        }
+    }
+
+    /// A workspace's items, on its row or on its project's when that stands for it.
+    private func workspaceMenu(_ menu: NSMenu, _ id: String) {
+        let app = self.app, m = app
+        guard let w = m.worktree(id) else { return }
+        let pinned = self.pinned.contains(id)
+        menu.add(pinned ? String(localized: "Unpin") : String(localized: "Pin to Top")) { [weak self] in
+            guard let self else { return }
+            self.pinned = pinned ? self.pinned.filter { $0 != id } : self.pinned + [id]; refresh()
+        }
+        menu.add(String(localized: "Rename")) { [weak self] in self?.startRename(id) }
+        menu.add(String(localized: "Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: w.path)]) }
+        menu.add(String(localized: "Copy Path")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.path, forType: .string) }
+        WorkspaceActions.addOpenIn(to: menu, path: w.path)
+        menu.addItem(.separator())
+        if w.path == m.repo(w.repoId)?.path {
+            // A desk: archiving pauses its agents and keeps its tabs (Window › Archived Workspaces brings it back);
+            // with ⌥ the item closes it instead, ending its agents. The project's folder is untouched either way.
+            let more = m.worktrees.filter { $0.repoId == w.repoId && $0.path == w.path && !$0.archived }.count > 1
+            let archive = menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
+            archive.isEnabled = more
+            let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions(app).close(w) }
+            close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
+        } else {
+            menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
+            menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions(app).delete(w) }
         }
     }
 }

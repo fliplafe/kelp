@@ -19,14 +19,20 @@ private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.k
 
 @Test func projectsListTheirWorkspacesAndLiveAgentsOnly() {
     let ss = [agent("a1", in: "w1", .working), agent("a2", in: "w1", .exited), agent("sh", in: "w1", .idle, agent: "shell")]
-    let out = tree([wt("w1", "r1", "main"), wt("w2", "r1", "old", archived: true)], ss).build()
+    let out = tree([wt("w1", "r1", "main"), wt("w2", "r1", "old"), wt("w3", "r1", "gone", archived: true)], ss).build()
     #expect(kinds(out) == [.project("r1"), .project("r2")])
-    #expect(kinds(out[0].children) == [.workspace("w1")])   // archived workspaces aren't listed
+    #expect(kinds(out[0].children) == [.workspace("w1"), .workspace("w2")])   // archived workspaces aren't listed
     #expect(kinds(out[0].children[0].children) == [.agent("a1")])   // an ended agent and a plain terminal aren't
 }
 
+@Test func aProjectWithOneWorkspaceStandsForIt() {
+    let out = tree([wt("w1", "r1", "main"), wt("w2", "r1", "old", archived: true)], [agent("a1", in: "w1", .working)]).build()
+    #expect(out[0].workspace == "w1" && kinds(out[0].children) == [.agent("a1")])   // the agents right under the project
+    #expect(out[1].workspace == nil && out[1].children.isEmpty)   // no workspace at all
+}
+
 @Test func searchKeepsWhatMatchesAndDropsEmptyProjects() {
-    var t = tree([wt("w1", "r1", "login"), wt("w2", "r1", "billing")], [agent("a1", in: "w2", .working, title: "fix invoices")])
+    var t = tree([wt("w1", "r1", "login"), wt("w2", "r1", "billing"), wt("w9", "r1", "spare")], [agent("a1", in: "w2", .working, title: "fix invoices")])
     t.query = "inv"
     var out = t.build()
     #expect(kinds(out) == [.project("r1")])
@@ -42,11 +48,11 @@ private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.k
 @Test func aWorkspaceNameMatchKeepsAllItsAgents() {
     var t = tree([wt("w1", "r1", "login")], [agent("a1", in: "w1", .working), agent("a2", in: "w1", .idle)])
     t.query = "login"
-    #expect(t.build()[0].children[0].children.count == 2)
+    #expect(t.build()[0].children.count == 2)
 }
 
 @Test func filtersNarrowAndTheCurrentWorkspaceStays() {
-    let ws = [wt("w1", "r1", "a"), wt("w2", "r1", "b"), wt("w3", "r2", "c")]
+    let ws = [wt("w1", "r1", "a"), wt("w2", "r1", "b"), wt("w3", "r2", "c"), wt("w4", "r2", "d")]
     let ss = [agent("a1", in: "w1", .working), agent("a2", in: "w2", .waiting), agent("a3", in: "w3", .done, unread: true)]
     var t = tree(ws, ss)
     t.filter = .working
@@ -60,11 +66,11 @@ private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.k
 }
 
 @Test func pinnedWorkspacesMoveUpInsteadOfBeingCopied() {
-    var t = tree([wt("w1", "r1", "a"), wt("w2", "r1", "b")])
+    var t = tree([wt("w1", "r1", "a"), wt("w2", "r1", "b"), wt("w3", "r1", "c")])
     t.pinned = ["w2", "gone"]   // an id that no longer exists is ignored
     let out = t.build()
     #expect(out[0].kind == .section("Pinned") && kinds(out[0].children) == [.workspace("w2")])
-    #expect(kinds(out[1].children) == [.workspace("w1")])
+    #expect(kinds(out[1].children) == [.workspace("w1"), .workspace("w3")])
 }
 
 @Test func inboxSkipsTheAgentOnScreenAndWaitsUntilOneHasNeededYouAWhile() {
