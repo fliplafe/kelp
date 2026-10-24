@@ -92,7 +92,7 @@ extension Sessions {
     func wiredHooks(_ m: AgentManifest, env: [String: String], argv: [String]) -> AgentManifest {
         let dir = hooksDir(m)
         let wired = switch m.hooks {
-        case .settingsFlag(let flag)?: argv.contains(flag)
+        case .settingsFlag(let flag)?: argv.contains { $0 == flag || $0.hasPrefix(flag + "=") }
         case .pluginDir(let key)?: env[key] == dir.path
         case .settingsFile(let key, _)?: env[key] == dir.appendingPathExtension("json").path
         case .herdr?: env["HERDR_PANE_ID"] != nil
