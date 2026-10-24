@@ -550,3 +550,20 @@ func trustQuestionStandIn() -> String {
     _ = try await w.c.call("repo.add", .obj(["path": .string(other), "init": true]), as: Repo.self)
     #expect(FileManager.default.fileExists(atPath: other + "/.git"))
 }
+
+/// A remote project's worktree, removed: what git doesn't see in it (an ignored .env) is moved aside on the host, not
+/// deleted for good, as a local one goes to the Trash.
+@Test func aRemoteWorktreesIgnoredFilesAreKeptOnTheHost() async throws {
+    _ = localSSH
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let there = try makeRepo()
+    let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
+    let made = try await c.call(WorktreeCreate(repoId: repo.id, branch: "aside"))
+    let wt = made.worktree
+    try ".env.local\n".write(toFile: there + "/.git/info/exclude", atomically: true, encoding: .utf8)
+    try "SECRET=1\n".write(toFile: wt.path + "/.env.local", atomically: true, encoding: .utf8)
+    _ = try await c.call(WorktreeRemove(id: wt.id, force: true, dropCommits: true))
+    let trash = try #require(ProcessInfo.processInfo.environment["KELP_TRASH"])
+    let kept = (FileManager.default.enumerator(atPath: trash)?.allObjects as? [String] ?? []).filter { $0.hasSuffix(".env.local") }
+    #expect(!kept.isEmpty)
+}

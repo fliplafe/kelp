@@ -82,7 +82,8 @@ extension Git {
     /// local database, submodules' own work) isn't checked above, and `worktree remove --force` would delete it for good.
     public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false, remotes: Remotes = .none) throws {
         try checkRemovable(repo: repo, path: path, branch: branch, force: force, dropCommits: dropCommits, remotes: remotes)
-        if remotes.of(path) == nil, FileManager.default.fileExists(atPath: path) {
+        let host = remotes.of(repo)
+        if host == nil, remotes.of(path) == nil, FileManager.default.fileExists(atPath: path) {   // a folder on this Mac
             // Only a folder git lists as this repo's worktree goes to the Trash, whatever the record says.
             let real = { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
             guard let entry = try linkedWorktrees(repo).first(where: { real($0.path) == real(path) }) else {
@@ -91,6 +92,12 @@ extension Git {
             // Locked (`git worktree lock`: kept on purpose): git wouldn't remove its record, so the folder stays too.
             guard !entry.locked else { throw GitError(args: ["worktree", "remove"], status: 1, stderr: "\(path) is locked (git worktree unlock)") }
             try Trash.move(URL(fileURLWithPath: path))
+        }
+        // A remote project's: what git doesn't see (ignored .env files, a local database) is moved aside on the host, into
+        // ~/.kelp-trash, rather than deleted for good by `worktree remove --force`.
+        if let host {
+            let q = RemoteHost.quote, aside = "\((path as NSString).lastPathComponent)-\(Int(Date().timeIntervalSince1970))"
+            _ = try host.run("d=\"${KELP_TRASH:-$HOME/.kelp-trash}\"; mkdir -p \"$d\" && if [ -e \(q(path)) ]; then mv -- \(q(path)) \"$d\"/\(q(aside)); fi")
         }
         // Its record only: `worktree prune` would also drop worktrees whose folder is just away (an unmounted disk).
         try run(["worktree", "remove", "--force", path], cwd: repo, remotes: remotes)
