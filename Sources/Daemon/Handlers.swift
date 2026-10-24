@@ -254,7 +254,11 @@ final class Slots: Sendable {
 
     /// An update is on its way: work that has a slot finishes (`waitIdle`), none starts, what waits is refused.
     func close() {
-        let refused = state.withLock { s in defer { s.waiting = [] }; s.closed = true; return s.waiting }
+        let refused = state.withLock { s in
+            defer { s.waiting = [] }
+            s.closed = true
+            return s.waiting
+        }
         refused.forEach { $0.resume(returning: false) }
         quickSlots?.close()
         nowSlots?.close()

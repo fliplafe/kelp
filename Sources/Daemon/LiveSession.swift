@@ -138,7 +138,11 @@ final class LiveSession: Sendable {
 
     /// On the PTY's queue, one chunk after another: the log is written here, after the lock, in that order.
     private func handleOutput(_ d: Data) {
-        let text = String(decoding: d, as: UTF8.self)
+        let text = state.withLock { s in
+            let (whole, rest) = UTF8Chunks.split(s.utf8Carry + d)
+            s.utf8Carry = rest
+            return String(decoding: whole, as: UTF8.self)
+        }
         let heard = state.withLock { hear(d, text, &$0) }
         // Disk, off the lock: a slow disk or the trim (a megabyte read back) doesn't hold up typing, attaching or status.
         try? log?.write(contentsOf: d)   // per chunk, unlogged: a full disk would flood the log (the trim says so)

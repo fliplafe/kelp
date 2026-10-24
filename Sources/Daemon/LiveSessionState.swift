@@ -28,6 +28,7 @@ extension LiveSession {
 
         // What the output says.
         var oscCarry = "", titleCarry = "", lastTopic: String?
+        var utf8Carry = Data()           // the start of a character the last chunk was cut in (`UTF8Chunks`)
         /// The program turned on bracketed paste (ESC[?2004h): it tells a paste from typing.
         var pasteMode = false, pasteCarry = Data()
         var sawURL = false, lastLimits: [ClaudeLimits.Reading] = []
