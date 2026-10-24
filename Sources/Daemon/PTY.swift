@@ -12,21 +12,30 @@ public struct PTYError: Error, LocalizedError, CustomStringConvertible {
 /// A child process on a pseudo-terminal. The daemon owns this, so the process outlives any UI.
 /// Once the program has exited its fd and pid are gone for good: they may already name another session's terminal or
 /// another process, so nothing is written to the one or signalled at the other after that.
-public final class PTY: @unchecked Sendable {   // closed under io, reaped under life; source and the rest on q
+public final class PTY: @unchecked Sendable {   // phases under `phase`; source (set on q) under it too
     public let pid: pid_t
     let primaryFD: Int32
     private var source: DispatchSourceRead?
     private let q = DispatchQueue(label: "kelp.pty")
-    private var exited = false
-    private let io = NSLock()     // `closed`: the primaryFD is closed under it, so no write lands in a reused fd
-    private let life = NSLock()   // `reaped`: set before the pid is reaped, so no signal reaches a recycled one
-    private var closed = false, reaped = false, started = false, handedOver = false
+
+    /// The terminal's fd: read here from `start`, until it's handed to the next kelpd or hung up. Once it's neither
+    /// waiting nor read, nothing touches it again: the number may be another terminal's.
+    enum Terminal { case waiting, reading, handedOver, hungUp }
+    /// The program: its pid is ours to signal until it's reaped (here), or handed over (reaped by the next kelpd).
+    enum Program { case running, handedOver, reaped }
+    struct Phase {
+        var terminal = Terminal.waiting, program = Program.running
+        var open: Bool { terminal == .waiting || terminal == .reading }
+    }
+    /// Every change of phase, and what must happen with one (closing the fd, a signal to the pid), is under this lock.
+    private let phase = OSAllocatedUnfairLock(initialState: Phase())
+    var phases: Phase { phase.withLock { $0 } }
+
     /// Typing goes out on a queue of its own, from a copy of the terminal's fd that only this queue closes: a program that
-    /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `io`, and a write never
-    /// reaches a reused fd number. `stopWrites` (under io) ends a write that's waiting for room.
+    /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `phase`, and a write
+    /// never reaches a reused fd number. A write waiting for room stops once the terminal isn't open.
     let writes = DispatchQueue(label: "kelp.pty.write")
     let writeFD: Int32
-    private var stopWrites = false
     /// Closes the terminal's fd from the read source's cancel handler, once GCD is done with it: closing right after
     /// `cancel()` could pull the fd from under a read still running (which would then read whatever reuses the number).
     private let closer: FDCloser
@@ -53,20 +62,21 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     }
 
     /// For the kelpd that takes over (`Handover`): output stops being read here once what was read is handled, and the fd
-    /// stays open, never written or closed here again. The program's exit is that one's to read. Nil once it has ended.
+    /// stays open, never written or closed here again. The program's exit is that one's to read. Nil once it has ended
+    /// (being reaped here: the new kelpd would find no such child). One not started yet goes too, and one whose output
+    /// already ended while its program runs on.
     func handOver() -> Int32? {
         q.sync {
-            let fd = io.withLock { () -> Int32? in
-                // One not started yet (a session made as the upgrade began) goes too: nothing has read from it.
-                guard !closed, !exited, source != nil || !started else { return nil }
-                // Already being reaped here: it has ended, and the new kelpd would find no such child.
-                guard life.withLock({ () -> Bool in if reaped { return false }; handedOver = true; return true }) else { return nil }
-                closed = true; stopWrites = true
+            let given = phase.withLock { p -> Bool in
+                guard p.open, p.program == .running else { return false }
+                p.terminal = .handedOver; p.program = .handedOver
                 source?.cancel(); source = nil   // `closer` isn't asked: the fd stays open
-                return primaryFD
+                return true
             }
-            if fd != nil { exited = true; let w = writeFD; writes.async { close(w) } }
-            return fd
+            guard given else { return nil }
+            let w = writeFD
+            writes.async { close(w) }
+            return primaryFD
         }
     }
 
@@ -130,9 +140,9 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     /// Starts reading the output and waiting for the exit. Set `onOutput` / `onExit` first: a program that prints (or
     /// fails) at once would otherwise lose that.
     public func start() {
-        let first = io.withLock { () -> Bool in
-            guard !started, !closed else { return false }
-            started = true; return true
+        let first = phase.withLock { p -> Bool in
+            guard p.terminal == .waiting else { return false }
+            p.terminal = .reading; return true
         }
         guard first else { return }
         let src = DispatchSource.makeReadSource(fileDescriptor: primaryFD, queue: q)
@@ -140,7 +150,7 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         let closer = closer
         src.setCancelHandler { closer.cancelled() }
         closer.watch()
-        q.sync { source = src }
+        q.sync { phase.withLock { _ in source = src } }
         src.resume()
         let pid = pid
         DispatchQueue(label: "kelp.pty.wait").async { [weak self] in
@@ -148,7 +158,9 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
             var info = siginfo_t()
             while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) < 0 && errno == EINTR {}
             // Handed over: the kelpd that takes over reaps it (exiting before the exec, it's that one's zombie to read).
-            let handedOver = self.map { me in me.life.withLock { () -> Bool in if me.handedOver { return true }; me.reaped = true; return false } }
+            let handedOver = self.map { me in
+                me.phase.withLock { p -> Bool in if p.program == .handedOver { return true }; p.program = .reaped; return false }
+            }
             if handedOver == true { return }
             var st: Int32 = 0
             while waitpid(pid, &st, 0) < 0 && errno == EINTR {}
@@ -162,15 +174,14 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         var buf = [UInt8](repeating: 0, count: 65536)
         let n = read(primaryFD, &buf, buf.count)
         if n > 0 { onOutput?(Data(buf[0..<n])) }
-        else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) { source?.cancel(); source = nil }
+        else if n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR) { phase.withLock { _ in source?.cancel(); source = nil } }
     }
 
+    /// Once: the wait thread is the only caller, and only for a program reaped here.
     private func finish(_ status: Int32) {
-        guard !exited else { return }
-        exited = true
         // Flush anything still buffered in the kernel.
         var buf = [UInt8](repeating: 0, count: 65536)
-        if !io.withLock({ closed }) {   // already hung up (dropped): the fd isn't ours any more
+        if phase.withLock({ $0.open }) {   // already hung up (dropped): the fd isn't ours any more
             let fl = fcntl(primaryFD, F_GETFL); _ = fcntl(primaryFD, F_SETFL, fl | O_NONBLOCK)
             while true { let n = read(primaryFD, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
         }
@@ -179,9 +190,9 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
     }
 
     private func hangUp() {
-        let first = io.withLock { () -> Bool in
-            guard !closed else { return false }
-            closed = true; stopWrites = true
+        let first = phase.withLock { p -> Bool in
+            guard p.open else { return false }
+            p.terminal = .hungUp
             if let s = source { s.cancel(); source = nil }
             closer.ask()   // closed once no source has it: now, or in the cancel handler (also of one ended by EOF)
             return true
@@ -222,36 +233,36 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 
     /// Typing into the program; dropped once it has exited (the fd may be another terminal's by then).
     public func write(_ d: Data) {
-        guard !io.withLock({ closed }) else { return }
+        guard phase.withLock({ $0.open }) else { return }
         writes.async { [self] in
             var rest = d[...]
-            while !rest.isEmpty, !io.withLock({ stopWrites }) {
+            while !rest.isEmpty, phase.withLock({ $0.open }) {
                 let n = rest.withUnsafeBytes { Darwin.write(writeFD, $0.baseAddress, $0.count) }
                 if n > 0 { rest = rest.dropFirst(n); continue }
                 guard n < 0, errno == EAGAIN || errno == EINTR else { return }   // EIO: the program's side is gone
                 var fds = pollfd(fd: writeFD, events: Int16(POLLOUT), revents: 0)
-                _ = poll(&fds, 1, 100)   // wait for room, looking at stopWrites every 0.1 s
+                _ = poll(&fds, 1, 100)   // wait for room, looking at the phase every 0.1 s
             }
         }
     }
 
     /// The program in the foreground when it isn't the one the PTY started (a shell running `npm run dev`, vim…).
     public var foregroundProgram: String? {
-        let pg = io.withLock { closed ? -1 : tcgetpgrp(primaryFD) }
+        let pg = phase.withLock { $0.open ? tcgetpgrp(primaryFD) : -1 }
         guard pg > 0, pg != pid else { return nil }
         var name = [CChar](repeating: 0, count: 256)
         return proc_name(pg, &name, UInt32(name.count)) > 0 ? String(cString: name) : "a program"
     }
 
     public func resize(cols: UInt16, rows: UInt16) {
-        var ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
-        io.withLock { if !closed { _ = ioctl(primaryFD, TIOCSWINSZ, &ws) } }
+        let ws = winsize(ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0)
+        phase.withLock { if $0.open { var ws = ws; _ = ioctl(primaryFD, TIOCSWINSZ, &ws) } }
     }
     public func kill() { signal { Darwin.kill(-$0, SIGHUP); Darwin.kill($0, SIGTERM) } }
 
     /// The program and everything it started, read now: a shell runs each job in a process group of its own, and once
     /// the shell is gone its jobs belong to launchd and can't be found from here any more.
-    public func tree() -> [pid_t] { life.withLock { reaped ? [] : Subprocess.tree(pid) } }
+    public func tree() -> [pid_t] { phase.withLock { $0.program == .reaped ? [] : Subprocess.tree(pid) } }
 
     /// Hangup and SIGTERM to the program and everything it started (a server in a shell's job too), then SIGKILL to
     /// whatever is still there after `grace` seconds (some TUIs ignore SIGTERM, servers treat SIGHUP as "reload").
@@ -261,15 +272,15 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
         let all = tree()
         kill()
         for p in all.dropFirst() { Darwin.kill(p, SIGHUP); Darwin.kill(p, SIGTERM) }
-        DispatchQueue.global().asyncAfter(deadline: .now() + grace) { [self] in   // keeps the PTY, and so `reaped`, until then
-            signal { if Darwin.kill($0, 0) == 0 { Darwin.kill(-$0, SIGKILL); Darwin.kill($0, SIGKILL) } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace) { [self] in
+            signal { if Darwin.kill($0, 0) == 0 { Darwin.kill(-$0, SIGKILL); Darwin.kill($0, SIGKILL) } }   // keeps `phase` until then
         }
         Subprocess.killLater(Array(all.dropFirst()), after: grace)
         return all
     }
 
     /// `f(pid)` while the pid is still this program's.
-    private func signal(_ f: (pid_t) -> Void) { life.withLock { if !reaped { f(pid) } } }
+    private func signal(_ f: @Sendable (pid_t) -> Void) { phase.withLock { if $0.program != .reaped { f(pid) } } }
 }
 
 /// Closes an fd when asked, but never while a dispatch source still has it. Not asked (a hand-over), it stays open.
