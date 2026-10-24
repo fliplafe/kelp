@@ -11,7 +11,12 @@ final class TabStrip: NSView {
     /// Room around the tabs: they don't run into the strip's edges or the pane dividers.
     static let height: CGFloat = 40
     struct Item {
-        let id: String; var title: String; let icon: NSImage?; let status: AgentStatus?; var unread = false; let toolTip: String?
+        let id: String
+        var title: String
+        let icon: NSImage?
+        let status: AgentStatus?
+        var unread = false
+        let toolTip: String?
         var edited = false
         var meter: Double?
         var progress: Double?
@@ -44,26 +49,49 @@ final class TabStrip: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityRole(.tabGroup); setAccessibilityLabel(String(localized: "Tabs"))
-        stack.orientation = .horizontal; stack.spacing = 1; stack.distribution = .fill
+        setAccessibilityElement(true)
+        setAccessibilityRole(.tabGroup)
+        setAccessibilityLabel(String(localized: "Tabs"))
+        stack.orientation = .horizontal
+        stack.spacing = 1
+        stack.distribution = .fill
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
-        insertion.wantsLayer = true; insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor; insertion.isHidden = true
+        insertion.wantsLayer = true
+        insertion.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        insertion.isHidden = true
         // Too many tabs to fit: the strip scrolls (trackpad / wheel) and the chevron lists them all, like Safari.
-        overflow.image = .symbol("chevron.down", String(localized: "All Tabs")); overflow.isBordered = false; overflow.contentTintColor = .secondaryLabelColor
+        overflow.image = .symbol("chevron.down", String(localized: "All Tabs"))
+        overflow.isBordered = false
+        overflow.contentTintColor = .secondaryLabelColor
         overflow.symbolConfiguration = .init(pointSize: 10, weight: .semibold); overflow.toolTip = String(localized: "All tabs in this group")
-        overflow.target = self; overflow.action = #selector(overflowTapped); overflow.isHidden = true
+        overflow.target = self
+        overflow.action = #selector(overflowTapped)
+        overflow.isHidden = true
         unzoom.image = .symbol("arrow.down.right.and.arrow.up.left", String(localized: "Show All Panes")); unzoom.isBordered = false
         unzoom.contentTintColor = .controlAccentColor; unzoom.symbolConfiguration = .init(pointSize: 11, weight: .medium)
-        unzoom.toolTip = String(localized: "Show all panes (⇧⌘↩)"); unzoom.target = self; unzoom.action = #selector(unzoomTapped); unzoom.isHidden = true
+        unzoom.toolTip = String(localized: "Show all panes (⇧⌘↩)")
+        unzoom.target = self
+        unzoom.action = #selector(unzoomTapped)
+        unzoom.isHidden = true
         // The one way to add a tab, in each pane (like Safari's "+"); the empty workspace offers the same choices.
         add.image = .symbol("plus", String(localized: "New Tab")); add.contentTintColor = .secondaryLabelColor
         add.symbolConfiguration = .init(pointSize: 12, weight: .medium); add.toolTip = String(localized: "New tab: an agent (⌥⌘T), a terminal (⌘T), a browser…")
         add.target = self; add.action = #selector(addTapped)
-        newAgent.imageScaling = .scaleNone; newAgent.target = self; newAgent.action = #selector(newAgentTapped); newAgent.isHidden = true
-        adds.setViews([newAgent, add], in: .leading); adds.spacing = 0; adds.detachesHiddenViews = true
+        newAgent.imageScaling = .scaleNone
+        newAgent.target = self
+        newAgent.action = #selector(newAgentTapped)
+        newAgent.isHidden = true
+        adds.setViews([newAgent, add], in: .leading)
+        adds.spacing = 0
+        adds.detachesHiddenViews = true
         adds.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
-        let trailing = NSStackView(views: [unzoom, overflow]); trailing.spacing = 6; trailing.detachesHiddenViews = true
-        scroll.documentView = stack; scroll.drawsBackground = false; scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = false
+        let trailing = NSStackView(views: [unzoom, overflow])
+        trailing.spacing = 6
+        trailing.detachesHiddenViews = true
+        scroll.documentView = stack
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
         scroll.horizontalScrollElasticity = .allowed; scroll.verticalScrollElasticity = .none
         scroll.automaticallyAdjustsContentInsets = false
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -88,7 +116,9 @@ final class TabStrip: NSView {
         ])
         // Like Safari: tabs narrow (titles truncate, down to their minimum) before the strip has to scroll.
         // Below the split view's holding priority (250): a full strip must never move the divider.
-        let fit = stack.widthAnchor.constraint(lessThanOrEqualTo: scroll.widthAnchor); fit.priority = .init(245); fit.isActive = true
+        let fit = stack.widthAnchor.constraint(lessThanOrEqualTo: scroll.widthAnchor)
+        fit.priority = .init(245)
+        fit.isActive = true
         // The stack's own hugging would beat `fit` and keep every title whole. Its clipping resistance stays above `fit`:
         // tabs at their minimum widen the stack (the strip scrolls) instead of running past its end, clipped.
         stack.setHuggingPriority(.init(200), for: .horizontal); stack.setClippingResistancePriority(.init(246), for: .horizontal)
@@ -103,7 +133,10 @@ final class TabStrip: NSView {
         // Reuse buttons by position: tabs change titles and status far more often than they move.
         while buttons.count > items.count { buttons.removeLast().removeFromSuperview() }
         while buttons.count < items.count {
-            let b = TabButton(); b.strip = self; buttons.append(b); stack.addArrangedSubview(b)
+            let b = TabButton()
+            b.strip = self
+            buttons.append(b)
+            stack.addArrangedSubview(b)
         }
         for (b, it) in zip(buttons, items) { b.set(it, selected: it.id == selected, groupFocused: focused) }
         self.items = items; selectedId = selected
@@ -186,7 +219,10 @@ private final class CapsuleSegment: NSButton {
     private var hover = false { didSet { needsDisplay = true } }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        title = ""; imagePosition = .imageOnly; isBordered = false; wantsLayer = true
+        title = ""
+        imagePosition = .imageOnly
+        isBordered = false
+        wantsLayer = true
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -213,9 +249,13 @@ private final class TabButton: NSControl, NSDraggingSource {
         wantsLayer = true; layer?.cornerRadius = 6
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
         title.font = .systemFont(ofSize: 12); title.lineBreakMode = .byTruncatingTail
-        close.image = .symbol("xmark", String(localized: "Close Tab")); close.toolTip = String(localized: "Close Tab (⌘W)"); close.isBordered = false
+        close.image = .symbol("xmark", String(localized: "Close Tab"))
+        close.toolTip = String(localized: "Close Tab (⌘W)")
+        close.isBordered = false
         close.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
-        close.contentTintColor = .secondaryLabelColor; close.target = self; close.action = #selector(closeTapped)
+        close.contentTintColor = .secondaryLabelColor
+        close.target = self
+        close.action = #selector(closeTapped)
         // Unsaved changes: a dot where the close button goes (as in TextEdit's tabs); hovering shows the close button.
         editedDot.image = .symbol("circle.fill", String(localized: "Edited")); editedDot.symbolConfiguration = .init(pointSize: 9, weight: .bold)
         editedDot.contentTintColor = .labelColor
@@ -225,7 +265,9 @@ private final class TabButton: NSControl, NSDraggingSource {
             v.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(v)
             NSLayoutConstraint.activate([v.centerXAnchor.constraint(equalTo: slot.centerXAnchor), v.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
         }
-        let row = NSStackView(views: [slot, title, meter]); row.spacing = 6; row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
+        let row = NSStackView(views: [slot, title, meter])
+        row.spacing = 6
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         pin(row)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 28),
@@ -236,7 +278,9 @@ private final class TabButton: NSControl, NSDraggingSource {
         title.setContentCompressionResistancePriority(.init(240), for: .horizontal)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
         // VoiceOver: a tab like NSTabView's (radio button, tab subrole); the close button only exists on hover, so it's an action.
-        setAccessibilityElement(true); setAccessibilityRole(.radioButton); setAccessibilitySubrole(.init(rawValue: "AXTabButton"))   // kAXTabButtonSubrole
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioButton)
+        setAccessibilitySubrole(.init(rawValue: "AXTabButton"))   // kAXTabButtonSubrole
         title.setAccessibilityElement(false); icon.setAccessibilityElement(false)
         setAccessibilityCustomActions([NSAccessibilityCustomAction(name: String(localized: "Close Tab")) { [weak self] in
             MainActor.assumeIsolated { self?.closeTapped() }; return true   // accessibility actions come on main
@@ -245,8 +289,14 @@ private final class TabButton: NSControl, NSDraggingSource {
     required init?(coder: NSCoder) { fatalError() }
 
     func set(_ it: TabStrip.Item, selected: Bool, groupFocused: Bool) {
-        item = it; self.selected = selected; self.groupFocused = groupFocused
-        title.stringValue = it.title; icon.image = it.icon; mark.status = it.status; mark.unread = it.unread; mark.progress = it.progress
+        item = it
+        self.selected = selected
+        self.groupFocused = groupFocused
+        title.stringValue = it.title
+        icon.image = it.icon
+        mark.status = it.status
+        mark.unread = it.unread
+        mark.progress = it.progress
         meter.share = it.meter
         toolTip = it.toolTip ?? it.title
         // VoiceOver hears the agent's state too ("Claude Code, Needs your input"): on screen it replaces the icon.
@@ -324,7 +374,12 @@ final class ContextMeter: NSView {
         wantsLayer = true; isHidden = true
         let path = CGMutablePath()   // from the top, clockwise (the layer's y goes up)
         path.addArc(center: CGPoint(x: 6, y: 6), radius: 4.5, startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi, clockwise: true)
-        for l in [track, fill] { l.path = path; l.fillColor = nil; l.lineWidth = 2; layer?.addSublayer(l) }
+        for l in [track, fill] {
+            l.path = path
+            l.fillColor = nil
+            l.lineWidth = 2
+            layer?.addSublayer(l)
+        }
         fill.lineCap = .round
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: 12), heightAnchor.constraint(equalToConstant: 12)])

@@ -18,8 +18,13 @@ final class PortsView: NSView {
         let title = NSTextField(labelWithString: String(localized: "Running in This Workspace")); title.font = .systemFont(ofSize: 13, weight: .semibold)
         hint.textColor = .secondaryLabelColor; hint.font = .systemFont(ofSize: 12)
         hint.stringValue = String(localized: "Servers you start in this workspace's terminals and agents show up here. Or type an address above.")
-        list.orientation = .vertical; list.alignment = .leading; list.spacing = 6
-        let stack = NSStackView(views: [title, list, hint]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
+        list.orientation = .vertical
+        list.alignment = .leading
+        list.spacing = 6
+        let stack = NSStackView(views: [title, list, hint])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([stack.topAnchor.constraint(equalTo: topAnchor, constant: 40), stack.centerXAnchor.constraint(equalTo: centerXAnchor),
                                      stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
@@ -54,8 +59,12 @@ final class PortsView: NSView {
     private func row(_ p: PortsList.Port, workspace wid: String) -> NSView {
         let port = p.port, address = "http://localhost:\(port)"
         let link = ClosureButton(title: "localhost:\(port)") { [weak self] in self?.onOpen?(address) }
-        link.isBordered = false; link.contentTintColor = .linkColor; link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        let what = NSTextField(labelWithString: p.command); what.textColor = .secondaryLabelColor; what.font = .systemFont(ofSize: 12)
+        link.isBordered = false
+        link.contentTintColor = .linkColor
+        link.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+        let what = NSTextField(labelWithString: p.command)
+        what.textColor = .secondaryLabelColor
+        what.font = .systemFont(ofSize: 12)
         let copy = ClosureButton(title: String(localized: "Copy")) {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(address, forType: .string)

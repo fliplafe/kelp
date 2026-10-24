@@ -34,8 +34,12 @@ package final class ScratchWindow: NSObject, NSWindowDelegate {
             let a = EditorArea(app: app, workspaceId: w.id)
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480), styleMask: [.titled, .closable, .resizable, .utilityWindow],
                             backing: .buffered, defer: false)
-            p.title = String(localized: "Scratch"); p.isFloatingPanel = true; p.hidesOnDeactivate = false
-            p.becomesKeyOnlyIfNeeded = false; p.isReleasedWhenClosed = false; p.delegate = self
+            p.title = String(localized: "Scratch")
+            p.isFloatingPanel = true
+            p.hidesOnDeactivate = false
+            p.becomesKeyOnlyIfNeeded = false
+            p.isReleasedWhenClosed = false
+            p.delegate = self
             p.contentViewController = a   // (the window takes the controller's empty view's size: set it after)
             p.minSize = NSSize(width: 420, height: 240)
             p.setContentSize(NSSize(width: 760, height: 480))

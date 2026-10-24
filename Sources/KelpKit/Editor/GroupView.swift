@@ -60,9 +60,13 @@ final class GroupView: NSView {
 
     /// Where a dropped tab will go (here and at the editor area's outer edges): accent fill, accent border.
     static func dropHint() -> NSView {
-        let v = NSView(); v.wantsLayer = true; v.isHidden = true
+        let v = NSView()
+        v.wantsLayer = true
+        v.isHidden = true
         v.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-        v.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor; v.layer?.borderWidth = 1; v.layer?.cornerRadius = 6
+        v.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
+        v.layer?.borderWidth = 1
+        v.layer?.cornerRadius = 6
         return v
     }
 
@@ -115,8 +119,14 @@ final class GroupView: NSView {
             guard !Workbench.files(s).isEmpty else { return [] }
             showHint(nil); return .copy
         }
-        if let o = outerEdge(s) { hint.isHidden = true; showOuterHint?(o); return .move }
-        showOuterHint?(nil); showHint(edge(s)); return .move
+        if let o = outerEdge(s) {
+            hint.isHidden = true
+            showOuterHint?(o)
+            return .move
+        }
+        showOuterHint?(nil)
+        showHint(edge(s))
+        return .move
     }
     override func draggingExited(_ s: NSDraggingInfo?) { hint.isHidden = true; showOuterHint?(nil) }
     override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
@@ -154,8 +164,13 @@ private final class Glow: Veil {
     init() {
         super.init(frame: .zero)
         wantsLayer = true; isHidden = true
-        layer?.masksToBounds = true; layer?.cornerRadius = 5; layer?.borderWidth = 1
-        frameLayer.fillRule = .evenOdd; frameLayer.shadowOffset = .zero; frameLayer.shadowRadius = 14; frameLayer.shadowOpacity = 0.6
+        layer?.masksToBounds = true
+        layer?.cornerRadius = 5
+        layer?.borderWidth = 1
+        frameLayer.fillRule = .evenOdd
+        frameLayer.shadowOffset = .zero
+        frameLayer.shadowRadius = 14
+        frameLayer.shadowOpacity = 0.6
         layer?.addSublayer(frameLayer)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -168,7 +183,11 @@ private final class Glow: Veil {
         frameLayer.fillColor = color.cgColor; frameLayer.shadowColor = color.cgColor
         guard breathing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let a = CABasicAnimation(keyPath: "opacity")
-        a.fromValue = 0.35; a.toValue = 1; a.duration = 1.2; a.autoreverses = true; a.repeatCount = .infinity
+        a.fromValue = 0.35
+        a.toValue = 1
+        a.duration = 1.2
+        a.autoreverses = true
+        a.repeatCount = .infinity
         a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         frameLayer.add(a, forKey: "breathe")
     }

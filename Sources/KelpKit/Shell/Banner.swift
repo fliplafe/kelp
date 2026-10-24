@@ -23,16 +23,26 @@ package enum Banner {
             }
         }
         current?.removeFromSuperview()
-        let fx = NSVisualEffectView(); fx.material = .hudWindow; fx.blendingMode = .withinWindow; fx.state = .active
+        let fx = NSVisualEffectView()
+        fx.material = .hudWindow
+        fx.blendingMode = .withinWindow
+        fx.state = .active
         fx.wantsLayer = true; fx.layer?.cornerRadius = 10
         let icon = NSImageView(image: .symbol(style == .error ? "exclamationmark.triangle.fill" : "info.circle.fill"))
         icon.contentTintColor = style == .error ? .systemOrange : .secondaryLabelColor
-        let label = NSTextField(wrappingLabelWithString: text); label.font = .systemFont(ofSize: 12); label.isSelectable = true
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 12)
+        label.isSelectable = true
         label.preferredMaxLayoutWidth = 460
-        let row = NSStackView(views: [icon, label]); row.spacing = 8; row.alignment = .top
+        let row = NSStackView(views: [icon, label])
+        row.spacing = 8
+        row.alignment = .top
         if let action {
             let b = ClosureButton(title: action.title) { action.run(); current?.removeFromSuperview() }
-            b.bezelStyle = .push; b.controlSize = .small; row.alignment = .centerY; row.addArrangedSubview(b)
+            b.bezelStyle = .push
+            b.controlSize = .small
+            row.alignment = .centerY
+            row.addArrangedSubview(b)
         }
         row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 14)
         fx.pin(row)
@@ -50,7 +60,9 @@ package enum Banner {
         NSAnimationContext.runAnimationGroup { $0.duration = 0.15; fx.animator().alphaValue = 1 }
         if fix?.blocking == true {   // git can't run at all: stays until it's closed
             let x = ClosureButton(title: "") { current?.removeFromSuperview() }
-            x.image = .symbol("xmark", String(localized: "Close")); x.isBordered = false; x.contentTintColor = .secondaryLabelColor
+            x.image = .symbol("xmark", String(localized: "Close"))
+            x.isBordered = false
+            x.contentTintColor = .secondaryLabelColor
             row.addArrangedSubview(x)
             return
         }

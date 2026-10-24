@@ -68,7 +68,9 @@ package struct AgentActions {
         for a in app.catalog.installed(app.catalog.all) {
             m.add(a.name) { handoff(sid, to: a.id, full: false) }.image = app.catalog.icon(a.id)
             let full = m.add(String(localized: "\(a.name) — Full Transcript")) { handoff(sid, to: a.id, full: true) }
-            full.isAlternate = true; full.keyEquivalentModifierMask = .option; full.image = app.catalog.icon(a.id)
+            full.isAlternate = true
+            full.keyEquivalentModifierMask = .option
+            full.image = app.catalog.icon(a.id)
         }
         return m
     }
@@ -96,9 +98,13 @@ package struct AgentActions {
 /// A one-field question (rename, go to line…).
 @MainActor
 package func prompt(_ title: String, _ info: String, initial: String = "") async -> String? {
-    let a = NSAlert(); a.messageText = title; a.informativeText = info
+    let a = NSAlert()
+    a.messageText = title
+    a.informativeText = info
     let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24)); f.stringValue = initial
-    a.accessoryView = f; a.addButton(withTitle: String(localized: "OK")); a.addButton(withTitle: String(localized: "Cancel"))
+    a.accessoryView = f
+    a.addButton(withTitle: String(localized: "OK"))
+    a.addButton(withTitle: String(localized: "Cancel"))
     a.window.initialFirstResponder = f
     return await runSheet(a) == .alertFirstButtonReturn ? f.stringValue : nil
 }

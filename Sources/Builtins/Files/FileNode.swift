@@ -12,7 +12,11 @@ final class FileNode: NSObject {
     let ignored: Bool
     var unread: Bool
     init(name: String, path: String, dir: Bool, ignored: Bool = false) {
-        self.name = name; self.path = path; children = dir ? [] : nil; self.ignored = ignored; unread = ignored && dir
+        self.name = name
+        self.path = path
+        children = dir ? [] : nil
+        self.ignored = ignored
+        unread = ignored && dir
     }
 
     /// Build a sorted tree (folders first) from relative paths, and what git ignores (`files.ignored`: a folder ends with "/").

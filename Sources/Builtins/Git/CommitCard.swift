@@ -36,7 +36,9 @@ final class CommitCard {
     }
 
     func close() {
-        opening?.cancel(); closing?.cancel(); shown = nil
+        opening?.cancel()
+        closing?.cancel()
+        shown = nil
         if popover.isShown { popover.performClose(nil) }
     }
 
@@ -84,7 +86,9 @@ final class CommitCardView: NSView {
         super.init(frame: .zero)
         let size = TextSize.of(18)
         avatar.image = picture ?? Self.initial(c.author, size: size); avatar.imageScaling = .scaleProportionallyUpOrDown
-        avatar.wantsLayer = true; avatar.layer?.cornerRadius = size / 2; avatar.layer?.masksToBounds = true
+        avatar.wantsLayer = true
+        avatar.layer?.cornerRadius = size / 2
+        avatar.layer?.masksToBounds = true
         avatar.setAccessibilityElement(false)   // the name follows it
         NSLayoutConstraint.activate([avatar.widthAnchor.constraint(equalToConstant: size), avatar.heightAnchor.constraint(equalToConstant: size)])
         let s = CommitSubject(c.subject)
@@ -110,7 +114,10 @@ final class CommitCardView: NSView {
         }
         rows.append(Self.meta(c, avatar: avatar))
         rows.append(Self.footer(c, details: d))
-        let stack = NSStackView(views: rows); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
         stack.setCustomSpacing(10, after: line)
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
@@ -195,18 +202,26 @@ final class CommitCardView: NSView {
         button = copy
         copy.font = .monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular)
         copy.image = .symbol("doc.on.doc", copyTitle); copy.imagePosition = .imageTrailing
-        copy.bezelStyle = .push; copy.controlSize = .small; copy.toolTip = copyTitle
+        copy.bezelStyle = .push
+        copy.controlSize = .small
+        copy.toolTip = copyTitle
         let row = NSStackView(views: views + [NSView(), copy]); row.spacing = 6
         return row
     }
 
     private static func label(_ s: String, font: NSFont) -> NSTextField {
-        let t = NSTextField(labelWithString: s); t.font = font; t.textColor = .secondaryLabelColor; t.lineBreakMode = .byTruncatingTail
+        let t = NSTextField(labelWithString: s)
+        t.font = font
+        t.textColor = .secondaryLabelColor
+        t.lineBreakMode = .byTruncatingTail
         return t
     }
 
     private static func text(_ s: String, font: NSFont, color: NSColor, lines: Int) -> NSTextField {
-        let t = NSTextField(wrappingLabelWithString: s); t.font = font; t.textColor = color; t.isSelectable = false
+        let t = NSTextField(wrappingLabelWithString: s)
+        t.font = font
+        t.textColor = color
+        t.isSelectable = false
         t.maximumNumberOfLines = lines; t.cell?.truncatesLastVisibleLine = true
         t.preferredMaxLayoutWidth = width - 28
         return t

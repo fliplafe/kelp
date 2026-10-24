@@ -16,7 +16,13 @@ extension KeySpec.Modifiers {
 /// Kelp's commands go by their id; the menu's other items (Copy, Minimize, the agents in New Tab) by their English path.
 @MainActor
 enum KeyBindings {
-    struct Entry: Identifiable { let id: String; let menu: String; let title: String; var key: KeySpec?; let defaultKey: KeySpec? }
+    struct Entry: Identifiable {
+        let id: String
+        let menu: String
+        let title: String
+        var key: KeySpec?
+        let defaultKey: KeySpec?
+    }
 
     /// Each item's default, recorded every time the menu is built (always with the defaults).
     private static var defaults: [String: KeySpec?] = [:]
@@ -172,7 +178,11 @@ struct KeyboardSettings: View {
                 Text(e.title)
                 Spacer()
                 if e.key != e.defaultKey {
-                    Button("Default") { KeyBindings.set(e.id, nil, in: app.settings); warning[e.id] = nil; later() }.buttonStyle(.link).font(.caption)
+                    Button("Default") {
+                        KeyBindings.set(e.id, nil, in: app.settings)
+                        warning[e.id] = nil
+                        later()
+                    }.buttonStyle(.link).font(.caption)
                         .help(e.defaultKey.map { String(localized: "Kelp's default: \(KeyBindings.display($0))") } ?? String(localized: "Kelp's default: none"))
                 }
                 Button { record(e.id) } label: {
@@ -192,13 +202,19 @@ struct KeyboardSettings: View {
             let chars = ev.charactersIgnoringModifiers ?? ""
             switch ev.keyCode {
             case 53 where mods.isEmpty: stop()   // Esc: keep it
-            case 51 where mods.isEmpty: KeyBindings.set(id, .init(key: "", mods: []), in: app.settings); warning[id] = nil; stop(); later()   // ⌫: none
+            case 51 where mods.isEmpty:   // ⌫: none
+                KeyBindings.set(id, .init(key: "", mods: []), in: app.settings)
+                warning[id] = nil
+                stop()
+                later()
             default:
                 let fKey = (0xF704...0xF70F).contains(chars.unicodeScalars.first?.value ?? 0)
                 guard !mods.subtracting(.shift).isEmpty || fKey else { NSSound.beep(); return nil }   // a plain letter would type
                 let key = KeySpec(key: mods.contains(.shift) && chars.count == 1 ? chars.uppercased() : chars, mods: .init(mods))
                 warning[id] = KeyBindings.conflict(key, keyCode: ev.keyCode, except: id)
-                KeyBindings.set(id, key, in: app.settings); stop(); later()
+                KeyBindings.set(id, key, in: app.settings)
+                stop()
+                later()
             }
             return nil
         }

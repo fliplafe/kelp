@@ -19,7 +19,11 @@ final class UsageTab: KelpKit.TabContent {   // not SwiftUI's
 struct UsageReportView: View {
     let app: AppModel
     init(app: AppModel) { self.app = app }
-    struct Row: Identifiable { let id: String; let cost: Double; let tokens: Int }
+    struct Row: Identifiable {
+        let id: String
+        let cost: Double
+        let tokens: Int
+    }
     @State private var range = 30
     @State private var days: [Row] = []
     @State private var models: [Row] = []
@@ -39,7 +43,11 @@ struct UsageReportView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Claude Code").font(.title3.weight(.semibold))
                     Spacer()
-                    Picker("", selection: $range) { Text("7 Days").tag(7); Text("30 Days").tag(30); Text("90 Days").tag(90) }
+                    Picker("", selection: $range) {
+                        Text("7 Days").tag(7)
+                        Text("30 Days").tag(30)
+                        Text("90 Days").tag(90)
+                    }
                         .pickerStyle(.segmented).fixedSize()
                 }
                 if loading {
@@ -83,12 +91,16 @@ struct UsageReportView: View {
         let read = await app.tryCall(UsageReport(days: range))
         let r = read.value; failed = read.error
         func rows(_ groups: [UsageReport.Group]?) -> [Row] { (groups ?? []).map { Row(id: $0.name, cost: $0.cost, tokens: $0.tokens) } }
-        days = rows(r?.days).sorted { $0.id < $1.id }; models = rows(r?.models); projects = rows(r?.projects)
+        days = rows(r?.days).sorted { $0.id < $1.id }
+        models = rows(r?.models)
+        projects = rows(r?.projects)
         loading = false
     }
 
     static func date(_ day: String) -> Date {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.date(from: day) ?? Date()
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: day) ?? Date()
     }
     private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(v < 10 ? 2 : 0))) }
     private func count(_ n: Int) -> String { n.formatted(.number.notation(.compactName)) }

@@ -7,11 +7,15 @@ enum ColorfulIcons {
     static func image(_ name: String, folder: Bool) -> NSImage {
         let (key, style) = folder ? folderStyle(name.lowercased()) : fileStyle(name.lowercased())
         if let i = cache[key] { return i }
-        let i = render(style); cache[key] = i; return i
+        let i = render(style)
+        cache[key] = i
+        return i
     }
 
     private struct Style {
-        var glyph: String; var color: NSColor; var text = false
+        var glyph: String
+        var color: NSColor
+        var text = false
         var badge: (glyph: String, color: NSColor)?
     }
     private static func sym(_ g: String, _ c: NSColor) -> Style { Style(glyph: g, color: c) }
@@ -173,7 +177,9 @@ enum ColorfulIcons {
         let size = NSSize(width: img.size.width * k, height: img.size.height * k)
         let r = NSRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height)
         ctx.beginTransparencyLayer(in: r, auxiliaryInfo: nil)
-        img.draw(in: r); color.set(); r.fill(using: .sourceIn)
+        img.draw(in: r)
+        color.set()
+        r.fill(using: .sourceIn)
         ctx.endTransparencyLayer()
     }
 

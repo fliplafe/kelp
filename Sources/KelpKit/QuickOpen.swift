@@ -12,7 +12,11 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
     init(app: AppModel) { self.app = app; super.init() }
 
     struct Item {
-        let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void
+        let kind: String
+        let icon: String
+        let title: String
+        let detail: String
+        let action: () -> Void
         /// ⇧↩: the same thing in a split to the right (files, agents, tabs).
         var split: (() -> Void)?
         /// An agent's: its state where the icon goes, as on its tab.
@@ -29,28 +33,33 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         var key = ""
     }
     /// A setting's choices on screen: the key, the value to go back to, whether moving tries them on, the query to return to.
-    private struct Choosing { let key: String; let saved: JSONValue?; let tries: Bool; let query: String }
-    private var choosing: Choosing?
+    struct Choosing {
+        let key: String
+        let saved: JSONValue?
+        let tries: Bool
+        let query: String
+    }
+    var choosing: Choosing?
     /// A list row: a group's heading ("Files", "Agents"…) while searching, or an item.
     private enum Row { case heading(String), item(Item) }
     private var rows: [Row] = []
 
-    private var panel: QuickPanel!
+    var panel: QuickPanel!
     /// What the empty field shows, made once per opening so rows don't move under the pointer.
-    private var recents: [Item] = []
+    var recents: [Item] = []
     private var showingRecents = false
-    private var prSearch: Task<Void, Never>?
-    private var filesLoad: Task<Void, Never>?
+    var prSearch: Task<Void, Never>?
+    var filesLoad: Task<Void, Never>?
     /// The typed query's matches being scored; the next keystroke cancels it.
     private var scoring: Task<Void, Never>?
-    private let field = NSSearchField()
+    let field = NSSearchField()
     private let table = NSTableView()
-    private let keys = NSTextField(labelWithString: "")
-    private var all: [Item] = []
-    private var commandsOnly = false
+    let keys = NSTextField(labelWithString: "")
+    var all: [Item] = []
+    var commandsOnly = false
     /// The tmux sessions listed instead of the palette (`showTmux`); nil for the palette.
-    private var tmux: [Tmux.Session]?
-    private var tmuxLoad: Task<Void, Never>?
+    var tmux: [Tmux.Session]?
+    var tmuxLoad: Task<Void, Never>?
 
     package func show(commandsOnly: Bool) {
         if panel == nil { build() }
@@ -59,7 +68,7 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         present()
     }
 
-    private func present() {
+    func present() {
         if let w = NSApp.mainWindow {
             let f = w.frame
             panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 120))
@@ -85,7 +94,7 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
 
     /// A setting's choices in the list instead, the one in effect ticked and selected. Looks (Appearance) are tried on
     /// as the selection moves, so you see the theme before keeping it.
-    private func pick(_ section: SettingsSection, _ spec: SettingSpec) {
+    func pick(_ section: SettingsSection, _ spec: SettingSpec) {
         let store = app.settings, now = store.value(spec.key)
         choosing = Choosing(key: spec.key, saved: store.values[spec.key], tries: section.id == "appearance", query: field.stringValue)
         all = choices(spec).map { v, name in
@@ -102,7 +111,7 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
     }
 
     /// Leaves a setting's choices with the value it had: what was tried on goes away.
-    private func stopChoosing() {
+    func stopChoosing() {
         if let c = choosing { app.settings.preview(c.key, c.saved) }
         choosing = nil
     }
@@ -113,23 +122,41 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         app.settings.preview(c.key, it.choice)
     }
 
-    private func build() {
+    func build() {
         panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 460), styleMask: [.titled, .fullSizeContentView, .closable],
                            backing: .buffered, defer: false)
         panel.onNumber = { [weak self] n in self?.pickRecent(n) ?? false }
         panel.title = String(localized: "Open Quickly")   // hidden; the Window menu and VoiceOver read it
-        panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isMovableByWindowBackground = true
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
         panel.standardWindowButton(.closeButton)?.isHidden = true; panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.hidesOnDeactivate = true; panel.delegate = self; panel.isReleasedWhenClosed = false
-        let effect = NSVisualEffectView(); effect.material = .popover; effect.state = .active
-        field.font = .systemFont(ofSize: 18); field.focusRingType = .none; field.delegate = self; field.sendsSearchStringImmediately = true
+        panel.hidesOnDeactivate = true
+        panel.delegate = self
+        panel.isReleasedWhenClosed = false
+        let effect = NSVisualEffectView()
+        effect.material = .popover
+        effect.state = .active
+        field.font = .systemFont(ofSize: 18)
+        field.focusRingType = .none
+        field.delegate = self
+        field.sendsSearchStringImmediately = true
         field.target = self; field.action = #selector(filterAction)
         if let bc = field.cell as? NSButtonCell { bc.imagePosition = .imageLeading }
-        let col = NSTableColumn(identifier: .init("i")); table.addTableColumn(col); table.headerView = nil
-        table.rowHeight = 34; table.dataSource = self; table.delegate = self; table.style = .plain; table.backgroundColor = .clear
+        let col = NSTableColumn(identifier: .init("i"))
+        table.addTableColumn(col)
+        table.headerView = nil
+        table.rowHeight = 34
+        table.dataSource = self
+        table.delegate = self
+        table.style = .plain
+        table.backgroundColor = .clear
         table.target = self; table.doubleAction = #selector(activate)
-        let sv = NSScrollView(); sv.documentView = table; sv.hasVerticalScroller = true; sv.drawsBackground = false
+        let sv = NSScrollView()
+        sv.documentView = table
+        sv.hasVerticalScroller = true
+        sv.drawsBackground = false
         keys.font = .systemFont(ofSize: 11); keys.textColor = .secondaryLabelColor
         let line = NSBox(); line.boxType = .separator
         for v in [field, sv, line, keys] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; effect.addSubview(v) }
@@ -144,103 +171,6 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             keys.centerYAnchor.constraint(equalTo: effect.bottomAnchor, constant: -14)
         ])
         panel.contentView = effect
-    }
-
-    private func collect() {
-        let app = self.app
-        var items: [Item] = []
-        if !commandsOnly {
-            collectRecents()
-            if let e = app.workbench.editor {
-                for (uri, title) in e.openTabs where TabURI.scheme(uri) != "session" {
-                    items.append(Item(kind: "Tab", icon: "square.on.square", title: title,
-                                      detail: TabURI.scheme(uri) == "file" ? TabURI.filePath(uri).path : uri,
-                                      action: { app.workbench.open(uri) }, split: { app.workbench.open(uri, split: .right) }))
-                }
-            }
-            for w in app.worktrees where !w.archived {
-                let repo = app.repo(w.repoId)?.name ?? ""
-                items.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName, detail: "\(repo) · \(w.branch)",
-                                  action: { app.workbench.show(workspace: w.id) }))
-            }
-            for s in app.sessions where s.status != .exited {
-                let wt = app.worktree(s.worktreeId)
-                items.append(Item(kind: "Agent", icon: "terminal", title: app.catalog.displayName(s),
-                                  detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
-                                  action: { app.workbench.focus(session: s.id) },
-                                  split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
-                                  session: s))
-            }
-            filesLoad?.cancel()
-            if let wid = app.workbench.workspaceId, let root = app.worktree(wid)?.path {
-                filesLoad = Task {
-                    let files = await app.call(FilesList(id: wid)) ?? []   // why there are none, if it failed
-                    let fuzzy = await Task.detached { files.map(ProjectFiles.FuzzyPath.init) }.value
-                    // Listed again meanwhile (its own load adds them), or a setting's choices are on screen.
-                    guard !Task.isCancelled, choosing == nil else { return }
-                    all += zip(files, fuzzy).map { f, z in Item(kind: "File", icon: "doc", title: (f as NSString).lastPathComponent, detail: f,
-                                                               action: { app.workbench.open(TabURI.file(root + "/" + f)) },
-                                                               split: { app.workbench.open(TabURI.file(root + "/" + f), split: .right) }, fuzzy: z) }
-                    filter()
-                }
-            }
-        }
-        // After what's open: the empty field without agents to list starts with tabs and workspaces, not the Kelp menu.
-        // Commands: every enabled menu item with an action.
-        func walk(_ m: NSMenu, path: String) {
-            for i in m.items {
-                if let s = i.submenu { walk(s, path: path.isEmpty ? i.title : path + " › " + i.title); continue }
-                guard let a = i.action, !i.isSeparatorItem, !i.isHidden, !i.title.isEmpty else { continue }
-                // Only what the menu would offer now: someone handles it and it's enabled (Run File needs a file…).
-                guard let t = NSApp.target(forAction: a, to: i.target, from: i), (t as? NSMenuItemValidation)?.validateMenuItem(i) ?? true else { continue }
-                // No icon unless the menu item has one: the same ⌘ on every row said nothing.
-                items.append(Item(kind: "Command", icon: "", title: i.title, detail: path, action: { NSApp.sendAction(a, to: i.target, from: i) },
-                                  image: i.image, key: i.keyEquivalent.isEmpty ? "" : Self.shortcut(i)))
-            }
-        }
-        if let m = NSApp.mainMenu { walk(m, path: "") }   // extension commands are in the menus (Tools) already
-        // Every setting: one with choices (Color Theme…) lists them here, the others open their page.
-        for section in app.extensions.all.settings {
-            for spec in section.specs {
-                let title = "\(loc(section.title)): \(loc(spec.title))", choices = self.choices(spec)
-                guard !choices.isEmpty else {
-                    items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""),
-                                      action: { SettingsWindow.show(app, section: section.id) }))
-                    continue
-                }
-                let now = app.settings.value(spec.key)
-                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""),
-                                  action: { [weak self] in self?.pick(section, spec) },
-                                  value: choices.first { $0.0 == now }?.1 ?? ""))
-            }
-        }
-        all = items
-    }
-
-    /// Agents to get back to: asking or failed first, then finished and unseen, then the latest others; then the
-    /// workspaces visited last. The first six get ⌘1–⌘6.
-    private func collectRecents() {
-        let app = self.app
-        let m = app
-        let queue = AttentionQueue(app).sessions
-        let rest = m.sessions.filter { s in s.agent != "shell" && s.status != .exited && !queue.contains { $0.id == s.id } }
-            .sorted { ($0.statusAt ?? $0.createdAt) > ($1.statusAt ?? $1.createdAt) }
-        var out = (queue + rest).prefix(6).map { s -> Item in
-            let w = m.worktree(s.worktreeId)
-            return Item(kind: s.status.words, icon: "terminal", title: app.catalog.displayName(s),
-                        detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
-                        action: { app.workbench.focus(session: s.id) },
-                        split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
-                        session: s)
-        }
-        var seen: Set<String> = []   // each workspace once, at its last visit
-        for id in app.workbench.history.visits.reversed() where id != app.workbench.workspaceId && seen.insert(id).inserted {
-            guard let w = m.worktree(id) else { continue }
-            out.append(Item(kind: "Workspace", icon: "arrow.triangle.branch", title: w.displayName,
-                            detail: m.repo(w.repoId)?.name ?? "", action: { app.workbench.show(workspace: w.id) }))
-            if out.count >= 10 { break }
-        }
-        recents = out
     }
 
     private func pickRecent(_ n: Int) -> Bool {
@@ -288,12 +218,16 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
     @objc private func filterAction() { filter() }
     package func controlTextDidChange(_ obj: Notification) { filter() }
 
-    private func filter() {
+    func filter() {
         scoring?.cancel()
         let q = field.stringValue
         if let t = tmux { setRows(tmuxItems(t, q), grouped: false); return }
         let pool = commandsOnly && choosing == nil ? all.filter { $0.kind == "Command" || $0.kind == "Setting" } : all
-        if !commandsOnly, choosing == nil, q.hasPrefix("#") { setRows([], grouped: false); searchPullRequests(q); return }
+        if !commandsOnly, choosing == nil, q.hasPrefix("#") {
+            setRows([], grouped: false)
+            searchPullRequests(q)
+            return
+        }
         if q.isEmpty {
             showingRecents = !commandsOnly && choosing == nil && !recents.isEmpty
             setRows(showingRecents ? recents : Array((commandsOnly ? pool : pool.filter { $0.kind != "File" }).prefix(200)),
@@ -359,7 +293,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             if let c = choosing { list(query: c.query); return true }   // a setting's choices: back to the list, the old value back
-            panel.orderOut(nil); NSApp.mainWindow?.makeKeyAndOrderFront(nil); return true   // back to the terminal
+            panel.orderOut(nil)
+            NSApp.mainWindow?.makeKeyAndOrderFront(nil)
+            return true   // back to the terminal
         default: return false
         }
     }
@@ -388,7 +324,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
     package func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
         guard case .item(let it) = rows[row] else {
             guard case .heading(let g) = rows[row] else { return nil }
-            let h = NSTextField(labelWithString: loc(g)); h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
+            let h = NSTextField(labelWithString: loc(g))
+            h.font = .systemFont(ofSize: 11, weight: .semibold)
+            h.textColor = .secondaryLabelColor
             let v = NSStackView(views: [h]); v.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 0, right: 10)
             return v
         }
@@ -398,8 +336,12 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         // An agent: its state while there's something to see (as on its tab), else its own icon.
         let lead: NSView
         if let s = it.session, [.working, .waiting, .error].contains(s.status) || (s.status == .done && s.unread) {
-            let m = StatusMark(size: 14); m.status = s.status; m.unread = s.unread
-            let box = NSView(); m.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(m)
+            let m = StatusMark(size: 14)
+            m.status = s.status
+            m.unread = s.unread
+            let box = NSView()
+            m.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(m)
             NSLayoutConstraint.activate([m.centerXAnchor.constraint(equalTo: box.centerXAnchor), m.centerYAnchor.constraint(equalTo: box.centerYAnchor),
                                          box.heightAnchor.constraint(equalToConstant: 18)])
             lead = box
@@ -410,7 +352,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         let t1 = NSTextField(labelWithString: "")
         t1.attributedStringValue = Self.highlighted(it.title, field.stringValue)
         t1.lineBreakMode = .byTruncatingTail
-        let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor
+        let t2 = NSTextField(labelWithString: it.detail)
+        t2.font = .systemFont(ofSize: 11)
+        t2.textColor = .secondaryLabelColor
         t2.lineBreakMode = it.kind == "Setting" ? .byTruncatingTail : .byTruncatingMiddle   // paths keep both ends, prose its start
         t2.isHidden = it.detail.isEmpty
         // Empty field: the agents on ⌘1–⌘6 say so.
@@ -421,12 +365,22 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         let tick = NSImageView(image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: String(localized: "Current")) ?? NSImage())
         tick.contentTintColor = .controlAccentColor; tick.isHidden = !it.checked
         // A command's shortcut: at the end of the title's line, as in a menu.
-        let key = NSTextField(labelWithString: it.key); key.font = .systemFont(ofSize: 12); key.textColor = .secondaryLabelColor; key.isHidden = it.key.isEmpty
+        let key = NSTextField(labelWithString: it.key)
+        key.font = .systemFont(ofSize: 12)
+        key.textColor = .secondaryLabelColor
+        key.isHidden = it.key.isEmpty
         key.setContentCompressionResistancePriority(.required, for: .horizontal); key.setContentHuggingPriority(.required, for: .horizontal)
-        let top = NSStackView(views: [t1, key]); top.spacing = 10; top.distribution = .fill
-        let texts = NSStackView(views: [top, t2]); texts.orientation = .vertical; texts.alignment = .leading; texts.spacing = 0
+        let top = NSStackView(views: [t1, key])
+        top.spacing = 10
+        top.distribution = .fill
+        let texts = NSStackView(views: [top, t2])
+        texts.orientation = .vertical
+        texts.alignment = .leading
+        texts.spacing = 0
         top.widthAnchor.constraint(equalTo: texts.widthAnchor).isActive = true
-        let line = NSStackView(views: [lead, texts, kind, tick]); line.spacing = 10; line.distribution = .fill
+        let line = NSStackView(views: [lead, texts, kind, tick])
+        line.spacing = 10
+        line.distribution = .fill
         line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
         lead.widthAnchor.constraint(equalToConstant: 18).isActive = true
         texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -443,66 +397,5 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             if r.location != NSNotFound { s.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .bold), range: r) }
         }
         return s
-    }
-}
-
-// MARK: tmux
-
-extension QuickOpen {
-    /// File › Attach to tmux Session, the "+" menu: the sessions tmux has on this workspace's machine, the last used first.
-    /// Typing filters them by name, and a name that isn't one starts that session. Each opens as a terminal attached to it.
-    package func showTmux() {
-        guard let wid = app.workbench.workspaceId else { NSSound.beep(); return }
-        if panel == nil { build() }
-        stopChoosing(); filesLoad?.cancel(); prSearch?.cancel(); tmuxLoad?.cancel()
-        commandsOnly = false; recents = []; all = []; tmux = []
-        field.placeholderString = String(localized: "Attach to a tmux session, or type a name for a new one")
-        keys.stringValue = String(localized: "↑↓ Select    ↩ Attach    ⇧↩ Attach in a Split")
-        field.stringValue = ""
-        filter()
-        present()
-        tmuxLoad = Task {
-            let found = await app.call(TmuxList(worktreeId: wid)) ?? []
-            guard !Task.isCancelled, tmux != nil else { return }
-            tmux = found; filter()
-        }
-    }
-
-    /// The sessions matching what's typed, that exact name first; then a new session by that name, or by the project's.
-    private func tmuxItems(_ sessions: [Tmux.Session], _ q: String) -> [Item] {
-        func item(_ name: String, icon: String, detail: String) -> Item {
-            let app = self.app
-            var c = URLComponents(); c.scheme = "terminal"; c.queryItems = [URLQueryItem(name: "tmux", value: name)]
-            let uri = c.string ?? "terminal:"
-            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { app.workbench.open(uri) },
-                        split: { app.workbench.open(uri, split: .right) })
-        }
-        // Kelp's own (terminal.tmux) are terminals already, and end with their tab: not offered.
-        let found = sessions.filter { !Tmux.isOwn($0.name) }.compactMap { s -> (Item, Int)? in
-            guard let score = s.name == q ? 1000 : Self.wordScore(s.name, q) else { return nil }
-            let detail = [s.windows == 1 ? String(localized: "1 window") : String(localized: "\(s.windows) windows"),
-                          s.attached > 0 ? String(localized: "attached") : nil, shortAgo(s.activity)].compactMap { $0 }.joined(separator: " · ")
-            return (item(s.name, icon: "terminal", detail: detail), score)
-        }.sorted { $0.1 > $1.1 }.map(\.0)
-        var new = Tmux.name(q)
-        if new.isEmpty {   // the project's name, numbered while tmux has a session by it
-            let w = app.worktree(app.workbench.workspaceId)
-            let base = Tmux.name(app.repo(w?.repoId)?.name ?? "kelp").lowercased().replacingOccurrences(of: " ", with: "-")
-            new = base
-            var n = 2
-            while sessions.contains(where: { $0.name == new }) { new = "\(base)-\(n)"; n += 1 }
-        }
-        guard !sessions.contains(where: { $0.name == new }) else { return found }
-        return found + [item(new, icon: "plus", detail: String(localized: "New tmux session"))]
-    }
-}
-
-/// The palette's window: ⌘1–⌘6 pick from the agents it lists before the main menu sees them (they select tabs there).
-final class QuickPanel: NSPanel {
-    var onNumber: ((Int) -> Bool)?
-    override func performKeyEquivalent(with e: NSEvent) -> Bool {
-        if e.modifierFlags.intersection([.command, .shift, .option, .control]) == .command, let n = Int(e.charactersIgnoringModifiers ?? ""),
-           (1...6).contains(n), onNumber?(n) == true { return true }
-        return super.performKeyEquivalent(with: e)
     }
 }

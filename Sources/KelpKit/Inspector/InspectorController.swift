@@ -41,14 +41,18 @@ final class InspectorController: NSViewController {
         v.rowMenu = { [weak self] in self?.rowMenu($0) }
         // A segmented capsule, like the system's scope bars on macOS 26: the shown panel's icon on a soft fill.
         selector.spacing = 2; selector.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
-        more.target = self; more.action = #selector(showMore(_:)); more.setButtonType(.momentaryChange)
+        more.target = self
+        more.action = #selector(showMore(_:))
+        more.setButtonType(.momentaryChange)
         more.widthAnchor.constraint(equalToConstant: 38).isActive = true; more.heightAnchor.constraint(equalToConstant: 24).isActive = true
         pin(moreBadge, on: more)
         empty.textColor = .secondaryLabelColor; empty.alignment = .center
         panelTitle.font = .ui(13, weight: .semibold); panelTitle.lineBreakMode = .byTruncatingTail
         panelTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         host.clipsToBounds = true
-        let sep = NSBox(); sep.boxType = .separator; rowSep.boxType = .separator
+        let sep = NSBox()
+        sep.boxType = .separator
+        rowSep.boxType = .separator
         for x in [bar, sep, rowSep, panelTitle, host, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         // Like the sidebar, the inspector runs the window's full height: the top band (as tall as the title bar) holds the
         // panel's name and, in the corner, the window's inspector toggle; its rows start under it.
@@ -108,7 +112,11 @@ final class InspectorController: NSViewController {
         func rank(_ e: (offset: Int, element: PanelSpec)) -> (Int, Int) { (order.firstIndex(of: e.element.id) ?? .max, e.offset) }
         panels = app.extensions.all.panels.enumerated().sorted { rank($0) < rank($1) }.map(\.element)
         let ids = Set(panels.map(\.id))
-        for k in made.keys where !ids.contains(k) { made[k]?.view.removeFromSuperview(); made[k]?.removeFromParent(); made[k] = nil }
+        for k in made.keys where !ids.contains(k) {
+            made[k]?.view.removeFromSuperview()
+            made[k]?.removeFromParent()
+            made[k] = nil
+        }
         buttons.forEach { $0.removeFromSuperview() }
         more.removeFromSuperview()
         counts = []
@@ -116,7 +124,10 @@ final class InspectorController: NSViewController {
         polls = panels.compactMap { p in p.poll.map { f in Task { await f() } } }
         buttons = panels.enumerated().map { i, p in
             let b = PanelIcon(p.icon, loc(p.title))
-            b.target = self; b.action = #selector(selected(_:)); b.tag = i; b.isHidden = hidden.contains(p.id)
+            b.target = self
+            b.action = #selector(selected(_:))
+            b.tag = i
+            b.isHidden = hidden.contains(p.id)
             b.moved = { [weak self, weak b] x in if let self, let b { self.move(b, to: x) } }
             b.dropped = { [weak self] in self?.saveOrder() }
             b.contextMenu = { [weak self] in self?.rowMenu($0) }
@@ -164,7 +175,9 @@ final class InspectorController: NSViewController {
         let m = NSMenu()
         for i in folded {
             let p = panels[i], item = NSMenuItem(title: loc(p.title), action: #selector(selected(_:)), keyEquivalent: "")
-            item.target = self; item.tag = i; item.image = .symbol(p.icon, loc(p.title))
+            item.target = self
+            item.tag = i
+            item.image = .symbol(p.icon, loc(p.title))
             if let n = p.badge?(), n.count > 0 { item.badge = NSMenuItemBadge(count: n.count) }
             m.addItem(item)
         }
@@ -175,7 +188,11 @@ final class InspectorController: NSViewController {
     /// those are made again. Built-in panels stay as they are.
     private func forgetFolderPanels() {
         let builtin = Set(app.extensions.extensions.filter(\.builtin).map(\.id))
-        for p in panels where !builtin.contains(p.extensionId) { made[p.id]?.view.removeFromSuperview(); made[p.id]?.removeFromParent(); made[p.id] = nil }
+        for p in panels where !builtin.contains(p.extensionId) {
+            made[p.id]?.view.removeFromSuperview()
+            made[p.id]?.removeFromParent()
+            made[p.id] = nil
+        }
     }
 
     private func showCounts() {
@@ -244,7 +261,9 @@ final class InspectorController: NSViewController {
 
     private func item(_ title: String, _ action: Selector, _ value: Any?, on: Bool) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        i.target = self; i.representedObject = value; i.state = on ? .on : .off
+        i.target = self
+        i.representedObject = value
+        i.state = on ? .on : .off
         return i
     }
 
@@ -340,8 +359,13 @@ final class PanelIcon: NSButton {
 
     convenience init(_ symbol: String, _ label: String) {
         self.init(frame: .zero)
-        image = .symbol(symbol, label); imagePosition = .imageOnly; title = ""; toolTip = label
-        isBordered = false; setButtonType(.pushOnPushOff); wantsLayer = true
+        image = .symbol(symbol, label)
+        imagePosition = .imageOnly
+        title = ""
+        toolTip = label
+        isBordered = false
+        setButtonType(.pushOnPushOff)
+        wantsLayer = true
         symbolConfiguration = .init(pointSize: 14, weight: .regular); imageScaling = .scaleProportionallyDown
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
     }
@@ -354,7 +378,9 @@ final class PanelIcon: NSButton {
         if #available(macOS 26, *), on {
             let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             layer?.backgroundColor = (dark ? NSColor.white.withAlphaComponent(0.16) : NSColor.white).cgColor
-            layer?.shadowOpacity = dark ? 0 : 0.15; layer?.shadowRadius = 1.5; layer?.shadowOffset = CGSize(width: 0, height: -0.5)
+            layer?.shadowOpacity = dark ? 0 : 0.15
+            layer?.shadowRadius = 1.5
+            layer?.shadowOffset = CGSize(width: 0, height: -0.5)
         } else {
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(on ? 0.14 : hover ? 0.06 : 0).cgColor
             layer?.shadowOpacity = 0

@@ -18,7 +18,9 @@ extension AppDelegate {
                 if sem.wait(timeout: .now() + 1) == .timedOut {   // stuck: record where the main thread is
                     let out = FileManager.default.temporaryDirectory.appendingPathComponent("kelp-hang-\(getpid()).txt").path
                     let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
-                    p.arguments = ["\(getpid())", "1", "-file", out]; try? p.run(); p.waitUntilExit()
+                    p.arguments = ["\(getpid())", "1", "-file", out]
+                    try? p.run()
+                    p.waitUntilExit()
                     print("HANG-SAMPLE " + out)
                     sem.wait()
                 }
@@ -149,7 +151,11 @@ extension AppDelegate {
                 let visible = web.window != nil && !web.isHiddenOrHasHiddenAncestor
                 print("WEB", web.url?.absoluteString ?? "-", "frame", web.frame.size, "visible", visible, "text", n.first ?? -1, "svg", n.last ?? 0)
                 // What the page draws, as "<name>-web<i>.png" (it's out of process, so not in the window's PNG).
-                guard visible else { left -= 1; if left == 0 { exit(0) }; return }
+                guard visible else {
+                    left -= 1
+                    if left == 0 { exit(0) }
+                    return
+                }
                 web.takeSnapshot(with: nil) { img, _ in
                     if let t = img?.tiffRepresentation, let png = NSBitmapImageRep(data: t)?.representation(using: .png, properties: [:]) {
                         try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-web\(i).png")))

@@ -55,9 +55,18 @@ extension EditorArea {
             let sid = TabURI.body(t.uri)
             let s = app.session(sid)
             // Ended while Kelp was closed (or deleted): nothing to show. Ended now: keep it, the tab offers Restart.
-            if !known.contains(sid) || (!reconciledOnce && s?.status == .exited) { contents[t.id] = nil; layout.remove(t.id); changed = true }
+            if !known.contains(sid) || (!reconciledOnce && s?.status == .exited) {
+                contents[t.id] = nil
+                layout.remove(t.id)
+                changed = true
+            }
         }
-        if layout.allTabs.isEmpty, layout.root != nil { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual; changed = true }
+        if layout.allTabs.isEmpty, layout.root != nil {
+            let manual = layout.manual
+            layout = WorkspaceLayout()
+            layout.manual = manual
+            changed = true
+        }
         let shown = Set(layout.allTabs.filter { TabURI.scheme($0.uri) == "session" }.map { TabURI.body($0.uri) })
         closed = closed.filter { app.session($0).map { $0.status != .exited } ?? false }
         for s in mine where s.status != .exited && !shown.contains(s.id) && !closed.contains(s.id) {

@@ -16,8 +16,12 @@ final class UnavailableTab: TabContent {
         let l = NSTextField(wrappingLabelWithString: String(localized: "The extension that shows “\(uri)” is turned off or was removed."))
         l.alignment = .center; l.textColor = .secondaryLabelColor
         let b = ClosureButton(title: String(localized: "Extensions…")) { SettingsWindow.show(app, section: "extensions") }; b.bezelStyle = .push
-        let stack = NSStackView(views: [icon, t, l, b]); stack.orientation = .vertical; stack.spacing = 8
-        let v = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(stack)
+        let stack = NSStackView(views: [icon, t, l, b])
+        stack.orientation = .vertical
+        stack.spacing = 8
+        let v = NSView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        v.addSubview(stack)
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: v.centerXAnchor), stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),
                                      stack.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32),
                                      l.widthAnchor.constraint(lessThanOrEqualToConstant: 420)])

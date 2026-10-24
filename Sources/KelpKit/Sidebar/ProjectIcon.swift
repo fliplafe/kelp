@@ -26,7 +26,11 @@ enum ProjectIcon {
     /// whatever disk the project is on, held up the sidebar); `show` puts the icon in once it's found.
     static func image(for repo: String) -> NSImage {
         if let i = cache[repo] { return i }
-        if RemoteHost.of(repo) != nil { let i = NSImage.symbol("network"); cache[repo] = i; return i }   // on another machine
+        if RemoteHost.of(repo) != nil { // on another machine
+            let i = NSImage.symbol("network")
+            cache[repo] = i
+            return i
+        }
         let letter = IconTile.letter((repo as NSString).lastPathComponent)
         cache[repo] = letter; looking[repo] = []
         Task {

@@ -15,7 +15,9 @@ enum SettingsWindow {
         if fresh {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
-            w.title = String(localized: "Settings"); w.isReleasedWhenClosed = false; w.toolbarStyle = .unified
+            w.title = String(localized: "Settings")
+            w.isReleasedWhenClosed = false
+            w.toolbarStyle = .unified
             w.standardWindowButton(.zoomButton)?.isEnabled = false   // ⌘, brings it back, so no minimize or zoom (HIG › Settings)
             let host = NSHostingController(rootView: SettingsView().environment(app))
             host.sizingOptions = [.minSize]

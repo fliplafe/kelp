@@ -56,9 +56,13 @@ final class MarkdownTab: NSViewController {
     override func loadView() {
         func b(_ sym: String, _ tip: String, _ sel: Selector) -> NSButton {
             let x = NSButton(image: .symbol(sym, tip), target: self, action: sel)
-            x.bezelStyle = .texturedRounded; x.toolTip = tip; return x
+            x.bezelStyle = .texturedRounded
+            x.toolTip = tip
+            return x
         }
-        mode.selectedSegment = startInPreview ? 2 : defaultSegment; mode.target = self; mode.action = #selector(modeChanged)
+        mode.selectedSegment = startInPreview ? 2 : defaultSegment
+        mode.target = self
+        mode.action = #selector(modeChanged)
         let heading = NSPopUpButton()
         heading.addItems(withTitles: [String(localized: "Text"), String(localized: "Heading 1"),
                                       String(localized: "Heading 2"), String(localized: "Heading 3")])
@@ -90,7 +94,11 @@ final class MarkdownTab: NSViewController {
         if !positioned, split.bounds.width > 700 { positioned = true; split.setPosition(split.bounds.width / 2, ofDividerAt: 0) }
         // Split in a narrow pane squeezes the preview to a word per line: show the source until there's room.
         let n = split.bounds.width > 0 && split.bounds.width < 760
-        if n != narrow { narrow = n; mode.setToolTip(n ? String(localized: "Split (needs a wider pane)") : nil, forSegment: 1); applyMode() }
+        if n != narrow {
+            narrow = n
+            mode.setToolTip(n ? String(localized: "Split (needs a wider pane)") : nil, forSegment: 1)
+            applyMode()
+        }
     }
 
     func textChanged() { rerender(after: .milliseconds(250)) }
@@ -135,7 +143,9 @@ final class MarkdownTab: NSViewController {
     }
 
     private func edit(_ f: (String, NSRange) -> (text: String, selection: NSRange)) {
-        let r = f(editor.text, editor.selectedRange); editor.apply(text: r.text, selection: r.selection); editor.focus()
+        let r = f(editor.text, editor.selectedRange)
+        editor.apply(text: r.text, selection: r.selection)
+        editor.focus()
     }
     @objc func bold() { edit(MarkdownFormat.toggleBold) }
     @objc func italic() { edit(MarkdownFormat.toggleItalic) }

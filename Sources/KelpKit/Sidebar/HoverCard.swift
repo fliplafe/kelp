@@ -12,7 +12,11 @@ final class HoverCard {
     private(set) var shownKey: String?
     private var warmUntil = Date.distantPast
 
-    init(app: AppModel) { self.app = app; popover.behavior = .applicationDefined; popover.animates = false }
+    init(app: AppModel) {
+        self.app = app
+        popover.behavior = .applicationDefined
+        popover.animates = false
+    }
 
     /// The pointer is over a row (`key` "w:…" / "a:…"), or over nothing.
     func hover(_ key: String?, rect: NSRect, in view: NSView) {
@@ -65,16 +69,24 @@ final class CardModel {
             title = app.catalog.displayName(s)
             let w = m.worktree(s.worktreeId)
             subtitle = [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")
-            agents = [Agent(id: s.id, session: s)]; workspaceId = s.worktreeId ?? ""; agentOnly = true; repo = nil
+            agents = [Agent(id: s.id, session: s)]
+            workspaceId = s.worktreeId ?? ""
+            agentOnly = true
+            repo = nil
         } else if key.hasPrefix("p:"), let r = m.repo(String(key.dropFirst(2))) {
             title = r.name; subtitle = (r.path as NSString).abbreviatingWithTildeInPath
-            agents = []; workspaceId = ""; agentOnly = false; repo = r
+            agents = []
+            workspaceId = ""
+            agentOnly = false
+            repo = r
         } else if key.hasPrefix("w:"), let w = m.worktree(String(key.dropFirst(2))) {
             let r = m.repo(w.repoId)
             title = w.displayName
             subtitle = [r?.name, w.path == r?.path ? nil : String(localized: "branch \(w.branch)")].compactMap { $0 }.joined(separator: " · ")
             agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }.map { Agent(id: $0.id, session: $0) }
-            workspaceId = w.id; agentOnly = false; repo = nil
+            workspaceId = w.id
+            agentOnly = false
+            repo = nil
         } else { return nil }
     }
 

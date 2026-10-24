@@ -32,10 +32,18 @@ final class OnboardingSheet: SheetController {
         let sub = NSTextField(wrappingLabelWithString:
                               String(localized: "Agents work in their own workspaces here, with the terminal, editor and git next to them."))
         sub.textColor = .secondaryLabelColor; sub.preferredMaxLayoutWidth = 340
-        let head = NSStackView(views: [icon, NSStackView(views: [title, sub])]); head.alignment = .top; head.spacing = 14
-        (head.arrangedSubviews[1] as? NSStackView).map { $0.orientation = .vertical; $0.alignment = .leading; $0.spacing = 4 }
+        let head = NSStackView(views: [icon, NSStackView(views: [title, sub])])
+        head.alignment = .top
+        head.spacing = 14
+        (head.arrangedSubviews[1] as? NSStackView).map {
+            $0.orientation = .vertical
+            $0.alignment = .leading
+            $0.spacing = 4
+        }
 
-        agents.orientation = .vertical; agents.alignment = .leading; agents.spacing = 6
+        agents.orientation = .vertical
+        agents.alignment = .leading
+        agents.spacing = 6
         pick.target = self; pick.action = #selector(picked)
         let pickRow = NSStackView(views: [NSTextField(labelWithString: String(localized: "New Agent (⌥⌘T) starts:")), pick]); pickRow.spacing = 8
 
@@ -44,7 +52,9 @@ final class OnboardingSheet: SheetController {
         notifyStatus.textColor = .secondaryLabelColor; notifyStatus.font = .systemFont(ofSize: 11)
         let notifyRow = NSStackView(views: [test, notifyStatus]); notifyRow.spacing = 8
 
-        let later = ClosureButton(title: String(localized: "Later")) { [weak self] in self?.close() }; later.bezelStyle = .push; later.keyEquivalent = "\u{1b}"
+        let later = ClosureButton(title: String(localized: "Later")) { [weak self] in self?.close() }
+        later.bezelStyle = .push
+        later.keyEquivalent = "\u{1b}"
         let add = ClosureButton(title: String(localized: "Add Project…")) { [weak self, app] in
             self?.close()
             DispatchQueue.main.async { app.workbench.addProject() }
@@ -54,8 +64,12 @@ final class OnboardingSheet: SheetController {
 
         let stack = NSStackView(views: [head, section(String(localized: "Agents on this Mac")), agents, pickRow,
                                         section(String(localized: "Notifications")), notifyRow, buttons])
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
-        stack.setCustomSpacing(18, after: head); stack.setCustomSpacing(18, after: pickRow); stack.setCustomSpacing(22, after: notifyRow)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.setCustomSpacing(18, after: head)
+        stack.setCustomSpacing(18, after: pickRow)
+        stack.setCustomSpacing(22, after: notifyRow)
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 22, bottom: 20, right: 22)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -44).isActive = true
         window?.contentView = stack
@@ -63,7 +77,9 @@ final class OnboardingSheet: SheetController {
     }
 
     private func section(_ t: String) -> NSTextField {
-        let l = NSTextField(labelWithString: t); l.font = .systemFont(ofSize: 12, weight: .semibold); return l
+        let l = NSTextField(labelWithString: t)
+        l.font = .systemFont(ofSize: 12, weight: .semibold)
+        return l
     }
 
     private func fillAgents() {
@@ -76,7 +92,9 @@ final class OnboardingSheet: SheetController {
         if !cells.isEmpty {   // two columns, like the start page
             let half = (cells.count + 1) / 2
             let grid = NSGridView(views: (0..<half).map { i in [cells[i], i + half < cells.count ? cells[i + half] : NSGridCell.emptyContentView] })
-            grid.rowSpacing = 6; grid.columnSpacing = 24; grid.column(at: 0).width = 190
+            grid.rowSpacing = 6
+            grid.columnSpacing = 24
+            grid.column(at: 0).width = 190
             grid.setContentHuggingPriority(.required, for: .vertical)   // else one row takes the slack
             agents.addArrangedSubview(grid)
         }
@@ -88,7 +106,11 @@ final class OnboardingSheet: SheetController {
             agents.addArrangedSubview(none)
         }
         pick.removeAllItems()
-        for a in found { pick.addItem(withTitle: a.name); pick.lastItem?.representedObject = a.id; pick.lastItem?.image = app.catalog.icon(a.id) }
+        for a in found {
+            pick.addItem(withTitle: a.name)
+            pick.lastItem?.representedObject = a.id
+            pick.lastItem?.image = app.catalog.icon(a.id)
+        }
         pick.isEnabled = !found.isEmpty
         if let i = found.firstIndex(where: { $0.id == app.catalog.defaultAgent }) { pick.selectItem(at: i) }
     }

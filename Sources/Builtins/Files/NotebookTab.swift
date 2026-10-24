@@ -16,7 +16,10 @@ final class NotebookTab: NSViewController {
 
     init(app: AppModel, url: URL, path: String, worktreeId: String?) {
         links = PreviewLinks(app: app)
-        self.app = app; self.url = url; self.path = path; self.worktreeId = worktreeId
+        self.app = app
+        self.url = url
+        self.path = path
+        self.worktreeId = worktreeId
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -24,7 +27,9 @@ final class NotebookTab: NSViewController {
     override func loadView() {
         func b(_ t: String, _ sym: String, _ sel: Selector) -> NSButton {
             let x = NSButton(title: t, target: self, action: sel); x.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil)
-            x.imagePosition = .imageLeading; x.bezelStyle = .texturedRounded; return x
+            x.imagePosition = .imageLeading
+            x.bezelStyle = .texturedRounded
+            return x
         }
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
         let bar = NSStackView(views: [b(String(localized: "Run All"), "play.fill", #selector(runAll)),

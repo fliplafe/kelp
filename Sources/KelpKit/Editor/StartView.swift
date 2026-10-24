@@ -26,10 +26,14 @@ final class StartView: NSView, NSTextFieldDelegate {
         icon.imageScaling = .scaleProportionallyUpOrDown; icon.symbolConfiguration = .init(pointSize: 40, weight: .light)
         icon.contentTintColor = .secondaryLabelColor
         let title = NSTextField(labelWithString: w.displayName)
-        title.font = .systemFont(ofSize: 20, weight: .semibold); title.lineBreakMode = .byTruncatingTail; title.alignment = .center
+        title.font = .systemFont(ofSize: 20, weight: .semibold)
+        title.lineBreakMode = .byTruncatingTail
+        title.alignment = .center
         // The window bar shows the folder; a remote project's host and path are said here, the bar has the local stand-in.
         let folder = NSTextField(labelWithString: RemoteHost.of(w.path).map { "\($0.host):\($0.path)" } ?? "")
-        folder.font = .systemFont(ofSize: 13); folder.textColor = .secondaryLabelColor; folder.lineBreakMode = .byTruncatingMiddle
+        folder.font = .systemFont(ofSize: 13)
+        folder.textColor = .secondaryLabelColor
+        folder.lineBreakMode = .byTruncatingMiddle
         folder.isHidden = folder.stringValue.isEmpty
 
         // The default agent first, then the others (two columns when there are many: people often have a dozen).
@@ -39,6 +43,57 @@ final class StartView: NSView, NSTextFieldDelegate {
             StartRow(image: app.catalog.icon(a.id, size: 20), title: a.name, detail: a.id == def && agents.count <= 5 ? String(localized: "Default") : nil,
                      shortcut: a.id == def ? "⌥⌘T" : nil) { [weak self] in self?.onAgent?(a.id) }
         }
+        let rows = agentRows(agents, tiles: tiles)
+        let others = otherRows(w)
+        let card = StartCard(rows: rows, others: others)
+
+        let open = NSTextField(labelWithString: String(localized: "Open"))
+        open.font = .ui(11, weight: .semibold); open.textColor = .secondaryLabelColor
+        let hint = NSTextField(labelWithString: String(localized: "A file, an agent or a command: ⌘P"))
+        hint.font = .systemFont(ofSize: 12); hint.textColor = .secondaryLabelColor
+
+        var views: [NSView] = [icon, title, folder]
+        let field = agents.contains { $0.id == def } ? promptField() : nil
+        if let field { views.append(field) }
+        views += [open, card, hint]
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 4
+        stack.detachesHiddenViews = true
+        stack.setCustomSpacing(14, after: icon); stack.setCustomSpacing(24, after: folder.isHidden ? title : folder)
+        if let field { stack.setCustomSpacing(22, after: field) }
+        stack.setCustomSpacing(6, after: open); stack.setCustomSpacing(14, after: card)
+        // In a scroll view: a low window scrolls the list rather than growing to hold it.
+        let page = FlippedView(); page.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView()
+        scroll.documentView = page
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        pin(scroll)
+        stack.translatesAutoresizingMaskIntoConstraints = false; page.addSubview(stack)
+        let width = stack.widthAnchor.constraint(equalToConstant: 460); width.priority = .defaultHigh
+        // A little above the middle; in a low window it starts at the top instead of going under it.
+        let middle = stack.centerYAnchor.constraint(equalTo: page.centerYAnchor, constant: -30); middle.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            page.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            page.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
+            page.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor).withPriority(NSLayoutConstraint.Priority.defaultLow.rawValue),
+            stack.centerXAnchor.constraint(equalTo: page.centerXAnchor), middle, stack.topAnchor.constraint(greaterThanOrEqualTo: page.topAnchor, constant: 24),
+            page.bottomAnchor.constraint(greaterThanOrEqualTo: stack.bottomAnchor, constant: 24),
+            width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: page.leadingAnchor, constant: 24),
+            icon.widthAnchor.constraint(equalToConstant: 56), icon.heightAnchor.constraint(equalToConstant: 56),
+            title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor), folder.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor), open.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 4)
+        ])
+        if let field { field.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        if tiles.count > 5 { tiles.forEach { $0.widthAnchor.constraint(equalTo: card.widthAnchor, multiplier: 0.5, constant: -6).isActive = true } }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The agents to start, in two columns when there are many; with none, what to install.
+    private func agentRows(_ agents: [AgentManifest], tiles: [StartRow]) -> [NSView] {
+        let app = self.app
         var rows: [NSView] = []
         if agents.isEmpty {
             let none = NSTextField(wrappingLabelWithString: String(localized: "No agent found on this Mac. Install one: its installer runs in a terminal here, and the agent is offered when it’s done."))
@@ -53,7 +108,9 @@ final class StartView: NSView, NSTextFieldDelegate {
                 SettingsWindow.show(app, section: "agents")
             })
         } else if tiles.count > 5 {
-            let grid = NSGridView(numberOfColumns: 2, rows: 0); grid.columnSpacing = 4; grid.rowSpacing = 0
+            let grid = NSGridView(numberOfColumns: 2, rows: 0)
+            grid.columnSpacing = 4
+            grid.rowSpacing = 0
             for i in stride(from: 0, to: tiles.count, by: 2) {
                 grid.addRow(with: [tiles[i], i + 1 < tiles.count ? tiles[i + 1] : NSGridCell.emptyContentView])
             }
@@ -61,6 +118,12 @@ final class StartView: NSView, NSTextFieldDelegate {
         } else {
             rows += tiles
         }
+        return rows
+    }
+
+    /// What else opens here: a terminal, a tmux session, what extensions open.
+    private func otherRows(_ w: Worktree) -> [StartRow] {
+        let app = self.app
         var others = [StartRow(image: .symbol("terminal"), title: String(localized: "Terminal"), shortcut: "⌘T") { [weak self] in self?.onOpen?("terminal:") }]
         if app.catalog.hasTmux(w) {
             others.append(StartRow(image: .symbol("rectangle.split.3x1"), title: String(localized: "tmux Session"), shortcut: nil) { app.quickOpen.showTmux() })
@@ -70,55 +133,23 @@ final class StartView: NSView, NSTextFieldDelegate {
             let key = app.extensions.command(e.id)?.key.flatMap(KeySpec.init).map(KeyBindings.display)
             others.append(StartRow(image: .symbol(e.icon), title: e.title, shortcut: key) { e.open(IDEContext.of(app), in: app) })
         }
-        let card = StartCard(rows: rows, others: others)
-
-        let open = NSTextField(labelWithString: String(localized: "Open"))
-        open.font = .ui(11, weight: .semibold); open.textColor = .secondaryLabelColor
-        let hint = NSTextField(labelWithString: String(localized: "A file, an agent or a command: ⌘P"))
-        hint.font = .systemFont(ofSize: 12); hint.textColor = .secondaryLabelColor
-
-        var views: [NSView] = [icon, title, folder]
-        let field = agents.contains { $0.id == def } ? promptField() : nil
-        if let field { views.append(field) }
-        views += [open, card, hint]
-        let stack = NSStackView(views: views); stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 4
-        stack.detachesHiddenViews = true
-        stack.setCustomSpacing(14, after: icon); stack.setCustomSpacing(24, after: folder.isHidden ? title : folder)
-        if let field { stack.setCustomSpacing(22, after: field) }
-        stack.setCustomSpacing(6, after: open); stack.setCustomSpacing(14, after: card)
-        // In a scroll view: a low window scrolls the list rather than growing to hold it.
-        let page = FlippedView(); page.translatesAutoresizingMaskIntoConstraints = false
-        let scroll = NSScrollView(); scroll.documentView = page; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        pin(scroll)
-        stack.translatesAutoresizingMaskIntoConstraints = false; page.addSubview(stack)
-        let width = stack.widthAnchor.constraint(equalToConstant: 460); width.priority = .defaultHigh
-        // A little above the middle; in a low window it starts at the top instead of going under it.
-        let middle = stack.centerYAnchor.constraint(equalTo: page.centerYAnchor, constant: -30); middle.priority = .defaultHigh
-        NSLayoutConstraint.activate([
-            page.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            page.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
-            { let fit = page.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor); fit.priority = .defaultLow; return fit }(),
-            stack.centerXAnchor.constraint(equalTo: page.centerXAnchor), middle, stack.topAnchor.constraint(greaterThanOrEqualTo: page.topAnchor, constant: 24),
-            page.bottomAnchor.constraint(greaterThanOrEqualTo: stack.bottomAnchor, constant: 24),
-            width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: page.leadingAnchor, constant: 24),
-            icon.widthAnchor.constraint(equalToConstant: 56), icon.heightAnchor.constraint(equalToConstant: 56),
-            title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor), folder.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
-            card.widthAnchor.constraint(equalTo: stack.widthAnchor), open.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 4)
-        ])
-        if let field { field.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
-        if tiles.count > 5 { tiles.forEach { $0.widthAnchor.constraint(equalTo: card.widthAnchor, multiplier: 0.5, constant: -6).isActive = true } }
+        return others
     }
-    required init?(coder: NSCoder) { fatalError() }
 
     /// The default agent's icon and a field: Return starts the agent with the text.
     private func promptField() -> NSView {
         let name = app.catalog.all.first { $0.id == def }?.name ?? def
         prompt.placeholderString = String(localized: "What should \(name) do? Return starts it")
-        prompt.isBordered = false; prompt.drawsBackground = false; prompt.focusRingType = .none; prompt.font = .systemFont(ofSize: 14)
+        prompt.isBordered = false
+        prompt.drawsBackground = false
+        prompt.focusRingType = .none
+        prompt.font = .systemFont(ofSize: 14)
         prompt.lineBreakMode = .byTruncatingTail; prompt.delegate = self
         prompt.setAccessibilityLabel(String(localized: "First task for \(name)"))
         let icon = NSImageView(image: app.catalog.icon(def, size: 18) ?? NSImage())
-        let row = NSStackView(views: [icon, prompt]); row.spacing = 10; row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        let row = NSStackView(views: [icon, prompt])
+        row.spacing = 10
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
         let box = StartBox(radius: 10, fill: 0.05)
         row.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(row)
         NSLayoutConstraint.activate([
@@ -149,7 +180,12 @@ final class StartView: NSView, NSTextFieldDelegate {
 @MainActor
 private final class StartBox: NSView {
     private let radius: CGFloat, fill: CGFloat
-    init(radius: CGFloat, fill: CGFloat) { self.radius = radius; self.fill = fill; super.init(frame: .zero); wantsLayer = true }
+    init(radius: CGFloat, fill: CGFloat) {
+        self.radius = radius
+        self.fill = fill
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
     required init?(coder: NSCoder) { fatalError() }
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
@@ -173,7 +209,9 @@ private final class StartCard: NSView {
             }
             views.append(r)
         }
-        let list = NSStackView(views: views); list.orientation = .vertical; list.spacing = 0
+        let list = NSStackView(views: views)
+        list.orientation = .vertical
+        list.spacing = 0
         list.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
         pin(box); pin(list)
         for v in views {
@@ -196,18 +234,28 @@ private final class StartRow: NSView {
         wantsLayer = true; layer?.cornerRadius = 8
         let icon = NSImageView(image: image ?? NSImage()); icon.symbolConfiguration = .init(pointSize: 15, weight: .regular)
         icon.contentTintColor = .secondaryLabelColor   // symbols only; real icons keep their colors
-        let label = NSTextField(labelWithString: title); label.font = .systemFont(ofSize: 13); label.lineBreakMode = .byTruncatingTail
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13)
+        label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let more = NSTextField(labelWithString: detail ?? ""); more.textColor = .secondaryLabelColor; more.font = .systemFont(ofSize: 12)
+        let more = NSTextField(labelWithString: detail ?? "")
+        more.textColor = .secondaryLabelColor
+        more.font = .systemFont(ofSize: 12)
         more.lineBreakMode = .byTruncatingTail; more.setContentCompressionResistancePriority(.init(240), for: .horizontal)   // the name wins
-        let key = NSTextField(labelWithString: shortcut ?? ""); key.textColor = .secondaryLabelColor; key.font = .systemFont(ofSize: 12)
-        let row = NSStackView(views: [icon, label, NSView(), more, key]); row.spacing = 10; row.detachesHiddenViews = true
+        let key = NSTextField(labelWithString: shortcut ?? "")
+        key.textColor = .secondaryLabelColor
+        key.font = .systemFont(ofSize: 12)
+        let row = NSStackView(views: [icon, label, NSView(), more, key])
+        row.spacing = 10
+        row.detachesHiddenViews = true
         more.isHidden = detail == nil; key.isHidden = shortcut == nil
         row.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
         pin(row)
         NSLayoutConstraint.activate([heightAnchor.constraint(equalToConstant: 36), icon.widthAnchor.constraint(equalToConstant: 22)])
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
-        setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(title)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title)
     }
     required init?(coder: NSCoder) { fatalError() }
 

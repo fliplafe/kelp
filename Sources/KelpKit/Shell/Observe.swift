@@ -19,7 +19,11 @@ private final class Tracker<T: Equatable> {
     var quiet: Bool
 
     init(owner: AnyObject?, value: @escaping @MainActor () -> T, changed: @escaping @MainActor (T) -> Void, quiet: Bool) {
-        self.owner = owner; owned = owner != nil; self.value = value; self.changed = changed; self.quiet = quiet
+        self.owner = owner
+        owned = owner != nil
+        self.value = value
+        self.changed = changed
+        self.quiet = quiet
     }
 
     func run() {

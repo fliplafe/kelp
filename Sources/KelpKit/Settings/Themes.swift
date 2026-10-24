@@ -99,7 +99,11 @@ package final class ThemeManager {
         var t = TerminalAppearance()
         t.useGhosttyConfig = theme == nil || s.bool("terminal.useGhosttyConfig") == true
         if let c = theme?.terminal {
-            t.background = c.background; t.foreground = c.foreground; t.cursor = c.cursor; t.selection = c.selection; t.palette = c.palette ?? []
+            t.background = c.background
+            t.foreground = c.foreground
+            t.cursor = c.cursor
+            t.selection = c.selection
+            t.palette = c.palette ?? []
         }
         t.fontFamily = s.string("terminal.fontFamily").flatMap { $0.isEmpty ? nil : $0 }
         t.fontSize = s.number("terminal.fontSize")
@@ -120,7 +124,10 @@ package final class ThemeManager {
         let minimap = s.bool("editor.minimap") ?? false
         TextSize.apply(s.string("workbench.textSize"))
         if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap {
-            CodeEditor.palette = palette; CodeEditor.fontSize = size; CodeEditor.fontName = font; CodeEditor.showMinimap = minimap
+            CodeEditor.palette = palette
+            CodeEditor.fontSize = size
+            CodeEditor.fontName = font
+            CodeEditor.showMinimap = minimap
             editorRevision += 1
         }
     }

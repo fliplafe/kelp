@@ -7,7 +7,12 @@ import Core
 /// The numbers come from the agents' own /usage screens (Claude Code, Grok, Antigravity — the daemon reads them) and
 /// Codex's app server (or its session logs, when newer); agents that don't report limits aren't listed.
 package struct UsageView: View {
-    struct Line: Equatable { var label: String; var used: Double; var resets: String?; var session = false }   // used: 0...1
+    struct Line: Equatable { // used: 0...1
+        var label: String
+        var used: Double
+        var resets: String?
+        var session = false
+    }
     struct Row: Identifiable, Equatable {
         var id: String, name: String, fullName: String
         var lines: [Line] = []

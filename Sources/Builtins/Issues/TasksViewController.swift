@@ -38,31 +38,53 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     override func loadView() {
         source.addItems(withTitles: [String(localized: "Pull Requests"), String(localized: "Issues"),
             String(localized: "Linear"), String(localized: "Jira"), String(localized: "Projects")])
-        source.selectItem(at: 0); source.target = self; source.action = #selector(sourceChanged)
+        source.selectItem(at: 0)
+        source.target = self
+        source.action = #selector(sourceChanged)
         filter.target = self; filter.action = #selector(filterChanged)
         let refresh = NSButton(image: .symbol("arrow.clockwise", String(localized: "Refresh")), target: self, action: #selector(reload))
         refresh.bezelStyle = .texturedRounded
         status.textColor = .secondaryLabelColor; status.font = .ui(11)
-        status.lineBreakMode = .byWordWrapping; status.maximumNumberOfLines = 3; status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        status.lineBreakMode = .byWordWrapping
+        status.maximumNumberOfLines = 3
+        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for c in [source, filter] as [NSControl] { c.controlSize = .small; c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         // An inspector panel: controls on one line, the status under them, list above the details.
         let controls = NSStackView(views: [source, filter, refresh]); controls.spacing = 6
-        for b in [showAll, setupButton] { b.bezelStyle = .push; b.controlSize = .small; b.isHidden = true }
+        for b in [showAll, setupButton] {
+            b.bezelStyle = .push
+            b.controlSize = .small
+            b.isHidden = true
+        }
         let statusRow = NSStackView(views: [status, showAll]); statusRow.spacing = 6
-        let bar = NSStackView(views: [controls, statusRow, setupButton]); bar.orientation = .vertical; bar.alignment = .leading; bar.spacing = 4
+        let bar = NSStackView(views: [controls, statusRow, setupButton])
+        bar.orientation = .vertical
+        bar.alignment = .leading
+        bar.spacing = 4
         bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         statusRow.widthAnchor.constraint(equalTo: bar.widthAnchor, constant: -20).isActive = true   // else the status wraps to no width
         for row in [controls, statusRow] { row.setHuggingPriority(.defaultHigh, for: .vertical) }   // as tall as their views; the list takes the rest
 
-        let col = NSTableColumn(identifier: .init("t")); table.addTableColumn(col); table.headerView = nil
-        table.rowHeight = TextSize.of(40); table.dataSource = self; table.delegate = self; table.style = .inset
-        let ts = NSScrollView(); ts.documentView = table; ts.hasVerticalScroller = true
+        let col = NSTableColumn(identifier: .init("t"))
+        table.addTableColumn(col)
+        table.headerView = nil
+        table.rowHeight = TextSize.of(40)
+        table.dataSource = self
+        table.delegate = self
+        table.style = .inset
+        let ts = NSScrollView()
+        ts.documentView = table
+        ts.hasVerticalScroller = true
         detail.orientation = .vertical
         detail.alignment = .leading
         detail.spacing = 10
         detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
-        let ds = NSScrollView(); ds.hasVerticalScroller = true; ds.drawsBackground = false
-        let flip = FlippedView(); flip.translatesAutoresizingMaskIntoConstraints = false; ds.documentView = flip
+        let ds = NSScrollView()
+        ds.hasVerticalScroller = true
+        ds.drawsBackground = false
+        let flip = FlippedView()
+        flip.translatesAutoresizingMaskIntoConstraints = false
+        ds.documentView = flip
         flip.pin(detail); flip.widthAnchor.constraint(equalTo: ds.contentView.widthAnchor).isActive = true
         split.isVertical = false; split.dividerStyle = .thin
         split.addArrangedSubview(ts); split.addArrangedSubview(ds)
@@ -89,7 +111,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         repoId = r
         guard isViewLoaded else { return }
         // Another project: drop its rows now, or Merge on one before the reload would act on a PR number in this repo.
-        rows = []; table.reloadData(); showDetail(nil)
+        rows = []
+        table.reloadData()
+        showDetail(nil)
         reload(); nameSources()
     }
 
@@ -130,7 +154,12 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     @objc private func reload() {
-        guard let repoId else { rows = []; table.reloadData(); status.stringValue = String(localized: "Select a project"); return }
+        guard let repoId else {
+            rows = []
+            table.reloadData()
+            status.stringValue = String(localized: "Select a project")
+            return
+        }
         let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
         let src = source.indexOfSelectedItem, f = filter.indexOfSelectedItem
         Task {
@@ -174,7 +203,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 showAll.isHidden = true
                 let message = (error as? RPCError)?.message ?? "\(error)"
                 setup = src == 2 || src == 3 ? nil : Forge.setup(for: message)
-                setupButton.title = setup?.title ?? ""; setupButton.toolTip = setup?.command; setupButton.isHidden = setup == nil
+                setupButton.title = setup?.title ?? ""
+                setupButton.toolTip = setup?.command
+                setupButton.isHidden = setup == nil
                 self.rows = []; status.stringValue = setup?.note ?? message
                 if src == 2 { status.stringValue = String(localized: "Connect Linear in Settings › Integrations") }
                 if src == 3 { status.stringValue = String(localized: "Connect Jira in Settings › Integrations") }
@@ -193,9 +224,17 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         case .jira(let j): ("\(j.key)  \(j.title)", "\(j.status) · \(j.type) · \(j.project)")
         case .item(let i): (i.title, "\(i.status ?? String(localized: "No status")) · \(i.type)")
         }
-        let t1 = NSTextField(labelWithString: title); t1.font = .ui(13, weight: .medium); t1.lineBreakMode = .byTruncatingTail
-        let t2 = NSTextField(labelWithString: sub); t2.font = .ui(11); t2.textColor = .secondaryLabelColor; t2.lineBreakMode = .byTruncatingTail
-        let s = NSStackView(views: [t1, t2]); s.orientation = .vertical; s.alignment = .leading; s.spacing = 2
+        let t1 = NSTextField(labelWithString: title)
+        t1.font = .ui(13, weight: .medium)
+        t1.lineBreakMode = .byTruncatingTail
+        let t2 = NSTextField(labelWithString: sub)
+        t2.font = .ui(11)
+        t2.textColor = .secondaryLabelColor
+        t2.lineBreakMode = .byTruncatingTail
+        let s = NSStackView(views: [t1, t2])
+        s.orientation = .vertical
+        s.alignment = .leading
+        s.spacing = 2
         return s
     }
     static func checksText(_ c: GitHub.PullRequest.Checks) -> String {
@@ -207,7 +246,10 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     // MARK: detail
     private func label(_ s: String, size: CGFloat = 13, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
-        let l = NSTextField(wrappingLabelWithString: s); l.font = .ui(size, weight: weight); l.textColor = color; l.isSelectable = true
+        let l = NSTextField(wrappingLabelWithString: s)
+        l.font = .ui(size, weight: weight)
+        l.textColor = color
+        l.isSelectable = true
         l.preferredMaxLayoutWidth = 520; return l
     }
     private func button(_ t: String, _ sym: String, _ action: @escaping () -> Void) -> NSButton {
@@ -273,7 +315,10 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
         actions.addArrangedSubview(button(String(localized: "Merge (squash)"), "arrow.triangle.merge") { [weak self] in self?.merge(n, wt) })
         detail.addArrangedSubview(actions)
-        let checksBox = NSStackView(); checksBox.orientation = .vertical; checksBox.alignment = .leading; checksBox.spacing = 4
+        let checksBox = NSStackView()
+        checksBox.orientation = .vertical
+        checksBox.alignment = .leading
+        checksBox.spacing = 4
         detail.addArrangedSubview(label(String(localized: "Checks"), weight: .semibold)); detail.addArrangedSubview(checksBox)
         guard let repoId else { return }
         Task { [weak self] in
@@ -308,7 +353,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
             guard let sid = pop?.selectedItem?.representedObject as? String else { return }
             Task { await app.call(LinearSetState(issueId: id, stateId: sid)) }
         }
-        pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
+        pop.target = sink
+        pop.action = #selector(ClosureTarget.fire)
+        objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
         let row = NSStackView(views: [NSTextField(labelWithString: String(localized: "State:")), pop]); row.spacing = 6
         return row
     }
@@ -327,7 +374,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 }
             }
         }
-        pop.target = sink; pop.action = #selector(ClosureTarget.fire); objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
+        pop.target = sink
+        pop.action = #selector(ClosureTarget.fire)
+        objc_setAssociatedObject(pop, "sink", sink, .OBJC_ASSOCIATION_RETAIN)
         let row = NSStackView(views: [NSTextField(labelWithString: String(localized: "Status:")), pop]); row.spacing = 6
         return row
     }

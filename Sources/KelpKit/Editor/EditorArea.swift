@@ -107,7 +107,9 @@ package final class EditorArea: NSViewController {
         switch n {
         case .pane(let gid): return groupView(gid)
         case .split(let vertical, let kids):
-            let sv = EqualizingSplitView(); sv.isVertical = vertical; sv.dividerStyle = .thin
+            let sv = EqualizingSplitView()
+            sv.isVertical = vertical
+            sv.dividerStyle = .thin
             let key = LayoutNode.splitKey(kids)
             sv.identifier = NSUserInterfaceItemIdentifier(key); sv.delegate = self
             let size = view.bounds.width > 0 ? view.bounds.size : NSSize(width: 1000, height: 700)
@@ -144,7 +146,9 @@ package final class EditorArea: NSViewController {
     /// View › Equalize Panes: every split back to equal shares.
     func equalizePanes() {
         guard layout.sizes != nil else { return }
-        layout.sizes = nil; render(); focusSelected()
+        layout.sizes = nil
+        render()
+        focusSelected()
     }
 
     private func groupView(_ gid: String) -> GroupView {
@@ -269,7 +273,9 @@ package final class EditorArea: NSViewController {
         track(owner: c, now: false) { [weak c] in c.map(TabLook.init) } changed: { [weak self] look in
             guard let self, let look, let gid = layout.group(of: t.id) else { return }
             if var g = layout.groups[gid], let i = g.tabs.firstIndex(where: { $0.id == t.id }), g.tabs[i].uri != look.uri {
-                g.tabs[i].uri = look.uri; layout.groups[gid] = g; scheduleSave()   // e.g. the browser navigated
+                g.tabs[i].uri = look.uri
+                layout.groups[gid] = g
+                scheduleSave()   // e.g. the browser navigated
             }
             refreshGroup(gid)
             app.publishUIState()
@@ -279,7 +285,9 @@ package final class EditorArea: NSViewController {
 
     private func rebuildStart() {
         guard start != nil else { return }
-        start?.removeFromSuperview(); start = nil; showStart()
+        start?.removeFromSuperview()
+        start = nil
+        showStart()
     }
 
     private func showStart() {

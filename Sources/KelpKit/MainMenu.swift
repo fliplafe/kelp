@@ -25,7 +25,9 @@ final class MenuBuilder {
             if id == "-" { m.addItem(.separator()); return nil }
             guard let c = reg.command(id) else { return nil }
             placed.insert(id)
-            let i = item(c); m.addItem(i); return i
+            let i = item(c)
+            m.addItem(i)
+            return i
         }
     }
 
@@ -49,9 +51,14 @@ extension AppDelegate {
     /// registry. Commands it doesn't place (extensions', the other built-ins') go in the menu they name, Tools by default.
     func buildMenu() {
         let b = MenuBuilder(reg: app.extensions, item: item)
-        appMenu(b); fileMenu(b); editMenu(b); viewMenu(b)
+        appMenu(b)
+        fileMenu(b)
+        editMenu(b)
+        viewMenu(b)
         let tools = b.sub("Tools")   // filled last, with what nothing else placed
-        runMenu(b); windowMenu(b); helpMenu(b)
+        runMenu(b)
+        windowMenu(b)
+        helpMenu(b)
         b.placeTheRest(in: tools)
         KeyBindings.apply(to: b.bar, app.settings)   // Settings › Keyboard's changes over the defaults (on the English titles)
         Localize.menu(b.bar)           // shown in the user's language

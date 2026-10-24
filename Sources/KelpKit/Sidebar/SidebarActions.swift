@@ -97,7 +97,9 @@ extension SidebarController {
             let archive = menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
             archive.isEnabled = more
             let close = menu.add(String(localized: "Close Workspace")) { WorkspaceActions(app).close(w) }
-            close.isAlternate = true; close.keyEquivalentModifierMask = .option; close.isEnabled = more
+            close.isAlternate = true
+            close.keyEquivalentModifierMask = .option
+            close.isEnabled = more
         } else {
             menu.add(String(localized: "Archive")) { WorkspaceActions(app).archive(w) }
             menu.add(String(localized: "Delete Workspace & Branch…")) { WorkspaceActions(app).delete(w) }

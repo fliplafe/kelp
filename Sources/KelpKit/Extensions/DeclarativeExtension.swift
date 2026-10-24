@@ -13,8 +13,19 @@ struct ExtManifest: Decodable {
         var languages: [LanguageSpec]?
     }
     /// VS Code's own shape: the theme file is in VS Code's file icon theme format.
-    struct IconThemeRef: Decodable { var id: String; var label: String?; var path: String }
-    struct ViewDef: Decodable { var id: String; var title: String; var icon: String?; var list: ListDef?; var web: String?; var badge: BadgeDef? }
+    struct IconThemeRef: Decodable {
+        var id: String
+        var label: String?
+        var path: String
+    }
+    struct ViewDef: Decodable {
+        var id: String
+        var title: String
+        var icon: String?
+        var list: ListDef?
+        var web: String?
+        var badge: BadgeDef?
+    }
     /// A panel's icon badge: what `command` prints (`PanelBadge(_:)`), read every `refresh` seconds (60 by default).
     struct BadgeDef: Decodable { var command: String; var refresh: Double? }
     struct ListDef: Decodable {
@@ -165,7 +176,10 @@ final class ExtViewTab: TabContent {
     private let controller: NSViewController
     var view: NSView { controller.view }
     init(uri: String, title: String, icon: String, controller: NSViewController) {
-        self.uri = uri; self.title = title; self.icon = .symbol(icon); self.controller = controller
+        self.uri = uri
+        self.title = title
+        self.icon = .symbol(icon)
+        self.controller = controller
     }
     func focus() {}
 }
@@ -282,7 +296,11 @@ struct ExtActions {
 /// (`process.run`): the app starts no programs. `extension`: whose command it is (its folder's name) — refused once
 /// that extension is off. A failure to reach the daemon or to start the program is code -1 with the reason as stderr.
 package enum Shell {
-    package struct Result: Sendable { package var code: Int32; package var stdout: String; package var stderr: String }
+    package struct Result: Sendable {
+        package var code: Int32
+        package var stdout: String
+        package var stderr: String
+    }
     package static func run(_ app: AppModel, _ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60,
                             extension id: String? = nil) async -> Result {
         await exec(app, ["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout, extension: id)

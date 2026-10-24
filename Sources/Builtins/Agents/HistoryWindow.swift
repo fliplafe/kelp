@@ -25,15 +25,26 @@ final class HistoryWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     private func build() {
         for (id, title, w) in [("agent", "Agent", 70.0), ("title", String(localized: "Conversation"), 380),
                                ("cwd", String(localized: "Folder"), 260), ("updated", String(localized: "Last active"), 130)] {
-            let c = NSTableColumn(identifier: .init(id)); c.title = title; c.width = w; table.addTableColumn(c)
+            let c = NSTableColumn(identifier: .init(id))
+            c.title = title
+            c.width = w
+            table.addTableColumn(c)
         }
-        table.dataSource = self; table.delegate = self; table.rowHeight = 22; table.style = .inset; table.usesAlternatingRowBackgroundColors = true
+        table.dataSource = self
+        table.delegate = self
+        table.rowHeight = 22
+        table.style = .inset
+        table.usesAlternatingRowBackgroundColors = true
         table.target = self; table.doubleAction = #selector(resume)
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
-        let sv = NSScrollView(); sv.documentView = table; sv.hasVerticalScroller = true
+        let sv = NSScrollView()
+        sv.documentView = table
+        sv.hasVerticalScroller = true
         search.placeholderString = String(localized: "Search titles and folders"); search.delegate = self
         fullText.target = self; fullText.action = #selector(searchChanged)
-        let resumeB = NSButton(title: String(localized: "Resume"), target: self, action: #selector(resume)); resumeB.bezelStyle = .rounded; resumeB.keyEquivalent = "\r"
+        let resumeB = NSButton(title: String(localized: "Resume"), target: self, action: #selector(resume))
+        resumeB.bezelStyle = .rounded
+        resumeB.keyEquivalent = "\r"
         let copyB = NSButton(title: String(localized: "Copy Resume Command"), target: self, action: #selector(copyCommand)); copyB.bezelStyle = .rounded
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11)
         showAll.bezelStyle = .rounded; showAll.isHidden = true

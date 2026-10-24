@@ -32,17 +32,31 @@ final class WorkspaceSwitcher {
         }
         order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
-        guard items.count > 1, let window = app.workbench.window?.window else { items = []; NSSound.beep(); return }
+        guard items.count > 1, let window = app.workbench.window?.window else {
+            items = []
+            NSSound.beep()
+            return
+        }
         index = 0
 
-        let list = NSStackView(); list.orientation = .vertical; list.spacing = 2; list.alignment = .leading
+        let list = NSStackView()
+        list.orientation = .vertical
+        list.spacing = 2
+        list.alignment = .leading
         list.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         rows = items.map { row($0) }
         rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -16).isActive = true }
-        let fx = NSVisualEffectView(); fx.material = .hudWindow; fx.state = .active; fx.wantsLayer = true; fx.layer?.cornerRadius = 12
+        let fx = NSVisualEffectView()
+        fx.material = .hudWindow
+        fx.state = .active
+        fx.wantsLayer = true
+        fx.layer?.cornerRadius = 12
         fx.pin(list); list.widthAnchor.constraint(equalToConstant: 460).isActive = true
         let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .popUpMenu
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = .popUpMenu
         p.contentView = fx
         fx.layoutSubtreeIfNeeded()
         let size = fx.fittingSize, f = window.frame
@@ -94,7 +108,9 @@ final class WorkspaceSwitcher {
         let agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }
         let top = AgentStatus.mostUrgent(agents.map(SidebarCell.shownStatus))
         let lead = agents.filter { SidebarCell.shownStatus($0) == top }.max { ($0.statusAt ?? $0.createdAt) < ($1.statusAt ?? $1.createdAt) }
-        let mark = StatusMark(size: 14); mark.status = top; mark.unread = agents.contains { SidebarCell.shownStatus($0) == top && $0.unread }
+        let mark = StatusMark(size: 14)
+        mark.status = top
+        mark.unread = agents.contains { SidebarCell.shownStatus($0) == top && $0.unread }
 
         let icon = NSImageView(image: .symbol("folder"))
         if let r = m.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) }
@@ -108,7 +124,9 @@ final class WorkspaceSwitcher {
         if let c = folder.flatMap({ RowBadges.changes(app.rowBadges.stats[$0.id]) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
         if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
         let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), tag: 1)
-        let top1 = NSStackView(views: [name, place, NSView(), changes, pr, when, mark]); top1.spacing = 8; top1.alignment = .centerY
+        let top1 = NSStackView(views: [name, place, NSView(), changes, pr, when, mark])
+        top1.spacing = 8
+        top1.alignment = .centerY
         top1.detachesHiddenViews = true
 
         // "Claude Code · Needs your input — Which test runner?  +1 more": the agent the mark is for.
@@ -118,17 +136,25 @@ final class WorkspaceSwitcher {
                 + (others > 0 ? "  " + String(localized: "+\(others) more") : "")
         } ?? String(localized: "No agents")
         let detail = label(said, .systemFont(ofSize: 12), tag: 1)
-        let text = NSStackView(views: [top1, detail]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 2
+        let text = NSStackView(views: [top1, detail])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 2
         top1.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
 
-        let r = NSStackView(views: [icon, text]); r.spacing = 10; r.alignment = .centerY
+        let r = NSStackView(views: [icon, text])
+        r.spacing = 10
+        r.alignment = .centerY
         r.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         r.wantsLayer = true; r.layer?.cornerRadius = 7
         return r
     }
 
     private func label(_ s: String, _ font: NSFont, tag: Int = 0) -> NSTextField {
-        let t = NSTextField(labelWithString: s); t.font = font; t.tag = tag; t.lineBreakMode = .byTruncatingTail
+        let t = NSTextField(labelWithString: s)
+        t.font = font
+        t.tag = tag
+        t.lineBreakMode = .byTruncatingTail
         t.setContentCompressionResistancePriority(tag == 0 ? .init(400) : .defaultLow, for: .horizontal)
         return t
     }

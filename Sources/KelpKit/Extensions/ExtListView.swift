@@ -18,7 +18,11 @@ struct ExtListView: View {
     private let app: AppModel
     private var bench: Workbench { app.workbench }
 
-    init(def: ExtManifest.ListDef, folder: URL, app: AppModel) { self.def = def; self.folder = folder; self.app = app }
+    init(def: ExtManifest.ListDef, folder: URL, app: AppModel) {
+        self.def = def
+        self.folder = folder
+        self.app = app
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,7 +108,9 @@ struct ExtListView: View {
         running = true
         Task {
             let r = await Shell.run(app, cmd, cwd: cwd, extension: folder.lastPathComponent)
-            slow.cancel(); loading = false; running = false
+            slow.cancel()
+            loading = false
+            running = false
             if r.code != 0, r.stdout.isEmpty { error = r.stderr.isEmpty ? String(localized: "Exit code \(r.code)") : String(r.stderr.suffix(600)); return }
             error = nil
             items = Self.parse(r.stdout)

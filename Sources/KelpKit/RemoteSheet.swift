@@ -51,20 +51,36 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
         host.completes = true; host.delegate = self
         host.stringValue = UserDefaults.standard.string(forKey: "remote.host") ?? ""
         for f in [host, path] as [NSView] { f.widthAnchor.constraint(equalToConstant: 340).isActive = true }
-        grid.column(at: 0).xPlacement = .trailing; grid.rowSpacing = 10; grid.columnSpacing = 8
+        grid.column(at: 0).xPlacement = .trailing
+        grid.rowSpacing = 10
+        grid.columnSpacing = 8
         // The fields don't move when the folder row and the list come and go.
         grid.setContentHuggingPriority(.required, for: .horizontal)
         grid.column(at: 0).width = (0..<2).compactMap { grid.cell(atColumnIndex: 0, rowIndex: $0).contentView?.fittingSize.width }.max() ?? 0
         let column = NSTableColumn(identifier: .init("folder")); column.resizingMask = .autoresizingMask
-        table.addTableColumn(column); table.headerView = nil; table.dataSource = self; table.delegate = self
+        table.addTableColumn(column)
+        table.headerView = nil
+        table.dataSource = self
+        table.delegate = self
         table.target = self; table.doubleAction = #selector(enter)
-        scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
         scroll.heightAnchor.constraint(equalToConstant: 220).isActive = true
         let note = NSTextField(wrappingLabelWithString: String(localized: "Agents and terminals run there, and git too, over one SSH connection. ")
                                + String(localized: "The agents you use must be installed on that machine. Files open read-only."))
-        for t in [note, status] { t.textColor = .secondaryLabelColor; t.font = .systemFont(ofSize: 11); t.preferredMaxLayoutWidth = 430 }
-        spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
-        go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(goPressed)
+        for t in [note, status] {
+            t.textColor = .secondaryLabelColor
+            t.font = .systemFont(ofSize: 11)
+            t.preferredMaxLayoutWidth = 430
+        }
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        go.bezelStyle = .push
+        go.keyEquivalent = "\r"
+        go.target = self
+        go.action = #selector(goPressed)
         cancel.title = String(localized: "Cancel")
         cancel.bezelStyle = .push
         cancel.keyEquivalent = "\u{1b}"
@@ -102,7 +118,13 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
 
     func controlTextDidChange(_ n: Notification) { if n.object as? NSComboBox === host { hostEdited() } }
     func comboBoxSelectionDidChange(_ n: Notification) { hostEdited() }
-    private func hostEdited() { guard listed != nil else { return }; listed = nil; rows = []; table.reloadData(); update() }
+    private func hostEdited() {
+        guard listed != nil else { return }
+        listed = nil
+        rows = []
+        table.reloadData()
+        update()
+    }
 
     @objc private func goPressed() {
         let h = host.stringValue.trimmingCharacters(in: .whitespaces)
@@ -125,7 +147,9 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
             let r = await app.tryCall(RemoteListFolders(host: h, path: p))
             busy(false)
             guard let v = r.value else { say(r.error, error: true); return }
-            listed = (h, v.path, v.repo); path.stringValue = v.path; say(nil)
+            listed = (h, v.path, v.repo)
+            path.stringValue = v.path
+            say(nil)
             rows = (v.path == "/" ? [] : [.init(name: "..", git: false)]) + v.folders
             table.reloadData(); update()
             window?.makeFirstResponder(table)

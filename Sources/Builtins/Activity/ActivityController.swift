@@ -9,7 +9,12 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     let app: AppModel
     init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError() }
-    private struct Row { var session: Session; var cpu: Double; var memory: Int; var processes: Int }
+    private struct Row {
+        var session: Session
+        var cpu: Double
+        var memory: Int
+        var processes: Int
+    }
     private let table = NSTableView()
     private let total = NSTextField(labelWithString: "")
     private let empty = NSTextField(labelWithString: String(localized: "No sessions running."))
@@ -17,10 +22,18 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("a")); col.resizingMask = .autoresizingMask
-        table.addTableColumn(col); table.headerView = nil; table.style = .plain; table.backgroundColor = .clear
-        table.rowHeight = TextSize.of(40); table.dataSource = self; table.delegate = self
+        table.addTableColumn(col)
+        table.headerView = nil
+        table.style = .plain
+        table.backgroundColor = .clear
+        table.rowHeight = TextSize.of(40)
+        table.dataSource = self
+        table.delegate = self
         table.target = self; table.doubleAction = #selector(open)
-        let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         total.font = .uiDigits(11); total.textColor = .secondaryLabelColor
         empty.textColor = .secondaryLabelColor; empty.isHidden = true
         let v = NSView()
@@ -35,7 +48,11 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
     }
 
     /// Watched while the panel shows: the daemon measures every two seconds and says when it changed.
-    override func viewDidAppear() { super.viewDidAppear(); watched.key = ""; show(app.activity) }
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        watched.key = ""
+        show(app.activity)
+    }
     override func viewDidDisappear() { super.viewDidDisappear(); watched.key = nil }
     private lazy var watched = Watched(.activity, in: app)
 
@@ -72,12 +89,21 @@ final class ActivityController: NSViewController, NSTableViewDataSource, NSTable
         name.font = .ui(12, weight: .medium); name.lineBreakMode = .byTruncatingTail
         let place = NSTextField(labelWithString: [m.worktree(s.worktreeId)?.displayName, String(localized: "\(r.processes) processes")]
             .compactMap { $0 }.joined(separator: " · "))
-        place.font = .ui(11); place.textColor = .secondaryLabelColor; place.lineBreakMode = .byTruncatingTail
-        let text = NSStackView(views: [name, place]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1
+        place.font = .ui(11)
+        place.textColor = .secondaryLabelColor
+        place.lineBreakMode = .byTruncatingTail
+        let text = NSStackView(views: [name, place])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
         let cost = NSTextField(labelWithString: "\(Self.percent(r.cpu))\n\(Self.bytes(r.memory))")
-        cost.font = .uiDigits(11); cost.alignment = .right; cost.textColor = r.cpu > 80 ? .systemOrange : .secondaryLabelColor
+        cost.font = .uiDigits(11)
+        cost.alignment = .right
+        cost.textColor = r.cpu > 80 ? .systemOrange : .secondaryLabelColor
         let stop = ClosureButton(title: "") { AgentActions(app).stop([s.id]) }
-        stop.image = .symbol("stop.circle", String(localized: "Stop")); stop.isBordered = false; stop.contentTintColor = .secondaryLabelColor
+        stop.image = .symbol("stop.circle", String(localized: "Stop"))
+        stop.isBordered = false
+        stop.contentTintColor = .secondaryLabelColor
         stop.toolTip = String(localized: "Stop \(name.stringValue) (ends its processes)")
         for x in [name, place, text] { x.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         let rowView = NSStackView(views: [icon, text, NSView(), cost, stop]); rowView.spacing = 8

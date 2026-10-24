@@ -32,17 +32,27 @@ final class WindowBar: NSView {
         name.font = .ui(13, weight: .semibold); name.lineBreakMode = .byTruncatingTail
         name.setContentCompressionResistancePriority(.init(450), for: .horizontal)
         folder.lineBreakMode = .byTruncatingMiddle; folder.setContentCompressionResistancePriority(.init(300), for: .horizontal)
-        folder.target = self; folder.action = #selector(folderMenu); folder.toolTip = String(localized: "Open In, Reveal in Finder, Copy Path")
-        branch.target = self; branch.action = #selector(branchMenu); branch.toolTip = String(localized: "Switch or create a branch")
+        folder.target = self
+        folder.action = #selector(folderMenu)
+        folder.toolTip = String(localized: "Open In, Reveal in Finder, Copy Path")
+        branch.target = self
+        branch.action = #selector(branchMenu)
+        branch.toolTip = String(localized: "Switch or create a branch")
         pr.target = self; pr.action = #selector(openPR)
         context.setViews([icon, name, folder, branch, pr], in: .leading)
-        context.spacing = 2; context.setCustomSpacing(7, after: icon); context.setCustomSpacing(6, after: name); context.setCustomSpacing(8, after: folder)
+        context.spacing = 2
+        context.setCustomSpacing(7, after: icon)
+        context.setCustomSpacing(6, after: name)
+        context.setCustomSpacing(8, after: folder)
         awake.target = self; awake.action = #selector(toggleAwake)
         sideBySide.target = self; sideBySide.action = #selector(toggleSideBySide)
         let hide = NSMenu()
         hide.add(String(localized: "Hide Button")) { app.settings.set("workbench.sideBySideButton", .bool(false)) }
         sideBySide.menu = hide
-        back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
+        back.target = self
+        back.action = #selector(goBack)
+        forward.target = self
+        forward.action = #selector(goForward)
         let nav = NSStackView(views: [back, forward]); nav.spacing = 0
         for v in [context, nav, search, awake, sideBySide] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         // Short of room, the search leaves the centre first, then narrows; only then does the path shorten, then the name.
@@ -81,7 +91,9 @@ final class WindowBar: NSView {
     private static func chip(_ symbol: String?) -> NSButton {
         let b = NSButton(title: "", target: nil, action: nil)
         b.bezelStyle = .recessed; b.showsBorderOnlyWhileMouseInside = true
-        b.font = .ui(12); b.imagePosition = .imageLeading; b.imageHugsTitle = true
+        b.font = .ui(12)
+        b.imagePosition = .imageLeading
+        b.imageHugsTitle = true
         if let symbol { b.image = Glyph.image(symbol, size: 13) ?? .symbol(symbol, ""); b.symbolConfiguration = .init(pointSize: 11, weight: .regular) }
         return b
     }
@@ -204,14 +216,18 @@ final class SearchPill: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         glass.symbolConfiguration = .init(pointSize: 11, weight: .regular); glass.contentTintColor = .secondaryLabelColor
-        label.font = .ui(12); label.textColor = .secondaryLabelColor; label.lineBreakMode = .byTruncatingTail
+        label.font = .ui(12)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.init(200), for: .horizontal)
         key.font = .ui(11); key.textColor = .tertiaryLabelColor
         let row = NSStackView(views: [glass, label, NSView(), key]); row.spacing = 6
         row.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 10)
         pin(row)
         toolTip = String(localized: "Open Quickly (⌘P)")
-        setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(String(localized: "Open Quickly"))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(String(localized: "Open Quickly"))
     }
     required init?(coder: NSCoder) { fatalError() }
 

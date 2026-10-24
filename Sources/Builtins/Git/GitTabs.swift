@@ -27,7 +27,9 @@ final class DiffTab: TabContent {
         let c = URLComponents(string: uri)
         worktreeId = c?.path ?? ""
         func item(_ n: String) -> String? { c?.queryItems?.first { $0.name == n }?.value }
-        file = item("file"); source = item("source"); commit = item("commit")
+        file = item("file")
+        source = item("source")
+        commit = item("commit")
         _ = controller.view
         if let file { controller.showFile(file, source: source ?? "unstaged", commit: commit) } else if source == "turn" { controller.showLastTurn() }
         controller.show(worktree: worktreeId)
@@ -100,19 +102,29 @@ final class CommitMessageTab: TabContent {
     }
 
     private func build() {
-        text.isRichText = false; text.allowsUndo = true; text.font = .monospacedSystemFont(ofSize: TextSize.of(13), weight: .regular)
-        text.textContainerInset = NSSize(width: 12, height: 12); text.isVerticallyResizable = true; text.autoresizingMask = .width
+        text.isRichText = false
+        text.allowsUndo = true
+        text.font = .monospacedSystemFont(ofSize: TextSize.of(13), weight: .regular)
+        text.textContainerInset = NSSize(width: 12, height: 12)
+        text.isVerticallyResizable = true
+        text.autoresizingMask = .width
         text.isAutomaticQuoteSubstitutionEnabled = false; text.isAutomaticDashSubstitutionEnabled = false
         text.onCommit = { [weak self] in self?.commit() }
         text.onChange = { [weak self] in self?.dimComments() }
-        let scroll = NSScrollView(); scroll.documentView = text; scroll.hasVerticalScroller = true
+        let scroll = NSScrollView()
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
         let hint = NSTextField(labelWithString: String(localized: "Lines starting with # are left out. ⌘↩ commits."))
-        hint.font = .ui(11); hint.textColor = .secondaryLabelColor; hint.lineBreakMode = .byTruncatingTail
+        hint.font = .ui(11)
+        hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
         hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let cancel = ClosureButton(title: String(localized: "Cancel")) { [weak self] in self?.dismiss() }
         cancel.bezelStyle = .push; cancel.toolTip = String(localized: "Close without committing")
         commitButton.title = amend ? String(localized: "Amend") : push ? String(localized: "Commit & Push") : String(localized: "Commit")
-        commitButton.bezelStyle = .push; commitButton.bezelColor = .controlAccentColor; commitButton.toolTip = String(localized: "Commit (⌘↩)")
+        commitButton.bezelStyle = .push
+        commitButton.bezelColor = .controlAccentColor
+        commitButton.toolTip = String(localized: "Commit (⌘↩)")
         commitButton.target = self; commitButton.action = #selector(commitPressed)
         let bar = NSStackView(views: [hint, NSView(), cancel, commitButton]); bar.spacing = 8
         bar.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)

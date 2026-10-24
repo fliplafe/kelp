@@ -16,10 +16,15 @@ final class CIStatusRow: NSView {
         super.init(frame: .zero)
         text.font = .ui(12); text.lineBreakMode = .byTruncatingTail
         time.font = .ui(11); time.textColor = .tertiaryLabelColor
-        place.font = .ui(11); place.textColor = .secondaryLabelColor; place.lineBreakMode = .byTruncatingMiddle
+        place.font = .ui(11)
+        place.textColor = .secondaryLabelColor
+        place.lineBreakMode = .byTruncatingMiddle
         for t in [text, place] { t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         top.spacing = 6; top.alignment = .centerY
-        let col = NSStackView(views: [top, place]); col.orientation = .vertical; col.alignment = .leading; col.spacing = 2
+        let col = NSStackView(views: [top, place])
+        col.orientation = .vertical
+        col.alignment = .leading
+        col.spacing = 2
         pin(col, inset: NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8))
         NSLayoutConstraint.activate([top.widthAnchor.constraint(equalTo: col.widthAnchor),
                                      place.trailingAnchor.constraint(lessThanOrEqualTo: col.trailingAnchor)])

@@ -23,7 +23,13 @@ package struct PanelSpec: Identifiable {
     package init(id: String, title: String, icon: String, extensionId: String,
                  badge: (@MainActor () -> PanelBadge?)? = nil, poll: (@MainActor () async -> Void)? = nil,
                  make: @escaping @MainActor () -> NSViewController) {
-        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId; self.badge = badge; self.poll = poll; self.make = make
+        self.id = id
+        self.title = title
+        self.icon = icon
+        self.extensionId = extensionId
+        self.badge = badge
+        self.poll = poll
+        self.make = make
     }
     package let id: String, title: String, icon: String, extensionId: String
     /// What the panel's icon says (nil: nothing). Read under observation, so it must not build the panel.
@@ -45,9 +51,19 @@ package struct PanelBadge: Equatable {
         var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         alert = t.hasPrefix("!")
         if alert { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
-        if let n = Int(t) { guard n > 0 else { return nil }; count = n } else { guard alert || !t.isEmpty else { return nil }; key = t }
+        if let n = Int(t) {
+            guard n > 0 else { return nil }
+            count = n
+        } else {
+            guard alert || !t.isEmpty else { return nil }
+            key = t
+        }
     }
-    package init(count: Int = 0, alert: Bool = false, key: String = "") { self.count = count; self.alert = alert; self.key = key }
+    package init(count: Int = 0, alert: Bool = false, key: String = "") {
+        self.count = count
+        self.alert = alert
+        self.key = key
+    }
 }
 
 /// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).
@@ -128,7 +144,10 @@ package struct TabProvider {
     package init(schemes: [String], make: @escaping @MainActor (String) -> TabContent?,
                  closeUnbuilt: (@MainActor (_ uri: String) async -> Bool)? = nil,
                  menu: (@MainActor (_ menu: NSMenu, _ uri: String, _ workspace: String, _ openBeside: @escaping @MainActor (String) -> Void) -> Void)? = nil) {
-        self.schemes = schemes; self.make = make; self.closeUnbuilt = closeUnbuilt; self.menu = menu
+        self.schemes = schemes
+        self.make = make
+        self.closeUnbuilt = closeUnbuilt
+        self.menu = menu
     }
     let schemes: [String]
     let make: @MainActor (String) -> TabContent?
@@ -206,8 +225,14 @@ package final class ExtensionRegistry {
             var info = info; info.enabled = info.essential || !off.contains(info.id)
             infos.append(info)
             guard info.enabled else { DeclarativeExtension.forget(info.id); return }
-            merged.panels += c.panels; merged.editors += c.editors; merged.commands += c.commands
-            merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
+            merged.panels += c.panels
+            merged.editors += c.editors
+            merged.commands += c.commands
+            merged.settings += c.settings
+            merged.themes += c.themes
+            merged.iconThemes += c.iconThemes
+            merged.agents += c.agents
+            merged.tabs += c.tabs
             merged.languages += c.languages
         }
         for b in app.builtins { take(b.info, b.contribute(app)) }

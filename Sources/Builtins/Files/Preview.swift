@@ -18,7 +18,10 @@ enum Preview {
 
     static func view(for url: URL, app: AppModel) -> NSView {
         if pdf.contains(url.pathExtension.lowercased()), let doc = PDFDocument(url: url) {
-            let v = LinkedPDFView(app: app); v.document = doc; v.autoScales = true; v.displayMode = .singlePageContinuous
+            let v = LinkedPDFView(app: app)
+            v.document = doc
+            v.autoScales = true
+            v.displayMode = .singlePageContinuous
             return v
         }
         if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true, let image = NSImage(contentsOf: url) {
@@ -43,7 +46,9 @@ final class ImagePreview: NSImageView {
         // A pixel is a point, as in a browser: NSImage would size it by the file's DPI (a 72-dpi-less PNG comes out huge).
         if let rep = image.representations.first, rep.pixelsWide > 0 { image.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh) }
         self.image = image
-        imageScaling = .scaleProportionallyDown; animates = true; focusRingType = .none
+        imageScaling = .scaleProportionallyDown
+        animates = true
+        focusRingType = .none
         // Its size is the image's: at the default priority a big one would push the window past the screen.
         for o in [NSLayoutConstraint.Orientation.horizontal, .vertical] { setContentCompressionResistancePriority(.defaultLow, for: o) }
         menu = NSMenu()

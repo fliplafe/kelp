@@ -3,7 +3,11 @@ import AppKit
 package final class ClosureButton: NSButton {
     private var handler: (() -> Void)?
     package convenience init(title: String, action: @escaping () -> Void) {
-        self.init(frame: .zero); self.title = title; handler = action; target = self; self.action = #selector(fire)
+        self.init(frame: .zero)
+        self.title = title
+        handler = action
+        target = self
+        self.action = #selector(fire)
     }
     @objc private func fire() { handler?() }
 }

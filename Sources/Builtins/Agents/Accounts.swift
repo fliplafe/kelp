@@ -7,7 +7,9 @@ import KelpKit
 /// Account profiles for Claude Code / Codex: each has its own config dir (CLAUDE_CONFIG_DIR / CODEX_HOME),
 /// so logins stay side by side and switching is just a different environment.
 struct AccountProfile: Codable, Hashable, Identifiable {
-    var name: String; var agent: String; var dir: String
+    var name: String
+    var agent: String
+    var dir: String
     var id: String { agent + "/" + name }
     static func defaultDir(agent: String, name: String) -> String {
         Paths.root.appendingPathComponent("accounts/\(agent)/\(name)").path

@@ -18,7 +18,11 @@ final class EditorStatusBar: NSView {
         case nil: ""
         }
         let format = NSTextField(labelWithString: ["UTF-8", indent].filter { !$0.isEmpty }.joined(separator: "  ·  "))
-        for l in [kind, place, format] { l.font = .ui(11); l.textColor = .secondaryLabelColor; l.lineBreakMode = .byTruncatingTail }
+        for l in [kind, place, format] {
+            l.font = .ui(11)
+            l.textColor = .secondaryLabelColor
+            l.lineBreakMode = .byTruncatingTail
+        }
         kind.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let row = NSStackView(views: [kind, place, NSView(), format]); row.spacing = 16
         row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)

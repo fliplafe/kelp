@@ -28,7 +28,9 @@ final class SidebarCell: NSTableCellView {
     private let changes = NSButton(), pr = NSButton()
 
     init(node: SidebarController.Node, owner: SidebarController) {
-        self.node = node; self.owner = owner; app = owner.app
+        self.node = node
+        self.owner = owner
+        app = owner.app
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
         trailing.font = .uiDigits(11, weight: .regular); trailing.textColor = .secondaryLabelColor
@@ -37,18 +39,29 @@ final class SidebarCell: NSTableCellView {
         case .project(let id):
             // A name, not a section label: what's under it is the project's. On the right only what needs doing.
             // Not the cell's textField: the source list would restyle it as a grey group heading.
-            textField = nil; title.font = .ui(13, weight: .semibold); title.textColor = .labelColor
+            textField = nil
+            title.font = .ui(13, weight: .semibold)
+            title.textColor = .labelColor
             trailing.font = .ui(11, weight: .semibold); trailing.textColor = .textOrange
             let b = ClosureButton(title: "") { [weak owner] in owner?.newWorkspace(id) }
-            b.image = .symbol("plus", String(localized: "New Workspace")); b.isBordered = false; b.contentTintColor = .secondaryLabelColor
-            b.toolTip = String(localized: "New workspace (⌘N)"); b.isHidden = true; add = b   // on hover, like Finder's sidebar
+            b.image = .symbol("plus", String(localized: "New Workspace"))
+            b.isBordered = false
+            b.contentTintColor = .secondaryLabelColor
+            b.toolTip = String(localized: "New workspace (⌘N)")
+            b.isHidden = true
+            add = b   // on hover, like Finder's sidebar
             let f = ClosureButton(title: "") { [weak owner, node] in owner?.toggle(node) }
-            f.isBordered = false; f.contentTintColor = .secondaryLabelColor; f.isHidden = true; fold = f
+            f.isBordered = false
+            f.contentTintColor = .secondaryLabelColor
+            f.isHidden = true
+            fold = f
             f.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
             addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            detail.font = .ui(12); detail.textColor = .secondaryLabelColor; detail.lineBreakMode = .byTruncatingTail
+            detail.font = .ui(12)
+            detail.textColor = .secondaryLabelColor
+            detail.lineBreakMode = .byTruncatingTail
             detail.setContentCompressionResistancePriority(.init(240), for: .horizontal)   // goes before the project's name
             summary.spacing = 3
             detail.setContentHuggingPriority(.init(1), for: .horizontal)   // takes the room, the badges sit at the right
@@ -65,8 +78,13 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            chip.bezelStyle = .inline; chip.controlSize = .mini; chip.font = .ui(10); chip.imagePosition = .imageLeading
-            chip.refusesFirstResponder = true; chip.isHidden = true; chip.lineBreakMode = .byTruncatingTail
+            chip.bezelStyle = .inline
+            chip.controlSize = .mini
+            chip.font = .ui(10)
+            chip.imagePosition = .imageLeading
+            chip.refusesFirstResponder = true
+            chip.isHidden = true
+            chip.lineBreakMode = .byTruncatingTail
             // The name keeps its room first; the chip shortens its command down to its icon and an ellipsis, never less
             // (squeezed past that its text broke into letters), and a long command takes no more than a third of the row.
             chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)
@@ -82,13 +100,27 @@ final class SidebarCell: NSTableCellView {
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         // The name takes the room up to what's on the right: no spacer views, whose spacing on both sides read as a gap.
         if case .section = node.kind {} else { title.setContentHuggingPriority(.init(2), for: .horizontal) }
-        for b in [changes, pr] { b.isBordered = false; b.title = ""; b.target = self }
+        for b in [changes, pr] {
+            b.isBordered = false
+            b.title = ""
+            b.target = self
+        }
         changes.action = #selector(openChanges); pr.action = #selector(openPR)
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseEntered(with e: NSEvent) { hovering = true; add?.isHidden = false; showFold(); fitBadges() }
-    override func mouseExited(with e: NSEvent) { hovering = false; add?.isHidden = true; showFold(); fitBadges() }
+    override func mouseEntered(with e: NSEvent) {
+        hovering = true
+        add?.isHidden = false
+        showFold()
+        fitBadges()
+    }
+    override func mouseExited(with e: NSEvent) {
+        hovering = false
+        add?.isHidden = true
+        showFold()
+        fitBadges()
+    }
 
     /// The fold shows on hover, like Finder's sections, and stays while folded: the row says there's more under it.
     private func showFold() {
@@ -99,7 +131,9 @@ final class SidebarCell: NSTableCellView {
     }
 
     private func layout(row: [NSView]) {
-        let r = NSStackView(views: row); r.spacing = 6; r.alignment = .centerY
+        let r = NSStackView(views: row)
+        r.spacing = 6
+        r.alignment = .centerY
         r.detachesHiddenViews = true
         for v in row where v === changes || v === pr { r.setVisibilityPriority(.notVisible, for: v) }
         r.translatesAutoresizingMaskIntoConstraints = false; addSubview(r)
@@ -194,7 +228,9 @@ final class SidebarCell: NSTableCellView {
             icon.alphaValue = s.status == .hibernated ? 0.7 : 1
             title.stringValue = app.catalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
-            mark.status = Self.shownStatus(s); mark.unread = s.unread; mark.compacting = s.summary.hasPrefix("Compacting")
+            mark.status = Self.shownStatus(s)
+            mark.unread = s.unread
+            mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
             slot.isHidden = trailing.stringValue.isEmpty && mark.isHidden
@@ -217,8 +253,12 @@ final class SidebarCell: NSTableCellView {
                                              (.done, agents.filter { Self.isNews($0) && Self.shownStatus($0) == .done }.count)]
         var tip: [String] = []
         for case let (status?, n) in groups where n > 0 {
-            let mark = StatusMark(size: 12); mark.status = status; mark.unread = true
-            let count = NSTextField(labelWithString: "\(n)"); count.font = .uiDigits(11, weight: .medium); count.textColor = .secondaryLabelColor
+            let mark = StatusMark(size: 12)
+            mark.status = status
+            mark.unread = true
+            let count = NSTextField(labelWithString: "\(n)")
+            count.font = .uiDigits(11, weight: .medium)
+            count.textColor = .secondaryLabelColor
             summary.addArrangedSubview(mark); summary.addArrangedSubview(count)
             summary.setCustomSpacing(6, after: count)
             tip.append("\(n) · \(status.words)")
@@ -241,7 +281,9 @@ final class SidebarCell: NSTableCellView {
         let running = s.background ?? []
         chip.isHidden = s.goal == nil && running.isEmpty
         if let g = s.goal {
-            chip.image = .symbol("scope"); chip.title = String(localized: "goal"); chip.toolTip = String(localized: "Goal: \(g)")
+            chip.image = .symbol("scope")
+            chip.title = String(localized: "goal")
+            chip.toolTip = String(localized: "Goal: \(g)")
         } else if !running.isEmpty {
             let waits = s.status == .working, first = running[0]
             chip.image = .symbol("apple.terminal")
@@ -268,7 +310,10 @@ final class SidebarCell: NSTableCellView {
     func beginEditing(delegate: NSTextFieldDelegate) {
         let field = node.workspace == nil ? title : detail
         if let w = node.workspace.flatMap(app.worktree) { detail.stringValue = w.displayName; detail.isHidden = false }
-        field.isEditable = true; field.isSelectable = true; field.drawsBackground = true; field.delegate = delegate
+        field.isEditable = true
+        field.isSelectable = true
+        field.drawsBackground = true
+        field.delegate = delegate
         window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
     }
@@ -349,7 +394,9 @@ final class SidebarRowView: NSTableRowView {
     // swiftlint:disable:next function_parameter_count
     private func fill(_ r: NSRect, first: Bool, top: CGFloat, last: Bool, bottom: CGFloat, radius: CGFloat, _ color: NSColor) {
         var r = r
-        if first { r.origin.y += top; r.size.height -= top } else { r.origin.y -= 12; r.size.height += 12 }
+        let grow = first ? -top : 12
+        r.origin.y -= grow
+        r.size.height += grow
         r.size.height += last ? -bottom : 12
         color.setFill()
         NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()

@@ -94,7 +94,10 @@ extension Workbench {
 
     func addProject() {
         // A new folder made here is a new project (asked whether to `git init` it). Clone and SSH are their own commands.
-        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true
+        p.canChooseFiles = false
+        p.canCreateDirectories = true
         p.message = String(localized: "Choose a project folder, or make a new one"); p.prompt = String(localized: "Add Project")
         let chosen = { [self] (r: NSApplication.ModalResponse) in
             guard r == .OK, let u = p.url else { return }
@@ -357,7 +360,9 @@ package struct WorkspaceActions {
 
     /// The project's folder was moved or renamed: pick it again; its workspaces follow.
     func relocate(_ r: Repo) {
-        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true
+        p.canChooseFiles = false
         p.message = String(localized: "Where is “\(r.name)” now?"); p.prompt = String(localized: "Choose")
         p.directoryURL = URL(fileURLWithPath: (r.path as NSString).deletingLastPathComponent)
         let chosen = { (resp: NSApplication.ModalResponse) in

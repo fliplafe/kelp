@@ -10,7 +10,9 @@ package enum Glyph {
         let img = NSImage(size: NSSize(width: size, height: size), flipped: true) { r in
             let p = NSBezierPath(); shape(p)
             p.transform(using: AffineTransform(scale: r.width / 16))
-            p.lineWidth = 1.3 * r.width / 16; p.lineCapStyle = .round; p.lineJoinStyle = .round
+            p.lineWidth = 1.3 * r.width / 16
+            p.lineCapStyle = .round
+            p.lineJoinStyle = .round
             NSColor.black.setStroke(); p.stroke()
             return true
         }
@@ -30,13 +32,17 @@ package enum Glyph {
     private static let shapes: [String: @Sendable (NSBezierPath) -> Void] = [
         // Source control: a branch leaving the trunk.
         "arrow.triangle.branch": { p in
-            ring(p, 4, 3.5); ring(p, 4, 12.5); ring(p, 12, 5)
+            ring(p, 4, 3.5)
+            ring(p, 4, 12.5)
+            ring(p, 12, 5)
             line(p, (4, 5), (4, 11))
             p.move(to: NSPoint(x: 12, y: 6.5)); p.curve(to: NSPoint(x: 4, y: 11), controlPoint1: NSPoint(x: 12, y: 9.5), controlPoint2: NSPoint(x: 4, y: 8.5))
         },
         // A pull request: the branch's commit coming back to the trunk.
         "arrow.triangle.pull": { p in
-            ring(p, 4, 3.5); ring(p, 4, 12.5); ring(p, 12, 12.5)
+            ring(p, 4, 3.5)
+            ring(p, 4, 12.5)
+            ring(p, 12, 12.5)
             line(p, (4, 5), (4, 11))
             p.move(to: NSPoint(x: 12, y: 11)); p.line(to: NSPoint(x: 12, y: 6.5))
             p.curve(to: NSPoint(x: 10, y: 4.5), controlPoint1: NSPoint(x: 12, y: 5.4), controlPoint2: NSPoint(x: 11.1, y: 4.5))

@@ -37,7 +37,11 @@ final class FileTab: SavableTab {
     private var pendingLine: Int?
     /// Closed with Don't Save: deinit's autosave mustn't write it after all.
     private var discarded = false
-    func discard() { discarded = true; comparing?.cancel(); isEdited = false }
+    func discard() {
+        discarded = true
+        comparing?.cancel()
+        isEdited = false
+    }
     /// The file was moved or deleted under the tab (often by an agent): the tab says so, ⌘S asks before writing it back.
     private var gone = false
     /// The last save (each waits for the one before) and whether it wrote; `writing` while one is on its way to disk.
@@ -57,14 +61,18 @@ final class FileTab: SavableTab {
     init(uri: String, app: AppModel) {
         self.app = app; version = Watched(.file, in: app)
         let (p, line) = TabURI.filePath(uri)
-        path = p; url = URL(fileURLWithPath: p); pendingLine = line
+        path = p
+        url = URL(fileURLWithPath: p)
+        pendingLine = line
         root = app.worktrees.filter { p.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }?.path ?? url.deletingLastPathComponent().path
         let host = RemoteHost.containing(p)?.remote.host
         remote = host != nil
         if !remote, Preview.canPreview(url) { view = Preview.view(for: url, app: app); return }
         if !remote, url.pathExtension.lowercased() == "ipynb" {
             let nb = NotebookTab(app: app, url: url, path: p, worktreeId: app.worktrees.first { p.hasPrefix($0.path + "/") }?.id)
-            notebook = nb; view = nb.view; return
+            notebook = nb
+            view = nb.view
+            return
         }
         // Off the main thread, by the daemon: only a regular file (a pipe or /dev/zero would block or never end), up to
         // `openLimit` (a 300 MB log would hang the window), as UTF-8; a remote project's on its host.
@@ -93,7 +101,9 @@ final class FileTab: SavableTab {
         let text = f.text
         let e = CodeEditor(text: text, url: url, editable: text.utf8.count <= CodeEditor.readOnlyLimit)
         e.view.clipsToBounds = true
-        editor = e; lastSaved = text; known = (f.stamp, text)
+        editor = e
+        lastSaved = text
+        known = (f.stamp, text)
         if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
             let md = MarkdownTab(editor: e, url: url, app: app)
             md.startInPreview = path == Help.location.path   // the help is for reading
@@ -138,7 +148,11 @@ final class FileTab: SavableTab {
         if let l = pendingLine { pendingLine = nil; DispatchQueue.main.async { [weak self] in self?.editor?.goTo(line: l) } }
     }
     func goTo(line: Int) {
-        guard let editor else { pendingLine = line; focusWhenLoaded = true; return }   // still being read: once it's here
+        guard let editor else { // still being read: once it's here
+            pendingLine = line
+            focusWhenLoaded = true
+            return
+        }
         editor.goTo(line: line); editor.focus()
     }
     var selectedText: String? { editor?.selectedText }
@@ -253,7 +267,12 @@ final class FileTab: SavableTab {
         defer { if readAgain { readAgain = false; diskChanged() } }   // its own version pushed, or an agent's right after
         if let error = res.error { Banner.show(String(localized: "Couldn't save \(title): \(error)"), style: .error); return false }
         guard let r = res.value else { return false }
-        if let stamp = r.stamp { gone = false; known = (stamp, text); saved(text, at: at); return true }
+        if let stamp = r.stamp {
+            gone = false
+            known = (stamp, text)
+            saved(text, at: at)
+            return true
+        }
         if r.missing == true { gone = true; return false }
         guard let c = r.conflict else { return false }
         known = (c.stamp, c.text)
@@ -324,7 +343,10 @@ final class FileTab: SavableTab {
         let wasGone = gone
         gone = d == .missing
         switch FileSync.diskChanged(buffer: e.text, saved: lastSaved, disk: d) {
-        case .follow(let text): e.setText(text); saved(text, at: edits); markdown?.textChanged()   // no local edits: follow the disk
+        case .follow(let text):   // no local edits: follow the disk
+            e.setText(text)
+            saved(text, at: edits)
+            markdown?.textChanged()
         case .conflict(let text): askKeepMine(disk: text)
         case .missing where !wasGone && isEdited:
             Banner.show(String(localized: "\(title) was moved or deleted. ⌘S asks before writing it there again."))
@@ -346,7 +368,11 @@ final class FileTab: SavableTab {
         a.beginSheetModal(for: w) { r in   // AppKit: on main
             MainActor.assumeIsolated {
                 if r == .alertFirstButtonReturn { self.lastSaved = disk; Task { _ = await self.serially { await self.write() } } }
-                else if !notText { e.setText(disk); self.saved(disk, at: self.edits); self.markdown?.textChanged() }
+                else if !notText {
+                    e.setText(disk)
+                    self.saved(disk, at: self.edits)
+                    self.markdown?.textChanged()
+                }
             }
         }
     }
@@ -438,7 +464,9 @@ final class FileTab: SavableTab {
 
     private static func message(_ s: String) -> NSView {
         let l = NSTextField(labelWithString: s); l.textColor = .secondaryLabelColor
-        let v = NSView(); l.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(l)
+        let v = NSView()
+        l.translatesAutoresizingMaskIntoConstraints = false
+        v.addSubview(l)
         NSLayoutConstraint.activate([l.centerXAnchor.constraint(equalTo: v.centerXAnchor), l.centerYAnchor.constraint(equalTo: v.centerYAnchor)])
         return v
     }

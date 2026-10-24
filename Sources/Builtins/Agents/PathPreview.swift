@@ -51,7 +51,11 @@ enum TerminalPaths {
 final class PathPreview {
     private let app: AppModel
     private let popover = NSPopover()
-    init(app: AppModel) { self.app = app; popover.behavior = .semitransient; popover.animates = false }
+    init(app: AppModel) {
+        self.app = app
+        popover.behavior = .semitransient
+        popover.animates = false
+    }
 
     /// The first of `tokens` (what the word under the pointer may be) that is a file; none closes it.
     func show(_ tokens: [String], rect: NSRect, in view: NSView, cwd: String, worktree: String?) {
@@ -69,7 +73,12 @@ final class PathPreview {
 @MainActor
 @Observable
 final class PreviewModel {
-    struct Line: Identifiable { let id: Int; let number: Int?; let text: String; let mark: Character }   // mark: + - or space
+    struct Line: Identifiable { // mark: + - or space
+        let id: Int
+        let number: Int?
+        let text: String
+        let mark: Character
+    }
     let path: String, line: Int?, name: String, folder: String
     var lines: [Line] = []
     var image: NSImage?
@@ -77,7 +86,9 @@ final class PreviewModel {
     private let app: AppModel
 
     init(path: String, line: Int?, cwd: String, app: AppModel) {
-        self.path = path; self.line = line; self.app = app
+        self.path = path
+        self.line = line
+        self.app = app
         name = (path as NSString).lastPathComponent
         let dir = (path as NSString).deletingLastPathComponent, root = (cwd as NSString).standardizingPath   // both without /private
         folder = dir.hasPrefix(root + "/") ? String(dir.dropFirst(root.count + 1)) : dir == root ? "" : (dir as NSString).abbreviatingWithTildeInPath

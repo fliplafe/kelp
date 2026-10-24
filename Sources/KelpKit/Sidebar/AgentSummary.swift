@@ -21,11 +21,16 @@ final class AgentSummary: NSView {
         self.app = app
         super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = 8
-        text.font = .ui(12); text.lineBreakMode = .byTruncatingTail; text.maximumNumberOfLines = 1; text.usesSingleLineMode = true
+        text.font = .ui(12)
+        text.lineBreakMode = .byTruncatingTail
+        text.maximumNumberOfLines = 1
+        text.usesSingleLineMode = true
         text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         more.font = .uiDigits(11, weight: .regular); more.textColor = .secondaryLabelColor
         chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold); chevron.contentTintColor = .secondaryLabelColor
-        let row = NSStackView(views: [mark, text, more, chevron]); row.spacing = 6; row.detachesHiddenViews = true
+        let row = NSStackView(views: [mark, text, more, chevron])
+        row.spacing = 6
+        row.detachesHiddenViews = true
         row.translatesAutoresizingMaskIntoConstraints = false; addSubview(row)
         let h = heightAnchor.constraint(equalToConstant: 0); height = h
         NSLayoutConstraint.activate([

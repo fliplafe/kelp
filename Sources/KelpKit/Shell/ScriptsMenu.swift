@@ -134,11 +134,15 @@ package final class ScriptsMenu: NSObject, NSMenuDelegate {
         if let c = info.issueCommand { lines.append("issueCommand: \(c)") }
         for (k, v) in info.recipes.sorted(by: { $0.key < $1.key }) { lines.append("recipe.\(k): \(v)") }
         let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 10))
-        text.string = lines.joined(separator: "\n"); text.isEditable = false; text.drawsBackground = false
+        text.string = lines.joined(separator: "\n")
+        text.isEditable = false
+        text.drawsBackground = false
         text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         text.isVerticallyResizable = true; text.textContainer?.widthTracksTextView = true
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 360, height: min(220, CGFloat(max(lines.count, 1)) * 16 + 8)))
-        scroll.documentView = text; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         return scroll
     }
 

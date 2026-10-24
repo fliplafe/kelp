@@ -48,41 +48,49 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         workflowsButton.isHidden = true
         for (b, symbol, tip) in [(workflowsButton, "play.circle", String(localized: "Run Workflow…")),
                                  (webButton, "globe", String(localized: "Open in Browser"))] {
-            b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip; b.contentTintColor = .secondaryLabelColor; b.target = self
+            b.image = .symbol(symbol, tip)
+            b.isBordered = false
+            b.toolTip = tip
+            b.contentTintColor = .secondaryLabelColor
+            b.target = self
         }
-        workflowsButton.action = #selector(runWorkflow); webButton.action = #selector(showPages); webButton.isHidden = true
+        workflowsButton.action = #selector(runWorkflow)
+        webButton.action = #selector(showPages)
+        webButton.isHidden = true
         let header = NSStackView(views: [NSImageView(image: .symbol("arrow.triangle.branch")), branch, NSView(), workflowsButton, webButton, refresh])
         header.spacing = 6; header.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 8)
 
         let col = NSTableColumn(identifier: .init("ci")); col.resizingMask = .autoresizingMask
-        outline.addTableColumn(col); outline.outlineTableColumn = col; outline.headerView = nil; outline.style = .sourceList
-        outline.rowSizeStyle = .custom; outline.dataSource = self; outline.delegate = self
+        outline.addTableColumn(col)
+        outline.outlineTableColumn = col
+        outline.headerView = nil
+        outline.style = .sourceList
+        outline.rowSizeStyle = .custom
+        outline.dataSource = self
+        outline.delegate = self
         outline.menu = NSMenu(); outline.menu?.delegate = self
-        let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        let scroll = NSScrollView()
+        scroll.documentView = outline
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         note.textColor = .secondaryLabelColor; note.alignment = .center
-        setupButton.bezelStyle = .push; setupButton.target = self; setupButton.action = #selector(runSetup)
+        setupButton.bezelStyle = .push
+        setupButton.target = self
+        setupButton.action = #selector(runSetup)
         if #available(macOS 26, *) { setupButton.tintProminence = .primary }
         let checkAgain = textButton(String(localized: "Check Again")) { [weak self] in self?.reload() }
         checkAgain.controlSize = .regular
         let setupRow = NSStackView(views: [setupButton, checkAgain]); setupRow.spacing = 8
-        let empty = NSStackView(views: [note, setupRow]); empty.orientation = .vertical; empty.spacing = 14; empty.isHidden = true
+        let empty = NSStackView(views: [note, setupRow])
+        empty.orientation = .vertical
+        empty.spacing = 14
+        empty.isHidden = true
 
-        log.isEditable = false; log.font = .monospacedSystemFont(ofSize: 10, weight: .regular); log.textContainerInset = NSSize(width: 6, height: 6)
-        log.isVerticallyResizable = true; log.autoresizingMask = .width; log.drawsBackground = false
-        let logScroll = NSScrollView(); logScroll.documentView = log; logScroll.hasVerticalScroller = true; logScroll.drawsBackground = false
-        let copy = textButton(String(localized: "Copy Log")) { [weak self] in
-            guard let self else { return }
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(shownLog, forType: .string); Banner.show(String(localized: "Log copied"))
-        }
-        let fix = textButton(String(localized: "Ask Agent to Fix")) { [weak self] in self?.askAgent() }
-        let rerun = textButton(String(localized: "Re-run Failed")) { [weak self] in self?.rerun() }
-        let web = textButton(String(localized: "Open in Browser")) { [weak self] in if let u = self?.shownJob?.job.url { Forge.open(u) } }
-        [copy, fix, rerun, web].forEach { logBar.addArrangedSubview($0) }
-        logBar.spacing = 6; logBar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-        let bottom = NSStackView(views: [logBar, logScroll]); bottom.orientation = .vertical; bottom.spacing = 0
-        logBar.isHidden = true
+        let bottom = logPane()
 
-        let split = NSSplitView(); split.isVertical = false; split.dividerStyle = .thin
+        let split = NSSplitView()
+        split.isVertical = false
+        split.dividerStyle = .thin
         split.addArrangedSubview(scroll); split.addArrangedSubview(bottom)
         split.setHoldingPriority(.init(260), forSubviewAt: 0)   // the runs keep their room; the log takes what's left
         let v = stacked(header, split)
@@ -94,8 +102,42 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
         ])
         view = v
-        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in self?.worktree = $0; self?.follow(); self?.loadPages() }
+        track(owner: self) { [app] in app.workbench.workspaceId } changed: { [weak self] in
+            self?.worktree = $0
+            self?.follow()
+            self?.loadPages()
+        }
         track(owner: self) { [weak self, app] in app.ci[self?.worktree ?? ""] } changed: { [weak self] in self?.apply($0) }
+    }
+
+    /// The selected job's log under the runs, with what can be done with it above it (hidden until a job is picked).
+    private func logPane() -> NSStackView {
+        log.isEditable = false
+        log.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        log.textContainerInset = NSSize(width: 6, height: 6)
+        log.isVerticallyResizable = true
+        log.autoresizingMask = .width
+        log.drawsBackground = false
+        let logScroll = NSScrollView()
+        logScroll.documentView = log
+        logScroll.hasVerticalScroller = true
+        logScroll.drawsBackground = false
+        let copy = textButton(String(localized: "Copy Log")) { [weak self] in
+            guard let self else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(shownLog, forType: .string)
+            Banner.show(String(localized: "Log copied"))
+        }
+        let fix = textButton(String(localized: "Ask Agent to Fix")) { [weak self] in self?.askAgent() }
+        let rerun = textButton(String(localized: "Re-run Failed")) { [weak self] in self?.rerun() }
+        let web = textButton(String(localized: "Open in Browser")) { [weak self] in if let u = self?.shownJob?.job.url { Forge.open(u) } }
+        [copy, fix, rerun, web].forEach { logBar.addArrangedSubview($0) }
+        logBar.spacing = 6; logBar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        let bottom = NSStackView(views: [logBar, logScroll])
+        bottom.orientation = .vertical
+        bottom.spacing = 0
+        logBar.isHidden = true
+        return bottom
     }
 
     /// From origin, not gh: there even when gh or glab isn't set up.
@@ -117,11 +159,17 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     @objc private func runSetup() { if let setup { Forge.run(setup, in: app) } }
 
     private func button(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
-        let b = ClosureButton(title: "", action: action); b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip
+        let b = ClosureButton(title: "", action: action)
+        b.image = .symbol(symbol, tip)
+        b.isBordered = false
+        b.toolTip = tip
         b.contentTintColor = .secondaryLabelColor; return b
     }
     private func textButton(_ title: String, _ action: @escaping () -> Void) -> NSButton {
-        let b = ClosureButton(title: title, action: action); b.bezelStyle = .push; b.controlSize = .small; return b
+        let b = ClosureButton(title: title, action: action)
+        b.bezelStyle = .push
+        b.controlSize = .small
+        return b
     }
 
     // MARK: loading
@@ -183,7 +231,11 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         guard case .run(let run) = item.kind, let w = worktree else { return }
         if item.children == nil {
             guard let jobs = await app.call(CIJobs(worktreeId: w, run: run.id)) else { return }   // the banner says why; asked again next time
-            item.children = jobs.map { j in let i = Item(.job(j, run: run.id)); i.children = j.steps.map { Item(.step($0)) }; return i }
+            item.children = jobs.map { j in
+                let i = Item(.job(j, run: run.id))
+                i.children = j.steps.map { Item(.step($0)) }
+                return i
+            }
             outline.reloadItem(item, reloadChildren: true)
         }
         outline.expandItem(item)
@@ -196,9 +248,15 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
 
     private func showLog(_ job: CIRuns.Job, run: Int) {
         guard let w = worktree else { return }
-        shownJob = (job, run); logBar.isHidden = false; log.string = ""
+        shownJob = (job, run)
+        logBar.isHidden = false
+        log.string = ""
         // gh hands out a job's log only once it's over; the next refresh after that brings it.
-        guard job.status == "completed" else { shownLog = ""; log.string = String(localized: "The log appears when the job finishes."); return }
+        guard job.status == "completed" else {
+            shownLog = ""
+            log.string = String(localized: "The log appears when the job finishes.")
+            return
+        }
         let slow = whileSlow { [weak self] in if self?.shownJob?.job.id == job.id { self?.log.string = String(localized: "Loading the log…") } }
         Task {
             defer { slow.cancel() }
@@ -246,7 +304,10 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         for input in wf.inputs {
             let control: NSView
             if !input.options.isEmpty {
-                let p = NSPopUpButton(); p.addItems(withTitles: input.options); p.selectItem(withTitle: input.defaultValue); control = p
+                let p = NSPopUpButton()
+                p.addItems(withTitles: input.options)
+                p.selectItem(withTitle: input.defaultValue)
+                control = p
             } else {
                 let f = NSTextField(string: input.defaultValue); f.placeholderString = input.description
                 f.widthAnchor.constraint(equalToConstant: 220).isActive = true; control = f
@@ -313,15 +374,22 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         guard let i = item as? Item else { return nil }
         switch i.kind {
         case .run(let r):
-            let t = NSTextField(labelWithString: r.title); t.font = .ui(12, weight: .medium); t.lineBreakMode = .byTruncatingTail
+            let t = NSTextField(labelWithString: r.title)
+            t.font = .ui(12, weight: .medium)
+            t.lineBreakMode = .byTruncatingTail
             let state = r.status == "completed" ? "" : CIRunLook.words(r.status, nil) + " · "
             let s = NSTextField(labelWithString: "\(state)\(r.workflow) · \(r.event) · \(CIRunLook.ago(r.createdAt))"); s.font = .ui(11)
             s.textColor = .secondaryLabelColor; s.lineBreakMode = .byTruncatingTail
-            let text = NSStackView(views: [t, s]); text.orientation = .vertical; text.alignment = .leading; text.spacing = 1
+            let text = NSStackView(views: [t, s])
+            text.orientation = .vertical
+            text.alignment = .leading
+            text.spacing = 1
             for x in [t, s, text] { x.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
             return row([CIRunLook.mark(r.status, r.conclusion), text])
         case .job(let j, _):
-            let t = NSTextField(labelWithString: j.name); t.font = .ui(12); t.lineBreakMode = .byTruncatingTail
+            let t = NSTextField(labelWithString: j.name)
+            t.font = .ui(12)
+            t.lineBreakMode = .byTruncatingTail
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             guard j.status != "completed", !j.steps.isEmpty else { return row([CIRunLook.mark(j.status, j.conclusion), t]) }
             // How far it got: "6/12" steps.
@@ -329,7 +397,9 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
             n.font = .uiDigits(11, weight: .regular); n.textColor = .tertiaryLabelColor
             return row([CIRunLook.mark(j.status, j.conclusion), t, NSView(), n])
         case .step(let s):
-            let t = NSTextField(labelWithString: s.name); t.font = .ui(11); t.lineBreakMode = .byTruncatingTail
+            let t = NSTextField(labelWithString: s.name)
+            t.font = .ui(11)
+            t.lineBreakMode = .byTruncatingTail
             // The step running now reads like a title; done ones grey, the ones still to come quieter still.
             t.textColor = s.status == "in_progress" ? .labelColor : s.status == "completed" ? .secondaryLabelColor : .tertiaryLabelColor
             t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -338,8 +408,12 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
     }
 
     private func row(_ views: [NSView]) -> NSView {
-        let r = NSStackView(views: views); r.spacing = 6; r.alignment = .centerY
-        let cell = NSTableCellView(); r.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(r)
+        let r = NSStackView(views: views)
+        r.spacing = 6
+        r.alignment = .centerY
+        let cell = NSTableCellView()
+        r.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(r)
         NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
                                      r.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
                                      r.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])

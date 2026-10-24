@@ -13,10 +13,10 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     required init?(coder: NSCoder) { fatalError() }
     let outline = FilesOutline()
     /// The row whose name is being edited in place (a rename, or a new file).
-    private var renaming: (field: NSTextField, url: URL, open: Bool)?
-    private let results = ResultsTable()
-    private let search = NSSearchField()
-    private let leftScroll = NSScrollView(), resultsScroll = NSScrollView()
+    var renaming: (field: NSTextField, url: URL, open: Bool)?
+    let results = ResultsTable()
+    let search = NSSearchField()
+    let leftScroll = NSScrollView(), resultsScroll = NSScrollView()
     private var nodes: [FileNode] = []
     private var status: [String: FileChange] = [:]
     /// Folders with a changed file somewhere under them (drawn orange).
@@ -25,48 +25,47 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     private var shownPaths: ([String], [String]?)?
     /// What the open ignored folders hold, by folder: kept when the tree is built again, read again after an operation.
     private var opened: [String: [String]] = [:]
-    private var matches: [SearchMatch] = []
+    var matches: [SearchMatch] = []
     /// Its files and their git status, pushed by the daemon while the panel is on screen (`WatchTopic.files`, `.git`):
     /// a hidden one costs no listing on every change, and the list comes again when it shows.
     private lazy var filesWatch = Watched(.files, in: app)
     private lazy var gitWatch = Watched(.git, in: app)
     private var shown = false
-    private var worktree: Worktree?
+    var worktree: Worktree?
     var root: String { worktree?.path ?? "/" }
 
     override func loadView() {
         let app = self.app
-        let col = NSTableColumn(identifier: .init("f")); outline.addTableColumn(col); outline.outlineTableColumn = col
-        outline.headerView = nil; outline.style = .sourceList; outline.dataSource = self; outline.delegate = self
+        let col = NSTableColumn(identifier: .init("f"))
+        outline.addTableColumn(col)
+        outline.outlineTableColumn = col
+        outline.headerView = nil
+        outline.style = .sourceList
+        outline.dataSource = self
+        outline.delegate = self
         outline.target = self; outline.action = #selector(openSelected)
         outline.registerForDraggedTypes([.fileURL]); outline.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
         outline.onSpace = { [weak self] in self?.togglePreview() }
         outline.onReturn = { [weak self] in self?.rename() }
         outline.onDelete = { [weak self] in self?.trashSelected() }
-        // Grouped like Finder's: open, create, change, locate, hand to the agent.
-        let m = NSMenu()
-        for group in [[("Open", #selector(openSelected))],
-                      [("New File", #selector(newFile)),
-                       (String(localized: "New Folder…"), #selector(newFolder)), (String(localized: "New from Template…"), #selector(newFromTemplate))],
-                      [("Rename", #selector(rename)), (String(localized: "Move to Trash"), #selector(trashSelected)),
-                       (String(localized: "Quick Look"), #selector(togglePreview))],
-                      [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)),
-                       (String(localized: "Copy Relative Path"), #selector(copyRelativePath))],
-                      [("Send to Agent", #selector(insertPath)), ("Copy Web Link", #selector(copyWebLink))]] {
-            if !m.items.isEmpty { m.addItem(.separator()) }
-            for (t, a) in group { m.addItem(withTitle: loc(t), action: a, keyEquivalent: "").target = self }
-        }
-        let openIn = NSMenu()
-        WorkspaceActions.addOpenIn(to: openIn, path: { [weak self] in self?.selectedPath }, prefix: "")
-        if !openIn.items.isEmpty, let i = m.items.firstIndex(where: { $0.action == #selector(reveal) }) {
-            m.insertItem(withTitle: String(localized: "Open In"), action: nil, keyEquivalent: "", at: i + 1).submenu = openIn
-        }
-        outline.menu = m
-        leftScroll.documentView = outline; leftScroll.hasVerticalScroller = true; leftScroll.drawsBackground = false
-        let rc = NSTableColumn(identifier: .init("r")); results.addTableColumn(rc); results.headerView = nil; results.style = .sourceList
-        results.dataSource = self; results.delegate = self; results.rowHeight = TextSize.of(34); results.target = self; results.action = #selector(openResult)
+        outline.menu = treeMenu()
+        leftScroll.documentView = outline
+        leftScroll.hasVerticalScroller = true
+        leftScroll.drawsBackground = false
+        let rc = NSTableColumn(identifier: .init("r"))
+        results.addTableColumn(rc)
+        results.headerView = nil
+        results.style = .sourceList
+        results.dataSource = self
+        results.delegate = self
+        results.rowHeight = TextSize.of(34)
+        results.target = self
+        results.action = #selector(openResult)
         search.delegate = self
-        resultsScroll.documentView = results; resultsScroll.hasVerticalScroller = true; resultsScroll.isHidden = true; resultsScroll.drawsBackground = false
+        resultsScroll.documentView = results
+        resultsScroll.hasVerticalScroller = true
+        resultsScroll.isHidden = true
+        resultsScroll.drawsBackground = false
         // One field, like Finder's: empty shows the tree, a search (↩) shows matches in their place, clearing it goes back.
         search.placeholderString = String(localized: "Search in Files")
         search.target = self
@@ -77,12 +76,19 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         noMatches.textColor = .secondaryLabelColor; noMatches.alignment = .center
         let clear = ClosureButton(title: String(localized: "Clear Search")) { [weak self] in
             guard let self else { return }
-            search.stringValue = ""; runSearch(); view.window?.makeFirstResponder(outline)
+            search.stringValue = ""
+            runSearch()
+            view.window?.makeFirstResponder(outline)
         }
         clear.bezelStyle = .push; clear.controlSize = .small
-        let empty = NSStackView(views: [noMatches, clear]); empty.orientation = .vertical; empty.spacing = 8; empty.isHidden = true
+        let empty = NSStackView(views: [noMatches, clear])
+        empty.orientation = .vertical
+        empty.spacing = 8
+        empty.isHidden = true
         noResults = empty
-        loadError.textColor = .secondaryLabelColor; loadError.alignment = .center; loadError.isHidden = true
+        loadError.textColor = .secondaryLabelColor
+        loadError.alignment = .center
+        loadError.isHidden = true
         for x in [search, leftScroll, resultsScroll, empty, loadError] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: v.centerXAnchor),
                                      empty.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
@@ -105,6 +111,28 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         track(owner: self) { app.fileIcons.revision } changed: { [weak self] _ in self?.reloadIcons() }
     }
 
+    /// The tree's right-click menu, grouped like Finder's: open, create, change, locate, hand to the agent.
+    private func treeMenu() -> NSMenu {
+        let m = NSMenu()
+        for group in [[("Open", #selector(openSelected))],
+                      [("New File", #selector(newFile)),
+                       (String(localized: "New Folder…"), #selector(newFolder)), (String(localized: "New from Template…"), #selector(newFromTemplate))],
+                      [("Rename", #selector(rename)), (String(localized: "Move to Trash"), #selector(trashSelected)),
+                       (String(localized: "Quick Look"), #selector(togglePreview))],
+                      [("Reveal in Finder", #selector(reveal)), ("Copy Path", #selector(copyPath)),
+                       (String(localized: "Copy Relative Path"), #selector(copyRelativePath))],
+                      [("Send to Agent", #selector(insertPath)), ("Copy Web Link", #selector(copyWebLink))]] {
+            if !m.items.isEmpty { m.addItem(.separator()) }
+            for (t, a) in group { m.addItem(withTitle: loc(t), action: a, keyEquivalent: "").target = self }
+        }
+        let openIn = NSMenu()
+        WorkspaceActions.addOpenIn(to: openIn, path: { [weak self] in self?.selectedPath }, prefix: "")
+        if !openIn.items.isEmpty, let i = m.items.firstIndex(where: { $0.action == #selector(reveal) }) {
+            m.insertItem(withTitle: String(localized: "Open In"), action: nil, keyEquivalent: "", at: i + 1).submenu = openIn
+        }
+        return m
+    }
+
     /// ⇧⌘F (Find in Workspace): straight into this field; pressed again there, back to what you were doing.
     func findInFiles() {
         guard let w = view.window else { return }
@@ -118,21 +146,39 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard wid != worktree?.id else { return }
         let next = app.worktree(wid)
         // Another folder: drop the old tree now, or a click before the reload would act on its paths under the new root.
-        if next?.path != worktree?.path { nodes = []; status = [:]; shownPaths = nil; opened = [:]; outline.reloadData() }
+        if next?.path != worktree?.path {
+            nodes = []
+            status = [:]
+            shownPaths = nil
+            opened = [:]
+            outline.reloadData()
+        }
         worktree = next
         matches = []; results.reloadData()
         watchShown()
         if let next { badges(app.git[next.id]?.changes); listed(app.fileLists[next.id]) }
     }
 
-    override func viewWillAppear() { super.viewWillAppear(); shown = true; watchShown() }
-    override func viewDidDisappear() { super.viewDidDisappear(); shown = false; watchShown() }
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        shown = true
+        watchShown()
+    }
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        shown = false
+        watchShown()
+    }
     private func watchShown() { filesWatch.key = shown ? worktree?.id : nil; gitWatch.key = shown ? worktree?.id : nil }
 
     /// The files listed now, then `done`: after an operation of its own, which selects or renames what it made (the
     /// daemon's push follows a moment later). Otherwise the tree follows what's pushed.
     func reloadTree(then done: (() -> Void)? = nil) {
-        guard let w = worktree else { nodes = []; outline.reloadData(); return }
+        guard let w = worktree else {
+            nodes = []
+            outline.reloadData()
+            return
+        }
         Task {
             let r = await app.tryCall(FilesList(id: w.id))
             // What it made or moved may be in an open ignored folder, which the list doesn't say: those are read again.
@@ -181,7 +227,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         reloadIcons()
     }
 
-    private func openFile(_ rel: String, line: Int? = nil, focus: Bool = true) { app.workbench.open(TabURI.file(root + "/" + rel, line: line), focus: focus) }
+    func openFile(_ rel: String, line: Int? = nil, focus: Bool = true) { app.workbench.open(TabURI.file(root + "/" + rel, line: line), focus: focus) }
 
     // MARK: outline
     func outlineView(_ o: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int { (item as? FileNode)?.children?.count ?? (item == nil ? nodes.count : 0) }
@@ -189,13 +235,17 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool { (item as? FileNode)?.children != nil }
     func outlineView(_ o: NSOutlineView, viewFor tc: NSTableColumn?, item: Any) -> NSView? {
         guard let n = item as? FileNode else { return nil }
-        let cell = NSTableCellView(); let tf = NSTextField(labelWithString: n.name); let img = NSImageView()
+        let cell = NSTableCellView()
+        let tf = NSTextField(labelWithString: n.name)
+        let img = NSImageView()
         img.image = app.fileIcons.image(n.name, folder: n.children != nil, expanded: o.isItemExpanded(n))
         tf.lineBreakMode = .byTruncatingMiddle; tf.font = .ui(12)
         let badge = NSTextField(labelWithString: "")
         if let s = status[n.path] {
             let (letter, color) = s.badge
-            badge.stringValue = letter; badge.textColor = color; tf.textColor = color
+            badge.stringValue = letter
+            badge.textColor = color
+            tf.textColor = color
         } else if n.children != nil, changedFolders.contains(n.path) { tf.textColor = .textOrange
         } else if n.ignored { tf.textColor = .secondaryLabelColor; img.alphaValue = 0.5 }
         badge.font = .ui(10, weight: .bold)
@@ -343,8 +393,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
         for t in all { pop.addItem(withTitle: t.deletingPathExtension().lastPathComponent) }
         let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); name.placeholderString = String(localized: "File name, e.g. plan-login.md")
-        let box = NSStackView(views: [pop, name]); box.orientation = .vertical; box.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
-        let a = NSAlert(); a.messageText = String(localized: "New from Template"); a.accessoryView = box
+        let box = NSStackView(views: [pop, name])
+        box.orientation = .vertical
+        box.frame = NSRect(x: 0, y: 0, width: 300, height: 60)
+        let a = NSAlert()
+        a.messageText = String(localized: "New from Template")
+        a.accessoryView = box
         a.addButton(withTitle: String(localized: "Create")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn, !name.stringValue.isEmpty,
@@ -394,61 +448,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         guard let p = selectedPath else { NSSound.beep(); return }
         FileActions(app).copyWebLink(p)
     }
-    // MARK: search
-    private func showResults(_ on: Bool) {
-        resultsScroll.isHidden = !on; leftScroll.isHidden = on || !loadError.isHidden; if !on { noResults?.isHidden = true }
-    }
     /// The files couldn't be listed (a folder moved away, git refusing it): say why where the tree would be, not an empty tree.
-    private let loadError = NSTextField(wrappingLabelWithString: "")
-    private func showLoadError(_ message: String?) {
-        loadError.stringValue = message.map { String(localized: "Couldn't list the files: \($0)") } ?? ""
-        loadError.isHidden = message == nil
-        leftScroll.isHidden = message != nil || !resultsScroll.isHidden
-    }
+    let loadError = NSTextField(wrappingLabelWithString: "")
     /// A search that found nothing says so (and the tree is one click away), rather than an empty list.
-    private let noMatches = NSTextField(wrappingLabelWithString: "")
-    private var noResults: NSView?
-    private let typing = Debounce()
-    /// Results follow the typing (a pause of a quarter second), like Xcode's Find navigator.
-    func controlTextDidChange(_ n: Notification) {
-        guard n.object as? NSSearchField === search else { return }
-        typing.after(0.25) { [weak self] in self?.runSearch() }
-    }
-    /// ↓ from the field goes into the results; ↩ there opens the line.
-    func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
-        if let r = renaming, c === r.field, sel == #selector(NSResponder.cancelOperation(_:)) {   // Esc keeps the old name
-            r.field.stringValue = r.url.lastPathComponent; view.window?.makeFirstResponder(outline); return true
-        }
-        guard c === search, sel == #selector(NSResponder.moveDown(_:)), !matches.isEmpty, !resultsScroll.isHidden else { return false }
-        view.window?.makeFirstResponder(results); results.selectRowIndexes([0], byExtendingSelection: false)
-        return true
-    }
-    @objc func runSearch() {
-        guard let w = worktree else { return }
-        let q = search.stringValue.trimmingCharacters(in: .whitespaces)
-        showResults(!q.isEmpty)
-        guard !q.isEmpty else { return }
-        Task {
-            let found = await app.tryCall(FilesSearch(id: w.id, query: q))
-            guard worktree?.id == w.id, search.stringValue.trimmingCharacters(in: .whitespaces) == q else { return }   // a newer search or workspace
-            matches = found.value ?? []
-            results.reloadData()
-            noMatches.stringValue = found.error.map { String(localized: "Couldn't search: \($0)") } ?? String(localized: "No matches for “\(q)”.")
-            noResults?.isHidden = !matches.isEmpty
-        }
-    }
-    func numberOfRows(in t: NSTableView) -> Int { matches.count }
-    func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
-        let m = matches[row]
-        let top = NSTextField(labelWithString: "\(m.path):\(m.line)"); top.font = .ui(10); top.textColor = .secondaryLabelColor
-        let txt = NSTextField(labelWithString: m.text); txt.font = .monospacedSystemFont(ofSize: 11, weight: .regular); txt.lineBreakMode = .byTruncatingTail
-        let s = NSStackView(views: [top, txt]); s.orientation = .vertical; s.alignment = .leading; s.spacing = 1
-        return s
-    }
-    @objc private func openResult() {
-        let r = results.clickedRow >= 0 ? results.clickedRow : results.selectedRow
-        if matches.indices.contains(r) { let m = matches[r]; openFile(m.path, line: m.line) }
-    }
+    let noMatches = NSTextField(wrappingLabelWithString: "")
+    var noResults: NSView?
+    let typing = Debounce()
 }
 
 /// Finder's keys in the tree: Space previews, ↩ renames, ⌘⌫ moves to the Trash.

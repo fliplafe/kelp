@@ -8,7 +8,11 @@ extension FilesPanel: @preconcurrency QLPreviewPanelDataSource, @preconcurrency 
         guard let p = QLPreviewPanel.shared() else { return }
         if p.isVisible { p.orderOut(nil); return }
         p.makeKeyAndOrderFront(nil)
-        if p.dataSource == nil { p.dataSource = self; p.delegate = self; p.reloadData() }   // no key window's chain led here
+        if p.dataSource == nil { // no key window's chain led here
+            p.dataSource = self
+            p.delegate = self
+            p.reloadData()
+        }
     }
     private var previewURL: URL? {
         (outline.item(atRow: outline.selectedRow) as? FileNode).map { URL(fileURLWithPath: root).appendingPathComponent($0.path) }

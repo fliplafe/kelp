@@ -81,13 +81,21 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
 
     override func loadView() {
         let app = self.app
-        branchButton.isBordered = false; branchButton.imagePosition = .imageLeading; branchButton.imageHugsTitle = true
+        branchButton.isBordered = false
+        branchButton.imagePosition = .imageLeading
+        branchButton.imageHugsTitle = true
         branchButton.image = Glyph.image("arrow.triangle.branch", size: 14); branchButton.font = .ui(12, weight: .semibold)
-        branchButton.lineBreakMode = .byTruncatingMiddle; branchButton.target = self; branchButton.action = #selector(branchMenu)
+        branchButton.lineBreakMode = .byTruncatingMiddle
+        branchButton.target = self
+        branchButton.action = #selector(branchMenu)
         branchButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         branchButton.toolTip = String(localized: "Switch or create a branch")
-        syncButton.isBordered = false; syncButton.imagePosition = .imageLeading; syncButton.font = .uiDigits(11, weight: .regular)
-        syncButton.contentTintColor = .secondaryLabelColor; syncButton.target = self; syncButton.action = #selector(sync)
+        syncButton.isBordered = false
+        syncButton.imagePosition = .imageLeading
+        syncButton.font = .uiDigits(11, weight: .regular)
+        syncButton.contentTintColor = .secondaryLabelColor
+        syncButton.target = self
+        syncButton.action = #selector(sync)
         let refresh = iconButton("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reloadAll() }
         let more = iconButton("ellipsis.circle", String(localized: "More Actions")) { [weak self] in self?.showMoreMenu() }
         moreButton = more
@@ -102,11 +110,17 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         graphBar.onResize = { [weak self] in self?.resizeGraph(by: $0) }
         graphBar.onRefresh = { [weak self] in Task { await self?.loadGraph() } }
 
-        empty.alignment = .center; empty.textColor = .secondaryLabelColor; empty.isHidden = true
+        empty.alignment = .center
+        empty.textColor = .secondaryLabelColor
+        empty.isHidden = true
         let v = NSView()
-        let sep = NSBox(); sep.boxType = .separator; separator = sep
+        let sep = NSBox()
+        sep.boxType = .separator
+        separator = sep
         for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 0); gh.priority = .defaultHigh; graphHeight = gh
+        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 0)
+        gh.priority = .defaultHigh
+        graphHeight = gh
         let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
         let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
         NSLayoutConstraint.activate([
@@ -139,32 +153,55 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     private func list(_ o: NSOutlineView) -> NSScrollView {
         let col = NSTableColumn(identifier: .init("scm")); col.resizingMask = .autoresizingMask
         o.addTableColumn(col); o.outlineTableColumn = col
-        o.headerView = nil; o.style = .plain; o.backgroundColor = .clear
-        o.intercellSpacing = .zero; o.indentationPerLevel = 0; o.rowSizeStyle = .custom
+        o.headerView = nil
+        o.style = .plain
+        o.backgroundColor = .clear
+        o.intercellSpacing = .zero
+        o.indentationPerLevel = 0
+        o.rowSizeStyle = .custom
         o.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        o.dataSource = self; o.delegate = self; o.target = self; o.action = #selector(clicked(_:))
-        let menu = NSMenu(); menu.delegate = self; o.menu = menu
-        let s = NSScrollView(); s.documentView = o; s.hasVerticalScroller = true; s.drawsBackground = false; s.autohidesScrollers = true
+        o.dataSource = self
+        o.delegate = self
+        o.target = self
+        o.action = #selector(clicked(_:))
+        let menu = NSMenu()
+        menu.delegate = self
+        o.menu = menu
+        let s = NSScrollView()
+        s.documentView = o
+        s.hasVerticalScroller = true
+        s.drawsBackground = false
+        s.autohidesScrollers = true
         return s
     }
 
     private func iconButton(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
         let b = ClosureButton(title: "", action: action)
-        b.image = .symbol(symbol, tip); b.isBordered = false; b.toolTip = tip; b.contentTintColor = .secondaryLabelColor
+        b.image = .symbol(symbol, tip)
+        b.isBordered = false
+        b.toolTip = tip
+        b.contentTintColor = .secondaryLabelColor
         b.symbolConfiguration = .init(pointSize: 12, weight: .regular)
         return b
     }
 
     /// The message field (grows to six lines) and Commit with its split menu.
     private func commitBox() -> NSView {
-        message.isRichText = false; message.font = .ui(13); message.drawsBackground = false
+        message.isRichText = false
+        message.font = .ui(13)
+        message.drawsBackground = false
         message.textContainerInset = NSSize(width: 4, height: 6); message.allowsUndo = true
         message.isAutomaticQuoteSubstitutionEnabled = false; message.isAutomaticDashSubstitutionEnabled = false
         message.isVerticallyResizable = true; message.autoresizingMask = .width
         message.onCommit = { [weak self] in self?.commit(push: false, amend: false) }
         message.onChange = { [weak self] in self?.messageChanged() }
-        let s = NSScrollView(); s.documentView = message; s.drawsBackground = false; s.hasVerticalScroller = false
-        placeholder.textColor = .placeholderTextColor; placeholder.font = .ui(13); placeholder.lineBreakMode = .byTruncatingTail
+        let s = NSScrollView()
+        s.documentView = message
+        s.drawsBackground = false
+        s.hasVerticalScroller = false
+        placeholder.textColor = .placeholderTextColor
+        placeholder.font = .ui(13)
+        placeholder.lineBreakMode = .byTruncatingTail
         placeholder.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)   // a long branch name truncates, not widens the panel
         let field = FieldBox(); field.wantsLayer = true
         commitMenu.add(String(localized: "Commit & Push")) { [weak self] in self?.commit(push: true, amend: false) }
@@ -173,17 +210,24 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         pullItem = syncMenu.add(String(localized: "Pull")) { [weak self] in self?.run(done: String(localized: "Pulled")) { GitRemoteOp(id: $0, op: "pull") } }
         // The panel's main action: the accent colour while there's something to commit (macOS 26's primary tint).
         let cb = NSButton(title: String(localized: "Commit"), target: self, action: #selector(commitPressed))
-        cb.image = .symbol("checkmark", String(localized: "Commit")); cb.imagePosition = .imageLeading; cb.imageHugsTitle = true; cb.bezelStyle = .push
+        cb.image = .symbol("checkmark", String(localized: "Commit"))
+        cb.imagePosition = .imageLeading
+        cb.imageHugsTitle = true
+        cb.bezelStyle = .push
         cb.controlSize = .large; cb.toolTip = String(localized: "Commit (⌘↩ in the message)")
         commitMore.image = .symbol("chevron.down", String(localized: "More Commit Actions")); commitMore.bezelStyle = .push
         commitMore.controlSize = .large; commitMore.toolTip = String(localized: "Commit & Push, Amend…")
         commitMore.target = self; commitMore.action = #selector(showCommitMenu)
         commitMore.setContentHuggingPriority(.required, for: .horizontal)
         commitButton = cb
-        let buttons = NSStackView(views: [cb, commitMore]); buttons.spacing = 6; buttons.distribution = .fill
+        let buttons = NSStackView(views: [cb, commitMore])
+        buttons.spacing = 6
+        buttons.distribution = .fill
         cb.setContentHuggingPriority(.defaultLow, for: .horizontal)
         ciRow.onClick = { [weak self] in self?.openCI() }
-        let stack = NSStackView(views: [buttons, ciRow]); stack.orientation = .vertical; stack.spacing = 6   // a hidden CI line takes no room
+        let stack = NSStackView(views: [buttons, ciRow])
+        stack.orientation = .vertical
+        stack.spacing = 6   // a hidden CI line takes no room
         let box = NSView()
         for x in [field, s, placeholder, stack] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(x) }
         let h = s.heightAnchor.constraint(equalToConstant: 30); messageHeight = h
@@ -382,12 +426,20 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     }
 
     private func toggle(commit hash: String) {
-        if openCommits.contains(hash) { openCommits.remove(hash); rebuildGraph(); return }
+        if openCommits.contains(hash) {
+            openCommits.remove(hash)
+            rebuildGraph()
+            return
+        }
         openCommits.insert(hash)
         guard commitFiles[hash] == nil, let wid = worktreeId else { rebuildGraph(); return }
         Task {
             // Unfolded by a click: a banner says why it can't, and it folds back to be asked again.
-            guard let files = await app.call(GitCommitFiles(id: wid, commit: hash)) else { openCommits.remove(hash); rebuildGraph(); return }
+            guard let files = await app.call(GitCommitFiles(id: wid, commit: hash)) else {
+                openCommits.remove(hash)
+                rebuildGraph()
+                return
+            }
             guard wid == worktreeId else { return }
             commitFiles[hash] = files
             rebuildGraph()

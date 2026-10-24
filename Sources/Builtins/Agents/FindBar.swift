@@ -18,18 +18,30 @@ final class FindBar: NSView, NSSearchFieldDelegate {
 
     init() {
         super.init(frame: .zero)
-        wantsLayer = true; layer?.cornerRadius = 8; layer?.borderWidth = 0.5
-        let sh = NSShadow(); sh.shadowBlurRadius = 6; sh.shadowOffset = NSSize(width: 0, height: -2)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 0.5
+        let sh = NSShadow()
+        sh.shadowBlurRadius = 6
+        sh.shadowOffset = NSSize(width: 0, height: -2)
         sh.shadowColor = NSColor.black.withAlphaComponent(0.2); shadow = sh
-        field.placeholderString = String(localized: "Find"); field.delegate = self; field.controlSize = .small; field.font = .systemFont(ofSize: 12)
+        field.placeholderString = String(localized: "Find")
+        field.delegate = self
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: 12)
         field.sendsSearchStringImmediately = true; field.focusRingType = .none
         count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular); count.textColor = .secondaryLabelColor
-        steps.segmentCount = 2; steps.trackingMode = .momentary; steps.controlSize = .small; steps.segmentStyle = .separated
+        steps.segmentCount = 2
+        steps.trackingMode = .momentary
+        steps.controlSize = .small
+        steps.segmentStyle = .separated
         steps.setImage(.symbol("chevron.up", String(localized: "Previous Match")), forSegment: 0)
         steps.setImage(.symbol("chevron.down", String(localized: "Next Match")), forSegment: 1)
         steps.setToolTip(String(localized: "Previous Match (⇧⌘G)"), forSegment: 0); steps.setToolTip(String(localized: "Next Match (⌘G)"), forSegment: 1)
         steps.target = self; steps.action = #selector(stepped)
-        let done = NSButton(title: String(localized: "Done"), target: self, action: #selector(close)); done.controlSize = .small; done.bezelStyle = .rounded
+        let done = NSButton(title: String(localized: "Done"), target: self, action: #selector(close))
+        done.controlSize = .small
+        done.bezelStyle = .rounded
         let row = NSStackView(views: [field, count, steps, done]); row.spacing = 6
         row.edgeInsets = NSEdgeInsets(top: 5, left: 6, bottom: 5, right: 6)
         pin(row); field.widthAnchor.constraint(equalToConstant: 190).isActive = true
@@ -64,7 +76,11 @@ final class FindBar: NSView, NSSearchFieldDelegate {
         guard field.stringValue.count < 3, !field.stringValue.isEmpty else { search(); return }
         pending.after(0.3) { [weak self] in self?.search() }
     }
-    private func search() { total = -1; selected = -1; onSearch?(field.stringValue) }
+    private func search() {
+        total = -1
+        selected = -1
+        onSearch?(field.stringValue)
+    }
 
     func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
         switch sel {
@@ -82,5 +98,9 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 
     @objc private func stepped() { onStep?(steps.selectedSegment == 1) }
-    @objc func close() { pending.cancel(); isHidden = true; onClose?() }
+    @objc func close() {
+        pending.cancel()
+        isHidden = true
+        onClose?()
+    }
 }

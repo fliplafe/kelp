@@ -161,7 +161,10 @@ package final class AppModel {
         for _ in 0..<3 {
             if let c = try? RPCClient(socket: Paths.socket.path) { client = c; break }
             launchDaemon()
-            for _ in 0..<30 { try? await Task.sleep(for: .milliseconds(100)); if let c = try? RPCClient(socket: Paths.socket.path) { client = c; break } }
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if let c = try? RPCClient(socket: Paths.socket.path) { client = c; break }
+            }
             if client != nil { break }
         }
         guard let c = client else {
@@ -177,7 +180,9 @@ package final class AppModel {
         let stopListening = listen(c)
         c.onClose = { [weak self] in stopListening(); Task { @MainActor in
             guard let self, self.client === c else { return }   // a newer connection took over: nothing to undo
-            self.client = nil; self.connected = false; self.reconnectSoon()
+            self.client = nil
+            self.connected = false
+            self.reconnectSoon()
         } }
         if await checkDaemonVersion(c) { return }
         await uiState.load()
@@ -230,7 +235,9 @@ package final class AppModel {
                     localized: "The background service is still the previous version. Restart it to finish the update — running agent sessions will end. You can also do it later from the Kelp menu.")
                 a.addButton(withTitle: String(localized: "Restart Service")); a.addButton(withTitle: String(localized: "Later"))
                 // Return keeps the agents running: ending them takes a deliberate click.
-                a.buttons[0].hasDestructiveAction = true; a.buttons[0].keyEquivalent = ""; a.buttons[1].keyEquivalent = "\r"
+                a.buttons[0].hasDestructiveAction = true
+                a.buttons[0].keyEquivalent = ""
+                a.buttons[1].keyEquivalent = "\r"
                 guard await runSheet(a) == .alertFirstButtonReturn else { return false }
             }
             _ = try? await c.call(DaemonShutdown())
@@ -283,7 +290,11 @@ package final class AppModel {
 
     /// One at a time: two lists asked for together could come back the older last. A caller gets a list read after it asked.
     package func refresh() async {
-        if let running = refreshTask { refreshAgain = true; await running.value; return }
+        if let running = refreshTask {
+            refreshAgain = true
+            await running.value
+            return
+        }
         let t = Task { @MainActor in
             repeat { refreshAgain = false; await refreshOnce() } while refreshAgain
             refreshTask = nil   // with the last check: no await between, so a later caller starts a new one

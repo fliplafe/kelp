@@ -7,7 +7,14 @@ import KelpKit
 extension SourceControlController {
     func bind(_ wid: String?) {
         guard wid != worktreeId else { return }
-        worktreeId = wid; changes = []; info = nil; commits = []; unpushed = []; commitFiles = [:]; openCommits = []; limit = 200
+        worktreeId = wid
+        changes = []
+        info = nil
+        commits = []
+        unpushed = []
+        commitFiles = [:]
+        openCommits = []
+        limit = 200
         ciRuns = []; ciRow.show([], failure: nil)
         message.string = ""; messageChanged()
         rebuild()
@@ -22,7 +29,11 @@ extension SourceControlController {
         ciWatch.key = info?.upstream != nil ? shown : nil   // no upstream: no CI line
     }
 
-    override func viewDidDisappear() { super.viewDidDisappear(); followWatches(); card.close() }
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        followWatches()
+        card.close()
+    }
 
     /// Refresh, and after an action: read git again now rather than on the next file event.
     func reloadAll() { if let wid = worktreeId { app.watchAgain(.git, wid) } }
@@ -31,8 +42,13 @@ extension SourceControlController {
     func apply(_ e: GitEvent?) {
         guard let e, e.worktree == worktreeId else { return }
         if let error = e.error {
-            changes = []; info = nil; commits = []
-            showError(error); updateHeader(); rebuild(); followWatches()
+            changes = []
+            info = nil
+            commits = []
+            showError(error)
+            updateHeader()
+            rebuild()
+            followWatches()
             return
         }
         guard let ch = e.changes, let br = e.branches else { return }
@@ -41,7 +57,9 @@ extension SourceControlController {
         let changed = ch != changes || br != info
         // A push (or a publish) starts CI: look for its run now and for a while.
         let pushed = info.map { old in br.upstream != nil && br.current == old.current && (old.upstream == nil || (br.ahead ?? 0) < (old.ahead ?? 0)) } ?? false
-        changes = ch; info = br; showError(nil)
+        changes = ch
+        info = br
+        showError(nil)
         updateHeader(); updateCommitButton()
         showStats(ch.isEmpty ? nil : e.stats)   // the "+6 −2" beside the header
         followWatches()
@@ -66,7 +84,9 @@ extension SourceControlController {
                                         attributes: [.font: NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular),
                                                      .foregroundColor: NSColor.secondaryLabelColor]))
         }
-        let p = NSMutableParagraphStyle(); p.alignment = .center; p.paragraphSpacing = 4
+        let p = NSMutableParagraphStyle()
+        p.alignment = .center
+        p.paragraphSpacing = 4
         s.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: s.length))
         empty.attributedStringValue = s
     }
@@ -144,7 +164,11 @@ extension SourceControlController {
     }
 
     func updateHeader() {
-        guard let info else { branchButton.title = ""; syncButton.isHidden = true; return }
+        guard let info else {
+            branchButton.title = ""
+            syncButton.isHidden = true
+            return
+        }
         branchButton.title = info.current ?? String(localized: "Detached at \(info.head ?? "?")")
         if info.merging { branchButton.title += String(localized: " (Merging)") }
         if let up = info.upstream {

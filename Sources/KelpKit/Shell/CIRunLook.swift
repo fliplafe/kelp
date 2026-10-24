@@ -8,14 +8,21 @@ package enum CIRunLook {
     /// – grey when skipped or cancelled.
     package static func mark(_ status: String, _ conclusion: String?) -> NSView {
         let words = Self.words(status, conclusion)
-        if status == "in_progress" { let m = StatusMark(size: 14); m.status = .working; m.toolTip = words; return m }
+        if status == "in_progress" {
+            let m = StatusMark(size: 14)
+            m.status = .working
+            m.toolTip = words
+            return m
+        }
         let (symbol, color): (String, NSColor) = switch (status, conclusion) {
         case ("completed", "success"?): ("checkmark.circle.fill", .systemGreen)
         case ("completed", "skipped"?), ("completed", "cancelled"?), ("completed", "neutral"?): ("minus.circle", .tertiaryLabelColor)
         case ("completed", _): ("xmark.circle.fill", .systemRed)
         default: ("circle", .tertiaryLabelColor)
         }
-        let v = NSImageView(image: .symbol(symbol, words)); v.contentTintColor = color; v.toolTip = words
+        let v = NSImageView(image: .symbol(symbol, words))
+        v.contentTintColor = color
+        v.toolTip = words
         v.symbolConfiguration = .init(pointSize: 12, weight: .regular)
         return v
     }

@@ -37,7 +37,12 @@ package protocol TabContent: AnyObject {
 struct TabLook: Equatable {
     let uri: String, title: String, toolTip: String?, isEdited: Bool, badge: TabBadge?, icon: NSImage?
     @MainActor init(_ c: TabContent) {
-        uri = c.uri; title = c.title; toolTip = c.toolTip; isEdited = c.isEdited; badge = c.badge; icon = c.icon
+        uri = c.uri
+        title = c.title
+        toolTip = c.toolTip
+        isEdited = c.isEdited
+        badge = c.badge
+        icon = c.icon
     }
 }
 

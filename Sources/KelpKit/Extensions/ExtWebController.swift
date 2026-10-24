@@ -15,7 +15,11 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
     private let badge: ExtBadge?
     private var web: WKWebView!
     init(page: URL, folder: URL, app: AppModel, badge: ExtBadge? = nil) {
-        self.page = page; self.folder = folder; self.app = app; self.badge = badge; super.init(nibName: nil, bundle: nil)
+        self.page = page
+        self.folder = folder
+        self.app = app
+        self.badge = badge
+        super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
 

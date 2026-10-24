@@ -73,8 +73,12 @@ package func shortAgo(_ d: Date?, now: Date = Date()) -> String {
 /// "4m", "1d 3h": a span in Kelp's language, `units` parts at most (the last one rounded), down to `smallest`.
 package func shortSpan(_ seconds: Double, units: Int = 1, smallest: NSCalendar.Unit = .minute) -> String {
     let f = DateComponentsFormatter()
-    f.unitsStyle = .abbreviated; f.maximumUnitCount = units; f.allowedUnits = [.day, .hour, .minute, smallest]
-    var c = Calendar.current; c.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en"); f.calendar = c
+    f.unitsStyle = .abbreviated
+    f.maximumUnitCount = units
+    f.allowedUnits = [.day, .hour, .minute, smallest]
+    var c = Calendar.current
+    c.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
+    f.calendar = c
     return f.string(from: max(0, seconds)) ?? ""
 }
 
@@ -98,7 +102,9 @@ final class StatusMark: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         image.translatesAutoresizingMaskIntoConstraints = false; addSubview(image)
-        ring.fillColor = nil; ring.lineWidth = 1.5; ring.lineCap = .round
+        ring.fillColor = nil
+        ring.lineWidth = 1.5
+        ring.lineCap = .round
         let inset: CGFloat = 1.5
         ring.frame = CGRect(x: 0, y: 0, width: size, height: size)
         ring.path = CGPath(ellipseIn: CGRect(x: inset, y: inset, width: size - 2 * inset, height: size - 2 * inset), transform: nil)
@@ -107,8 +113,15 @@ final class StatusMark: NSView {
         // The pie is a stroke as wide as its radius around half of it, so strokeEnd fills it from the top, clockwise.
         let pie = (size / 2 - inset) - 1.5, arc = CGMutablePath()
         arc.addArc(center: CGPoint(x: size / 2, y: size / 2), radius: pie / 2, startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi, clockwise: true)
-        track.path = ring.path; track.lineWidth = 1; bar.path = arc; bar.lineWidth = pie
-        for l in [track, bar] { l.frame = ring.frame; l.fillColor = nil; layer?.addSublayer(l) }
+        track.path = ring.path
+        track.lineWidth = 1
+        bar.path = arc
+        bar.lineWidth = pie
+        for l in [track, bar] {
+            l.frame = ring.frame
+            l.fillColor = nil
+            layer?.addSublayer(l)
+        }
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size),
@@ -131,7 +144,9 @@ final class StatusMark: NSView {
         setAccessibilityLabel(compacting && s == .working ? String(localized: "Compacting its conversation") : toolTip)
         track.isHidden = filling == nil; bar.isHidden = filling == nil
         if let filling {
-            ring.isHidden = true; image.isHidden = true; ring.removeAllAnimations()
+            ring.isHidden = true
+            image.isHidden = true
+            ring.removeAllAnimations()
             effectiveAppearance.performAsCurrentDrawingAppearance {
                 track.strokeColor = NSColor.secondaryLabelColor.cgColor; bar.strokeColor = NSColor.secondaryLabelColor.cgColor
             }
@@ -143,12 +158,17 @@ final class StatusMark: NSView {
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let spinning = s == .working && !compacting && !still
         ring.isHidden = !spinning; image.isHidden = spinning
-        ring.removeAllAnimations(); image.layer?.removeAllAnimations(); image.alphaValue = 1
+        ring.removeAllAnimations()
+        image.layer?.removeAllAnimations()
+        image.alphaValue = 1
         if spinning {
             effectiveAppearance.performAsCurrentDrawingAppearance { ring.strokeColor = NSColor.secondaryLabelColor.cgColor }
             ring.anchorPoint = CGPoint(x: 0.5, y: 0.5); ring.position = CGPoint(x: size / 2, y: size / 2)
             let a = CABasicAnimation(keyPath: "transform.rotation.z")
-            a.fromValue = 0; a.toValue = -2 * Double.pi; a.duration = 1; a.repeatCount = .infinity
+            a.fromValue = 0
+            a.toValue = -2 * Double.pi
+            a.duration = 1
+            a.repeatCount = .infinity
             ring.add(a, forKey: "spin")
             return
         }
@@ -158,7 +178,10 @@ final class StatusMark: NSView {
             image.symbolConfiguration = .init(pointSize: size - 2, weight: .regular); image.contentTintColor = .secondaryLabelColor
             if compacting, !still {
                 image.wantsLayer = true
-                let p = CABasicAnimation(keyPath: "opacity"); p.fromValue = 1; p.toValue = 0.3; p.duration = 0.9
+                let p = CABasicAnimation(keyPath: "opacity")
+                p.fromValue = 1
+                p.toValue = 0.3
+                p.duration = 0.9
                 p.autoreverses = true; p.repeatCount = .infinity
                 image.layer?.add(p, forKey: "pulse")
             }

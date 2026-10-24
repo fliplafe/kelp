@@ -35,7 +35,11 @@ extension EditorArea {
             return
         }
         if let t = layout.tab(uri: uri) {   // already open (maybe added by reconcile a moment ago)
-            if let split, let gid = layout.group(of: t.id) { layout.split(t.id, from: gid, vertical: split == .right, before: false); arrange(); render() }
+            if let split, let gid = layout.group(of: t.id) {
+                layout.split(t.id, from: gid, vertical: split == .right, before: false)
+                arrange()
+                render()
+            }
             select(t.id, focus: focus); return
         }
         if TabURI.scheme(uri) != "session", app.extensions.tabProvider(for: uri) == nil {
@@ -65,8 +69,14 @@ extension EditorArea {
         if let sid { closed.insert(sid) }
         contents[id] = nil
         layout.remove(id)
-        if layout.allTabs.isEmpty { let manual = layout.manual; layout = WorkspaceLayout(); layout.manual = manual }
-        arrange(); render(); focusSelected()
+        if layout.allTabs.isEmpty {
+            let manual = layout.manual
+            layout = WorkspaceLayout()
+            layout.manual = manual
+        }
+        arrange()
+        render()
+        focusSelected()
         return true
     }
 
@@ -135,7 +145,9 @@ extension EditorArea {
         zoomed = nil
         layout.manual = layout.manual == true ? nil : true
         if layout.manual == true { layout.tile([]) } else { arrange() }
-        render(); focusSelected(); publishFocus()
+        render()
+        focusSelected()
+        publishFocus()
     }
 
     /// A split or a tab dragged to another pane: the panes stay as the user puts them, agents no longer tile.

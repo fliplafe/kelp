@@ -112,7 +112,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         var s = String(line[..<end]).trimmingCharacters(in: .whitespaces)
         if s.hasSuffix(".") { s.removeLast() }
         for lead in ["I've ", "I have ", "I "] where s.hasPrefix(lead) {
-            s = String(s.dropFirst(lead.count)); s = s.prefix(1).uppercased() + s.dropFirst(); break
+            s = String(s.dropFirst(lead.count))
+            s = s.prefix(1).uppercased() + s.dropFirst()
+            break
         }
         return s.count > 90 ? String(s.prefix(89)) + "…" : s
     }
@@ -148,7 +150,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard let id = r.notification.request.content.userInfo["session"] as? String else { return }
         let action = r.actionIdentifier
         await MainActor.run {
-            guard action == "allow" || action == "deny" else { NSApp.activate(); app.workbench.focus(session: id); return }
+            guard action == "allow" || action == "deny" else {
+                NSApp.activate()
+                app.workbench.focus(session: id)
+                return
+            }
             Task {
                 // Answered without Kelp coming forward; if the menu is gone (answered in the terminal), show the agent.
                 let ok = await app.call(SessionChoose(id: id, answer: action)) ?? false

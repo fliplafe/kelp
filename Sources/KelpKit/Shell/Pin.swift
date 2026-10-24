@@ -1,5 +1,13 @@
 import AppKit
 
+extension NSLayoutConstraint {
+    /// The constraint at `priority`, for a list of them in `activate`.
+    func withPriority(_ priority: Float) -> NSLayoutConstraint {
+        self.priority = .init(priority)
+        return self
+    }
+}
+
 extension NSView {
     /// Adds `v` filling this view, `inset` in from its edges.
     package func pin(_ v: NSView, inset: NSEdgeInsets = NSEdgeInsetsZero) {

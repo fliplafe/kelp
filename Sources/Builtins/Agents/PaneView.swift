@@ -27,7 +27,9 @@ final class PaneView: NSView {
     var onRestart: ((PaneView) -> Void)?
 
     init(session: Session, app: AppModel) {
-        sessionId = session.id; self.app = app; attachedTo = app.connections
+        sessionId = session.id
+        self.app = app
+        attachedTo = app.connections
         super.init(frame: .zero)
         wantsLayer = true
         buildTerminal(session)
@@ -70,8 +72,14 @@ final class PaneView: NSView {
     }
 
     private func buildEndedOverlay() {
-        let l = endedLabel; l.font = .systemFont(ofSize: 13, weight: .medium); l.textColor = .secondaryLabelColor
-        let b = restartButton; b.title = String(localized: "Restart"); b.target = self; b.action = #selector(restartTapped); b.bezelStyle = .rounded
+        let l = endedLabel
+        l.font = .systemFont(ofSize: 13, weight: .medium)
+        l.textColor = .secondaryLabelColor
+        let b = restartButton
+        b.title = String(localized: "Restart")
+        b.target = self
+        b.action = #selector(restartTapped)
+        b.bezelStyle = .rounded
         b.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil); b.imagePosition = .imageLeading
         let c = NSButton(title: String(localized: "Close"), target: self, action: #selector(closeTapped)); c.bezelStyle = .rounded
         let buttons = NSStackView(views: [b, c]); buttons.spacing = 8
@@ -120,7 +128,9 @@ final class PaneView: NSView {
         }
     }
     override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow(); viewDidChangeEffectiveAppearance(); settle(shown: true)
+        super.viewDidMoveToWindow()
+        viewDidChangeEffectiveAppearance()
+        settle(shown: true)
         offScreen?.cancel(); offScreen = nil
         guard window == nil, let minutes = app.settings.number("sessions.hibernateMinutes"), minutes > 0 else { return }
         offScreen = Task { [weak self] in

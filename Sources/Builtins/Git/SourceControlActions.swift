@@ -109,7 +109,9 @@ extension SourceControlController {
             if await app.call(GitRemoteOp(id: wid, op: "pull")) != nil {
                 if (info.ahead ?? 0) > 0 { _ = await app.call(GitRemoteOp(id: wid, op: "push")) }
             }
-            busy = false; syncing = nil; reloadAll()
+            busy = false
+            syncing = nil
+            reloadAll()
         }
     }
 
@@ -163,9 +165,15 @@ extension SourceControlController {
         guard let wid = worktreeId else { return }
         Task {
             guard let r = await app.call(GitMerge(id: wid)) else { return }
-            if r.merged { Banner.show(String(localized: "Merged")); await app.refresh(); return }
+            if r.merged {
+                Banner.show(String(localized: "Merged"))
+                await app.refresh()
+                return
+            }
             let files = r.conflicts
-            let a = NSAlert(); a.messageText = String(localized: "Merge Conflicts"); a.alertStyle = .warning
+            let a = NSAlert()
+            a.messageText = String(localized: "Merge Conflicts")
+            a.alertStyle = .warning
             a.informativeText = files.joined(separator: "\n") + String(localized: "\n\nThe merge was aborted; nothing changed.")
             a.addButton(withTitle: String(localized: "OK"))
             if FileActions(app).targetAgent != nil { a.addButton(withTitle: String(localized: "Ask Agent to Resolve")) }

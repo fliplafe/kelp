@@ -60,7 +60,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     override func loadView() {
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
         outline.addTableColumn(col); outline.outlineTableColumn = col
-        outline.headerView = nil; outline.style = .sourceList; outline.rowSizeStyle = .custom
+        outline.headerView = nil
+        outline.style = .sourceList
+        outline.rowSizeStyle = .custom
         outline.selectionHighlightStyle = .none   // SidebarRowView draws the selection as a pill
         outline.floatsGroupRows = false; outline.indentationPerLevel = 14
         outline.pads = { [weak self] row in (self?.outline.item(atRow: row) as? Node).flatMap { self?.pads($0) } ?? (0, 0) }
@@ -70,8 +72,13 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         outline.registerForDraggedTypes([.fileURL, Self.rowType])   // a folder from Finder becomes a project; rows move
         outline.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
                                                owner: self, userInfo: nil))
-        let menu = NSMenu(); menu.delegate = self; outline.menu = menu
-        let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        let menu = NSMenu()
+        menu.delegate = self
+        outline.menu = menu
+        let scroll = NSScrollView()
+        scroll.documentView = outline
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
@@ -81,8 +88,12 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let footer = NSHostingView(rootView: UsageView(app: app))   // agent limits, when any agent reports them
         footer.sizingOptions = [.intrinsicContentSize]
         let v = NSView()
-        search.placeholderString = String(localized: "Workspace or agent"); search.delegate = self; search.controlSize = .small
-        search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
+        search.placeholderString = String(localized: "Workspace or agent")
+        search.delegate = self
+        search.controlSize = .small
+        search.sendsSearchStringImmediately = true
+        search.target = self
+        search.action = #selector(searchChanged)
         setFilterMenu()
         // Beside the search, over the projects it adds to, where people look for it.
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"),
@@ -139,7 +150,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         t.textColor = .secondaryLabelColor
         let b = ClosureButton(title: String(localized: "Show All")) { [weak self] in
             guard let self else { return }
-            search.stringValue = ""; query = ""; setFilter(.all)
+            search.stringValue = ""
+            query = ""
+            setFilter(.all)
         }
         b.bezelStyle = .push; b.controlSize = .small
         [t, b].forEach { noMatch.addArrangedSubview($0) }
@@ -249,7 +262,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func workspaceNode(_ id: String) -> Node? { node("w:" + id) ?? roots.first { $0.workspace == id } }
 
     func node(_ key: String) -> Node? {
-        func find(_ ns: [Node]) -> Node? { for n in ns { if n.key == key { return n }; if let f = find(n.children) { return f } }; return nil }
+        func find(_ ns: [Node]) -> Node? { for n in
+            ns { if n.key == key { return n }; if let f = find(n.children) { return f } }
+            return nil
+        }
         return find(roots)
     }
 
@@ -264,7 +280,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let agent = TabURI.scheme(tab) == "session" ? w.children.first { $0.key == "a:" + TabURI.body(tab) } : nil
         let row = agent.map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil } ?? outline.row(forItem: w)
         guard row >= 0 else { return }
-        if outline.selectedRow != row { syncing = true; outline.selectRowIndexes([row], byExtendingSelection: false); syncing = false }
+        if outline.selectedRow != row {
+            syncing = true
+            outline.selectRowIndexes([row], byExtendingSelection: false)
+            syncing = false
+        }
         keepOpenInView()
     }
 
@@ -359,7 +379,11 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         // A project folding folds its workspaces with it: that isn't the user folding them.
         if let p = outline.parent(forItem: node) as? Node, !outline.isItemExpanded(p) { return }
         if c { collapsed.insert(node.key) } else { collapsed.remove(node.key) }
-        if !c, case .project = node.kind { syncing = true; expand(node); syncing = false }
+        if !c, case .project = node.kind {
+            syncing = true
+            expand(node)
+            syncing = false
+        }
         refreshCell(node.key)   // collapsed, the row shows its agents' state itself
         updateCard()   // the card ends at another row
     }

@@ -32,7 +32,9 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     var toolTip: String? { page.url?.absoluteString }
 
     init(uri: String, app: AppModel) {
-        start = uri; self.app = app; ports = PortsView(app: app)
+        start = uri
+        self.app = app
+        ports = PortsView(app: app)
         let cfg = WKWebViewConfiguration()
         cfg.preferences.isElementFullscreenEnabled = true
         cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")   // "Inspect Element" in the page's context menu
@@ -48,8 +50,12 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         let back = b("chevron.left", String(localized: "Back")), fwd = b("chevron.right", String(localized: "Forward"))
         let reload = b("arrow.clockwise", String(localized: "Reload (⌘R)")), ext = b("safari", String(localized: "Open in Safari"))
         let more = b("ellipsis.circle", String(localized: "More"))
-        address.placeholderString = String(localized: "Search or enter address"); address.lineBreakMode = .byTruncatingTail; address.bezelStyle = .roundedBezel
-        designButton.setButtonType(.pushOnPushOff); designButton.bezelStyle = .texturedRounded; designButton.isBordered = false
+        address.placeholderString = String(localized: "Search or enter address")
+        address.lineBreakMode = .byTruncatingTail
+        address.bezelStyle = .roundedBezel
+        designButton.setButtonType(.pushOnPushOff)
+        designButton.bezelStyle = .texturedRounded
+        designButton.isBordered = false
         designButton.image = .symbol("cursorarrow.rays", String(localized: "Design Mode"))
         designButton.toolTip = String(localized: "Design Mode: click an element to send its source, HTML, CSS and a screenshot to the agent (⌥-click copies them)")
         let bar = NSStackView(views: [back, fwd, reload, address, designButton, ext, more]); bar.spacing = 6
@@ -62,7 +68,9 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
         ports.onOpen = { [weak self] u in self?.load(u) }
         web.navigationDelegate = self
         web.configuration.userContentController.add(WeakHandler(self), name: "kelp")
-        address.delegate = self; address.target = self; address.action = #selector(go)
+        address.delegate = self
+        address.target = self
+        address.action = #selector(go)
         back.target = web; back.action = #selector(WKWebView.goBack(_:))
         fwd.target = web; fwd.action = #selector(WKWebView.goForward(_:))
         reload.target = web; reload.action = #selector(WKWebView.reload(_:))
@@ -100,7 +108,9 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             self?.web.takeSnapshot(with: nil) { img, _ in   // WebKit answers on main
                 MainActor.assumeIsolated {
                     guard let img else { return }
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([img]); Banner.show(String(localized: "Screenshot copied"))
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.writeObjects([img])
+                    Banner.show(String(localized: "Screenshot copied"))
                 }
             }
         }
@@ -127,7 +137,9 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
     }
 
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
-        address.stringValue = w.url?.absoluteString ?? ""; ports.isHidden = true; page = (w.url, w.title)
+        address.stringValue = w.url?.absoluteString ?? ""
+        ports.isHidden = true
+        page = (w.url, w.title)
     }
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         address.stringValue = w.url?.absoluteString ?? ""; page = (w.url, w.title)
@@ -263,7 +275,13 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
      const box = document.createElement('div');
      box.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #0a84ff;background:rgba(10,132,255,.12);z-index:2147483647;border-radius:3px;display:none';
      const tag = document.createElement('div');
-     tag.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:11px -apple-system;\
+     tag.style.cssText = 'position:fixed
+     pointer-events:none
+     z-index:2147483647
+     background:#0a84ff
+     color:#fff
+     font:11px -apple-system
+     \
     padding:2px 6px;border-radius:4px;display:none';
      document.documentElement.append(box, tag);
      const move = e => { const r = e.target.getBoundingClientRect();
