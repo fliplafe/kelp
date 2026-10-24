@@ -157,6 +157,7 @@ private let fakeGlab: String = {
 @Test func onGitLabAPullRequestIsAMergeRequestNotAGhCall() async throws {
     let log = fakeGlab
     let r = try await rig(); defer { r.d.stop() }
+    let ghBefore = calls().count   // the gh log is every test's: only what this one led to counts
     let wt = try await desk(r, "feat/mr")
     // origin looks like GitLab; pushes go to a bare repository here.
     let bare = tmp().path
@@ -171,7 +172,7 @@ private let fakeGlab: String = {
     #expect(sent.contains("source_branch=feat/mr") && sent.contains("title=Draft: Add x") && sent.contains("target_branch=main"))
     _ = try await r.c.call("github.pr-merge", .obj(["worktreeId": .string(wt.id)]))
     #expect(((try? String(contentsOfFile: log, encoding: .utf8)) ?? "").contains("merge_requests/12/merge --raw-field squash=true"))
-    #expect(!calls().contains { $0.hasPrefix("pr create") || $0.hasPrefix("pr merge") })   // gh, which can't talk to GitLab, was never asked
+    #expect(!calls().dropFirst(ghBefore).contains { $0.hasPrefix("pr create") || $0.hasPrefix("pr merge") })   // gh, which can't talk to GitLab, was never asked
 }
 
 @Test func aWorkspaceLinksToItsProjectsPagesFromOrigin() async throws {
