@@ -128,3 +128,13 @@ final class Counter: @unchecked Sendable {
     let newest = try #require(sent.range(of: "NEWEST"))
     #expect(newest.lowerBound > lastOpen.lowerBound)
 }
+
+/// A server that ignores SIGTERM is gone once `terminateNow` returns: the daemon execs or exits right after, and the
+/// SIGKILL `terminate` leaves for later would never come.
+@Test func aServerThatIgnoresSIGTERMIsGoneBeforeTheDaemonMovesOn() throws {
+    let c = try #require(LSPClient(argv: ["/bin/sh", "-c", "trap '' TERM; while :; do sleep 0.1; done"], root: NSTemporaryDirectory()))
+    let pid = try #require(c.pid)
+    Thread.sleep(forTimeInterval: 0.2)   // the trap is set
+    c.terminateNow()
+    #expect(kill(pid, 0) != 0 || Subprocess.isZombie(pid))   // gone, or ended and waiting for its parent to reap it
+}

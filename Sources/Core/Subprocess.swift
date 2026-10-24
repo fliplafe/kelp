@@ -90,6 +90,19 @@ public enum Subprocess {
         killLater(all, after: 2)
     }
 
+    /// `stopTree`, waiting: SIGTERM, up to `grace` for them to go, then SIGKILL to whatever is left, all before it returns.
+    /// For a process about to exec or exit, which a later SIGKILL (`killLater`) would never come from.
+    public static func stopTreeNow(_ pid: pid_t, grace: TimeInterval = 2) {
+        let born = tree(pid).map { ($0, started($0)) }
+        for (p, _) in born.reversed() { kill(p, SIGTERM) }
+        func left() -> [pid_t] { born.compactMap { p, t in t != nil && started(p) == t && !isZombie(p) ? p : nil } }
+        let end = Date().addingTimeInterval(grace)
+        while !left().isEmpty, Date() < end { usleep(50_000) }
+        for p in left() { kill(p, SIGKILL) }
+        let killed = Date().addingTimeInterval(1)   // SIGKILL lands a moment later
+        while !left().isEmpty, Date() < killed { usleep(10_000) }
+    }
+
     /// SIGKILL after `delay` to those of `pids` still running: the same processes, by their start time, not ones that
     /// were given a pid of theirs since.
     public static func killLater(_ pids: [pid_t], after delay: TimeInterval) {
@@ -105,6 +118,13 @@ public enum Subprocess {
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
         return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+    }
+
+    /// Ended, not reaped yet: nothing left to stop.
+    public static func isZombie(_ pid: pid_t) -> Bool {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size && info.pbi_status == UInt32(SZOMB)
     }
 
     /// `pid` and its descendants, parents before children.

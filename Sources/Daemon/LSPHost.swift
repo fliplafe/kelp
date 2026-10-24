@@ -107,7 +107,8 @@ final class LSPHost: Sendable {
     /// The daemon is stopping: so do its servers.
     func stopAll() {
         let all = state.withLock { s in defer { s.servers = [:] }; return s.servers.values.compactMap { if case .running(let c) = $0 { c } else { nil } } }
-        all.forEach { $0.terminate() }
+        // Gone before this returns: the daemon stops or execs next, and a SIGKILL left for later would never come.
+        DispatchQueue.concurrentPerform(iterations: all.count) { all[$0].terminateNow() }
     }
 
     private func start(_ key: Key) {
