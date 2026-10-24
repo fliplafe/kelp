@@ -156,10 +156,29 @@ enum RepoFilters {
     static func names(_ cwd: String) -> [String] {
         guard let file = configFile(cwd) else { return read(cwd).names }
         if let hit = cache.withLock({ $0[file] }), hit.stamps.allSatisfy({ stamp($0.key) == $0.value }) { return hit.names }
-        let r = read(cwd)
-        let stamps = Dictionary((r.files + [file]).compactMap { f in stamp(f).map { (f, $0) } }) { a, _ in a }
-        cache.withLock { $0[file] = (stamps, r.names) }
-        return r.names
+        let r = read(cwd), subs = submodules(of: file)
+        let names = Array(Set(r.names + subs.names)).sorted()
+        let stamps = Dictionary((r.files + subs.files + [file]).compactMap { f in stamp(f).map { (f, $0) } }) { a, _ in a }
+        cache.withLock { $0[file] = (stamps, names) }
+        return names
+    }
+
+    /// Filters the repository's submodules define in their own config (.git/modules/…/config): `git status` runs in each
+    /// populated one too, and Kelp's `-c` reaches them (GIT_CONFIG_PARAMETERS). Their config files are stamped as well.
+    private static func submodules(of config: String) -> (names: [String], files: [String]) {
+        let modules = URL(fileURLWithPath: config).deletingLastPathComponent().appendingPathComponent("modules")
+        let all = (FileManager.default.enumerator(at: modules, includingPropertiesForKeys: nil)?.allObjects as? [URL]) ?? []
+        let files = all.filter { $0.lastPathComponent == "config" }.map(\.path)
+        var names = Set<String>()
+        for f in files {
+            let args = ["/usr/bin/git", "config", "--file", f, "--includes", "--get-regexp", #"^filter\..*\.(clean|smudge|process)$"#]
+            guard let r = try? Subprocess.run(args, cwd: "/", env: ProcessInfo.processInfo.environment, timeLimit: 10, limit: 1 << 20) else { continue }
+            for line in String(decoding: r.stdout, as: UTF8.self).split(whereSeparator: \.isNewline) {
+                let parts = (line.split(separator: " ").first ?? "").split(separator: ".")
+                if parts.count >= 3 { names.insert(parts.dropFirst().dropLast().joined(separator: ".")) }
+            }
+        }
+        return (Array(names), files)
     }
 
     private static func stamp(_ path: String) -> Date? { try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date }

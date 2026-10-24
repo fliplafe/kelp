@@ -83,3 +83,12 @@ import Core
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: repo + "/.git/extra.cfg")
     #expect(RepoFilters.names(repo) == ["x", "y"])
 }
+
+/// A submodule's own config can define a filter too (`git status` runs in the submodule): it's turned off as well.
+@Test func aSubmodulesFilterIsTurnedOffToo() throws {
+    let repo = try tempRepo()
+    let modules = repo + "/.git/modules/sub"
+    try FileManager.default.createDirectory(atPath: modules, withIntermediateDirectories: true)
+    try "[core]\n\tbare = false\n[filter \"evil\"]\n\tclean = touch ran\n".write(toFile: modules + "/config", atomically: true, encoding: .utf8)
+    #expect(RepoFilters.names(repo).contains("evil"))
+}
