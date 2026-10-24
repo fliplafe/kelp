@@ -168,12 +168,7 @@ extension DaemonShutdown: Handled {
     /// In order, as daemon.upgrade: the stop starts once its reply is queued, and the replies queued go out before
     /// anyone is hung up (`Daemon.answerInOrder`), not on a timer a busy machine could outrun.
     static var inOrder: Bool { true }
-    func handle(_ shutdown: Shutdown) throws -> Done { Done() }
-}
-
-/// daemon.shutdown's: the daemon's stop, and nothing else of it.
-struct Shutdown {
-    let stop: @Sendable () -> Void
+    func handle(_: NoService) throws -> Done { Done() }
 }
 
 extension DaemonUpgrade: Handled {

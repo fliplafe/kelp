@@ -113,7 +113,12 @@ extension Sessions {
                 && (!["shell", "custom"].contains(ls.snapshot.agent) || Self.tmuxName(ls.snapshot) != nil)
         }
         guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
-        let manifests = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+        let manifests = idleManifests.withLock { cache in
+            if let cache, Date().timeIntervalSince(cache.read) < 30 { return cache.all }
+            let all = AgentManifest.load(dir: root.appendingPathComponent("agents"))
+            cache = (Date(), all)
+            return all
+        }
         let candidates = idle.filter { Self.resumable($0.snapshot, manifests) }.map { ($0, $0.inputs) }
         // Off the ticker: waiting for programs to exit (up to 3 s each) must not hold up status for everyone else.
         let start = pausingIdle.withLock { busy -> Bool in

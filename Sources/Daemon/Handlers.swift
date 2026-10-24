@@ -61,7 +61,6 @@ extension LSPHost: DaemonService { static func of(_ d: Daemon) -> LSPHost { d.ls
 extension SettingsEvents: DaemonService { static func of(_ d: Daemon) -> SettingsEvents { d.settingsEvents } }
 extension UIStore: DaemonService { static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) } }
 extension ForgeWork: DaemonService { static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) } }
-extension Shutdown: DaemonService { static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } } }
 extension Upgrade: DaemonService {
     static func of(_ d: Daemon) -> Upgrade {
         let root = d.root, offloads = d.offloads
