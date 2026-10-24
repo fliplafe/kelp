@@ -274,19 +274,22 @@ final class Box: @unchecked Sendable {
 /// A terminal's fd is closed once, and never while a read source still has it: whether the source ended first (its
 /// program's EOF) or the hang-up did, and right away when no source ever had it.
 @Test func aTerminalsFdClosesOnceNoSourceHasIt() {
-    func open() -> Int32 { var fds: [Int32] = [0, 0]; pipe(&fds); close(fds[1]); return fds[0] }
-    func isOpen(_ fd: Int32) -> Bool { fcntl(fd, F_GETFD) != -1 }
-    let eofFirst = FDCloser(open())
+    // Counted, not looked up by number: a parallel test can be given the number the moment it's closed.
+    func closer() -> (FDCloser, () -> Int) {
+        let n = OSAllocatedUnfairLock(initialState: 0)
+        return (FDCloser(7, closing: { _ in n.withLock { $0 += 1 } }), { n.withLock { $0 } })
+    }
+    let (eofFirst, eofClosed) = closer()
     eofFirst.watch(); eofFirst.cancelled()
-    #expect(isOpen(eofFirst.fd))   // not asked yet: a hand-over keeps it
-    eofFirst.ask()
-    #expect(!isOpen(eofFirst.fd))
-    let hangUpFirst = FDCloser(open())
+    #expect(eofClosed() == 0)   // not asked yet: a hand-over keeps it
+    eofFirst.ask(); eofFirst.ask()
+    #expect(eofClosed() == 1)
+    let (hangUpFirst, hangUpClosed) = closer()
     hangUpFirst.watch(); hangUpFirst.ask()
-    #expect(isOpen(hangUpFirst.fd))   // GCD still has it
-    hangUpFirst.cancelled()
-    #expect(!isOpen(hangUpFirst.fd))
-    let never = FDCloser(open())
+    #expect(hangUpClosed() == 0)   // GCD still has it
+    hangUpFirst.cancelled(); hangUpFirst.cancelled()
+    #expect(hangUpClosed() == 1)
+    let (never, neverClosed) = closer()
     never.ask()
-    #expect(!isOpen(never.fd))
+    #expect(neverClosed() == 1)
 }

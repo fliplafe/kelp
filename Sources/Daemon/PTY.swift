@@ -275,7 +275,8 @@ public final class PTY: @unchecked Sendable {   // closed under io, reaped under
 final class FDCloser: Sendable {
     let fd: Int32
     private let state = OSAllocatedUnfairLock<(asked: Bool, watched: Bool, done: Bool)>(initialState: (false, false, false))
-    init(_ fd: Int32) { self.fd = fd }
+    private let closeFD: @Sendable (Int32) -> Void
+    init(_ fd: Int32, closing: @escaping @Sendable (Int32) -> Void = { _ = close($0) }) { self.fd = fd; closeFD = closing }
     /// A read source has the fd from now until its cancel handler runs (`cancelled`).
     func watch() { state.withLock { $0.watched = true } }
     /// Close it once no source has it: at once, or when the cancel handler runs. However the source ended (hung up, or
@@ -283,6 +284,6 @@ final class FDCloser: Sendable {
     func ask() { state.withLock { $0.asked = true; closeIfDue(&$0) } }
     func cancelled() { state.withLock { $0.watched = false; closeIfDue(&$0) } }
     private func closeIfDue(_ s: inout (asked: Bool, watched: Bool, done: Bool)) {
-        if s.asked && !s.watched && !s.done { s.done = true; close(fd) }
+        if s.asked && !s.watched && !s.done { s.done = true; closeFD(fd) }
     }
 }
