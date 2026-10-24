@@ -255,26 +255,28 @@ package final class ExtensionRegistry {
     }
 
     /// Like VS Code's "Install from VSIX…": a .vsix (a zip with the extension in `extension/`) or an extension folder,
-    /// copied into ~/.kelp/extensions. A version already there goes to the Trash.
+    /// copied into ~/.kelp/extensions. A version already there goes to the Trash. One with a Kelp manifest (it can run
+    /// commands) is installed once the user has seen what it runs, as one from GitHub.
     func install(_ src: URL) async throws {
-        let app = self.app
-        let dir = Self.userDir
-        try await Task.detached {
+        let app = self.app, dir = Self.userDir, fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: tmp) }
+        let (folder, name) = try await Task.detached { @Sendable () async throws -> (URL, String) in
             let fm = FileManager.default
-            var folder = src, name = src.lastPathComponent
-            let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            defer { try? fm.removeItem(at: tmp) }
-            if src.pathExtension.lowercased() == "vsix" {
-                let unzip = await Shell.exec(app, ["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
-                folder = tmp.appendingPathComponent("extension")
-                guard unzip.code == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
-                    throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
-                }
-                name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: folder.appendingPathComponent("package.json"))).manifest.id)
-                    ?? src.deletingPathExtension().lastPathComponent
+            guard src.pathExtension.lowercased() == "vsix" else { return (src, src.lastPathComponent) }
+            let unzip = await Shell.exec(app, ["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
+            let folder = tmp.appendingPathComponent("extension")
+            guard unzip.code == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
+                throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
             }
-            try IDE.installExtension(folder, as: name, in: dir)
+            let package = folder.appendingPathComponent("package.json")
+            let name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: package)))?.manifest.id
+            return (folder, name ?? src.deletingPathExtension().lastPathComponent)
         }.value
+        if fm.fileExists(atPath: folder.appendingPathComponent("extension.json").path) {
+            guard await ExtensionReview.approve(folder) else { return }
+        }
+        try await Task.detached { try IDE.installExtension(folder, as: name, in: dir) }.value
         reload()
     }
 

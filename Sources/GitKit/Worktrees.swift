@@ -125,7 +125,8 @@ extension Git {
                            stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
         }
         // Commits made on a detached HEAD belong to no branch at all: removing the folder would leave them to `git gc`.
-        if !dropCommits, remotes.of(path) != nil || FileManager.default.fileExists(atPath: path), case let n = commitsOnNoBranch(path, remotes: remotes), n > 0 {
+        if !dropCommits, remotes.of(path) != nil || FileManager.default.fileExists(atPath: path),
+           case let n = commitsOnNoBranch(path, remotes: remotes), n > 0 {
             throw GitError(args: ["worktree", "remove"], status: 1,
                            stderr: "This workspace has \(n) commit\(n == 1 ? "" : "s") on no branch (a detached HEAD). Create a branch for them first.")
         }
