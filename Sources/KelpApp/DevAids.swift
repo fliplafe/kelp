@@ -104,7 +104,7 @@ extension AppDelegate {
             RunLoop.main.add(Timer(timeInterval: 1.2, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)   // main run loop
             return
         }
-        if want != nil { print("WINDOW", w.title, w.frame) }
+        print("WINDOW", w.title, w.frame)
         print("WINDOWS", NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? "-" : $0.title)(\(type(of: $0)))" }.joined(separator: ", "))
         if let s = w.attachedSheet {
             print("SHEET", s.className, (s.contentView?.allSubviews(of: NSTextField.self) ?? []).map(\.stringValue).filter { !$0.isEmpty })

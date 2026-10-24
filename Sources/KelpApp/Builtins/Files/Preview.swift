@@ -43,6 +43,8 @@ final class ImagePreview: NSImageView {
         if let rep = image.representations.first, rep.pixelsWide > 0 { image.size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh) }
         self.image = image
         imageScaling = .scaleProportionallyDown; animates = true; focusRingType = .none
+        // Its size is the image's: at the default priority a big one would push the window past the screen.
+        for o in [NSLayoutConstraint.Orientation.horizontal, .vertical] { setContentCompressionResistancePriority(.defaultLow, for: o) }
         menu = NSMenu()
         menu?.add(String(localized: "Copy Image")) { [weak self] in self?.copy(nil) }
     }

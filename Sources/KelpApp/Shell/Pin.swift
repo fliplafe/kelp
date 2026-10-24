@@ -11,6 +11,9 @@ extension NSView {
     }
 }
 
+/// A scroll view's document that starts at the top.
+final class FlippedView: NSView { override var isFlipped: Bool { true } }
+
 /// `views` top to bottom, each the full width; the one without a height of its own takes the rest (a body under or
 /// over a bar). Used by every mode view.
 @MainActor

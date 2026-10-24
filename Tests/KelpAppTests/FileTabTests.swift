@@ -182,3 +182,13 @@ extension AppOfItsOwn {
         #expect(tab.editor?.text == "cccc\n")
     }
 }
+
+/// A picture bigger than the window is shown smaller: it used to grow the window to its own size (#39).
+@MainActor @Test func aBigImageDoesntGrowTheWindow() {
+    let image = NSImage(size: NSSize(width: 6000, height: 4000))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled, .resizable], backing: .buffered, defer: true)
+    let box = NSView(); window.contentView = box
+    box.pin(ImagePreview(image: image, url: URL(fileURLWithPath: "/tmp/big.png")))
+    window.layoutIfNeeded()
+    #expect(window.contentLayoutRect.size == NSSize(width: 800, height: 600))
+}

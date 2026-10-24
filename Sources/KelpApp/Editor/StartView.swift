@@ -86,13 +86,21 @@ final class StartView: NSView, NSTextFieldDelegate {
         stack.setCustomSpacing(14, after: icon); stack.setCustomSpacing(24, after: folder.isHidden ? title : folder)
         if let field { stack.setCustomSpacing(22, after: field) }
         stack.setCustomSpacing(6, after: open); stack.setCustomSpacing(14, after: card)
-        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        // In a scroll view: a low window scrolls the list rather than growing to hold it.
+        let page = FlippedView(); page.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView(); scroll.documentView = page; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        pin(scroll)
+        stack.translatesAutoresizingMaskIntoConstraints = false; page.addSubview(stack)
         let width = stack.widthAnchor.constraint(equalToConstant: 460); width.priority = .defaultHigh
         // A little above the middle; in a low window it starts at the top instead of going under it.
-        let middle = stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -30); middle.priority = .defaultHigh
+        let middle = stack.centerYAnchor.constraint(equalTo: page.centerYAnchor, constant: -30); middle.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor), middle, stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 24),
-            width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            page.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            page.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
+            { let fit = page.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor); fit.priority = .defaultLow; return fit }(),
+            stack.centerXAnchor.constraint(equalTo: page.centerXAnchor), middle, stack.topAnchor.constraint(greaterThanOrEqualTo: page.topAnchor, constant: 24),
+            page.bottomAnchor.constraint(greaterThanOrEqualTo: stack.bottomAnchor, constant: 24),
+            width, stack.leadingAnchor.constraint(greaterThanOrEqualTo: page.leadingAnchor, constant: 24),
             icon.widthAnchor.constraint(equalToConstant: 56), icon.heightAnchor.constraint(equalToConstant: 56),
             title.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor), folder.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
             card.widthAnchor.constraint(equalTo: stack.widthAnchor), open.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 4)

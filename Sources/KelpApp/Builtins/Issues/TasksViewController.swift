@@ -375,5 +375,3 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 }
-
-final class FlippedView: NSView { override var isFlipped: Bool { true } }

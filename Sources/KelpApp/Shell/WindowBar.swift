@@ -30,8 +30,8 @@ final class WindowBar: NSView {
         self.app = app; search = SearchPill(app: app)
         super.init(frame: .zero)
         name.font = .ui(13, weight: .semibold); name.lineBreakMode = .byTruncatingTail
-        name.setContentCompressionResistancePriority(.init(600), for: .horizontal)
-        folder.lineBreakMode = .byTruncatingMiddle; folder.setContentCompressionResistancePriority(.init(500), for: .horizontal)
+        name.setContentCompressionResistancePriority(.init(450), for: .horizontal)
+        folder.lineBreakMode = .byTruncatingMiddle; folder.setContentCompressionResistancePriority(.init(300), for: .horizontal)
         folder.target = self; folder.action = #selector(folderMenu); folder.toolTip = String(localized: "Open In, Reveal in Finder, Copy Path")
         branch.target = self; branch.action = #selector(branchMenu); branch.toolTip = String(localized: "Switch or create a branch")
         pr.target = self; pr.action = #selector(openPR)
@@ -45,7 +45,8 @@ final class WindowBar: NSView {
         back.target = self; back.action = #selector(goBack); forward.target = self; forward.action = #selector(goForward)
         let nav = NSStackView(views: [back, forward]); nav.spacing = 0
         for v in [context, nav, search, awake, sideBySide] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
-        // Short of room, the search leaves the centre first, then narrows; only then does the path shorten.
+        // Short of room, the search leaves the centre first, then narrows; only then does the path shorten, then the name.
+        // All below the window's own size (500): a long path or name truncates instead of widening the window.
         let wide = search.widthAnchor.constraint(equalToConstant: 280); wide.priority = .init(250)
         let center = search.centerXAnchor.constraint(equalTo: centerXAnchor); center.priority = .init(200)
         NSLayoutConstraint.activate([
