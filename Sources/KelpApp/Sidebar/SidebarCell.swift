@@ -94,7 +94,7 @@ final class SidebarCell: NSTableCellView {
         r.detachesHiddenViews = true
         for v in row where v === changes || v === pr { r.setVisibilityPriority(.notVisible, for: v) }
         r.translatesAutoresizingMaskIntoConstraints = false; addSubview(r)
-        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2), r.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2), r.trailingAnchor.constraint(equalTo: trailingAnchor),
                                      r.centerYAnchor.constraint(equalTo: centerYAnchor)])
     }
 
@@ -126,7 +126,7 @@ final class SidebarCell: NSTableCellView {
     private func fitBadges() {
         guard let r = changes.superview as? NSStackView else { return }
         let others = r.views.filter { $0 !== changes && $0 !== pr && !$0.isHidden }
-        var room = bounds.width - 8 - others.reduce(0) { $0 + max(0, $1.intrinsicContentSize.width) + r.spacing }
+        var room = bounds.width - 2 - others.reduce(0) { $0 + max(0, $1.intrinsicContentSize.width) + r.spacing }
         for (b, has) in [(changes, hasBadge.changes), (pr, hasBadge.pr)] {
             let need = b.intrinsicContentSize.width + r.spacing, show = has && room >= need
             if show { room -= need }
@@ -140,6 +140,7 @@ final class SidebarCell: NSTableCellView {
     }
 
     func update() {
+        defer { trailing.isHidden = trailing.stringValue.isEmpty }   // an empty label would still take its spacing
         updateBadges()
         let m = app
         func live(_ wid: String) -> [Session] { m.sessions.filter { $0.worktreeId == wid && $0.status != .exited && $0.agent != "shell" } }
@@ -276,8 +277,9 @@ final class SidebarOutline: NSOutlineView {
     }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var r = padded(super.frameOfCell(atColumn: column, row: row), row)
+        // The content ends as far from the right edge as a project's icon starts from the left.
         let x = Self.lead + (level(forRow: row) > 0 ? Self.step : 0)
-        r.size.width = r.maxX - x; r.origin.x = x
+        r.origin.x = x; r.size.width = bounds.width - Self.lead - 2 - x
         return r
     }
     private func padded(_ r: NSRect, _ row: Int) -> NSRect {
@@ -295,8 +297,8 @@ final class SidebarRowView: NSTableRowView {
     /// Where this row is in its project's card; the outline leaves room for its ends (`pads`).
     var group: (first: Bool, last: Bool)? { didSet { if group?.first != oldValue?.first || group?.last != oldValue?.last { needsDisplay = true } } }
 
-    /// A project's card: 2 pt over its first row and under its last (4 between cards), 4 more inside under the rows below its name.
-    static func pads(_ g: (first: Bool, last: Bool)) -> (top: CGFloat, bottom: CGFloat) { (g.first ? 2 : 0, g.last ? (g.first ? 2 : 6) : 0) }
+    /// A project's card: 4 pt over its first row and under its last (8 between cards), 4 more inside under the rows below its name.
+    static func pads(_ g: (first: Bool, last: Bool)) -> (top: CGFloat, bottom: CGFloat) { (g.first ? 4 : 0, g.last ? (g.first ? 4 : 8) : 0) }
 
     static let groupFill = NSColor.labelColor.withAlphaComponent(0.045)
     static let cardFill = NSColor.labelColor.withAlphaComponent(0.075)
@@ -307,7 +309,7 @@ final class SidebarRowView: NSTableRowView {
         // Rows in the middle extend past their bounds, so only a card's ends are rounded. Flipped: y grows down.
         let pad = group.map(Self.pads) ?? (top: 0, bottom: 0)
         if let group {
-            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 2, last: group.last, bottom: 2, radius: 10, Self.groupFill)
+            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 4, last: group.last, bottom: 4, radius: 10, Self.groupFill)
         }
         let side: CGFloat = group == nil ? 6 : 12
         if let card {
