@@ -46,3 +46,15 @@ import Testing
     for _ in 0..<(PTY.queueLimit >> 20) + 16 { p.write(chunk) }
     #expect(p.queued.withLock { $0 } <= PTY.queueLimit)
 }
+
+/// A program that has already ended when its exit starts being watched (a process source misses a zombie) is still
+/// seen: its exit is reported and it's reaped.
+@Test func aProgramThatEndedBeforeItWasWatchedIsSeen() async throws {
+    let p = try PTY(argv: ["/bin/sh", "-c", "exit 7"], cwd: "/tmp", env: [:], trampoline: nil)
+    try await Task.sleep(for: .milliseconds(300))   // long gone by now: a zombie
+    let box = Box()
+    p.onExit = { box.exit($0) }
+    p.start()
+    #expect(try await waitFor(5) { box.code != nil })
+    #expect(p.phases.program == .reaped)
+}

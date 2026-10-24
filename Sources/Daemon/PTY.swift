@@ -158,12 +158,18 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
         closer.watch()
         q.sync { phase.withLock { _ in source = src } }
         src.resume()
-        let pid = pid
-        DispatchQueue(label: "kelp.pty.wait").async { [weak self] in
-            // Wait without reaping: while it's a zombie its pid can't be anyone else's, so `reaped` goes up first.
-            var info = siginfo_t()
-            while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) < 0 && errno == EINTR {}
-            // Handed over: the kelpd that takes over reaps it (exiting before the exec, it's that one's zombie to read).
+        watchExit()
+    }
+
+    /// The program's exit, seen without a thread of its own waiting for it (a process source). A zombie until `reaped`
+    /// goes up, so its pid can't be anyone else's meanwhile; one handed over is the next kelpd's to reap. The source
+    /// keeps itself until it fired, so a PTY dropped meanwhile still has its program reaped.
+    private func watchExit() {
+        let pid = pid, once = OSAllocatedUnfairLock(initialState: false)
+        let exits = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
+        let reap: @Sendable () -> Void = { [weak self] in
+            guard once.withLock({ first in defer { first = true }; return !first }) else { return }
+            exits.cancel()
             let handedOver = self.map { me in
                 me.phase.withLock { p -> Bool in
                     if p.program == .handedOver { return true }
@@ -178,6 +184,11 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
             let status = st
             pty.q.async { pty.finish(status) }
         }
+        exits.setEventHandler(handler: reap)
+        exits.resume()
+        // Exited before the source was armed (a process source misses one that's already a zombie): seen here.
+        var info = siginfo_t()
+        if waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT | WNOHANG) == 0, info.si_pid == pid { reap() }
     }
 
     private func drain() {
