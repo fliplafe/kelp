@@ -208,7 +208,8 @@ struct ExtActions {
         }
         // A command gets the values as shell variables, never as text in it: $(…) or a newline in a title can't run.
         guard quote else { return ShellTemplate.substitute(template) { value($0) ?? "" } }
-        // Each of them as KELP_<name> as well: the item's fields and the workspace's.
+        // Each of them as KELP_<name> as well, for a command that reads them so: the item's fields and the workspace's.
+        guard template.contains("KELP_") else { return ShellTemplate.fill(template, value) }
         var named = ["workspace.path", "workspace.branch", "workspace.name", "project.path", "file"].reduce(into: [String: String]()) { $0[$1] = value($1) }
         if case .object(let fields)? = item { for (k, v) in fields { named[k] = Self.text(v) } }
         return ShellTemplate.fill(template, named: named, value)
