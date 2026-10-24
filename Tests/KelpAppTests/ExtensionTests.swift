@@ -126,7 +126,8 @@ extension OneAtATime {
                   #"/bin/sh -c 'printf %s ${title}'"#, #"env bash -c 'printf %s ${title}'"#, #"sh -c "printf %s ${title}""#,
                   #"/bin/bash -c "printf %s ${title}""#, "sh <<EOF\nprintf %s ${title}\nEOF", "cat <<EOF | sh\nprintf %s ${title}\nEOF",
                   #"ssh -o x=y host 'printf %s ${title}'"#, #"ssh host "printf %s ${title}""#, #"ssh host printf %s ${title}"#,
-                  #"ssh -o x=y host 'cd /' \; printf %s ${title}"#]
+                  #"ssh -o x=y host 'cd /' \; printf %s ${title}"#,
+                  #"printf %s "$KELP_title""#, #"sh -c 'printf %s "$KELP_title"'"#, #"python3 -c 'import os; print(os.environ["KELP_title"], end="")'"#]
     for template in shapes {
         let sh = Process(), out = Pipe()
         // ssh is a stand-in that joins the words after the host into one command line for sh, as ssh does for a host.

@@ -66,6 +66,12 @@ Both take the same view definitions; `editors` also appear in the editor area's 
   `eval`, a here-document fed to `sh`, it's that shell's variable; in `ssh host '…'` / `"…"` it arrives quoted for the
   host's shell. In `python3 -c`, `perl -e`, `node -e` or `osascript -e` code, `${Field}` is left as the variable's name:
   read it there as the environment variable `KELP_V1` (the first placeholder, `KELP_V2` the next…).
+- Plainest of all: every field of the row and each value above is also exported by name, `KELP_<name>` (`.` and other
+  signs as `_`: `$KELP_title`, `$KELP_workspace_path`). Write `"$KELP_title"` in a command, or read it from the
+  environment in any program, and nothing has to be quoted. Over `ssh` the host doesn't get them: use `${Field}` there.
+- Plainest of all: every field of the row and each value above is also exported by name, `KELP_<name>` (`.` and other
+  signs as `_`: `$KELP_title`, `$KELP_workspace_path`). Write `"$KELP_title"` in a command, or read it from the
+  environment in any program, and nothing has to be quoted. Over `ssh` the host doesn't get them: use `${Field}` there.
 - `status` maps a field to a status dot: `working`, `waiting`, `done`, `idle`, `ended`.
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
 - `refresh`: seconds between reloads (0 = only on open and after actions).

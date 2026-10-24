@@ -9,8 +9,10 @@ import Core
 /// as `"${KELP_Vn}"` for that shell to expand from the environment, as data. On an ssh line (quoted or bare) the value
 /// goes in as its text, quoted for the host's shell, which this one's variables don't reach.
 public enum ShellTemplate {
-    /// `value(name)` nil: the placeholder stays as written (the shell's own `${HOME}`).
-    public static func fill(_ template: String, _ value: (String) -> String?) -> String {
+    /// `value(name)` nil: the placeholder stays as written (the shell's own `${HOME}`). `named`: values exported as
+    /// `KELP_<name>` too (`workspace.path` as `KELP_workspace_path`), for a command that reads `"$KELP_title"` itself:
+    /// the plainest way to keep a value data, whatever shell or program gets it.
+    public static func fill(_ template: String, named: [String: String] = [:], _ value: (String) -> String?) -> String {
         var assign: [String] = [], out = "", rest = Substring(template), quotes = ShellQuotes()
         while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
             out += rest[..<open.lowerBound]; quotes.read(rest[..<open.lowerBound])
@@ -25,7 +27,14 @@ public enum ShellTemplate {
             }
             rest = rest[rest.index(after: close)...]
         }
+        assign += named.sorted { $0.key < $1.key }.compactMap { k, v in envName(k).map { "\($0)=\(IDE.shellWord(v))" } }
         return assign.isEmpty ? out + rest : "export " + assign.joined(separator: " ") + "; " + out + rest
+    }
+
+    /// `KELP_` and the name with anything but letters, digits and _ as _; nil for one that's empty.
+    public static func envName(_ name: String) -> String? {
+        let safe = String(name.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
+        return safe.isEmpty ? nil : "KELP_" + safe
     }
 
     /// Plain text (a title, a prompt): values put in as they are.

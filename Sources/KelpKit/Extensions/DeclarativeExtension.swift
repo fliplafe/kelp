@@ -207,7 +207,11 @@ struct ExtActions {
             }
         }
         // A command gets the values as shell variables, never as text in it: $(…) or a newline in a title can't run.
-        return quote ? ShellTemplate.fill(template, value) : ShellTemplate.substitute(template) { value($0) ?? "" }
+        guard quote else { return ShellTemplate.substitute(template) { value($0) ?? "" } }
+        // Each of them as KELP_<name> as well: the item's fields and the workspace's.
+        var named = ["workspace.path", "workspace.branch", "workspace.name", "project.path", "file"].reduce(into: [String: String]()) { $0[$1] = value($1) }
+        if case .object(let fields)? = item { for (k, v) in fields { named[k] = Self.text(v) } }
+        return ShellTemplate.fill(template, named: named, value)
     }
 
     /// An `open` action's URI: the extension's template with the item's values put in, for one that opens something. A
