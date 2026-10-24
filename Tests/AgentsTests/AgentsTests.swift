@@ -59,6 +59,7 @@ import TestSupport
 
 @Test func stripRemovesCharsetSelection() {
     #expect(StatusDetector.stripANSI("\u{1B}(Bhi") == "hi")
+    #expect(StatusDetector.stripANSI("Trust\u{1B}[5;9Hthis\u{1B}[5;14Hfolder?") == "Trust this folder?")
     #expect(StatusDetector.stripANSI("\u{1B}(B") == "")
     #expect(StatusDetector.stripANSI("\u{1B}(B\u{1B}(B") == "")
     #expect(StatusDetector.stripANSI("\u{1B})0hello\u{1B}*B\u{1B}+A") == "hello")
@@ -289,7 +290,7 @@ import TestSupport
 /// A redraw of borders and a spinner, each ended by ESC ( B, has no words.
 @Test func characterSetSwitchesAreNotWords() {
     let redraw = "\u{1B}[23;3H┃\u{1B}[2C◆\u{1B}[55;7H\u{1B}(B\u{1B}[m┃\u{1B}(B┃⠴\u{1B}(B"
-    #expect(StatusDetector.stripANSI(redraw) == "┃ ◆┃┃⠴")   // the cursor move keeps its gap
+    #expect(StatusDetector.stripANSI(redraw) == " ┃ ◆ ┃┃⠴")   // each cursor move keeps its gap
     #expect(!StatusDetector.hasWords(StatusDetector.stripANSI(redraw)))
 }
 

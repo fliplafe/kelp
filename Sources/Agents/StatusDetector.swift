@@ -109,8 +109,9 @@ public struct StatusDetector: Sendable {
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 
-    // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable.
-    private static let cursorMoves = try? NSRegularExpression(pattern: #"\x{1B}\[\d*[GC]"#)
+    // TUIs often place words with cursor moves instead of spaces; keep a space there so text stays readable. Codex puts
+    // each word at its own row;col ("Trust␛[5;9Hthis␛[5;14Hfolder?").
+    private static let cursorMoves = try? NSRegularExpression(pattern: #"\x{1B}\[[\d;]*[GCHf]"#)
     // Character set selections too (ESC ( B, ESC ) 0…): Grok ends each redraw with one, and its "B"s read as words, a redraw as work.
     private static let escapes = try? NSRegularExpression(pattern: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]|\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)|\x{1B}[78=>]|\x{1B}[()*+]."#)
 
