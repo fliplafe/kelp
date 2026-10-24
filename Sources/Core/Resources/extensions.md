@@ -66,6 +66,13 @@ Both take the same view definitions; `editors` also appear in the editor area's 
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
 - `refresh`: seconds between reloads (0 = only on open and after actions).
 
+### badge — a mark on a panel's icon
+A panel (list or web) may add `"badge": { "command": "gh pr list --search review-requested:@me --json number --jq length", "refresh": 120 }`.
+The command runs every `refresh` seconds (60 by default) while the panel is in the inspector, even when it isn't shown, and prints:
+a number (a grey count; 0 or nothing: no badge), any other text (a dot, gone once the panel is opened, back when the
+text changes), or either after `!` (red: something failed). A command that fails shows a red dot.
+A web panel can also set it itself: `kelp.badge(3)`, `kelp.badge("!")`, `kelp.badge(null)`.
+
 ### web — any UI you like
 ```json
 { "id": "dashboard", "title": "Emulator", "icon": "iphone", "web": "index.html" }
@@ -79,6 +86,7 @@ kelp.agent("Write a test for the parser") // new agent tab with this prompt type
 await kelp.settings.get("my.key"); await kelp.settings.set("my.key", 3)
 kelp.workspace                            // {name, path, branch, project}
 kelp.on("settings", s => …); kelp.on("workspace", w => …)
+kelp.badge(2)                             // the panel icon's badge (see badge above)
 ```
 
 ## Actions (list rows, toolbars, commands)
