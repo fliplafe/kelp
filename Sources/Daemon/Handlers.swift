@@ -197,7 +197,10 @@ final class Slots: Sendable {
     let limit: Int
     private struct State { var held = 0; var waiting: [CheckedContinuation<Void, Never>] = [] }
     private let state = OSAllocatedUnfairLock(initialState: State())
-    init(_ limit: Int) { self.limit = limit }
+    /// Quick work's own cap (a thread each): it never waits behind slow work, only behind this much quick work at once,
+    /// so a client looping on `kelp hook` can't make thousands of threads.
+    private let quickSlots: Slots?
+    init(_ limit: Int, quick: Int? = 64) { self.limit = limit; quickSlots = quick.map { Slots($0, quick: nil) } }
 
     func acquire() async {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
@@ -226,11 +229,12 @@ final class Slots: Sendable {
 
     /// `work` on a thread of its own once it has a slot (`Daemon.offload`); `quick`, at once, with no slot and no program.
     func run<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
-        if !quick { await acquire() }
+        let slots = quick ? quickSlots : self
+        await slots?.acquire()
         return try await withCheckedThrowingContinuation { c in
-            Thread.detachNewThread { [self] in
+            Thread.detachNewThread {
                 let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
-                if !quick { release() }
+                slots?.release()
                 c.resume(with: r)
             }
         }
