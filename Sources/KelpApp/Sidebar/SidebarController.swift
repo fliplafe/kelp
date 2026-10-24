@@ -41,6 +41,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         set { app.uiState["sidebar.collapsed"] = try? .from(newValue.sorted()) }
     }
     private var syncing = false
+    /// The workspace whose project syncSelection last opened (or found open).
+    private var revealed: String?
     var renaming: String?
     private let empty = NSStackView()
     private let search = NSSearchField()
@@ -91,8 +93,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
             add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
-            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 6),
-            summary.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6),
+            // In line with the projects' cards (SidebarRowView.band): 8 pt to the window's edge and to the editor area.
+            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
+            summary.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -243,8 +246,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     /// The row of what's on screen: the agent whose tab has focus, else its workspace. Several rows picked stay picked.
     private func syncSelection() {
         guard let id = app.workbench.workspaceId, let w = workspaceNode(id), outline.selectedRowIndexes.count <= 1 else { return }
-        // Shown from elsewhere (⌃1, the line over the list) while its project is folded: open the project.
-        if let p = outline.parent(forItem: w) as? Node, !outline.isItemExpanded(p) { outline.expandItem(p) }
+        // Gone to from elsewhere (⌃1, the line over the list) while its project is folded: open the project. Only on the
+        // way in: a project folded while you're in it stays folded.
+        if id != revealed, let p = outline.parent(forItem: w) as? Node, !outline.isItemExpanded(p) { outline.expandItem(p) }
+        revealed = id
         let tab = app.workbench.focusedTab ?? ""
         let agent = TabURI.scheme(tab) == "session" ? w.children.first { $0.key == "a:" + TabURI.body(tab) } : nil
         let row = agent.map { outline.row(forItem: $0) }.flatMap { $0 >= 0 ? $0 : nil } ?? outline.row(forItem: w)
@@ -280,7 +285,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         if case .section? = (item as? Node)?.kind { true } else { false }
     }
     func outlineView(_ o: NSOutlineView, shouldSelectItem item: Any) -> Bool { !Self.isHeader(item) || (item as? Node)?.workspace != nil }
-    func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool { !Self.isHeader(item) }
+    // A project too: the outline doesn't fold an item without one. Its triangle isn't drawn (SidebarOutline), it has its own chevron.
+    func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool {
+        if case .section? = (item as? Node)?.kind { false } else { true }
+    }
     // One line per row, as dense as Finder's and Xcode's sidebars; headers a little taller for air above them.
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let n = item as? Node else { return TextSize.of(24) }
@@ -338,6 +346,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineViewItemDidExpand(_ n: Notification) { remember(n, collapsed: false) }
     private func remember(_ n: Notification, collapsed c: Bool) {
         guard !syncing, let node = n.userInfo?["NSObject"] as? Node, node.id != nil else { return }
+        // A project folding folds its workspaces with it: that isn't the user folding them.
+        if let p = outline.parent(forItem: node) as? Node, !outline.isItemExpanded(p) { return }
         if c { collapsed.insert(node.key) } else { collapsed.remove(node.key) }
         if !c, case .project = node.kind { syncing = true; expand(node); syncing = false }
         refreshCell(node.key)   // collapsed, the row shows its agents' state itself

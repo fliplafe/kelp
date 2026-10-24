@@ -276,15 +276,16 @@ final class SidebarOutline: NSOutlineView {
     /// Room over and under a row's content, where its project's card opens and closes (SidebarRowView.group).
     var pads: (Int) -> (top: CGFloat, bottom: CGFloat) = { _ in (0, 0) }
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        if level(forRow: row) == 0 { return .zero }   // a project folds from the chevron on its row
         var r = padded(super.frameOfOutlineCell(atRow: row), row)
         r.origin.x = Self.lead + 2 + 8 - r.width / 2
         return r
     }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var r = padded(super.frameOfCell(atColumn: column, row: row), row)
-        // The content ends as far from the right edge as a project's icon starts from the left.
+        // The content ends as far inside its card on the right as a project's icon starts on the left (SidebarRowView.band).
         let x = Self.lead + (level(forRow: row) > 0 ? Self.step : 0)
-        r.origin.x = x; r.size.width = bounds.width - Self.lead - 2 - x
+        r.origin.x = x; r.size.width = bounds.width - 8 - x
         return r
     }
     private func padded(_ r: NSRect, _ row: Int) -> NSRect {
@@ -314,14 +315,14 @@ final class SidebarRowView: NSTableRowView {
         // Rows in the middle extend past their bounds, so only a card's ends are rounded. Flipped: y grows down.
         let pad = group.map(Self.pads) ?? (top: 0, bottom: 0)
         if let group {
-            fill(bounds.insetBy(dx: 6, dy: 0), first: group.first, top: 4, last: group.last, bottom: 4, radius: 10, Self.groupFill)
+            fill(band(6), first: group.first, top: 4, last: group.last, bottom: 4, radius: 10, Self.groupFill)
         }
         let side: CGFloat = group == nil ? 6 : 12
         if let card {
-            fill(bounds.insetBy(dx: side, dy: 0), first: card.first, top: 0, last: card.last, bottom: pad.bottom, radius: 8, Self.cardFill)
+            fill(band(side), first: card.first, top: 0, last: card.last, bottom: pad.bottom, radius: 8, Self.cardFill)
         }
         guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
-        var pill = bounds.insetBy(dx: (card == nil ? 6 : side) + 4, dy: 2)
+        var pill = band((card == nil ? 6 : side) + 4).insetBy(dx: 0, dy: 2)
         if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }
         if card?.last == true { pill.size.height -= 1 }
         pill.origin.y += pad.top; pill.size.height -= pad.top + pad.bottom
@@ -331,6 +332,11 @@ final class SidebarRowView: NSTableRowView {
         Self.pillFill.setFill()
         NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+    /// The row inset by `inset` on the left and 8 pt less on the right: past the sidebar's right edge come the divider
+    /// and the editor area's own margin, so a card leaves the same gap to the window's edge and to the editor (8 pt).
+    private func band(_ inset: CGFloat) -> NSRect {
+        NSRect(x: bounds.minX + inset + 2, y: bounds.minY, width: bounds.width - 2 * inset + 4, height: bounds.height)
     }
     // swiftlint:disable:next function_parameter_count
     private func fill(_ r: NSRect, first: Bool, top: CGFloat, last: Bool, bottom: CGFloat, radius: CGFloat, _ color: NSColor) {

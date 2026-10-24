@@ -56,6 +56,28 @@ extension OneAtATime {
     }
 }
 
+@Test func aProjectFoldsFromItsChevronAndSaysWhatItsAgentsDo() throws {
+    let agent = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Fix login bug")
+    try withSidebar(repos: [project], worktrees: [desk("w1", "feat/login"), desk("w2", "feat/billing")], sessions: [agent]) { vc, o in
+        #expect(o.numberOfRows == 4)
+        func fold() throws -> NSButton {
+            let cell = try #require(o.view(atColumn: 0, row: 0, makeIfNecessary: true))
+            func find(_ v: NSView) -> NSButton? {
+                if let b = v as? NSButton, ["Collapse", "Expand"].contains(b.image?.accessibilityDescription ?? "") { return b }
+                return v.subviews.lazy.compactMap(find).first
+            }
+            return try #require(find(cell))
+        }
+        try fold().performClick(nil)
+        #expect(o.numberOfRows == 1)                            // the project alone
+        #expect(rows(of: o)[0].contains("1"))                   // and how many of its agents need you
+        #expect(vc.app.uiState.strings("sidebar.collapsed") == ["p:r1"])   // kept for the next launch
+        try fold().performClick(nil)
+        #expect(o.numberOfRows == 4)                            // its workspaces open as they were
+        #expect(vc.app.uiState.strings("sidebar.collapsed").isEmpty)
+    }
+}
+
 @Test func anEndedAgentAndAPlainTerminalAreNotListed() throws {
     let ended = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .exited, title: "Old chat")
     let shell = Session(worktreeId: "w1", cwd: "/", command: "zsh", agent: "shell", status: .idle, title: "zsh")
