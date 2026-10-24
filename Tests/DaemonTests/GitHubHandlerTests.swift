@@ -22,7 +22,8 @@ private let fakeGh: (log: String, script: String) = {
                     *) printf 'step 1\\nstep 2 failed\\n';;
                   esac;;
       "run list") echo '[{"databaseId":99,"displayTitle":"Add login","workflowName":"CI","status":"completed","conclusion":"failure","event":"push","url":"https://github.com/o/r/actions/runs/99","createdAt":"2026-10-20T10:00:00Z"}]';;
-      "run rerun"|"workflow run") ;;
+      "run rerun"|"workflow run"|"pr merge") ;;
+      "pr create") echo "Creating pull request"; echo "https://github.com/o/r/pull/8";;
       "repo view") echo '{"owner":{"id":"O_1","login":"acme"}}';;
       "project list") echo '{"projects":[{"closed":false,"id":"PVT_1","number":3,"owner":{"login":"acme"},"title":"Roadmap","url":"https://github.com/orgs/acme/projects/3"}],"totalCount":1}';;
       "project item-list") echo '{"items":[{"content":{"type":"Issue","url":"https://github.com/acme/r/issues/5"},"id":"I1","status":"In Progress","title":"Login"},\
@@ -198,4 +199,24 @@ private let fakeGlab: String = {
     #expect(sent.contains("scope=created_by_me") && sent.contains("scope=assigned_to_me"))
     let branch = try await r.c.call("github.branchPR", .obj(["worktreeId": .string(wt.id)]))
     #expect(branch["number"]?.int == 9 && branch["state"]?.string == "MERGED" && branch["checks"]?["pending"]?.int == 1)
+}
+
+/// On GitHub a pull request is opened and merged through gh: pushed first, titled from its commits, draft when asked,
+/// its URL the last line gh prints; merged by number in the method asked for.
+@Test func onGitHubAPullRequestIsOpenedAndMergedThroughGh() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let wt = try await desk(r, "feat/gh")
+    let bare = tmp().path
+    try Git.run(["init", "-q", "--bare", bare], cwd: bare)
+    try Git.run(["remote", "add", "origin", bare], cwd: wt.path)
+    try "x\n".write(toFile: wt.path + "/x.txt", atomically: true, encoding: .utf8)
+    try Git.run(["add", "x.txt"], cwd: wt.path)
+    try Git.run(["commit", "-qm", "Add x"], cwd: wt.path)
+    let made = try await r.c.call("github.pr-create", .obj(["worktreeId": .string(wt.id), "draft": true]))
+    #expect(made["url"]?.string == "https://github.com/o/r/pull/8")
+    #expect(Git.branchExists(bare, "feat/gh"))   // pushed before gh was asked
+    let create = calls().last { $0.hasPrefix("pr create") } ?? ""
+    #expect(create.contains("--title Add x") && create.contains("--base main") && create.hasSuffix("--draft"))
+    _ = try await r.c.call("github.pr-merge", .obj(["worktreeId": .string(wt.id), "pr": 8, "method": "rebase"]))
+    #expect(calls().contains("pr merge 8 --rebase"))
 }
