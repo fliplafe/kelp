@@ -28,7 +28,7 @@ import Agents
     func screen() async throws -> String { try await w.c.call(SessionRead(id: s.id)) }
     func keys(_ k: String) async throws { _ = try await w.c.call(SessionWrite(id: s.id, base64: Data(k.utf8).base64EncodedString())) }
     #expect(try await waitFor(10) { try await screen().contains("ready") })
-    try await Task.sleep(for: .seconds(2.5))   // started up: drawn and quiet, sends go straight in
+    #expect(try await waitFor(30) { w.d.sessions.existing(s.id)?.startedUp == true })   // sends go straight in
     try await keys("half")
     await #expect(throws: RPCError.self) { _ = try await w.c.call(SessionSend(id: s.id, text: "hello")) }
     _ = try await w.c.call(SessionSend(id: s.id, text: " ref", enter: false))
@@ -46,7 +46,7 @@ import Agents
     let s = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "stty -echo; echo ready; exec cat"))
     func screen() async throws -> String { try await w.c.call(SessionRead(id: s.id)) }
     #expect(try await waitFor(10) { try await screen().contains("ready") })
-    try await Task.sleep(for: .seconds(2.5))   // started up: the send is typed now
+    #expect(try await waitFor(30) { w.d.sessions.existing(s.id)?.startedUp == true })   // the send is typed now
     _ = try await w.c.call(SessionSend(id: s.id, text: "hello"))
     _ = try await w.c.call(SessionWrite(id: s.id, base64: Data("x\r".utf8).base64EncodedString()))   // within its 0.3 s
     func lines() async throws -> [String] { try await screen().split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) } }
@@ -120,7 +120,7 @@ import Agents
     ls.inOrder { let old = ls.snapshot; gate.wait(); _ = try? w.d.store.update(old) }   // held until the pause had its say
     let paused = OSAllocatedUnfairLock(initialState: false)
     Thread.detachNewThread { try? w.d.sessions.pauseSessions(of: wt.id); paused.withLock { $0 = true } }
-    try await Task.sleep(for: .milliseconds(500))
+    #expect(try await waitFor(5) { w.d.sessions.live[s.id] == nil })   // the pause took it out; its save waits behind the gate
     gate.signal()
     #expect(try await waitFor(10) { paused.withLock { $0 } })
     await withCheckedContinuation { c in ls.inOrder { c.resume() } }   // whatever was queued is saved by now
@@ -140,7 +140,7 @@ import Agents
     old.hook("working")   // its status change, queued behind `first`
     let paused = OSAllocatedUnfairLock(initialState: false)
     Thread.detachNewThread { try? w.d.sessions.pauseSessions(of: wt.id); paused.withLock { $0 = true } }
-    try await Task.sleep(for: .milliseconds(300))   // the pause's own save is queued now
+    #expect(try await waitFor(5) { w.d.sessions.live[s.id] == nil })   // the pause took it out; its own save is queued next
     old.inOrder { second.wait() }   // whatever the status change queues again lands behind this
     first.signal()
     #expect(try await waitFor(10) { paused.withLock { $0 } })
@@ -178,7 +178,7 @@ import Agents
     Thread.detachNewThread { w.d.sessions.pauseIdle(ls, inputs: ls.inputs) }
     #expect(try await waitFor(5) { w.d.sessions.live[s.id] == nil })
     let sent = Task { try await w.c.call(SessionWrite(id: s.id, text: "hello\r")) }
-    try await Task.sleep(for: .milliseconds(300))
+    #expect(try await waitFor(5) { !w.d.sessions.lanes.isClear(s.id) })   // the write waits on the session's lane
     gate.signal()
     _ = try await sent.value
     #expect(try #require(w.d.sessions.live[s.id]) !== ls)

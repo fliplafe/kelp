@@ -441,6 +441,8 @@ final class LiveSession: Sendable {
         defer { state.withLock { $0.inputsInFlight -= 1 } }
         return try work()
     }
+    /// Drawn and quiet after its start (or 25 s on): text sent now is typed at once, not kept for later.
+    var startedUp: Bool { state.withLock { $0.startedUp } }
     /// Inputs taken so far: an idle pause lets go only if none came after it looked.
     var inputs: Int { state.withLock { $0.inputs } }
     /// `letGo` for an idle pause: only while nobody is attached and no input came since there were `seen`.

@@ -144,7 +144,7 @@ private func name(_ pid: pid_t) -> String {
     let (d, c, root) = try daemon(); defer { d.stop() }
     let s = try await c.call(SessionCreate(cwd: root.path, command: readAndEcho))
     #expect(try await waitFor { d.sessions.existing(s.id)?.tail(4096).range(of: Data("before".utf8)) != nil })
-    try await Task.sleep(for: .seconds(2.5))   // started up: a send goes straight in
+    #expect(try await waitFor(30) { d.sessions.existing(s.id)?.startedUp == true })   // a send goes straight in
     _ = try await c.call(SessionSend(id: s.id, text: "whole"))
     let next = try Daemon(root: root)
     try next.start(adopting: try #require(d.handOver())); defer { next.stop() }
