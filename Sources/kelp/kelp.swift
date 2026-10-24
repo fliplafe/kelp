@@ -32,7 +32,8 @@ usage: kelp <command>
   run <command-id> [json-args]         run an app command (ids from `kelp ui state`)
   ext list | new <id> [--name N] [--description D] | enable <id> | disable <id> | reload | path
   ext search [text]                    the extension library (github.com/nikiomori/kelp-extensions)
-  ext install <id | github-url | ./folder>   from the library, any GitHub folder (…/tree/<branch>/<path>) or disk
+  ext install <id | github-url | ./folder> [--yes]   from the library, any GitHub folder (…/tree/<branch>/<path>) or
+                                       disk; one from elsewhere on GitHub shows what it runs and asks first (--yes: don't)
   ext update [id]                      what came from GitHub, to the library's latest (or its branch's)
 """
 
@@ -382,7 +383,7 @@ func plist() -> String {
                 let src = URL(fileURLWithPath: what).standardizedFileURL
                 installed(try IDE.installExtension(src, as: src.lastPathComponent, in: Paths.extensions))
             } else if what.contains("/") {
-                installed(try await fetch(what, as: nil, c))
+                installed(try await fetch(what, as: nil, c, review: !args.contains("--yes")))
             } else {
                 guard let e = try await c.call(ExtensionLibrary()).first(where: { $0.id == what }) else { fail("no \(what) in the library (kelp ext search)") }
                 installed(try await fetch(e.source, as: nil, c))
@@ -396,16 +397,29 @@ func plist() -> String {
                 // One from elsewhere on GitHub may have moved on its branch: it's fetched again.
                 let latest = library.first { $0.id == id }?.source
                 if latest == source { print("\(id) is up to date"); continue }
-                installed(try await fetch(latest ?? source, as: f.lastPathComponent, c))
+                // The library's pinned commit was reviewed; a branch elsewhere may hold anything its owner pushed since.
+                installed(try await fetch(latest ?? source, as: f.lastPathComponent, c, review: latest == nil && !args.contains("--yes")))
             }
             if !found { print(args.first.map { "\($0) wasn't installed from GitHub" } ?? "nothing here was installed from GitHub") }
         default: print(usage)
         }
     }
 
-    /// Downloads it through the daemon and moves it in, as `name` (else its id).
-    static func fetch(_ source: String, as name: String?, _ c: RPCClient) async throws -> URL {
+    /// Downloads it through the daemon and moves it in, as `name` (else its id). `review`: what it can run is shown
+    /// first and asked about in a terminal; with no terminal to ask in, it's refused (`--yes` says yes).
+    static func fetch(_ source: String, as name: String?, _ c: RPCClient, review: Bool = false) async throws -> URL {
         let folder = URL(fileURLWithPath: try await c.call(ExtensionFetch(source: source)).folder)
+        if review {
+            let (commands, pages) = IDE.commandsIn(manifest(folder))
+            if !commands.isEmpty || !pages.isEmpty {
+                print("\(source) can run:")
+                commands.forEach { print("  \($0)") }
+                pages.forEach { print("  \($0) (a web page, which can run any command)") }
+                guard isatty(STDIN_FILENO) == 1 else { fail("not installed: run it again with --yes to install it as it is") }
+                print("Install it? [y/N] ", terminator: "")
+                guard readLine()?.lowercased().hasPrefix("y") == true else { fail("not installed") }
+            }
+        }
         return try IDE.installExtension(folder, as: name ?? folder.lastPathComponent, in: Paths.extensions, move: true)
     }
 

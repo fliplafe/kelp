@@ -175,7 +175,8 @@ which commands the extension can run.
 - Install: Settings › Extensions › Library, or `kelp ext search [text]` then `kelp ext install <id>`.
   `kelp ext update [id]` brings what came from GitHub up to date (the old copy goes to the Trash).
 - Any other GitHub folder installs the same way, without the review:
-  `kelp ext install https://github.com/me/repo` (the repo is the extension) or `…/tree/<branch>/<folder>`.
+  `kelp ext install https://github.com/me/repo` (the repo is the extension) or `…/tree/<branch>/<folder>`: what it can
+  run is shown and asked about first (`--yes` installs without asking; without a terminal it's needed).
   A folder on disk: `kelp ext install ./my-ext`.
 - Share yours: a pull request adding `extensions/<id>/` to that repo — `extension.json` (its `id` is the folder's name;
   `name`, `version` like `1.0.0` and `description` required) and a `README.md`; no binaries, symlinks or files over
