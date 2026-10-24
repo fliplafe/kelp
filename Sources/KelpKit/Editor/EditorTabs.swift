@@ -71,7 +71,7 @@ extension EditorArea {
     }
 
     /// Sessions whose tab is on screen right now (the selected tab of each pane shown).
-    package var visibleSessions: [String] {
+    var visibleSessions: [String] {
         let groups = zoomed.map { [$0] } ?? layout.root?.sessions ?? []
         return groups.compactMap { layout.groups[$0]?.selectedTab?.uri }.filter { TabURI.scheme($0) == "session" }.map(TabURI.body)
     }

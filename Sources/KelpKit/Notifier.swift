@@ -4,7 +4,7 @@ import Core
 
 /// Banner + dock badge when an agent finishes or waits; clicking opens the right pane.
 @MainActor
-package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// macOS lets Kelp show banners (false: they're off in System Settings).
     private var allowed = true
     private let center: UNUserNotificationCenter? = Bundle.main.bundleIdentifier != nil ? .current() : nil   // needs an app bundle
@@ -24,7 +24,7 @@ package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.
     /// Called at launch and when Kelp comes to the front.
-    package func checkAllowed() {
+    func checkAllowed() {
         center?.getNotificationSettings { s in
             let off = s.authorizationStatus == .denied || s.alertSetting == .disabled
             Task { @MainActor in
@@ -144,7 +144,7 @@ package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         return s.status == .waiting && ["permission", "approve", "allow"].contains { t.contains($0) }
     }
 
-    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse) async {
         guard let id = r.notification.request.content.userInfo["session"] as? String else { return }
         let action = r.actionIdentifier
         await MainActor.run {
@@ -156,7 +156,7 @@ package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
-    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
+    nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
 }

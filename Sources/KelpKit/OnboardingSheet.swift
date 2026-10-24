@@ -4,7 +4,7 @@ import Core
 /// The first launch, in one sheet: the agents found on this Mac and which one New Agent starts, a test notification
 /// (so a silent banner setting shows up now, not when an agent is waiting), and Add Project.
 @MainActor
-package final class OnboardingSheet: SheetController {
+final class OnboardingSheet: SheetController {
     private static var shown: OnboardingSheet?
     private let agents = NSStackView()
     private let pick = NSPopUpButton()

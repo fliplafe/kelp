@@ -6,7 +6,7 @@ import AppKit
 package func loc(_ english: String) -> String { Bundle.main.localizedString(forKey: english, value: english, table: nil) }
 
 @MainActor
-package enum Localize {
+enum Localize {
     /// The menu bar is built in English and shows the translation; a submenu keeps its English title as its
     /// identifier (Settings › Keyboard names items by command id or English path).
     package static func menu(_ m: NSMenu) {

@@ -17,7 +17,7 @@ extension AgentStatus {
         case .error: "exclamationmark.circle.fill"
         }
     }
-    package var nsColor: NSColor {
+    var nsColor: NSColor {
         switch self {
         case .working: .secondaryLabelColor
         case .waiting: .systemOrange
@@ -42,8 +42,8 @@ extension AgentStatus {
         }
     }
     /// Most urgent first: what a workspace shows when it has several agents.
-    package static let urgency: [AgentStatus] = [.waiting, .error, .working, .done, .idle, .hibernated, .exited]
-    package static func mostUrgent(_ s: [AgentStatus]) -> AgentStatus? { s.min { (urgency.firstIndex(of: $0) ?? 9) < (urgency.firstIndex(of: $1) ?? 9) } }
+    static let urgency: [AgentStatus] = [.waiting, .error, .working, .done, .idle, .hibernated, .exited]
+    static func mostUrgent(_ s: [AgentStatus]) -> AgentStatus? { s.min { (urgency.firstIndex(of: $0) ?? 9) < (urgency.firstIndex(of: $1) ?? 9) } }
 }
 
 /// Status colours for text ("+6 −2", "1 needs you", M/U letters). The system ones are made for glyphs: as 11 pt text on a
@@ -51,9 +51,9 @@ extension AgentStatus {
 /// (≥ 4.7:1 on the diff list's #E9E9E9); dark keeps the system colours, except red and purple, which are lighter there.
 extension NSColor {
     package static let textOrange = shade(light: 0x9A5000, dark: .systemOrange)   // amber, so M and D don't both read red
-    package static let textGreen = shade(light: 0x1C7332, dark: .systemGreen)
-    package static let textRed = shade(light: 0xCC0014, dark: NSColor(hex: 0xFF6961))
-    package static let textPurple = shade(light: 0x9C27B0, dark: NSColor(hex: 0xE07BFF))
+    static let textGreen = shade(light: 0x1C7332, dark: .systemGreen)
+    static let textRed = shade(light: 0xCC0014, dark: NSColor(hex: 0xFF6961))
+    static let textPurple = shade(light: 0x9C27B0, dark: NSColor(hex: 0xE07BFF))
 
     private static func shade(light: Int, dark: NSColor) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : NSColor(hex: light) }
@@ -200,7 +200,7 @@ extension Session {
 
 /// Agents waiting for the user, in the order to visit them: questions and failures before finished work, oldest first.
 @MainActor
-package struct AttentionQueue {
+struct AttentionQueue {
     let app: AppModel
     package init(_ app: AppModel) { self.app = app }
 

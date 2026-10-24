@@ -152,7 +152,7 @@ extension Workbench {
     }
 
     /// New isolated workspace in the project on screen (or the first one).
-    package func newWorkspace(repo: String? = nil) {
+    func newWorkspace(repo: String? = nil) {
         Task {
             // Right after launch the project list may not be in yet: ⌘N must not turn into "Add Project".
             let m = app
@@ -167,7 +167,7 @@ extension Workbench {
 
 /// `kelp://` links (from a browser, a script, another app). Looking things up is free; adding a project asks first.
 @MainActor
-package struct KelpLinks {
+struct KelpLinks {
     let app: AppModel
     package init(_ app: AppModel) { self.app = app }
 
@@ -405,7 +405,7 @@ package struct WorkspaceActions {
         }
     }
 
-    package func unarchive(_ id: String) {
+    func unarchive(_ id: String) {
         Task {
             await app.call(WorktreeUnarchive(id: id))
             await app.refresh()

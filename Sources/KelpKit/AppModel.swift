@@ -30,7 +30,7 @@ package final class AppModel {
     /// them by type without naming them (see `part`).
     @ObservationIgnored private var parts: [ObjectIdentifier: AnyObject] = [:]
     /// Banners and the dock badge: the running app's (its delegate sets it), none in tests.
-    @ObservationIgnored package var notifier: Notifier?
+    @ObservationIgnored var notifier: Notifier?
     /// The app's one `T`, made by `make` the first time.
     package func part<T: AnyObject>(_ make: () -> T) -> T {
         if let p = parts[ObjectIdentifier(T.self)] as? T { return p }

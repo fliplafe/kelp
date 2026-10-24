@@ -2,7 +2,7 @@ import AppKit
 
 /// A sheet on the main window (clone, SSH, first launch); `close()` ends it.
 @MainActor
-package class SheetController: NSWindowController {
+class SheetController: NSWindowController {
     let app: AppModel
     package init(app: AppModel, width: CGFloat) {
         self.app = app

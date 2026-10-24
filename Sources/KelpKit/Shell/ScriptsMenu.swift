@@ -42,7 +42,7 @@ package final class ScriptsMenu: NSObject, NSMenuDelegate {
     }
 
     /// Something the Run menu started in this workspace is still running (Run › Stop).
-    package var canStop: Bool {
+    var canStop: Bool {
         guard let wid = app.workbench.workspaceId else { return false }
         return runs.contains { $0.value.workspace == wid && app.session($0.key)?.status != .exited }
     }

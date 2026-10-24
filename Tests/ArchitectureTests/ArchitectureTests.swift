@@ -77,6 +77,11 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
     let windowParts = sources(["Sources/KelpKit/Sidebar", "Sources/KelpKit/Inspector"]).filter { !shared.contains(($0.path as NSString).lastPathComponent) }
         + sources(["Sources/KelpKit/Shell"]).filter { $0.path.hasSuffix("/MainWindow.swift") }
     #expect(windowParts.filter { codeOnly($0.text).contains("package ") }.map(\.path) == [])
+    // What the built-ins may reach of the shell: a ceiling that only goes down (one a built-in stopped using goes).
+    let declared = sources(["Sources/KelpKit"]).map { f in
+        codeOnly(f.text).split(separator: "\n").filter { $0.range(of: #"^\s*(@\w+(\([^)]*\))?\s+)*package\s"#, options: .regularExpression) != nil }.count
+    }.reduce(0, +)
+    #expect(declared <= 293, "\(declared) package declarations in KelpKit")
 }
 
 /// What the shell asks of every tab stays short: a question only one kind of tab answers is that tab's own (its provider's

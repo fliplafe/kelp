@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// as the letter that key types on the user's Latin layout — ⌘Ц is ⌘W, ⌘С is ⌘C — so menus, the terminal's own
 /// bindings and text views all see the shortcut they know, like in most Mac apps.
 @MainActor
-package enum LatinShortcuts {
+enum LatinShortcuts {
     static func install() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
             guard e.modifierFlags.contains(.command), let typed = e.charactersIgnoringModifiers,

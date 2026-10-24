@@ -341,7 +341,7 @@ package final class EditorArea: NSViewController {
     /// Areas whose layout is waiting out the pause before it's saved (weak: one that's gone has nothing to save).
     private static let unsaved = NSHashTable<EditorArea>.weakObjects()
     /// Quitting: layouts still waiting are saved now, before the app's last writes go out.
-    package static func saveLayouts() { for a in unsaved.allObjects { a.saveWork.cancel(); a.saveLayout() } }
+    static func saveLayouts() { for a in unsaved.allObjects { a.saveWork.cancel(); a.saveLayout() } }
 
     /// Every open tab (URI and title), for the palette.
     var openTabs: [(String, String)] { layout.allTabs.map { ($0.uri, contents[$0.id]?.title ?? placeholder($0).title) } }

@@ -5,7 +5,7 @@ import Core
 /// to switch; Esc stays. A quick ⌃Tab flips to the previous workspace. Each row says what's there: project and branch,
 /// changes not committed, the pull request, and the agent that matters most (what it's doing and its last words).
 @MainActor
-package final class WorkspaceSwitcher {
+final class WorkspaceSwitcher {
     let app: AppModel
     package init(app: AppModel) { self.app = app }
     private var panel: NSPanel?

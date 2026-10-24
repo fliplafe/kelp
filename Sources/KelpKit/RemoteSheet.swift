@@ -11,7 +11,7 @@ extension RemoteHost {
 /// there from a list, as an open panel does (double-click goes in, repositories are marked). Open takes the selected
 /// folder, else the one listed; one that isn't in a repository yet gets `git init` first, and the button says so.
 @MainActor
-package final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSource, NSTableViewDelegate {
+final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSource, NSTableViewDelegate {
     /// The host, as after `ssh` (the hosts in ~/.ssh/config to pick from).
     private let host = NSComboBox()
     /// The folder listed; a path typed here is gone to on Return.
@@ -101,7 +101,7 @@ package final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableVie
     package func tableViewSelectionDidChange(_ n: Notification) { update() }
 
     package func controlTextDidChange(_ n: Notification) { if n.object as? NSComboBox === host { hostEdited() } }
-    package func comboBoxSelectionDidChange(_ n: Notification) { hostEdited() }
+    func comboBoxSelectionDidChange(_ n: Notification) { hostEdited() }
     private func hostEdited() { guard listed != nil else { return }; listed = nil; rows = []; table.reloadData(); update() }
 
     @objc private func goPressed() {

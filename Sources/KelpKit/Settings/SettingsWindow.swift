@@ -7,7 +7,7 @@ import WorkbenchKit
 
 /// Settings: every section comes from an extension's settings schema (plus custom views), searchable, like VS Code.
 @MainActor
-package enum SettingsWindow {
+enum SettingsWindow {
     private(set) static var window: NSWindow?
     static func show(_ app: AppModel, section: String? = nil) {
         if let s = section { UserDefaults.standard.set(s, forKey: "settings.section") }
@@ -358,7 +358,7 @@ private struct ExtensionsSettings: View {
 
 extension Color {
     package init?(hex: String) { guard let c = NSColor(hex: hex) else { return nil }; self.init(nsColor: c) }
-    package var hex: String {
+    var hex: String {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
         return String(format: "#%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }

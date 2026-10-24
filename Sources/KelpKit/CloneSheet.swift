@@ -4,7 +4,7 @@ import Core
 /// Clone a repository by URL, in a sheet that does the work in place: git's progress, its error in the sheet, and
 /// Cancel stops it and removes the half-made folder.
 @MainActor
-package final class CloneSheet: SheetController, NSTextFieldDelegate {
+final class CloneSheet: SheetController, NSTextFieldDelegate {
     private let field = NSTextField()
     private let dest = NSTextField(), choose = NSButton()
     /// The folder the destination goes in until one is typed; the name in it follows the URL until it's typed over.

@@ -2,7 +2,7 @@ import AppKit
 
 /// Unsaved files ask before what would drop them: quitting, or closing, archiving or removing their workspace.
 @MainActor
-package enum UnsavedChanges {
+enum UnsavedChanges {
     /// Save (All), Cancel when `canCancel` (not once the workspace is already gone), Don't Save.
     static func alert(_ edited: [SavableTab], quitting: Bool, canCancel: Bool = true) -> NSAlert {
         let a = NSAlert()

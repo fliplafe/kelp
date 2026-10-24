@@ -15,7 +15,7 @@ extension KeySpec.Modifiers {
 /// then the overrides in settings.json are laid over it: `"keys": {"editor.saveAll": "opt+cmd+s"}` ("" = none).
 /// Kelp's commands go by their id; the menu's other items (Copy, Minimize, the agents in New Tab) by their English path.
 @MainActor
-package enum KeyBindings {
+enum KeyBindings {
     struct Entry: Identifiable { let id: String; let menu: String; let title: String; var key: KeySpec?; let defaultKey: KeySpec? }
 
     /// Each item's default, recorded every time the menu is built (always with the defaults).

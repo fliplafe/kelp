@@ -7,7 +7,7 @@ import Core
 /// Until (or unless) one is found, the agent's SF Symbol stands in.
 @MainActor
 @Observable
-package final class AgentIcons {
+final class AgentIcons {
     private(set) var images: [String: NSImage] = [:]
     @ObservationIgnored private var asked = Set<String>()
 

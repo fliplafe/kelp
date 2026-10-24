@@ -39,7 +39,7 @@ enum IconTile {
 
 extension NSImage {
     /// The same picture without its colour, at the same size (a paused agent's icon).
-    package var grayscale: NSImage {
+    var grayscale: NSImage {
         guard let cg = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return self }
         let gray = CIImage(cgImage: cg).applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
         let out = NSImage(size: size)
