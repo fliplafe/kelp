@@ -195,11 +195,16 @@ public final class Daemon: Sendable {
         settingsEvents.stopWatching()
         // daemon.upgrade's own reply is out first: an app that never got it would think the upgrade failed and offer a
         // restart that ends the agents just handed over.
-        let everyone = clients.everyone()
-        DispatchQueue.concurrentPerform(iterations: everyone.count) { everyone[$0].drain(within: 2) }
-        everyone.forEach { $0.hangUp() }
+        drainReplies()
+        clients.everyone().forEach { $0.hangUp() }
         close(r.instanceLock)
         return h
+    }
+
+    /// What's queued for every client goes out first (a stop's or an update's own reply among it), 2 s at most each.
+    private func drainReplies() {
+        let everyone = clients.everyone()
+        DispatchQueue.concurrentPerform(iterations: everyone.count) { everyone[$0].drain(within: 2) }
     }
 
     /// `daemon.upgrade`: this process runs the kelpd now at `executable`, which takes every running session over. Returns
@@ -319,6 +324,13 @@ public final class Daemon: Sendable {
         reply(answered)
         // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
         if handler == DaemonUpgrade.self, case .success = answered { Thread.detachNewThread { Upgrade.of(self).run() } }
+        if handler == DaemonShutdown.self, case .success = answered {
+            Thread.detachNewThread { [self] in
+                drainReplies()
+                stop()
+                exit(0)
+            }
+        }
     }
 
     /// The connection ended: what it held goes with it.

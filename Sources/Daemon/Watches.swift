@@ -54,6 +54,12 @@ final class Watches: Sendable {
             e[k] = x
             return (false, again, x.last)
         }
+        // Stopped while this was taking its place: it goes too, rather than run on unseen.
+        if closed.withLock({ $0 }) {
+            let late = entries.withLock { e in defer { e = [:] }; return e }
+            _ = late
+            return
+        }
         if new { begin(k) } else if again { read(k) } else if let last { clients.targets([conn]).forEach { $0.send(last) } }
     }
 

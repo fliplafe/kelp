@@ -159,7 +159,7 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     let inOrder = Set(Daemon.methods.values.filter { $0.inOrder }.map { $0.name })
     let known: [any RPCMethod.Type] = [SessionWrite.self, SessionSend.self, SessionResize.self, UIPublish.self, StateSet.self, ClientEvents.self,
                                        SettingsSet.self, WatchStart.self, WatchStop.self, LSPOpen.self, LSPChange.self, LSPClose.self,
-                                       DaemonUpgrade.self]
+                                       DaemonUpgrade.self, DaemonShutdown.self]
     #expect(inOrder == Set(known.map { $0.name }))
     let both = Daemon.methods.values.compactMap { $0 as? any Handled.Type }.filter { $0.inOrder && $0.quick }.map { $0.name }
     #expect(both == [], "in order or quick, not both")
