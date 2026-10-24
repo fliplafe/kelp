@@ -165,19 +165,19 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     /// goes up, so its pid can't be anyone else's meanwhile; one handed over is the next kelpd's to reap. The source
     /// keeps itself until it fired, so a PTY dropped meanwhile still has its program reaped.
     private func watchExit() {
-        let pid = pid, once = OSAllocatedUnfairLock(initialState: false)
+        // The phase itself, not through the PTY: one dropped after a hand-over (an update's exec that failed, its sessions
+        // taken back by a new PTY on the same pid) must still see it was handed over, and leave the reaping to that one.
+        let pid = pid, once = OSAllocatedUnfairLock(initialState: false), phase = phase
         let exits = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
         let reap: @Sendable () -> Void = { [weak self] in
             guard once.withLock({ first in defer { first = true }; return !first }) else { return }
             exits.cancel()
-            let handedOver = self.map { me in
-                me.phase.withLock { p -> Bool in
-                    if p.program == .handedOver { return true }
-                    p.program = .reaped
-                    return false
-                }
+            let handedOver = phase.withLock { p -> Bool in
+                if p.program == .handedOver { return true }
+                p.program = .reaped
+                return false
             }
-            if handedOver == true { return }
+            if handedOver { return }
             var st: Int32 = 0
             while waitpid(pid, &st, 0) < 0 && errno == EINTR {}
             guard let pty = self else { return }

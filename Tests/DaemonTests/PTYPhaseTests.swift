@@ -58,3 +58,18 @@ import Testing
     #expect(try await waitFor(5) { box.code != nil })
     #expect(p.phases.program == .reaped)
 }
+
+/// A terminal handed over and then dropped (an update whose exec failed takes its sessions back in a new PTY) leaves
+/// its program to the one that took it: only that one reaps it, and reads its real exit status.
+@Test func aDroppedHandedOverTerminalLeavesTheReapingToItsSuccessor() async throws {
+    var old: PTY? = try PTY(argv: ["/bin/sh", "-c", "read l; exit 3"], cwd: "/tmp", env: [:], trampoline: nil)
+    old?.start()
+    let pid = try #require(old?.pid), fd = try #require(old?.handOver())
+    old = nil
+    let next = PTY(adopting: pid, fd: fd), box = Box()
+    next.onExit = { box.exit($0) }
+    next.start()
+    next.write(Data("go\n".utf8))
+    #expect(try await waitFor(5) { box.code != nil })
+    #expect(box.code.map { ($0 >> 8) & 0xff } == 3)
+}
