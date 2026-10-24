@@ -178,14 +178,32 @@ extension DaemonUpgrade: Handled {
         guard URL(fileURLWithPath: upgrade.executable).lastPathComponent == "kelpd", FileManager.default.isExecutableFile(atPath: upgrade.executable) else {
             throw RPCError.invalidParams("no kelpd to upgrade to at \(upgrade.executable)")
         }
+        if let why = upgrade.refused() { throw RPCError.invalidParams(why) }
         return Done()
     }
 }
 
 /// daemon.upgrade's: the binary the daemon runs and its exec in place, nothing else of it.
 struct Upgrade {
-    let executable: String
+    let executable: String, root: URL
     let run: @Sendable () -> Void
+
+    /// Why the binary now at `executable` was refused, as long as it's still that one (same modification time).
+    func refused() -> String? {
+        guard let data = FileManager.default.contents(atPath: Self.refusal(root).path) else { return nil }   // none refused
+        let parts = String(decoding: data, as: UTF8.self).split(separator: "\n", maxSplits: 1).map(String.init)
+        return parts.count == 2 && Double(parts[0]) == Self.modified(executable) ? parts[1] : nil
+    }
+    static func refuse(root: URL, executable: String, _ why: String) {
+        Log.start.attempt("keeping why the update was refused") {
+            try "\(modified(executable))\n\(why)".write(to: refusal(root), atomically: true, encoding: .utf8)
+        }
+    }
+    private static func refusal(_ root: URL) -> URL { root.appendingPathComponent("upgrade-refused") }
+    /// When the file at `path` was last changed (seconds since 1970); 0 when there's none.
+    static func modified(_ path: String) -> Double {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+    }
 }
 
 /// The agents on this Mac, side by side, each through `offload`; latest from npm where they publish there.

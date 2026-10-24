@@ -12,6 +12,20 @@ public struct Handover: Codable, Sendable {
     var sessions: [Session]
     // A newer kelpd reads what an older one wrote: fields are only ever added, as optionals.
 
+    /// What `kelpd --can-adopt` prints: the kelpd being exec'd into says it runs here and reads this hand-over, before
+    /// any session is given up. One that can't (another architecture, a broken signature, a kelpd from before the flag)
+    /// prints something else or nothing.
+    public static let canAdopt = "kelpd adopts handover 1"
+
+    /// Whether the kelpd at `executable` takes sessions over (`canAdopt`), asked by running it. In this daemon's home: a
+    /// kelpd from before the flag starts as a daemon instead, and stops at once on the lock this one holds.
+    static func adoptable(_ executable: String, home: URL) -> Bool {
+        guard let r = Log.start.attempt("asking \(executable) whether it adopts", {
+            try Subprocess.run([executable, "--can-adopt"], cwd: "/", env: ["KELP_HOME": home.path], timeLimit: 10)
+        }) else { return false }
+        return r.status == 0 && String(decoding: r.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == canAdopt
+    }
+
     /// The file `kelpd --adopt` names, read and removed. Nil if it can't be read: then the lock this process still holds
     /// makes the start fail, and the sessions end with it, as after a crash.
     public static func take(_ path: String) -> Handover? {

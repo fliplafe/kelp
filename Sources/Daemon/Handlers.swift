@@ -58,7 +58,9 @@ extension SettingsEvents: DaemonService { static func of(_ d: Daemon) -> Setting
 extension UIStore: DaemonService { static func of(_ d: Daemon) -> UIStore { UIStore(store: d.store, clients: d.clients) } }
 extension ForgeWork: DaemonService { static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) } }
 extension Shutdown: DaemonService { static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } } }
-extension Upgrade: DaemonService { static func of(_ d: Daemon) -> Upgrade { Upgrade(executable: Daemon.executable) { [weak d] in d?.upgrade() } } }
+extension Upgrade: DaemonService {
+    static func of(_ d: Daemon) -> Upgrade { Upgrade(executable: Daemon.executable, root: d.root) { [weak d] in d?.upgrade() } }
+}
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
 /// connection (attach, detach, ui.publish); the rest write `handle(_:)`.
@@ -214,6 +216,12 @@ final class Slots: Sendable {
             return s.waiting.removeFirst()
         }
         next?.resume()
+    }
+
+    /// Waits until no slot is held (what's running has finished), for at most `seconds`.
+    func waitIdle(seconds: Double) {
+        let end = Date().addingTimeInterval(seconds)
+        while state.withLock({ $0.held > 0 }), Date() < end { usleep(50_000) }
     }
 
     /// `work` on a thread of its own once it has a slot (`Daemon.offload`); `quick`, at once, with no slot and no program.

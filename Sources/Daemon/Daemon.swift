@@ -78,9 +78,7 @@ public final class Daemon: Sendable {
     static var executable: String { (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).path }
 
     /// When this binary was built; the app compares it with the kelpd it ships to spot a stale daemon after an update.
-    static let binaryMTime: Double = {
-        (try? FileManager.default.attributesOfItem(atPath: executable)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-    }()
+    static let binaryMTime = Upgrade.modified(executable)
 
     /// `handover`: what the kelpd this process ran before (an update, `daemon.upgrade`) left open for this one to take over.
     public func start(adopting handover: Handover? = nil) throws {
@@ -184,6 +182,14 @@ public final class Daemon: Sendable {
     /// `daemon.upgrade`: this process runs the kelpd now at `executable`, which takes every running session over. Returns
     /// only when the daemon is stopping anyway.
     func upgrade() {
+        // Nothing is given up to a kelpd that couldn't take it: every agent would end with this process. The reason is
+        // kept, so the app's next daemon.upgrade is refused and it asks the user instead of trying again.
+        guard Handover.adoptable(Self.executable, home: root) else {
+            Log.start.error("not updating in place: \(Self.executable, privacy: .public) doesn't adopt this hand-over")
+            Upgrade.refuse(root: root, executable: Self.executable, "The new background service can't take the running sessions over.")
+            return
+        }
+        offloads.waitIdle(seconds: 10)   // a clone or a worktree being made finishes instead of losing its git mid-way
         guard let h = handOver() else { return }
         let file = root.appendingPathComponent("handover.json")
         do {

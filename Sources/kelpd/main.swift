@@ -3,6 +3,7 @@ import Core
 import Daemon
 
 // kelpd: background daemon. Run by launchd (see `kelp install`) or started on demand by the app/CLI.
+if CommandLine.arguments.contains("--can-adopt") { print(Handover.canAdopt); exit(0) }   // asked before an update execs this
 signal(SIGPIPE, SIG_IGN)
 // launchd gives 256 fds; every agent holds 3, every open terminal 2 more, every git or gh run 2: take what's allowed.
 var files = rlimit()

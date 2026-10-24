@@ -97,3 +97,22 @@ private func name(_ pid: pid_t) -> String {
     guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 else { return "" }
     return withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
 }
+
+/// An update is refused before any session is given up when the new kelpd wouldn't take them (it says so itself:
+/// `--can-adopt`), and stays refused for that binary, so the app asks instead of trying again.
+@Test func anUpdateTheNewKelpdCantTakeIsRefusedFirst() throws {
+    let kelp = try #require(ProcessInfo.processInfo.environment["KELP_TRAMPOLINE"])
+    let real = URL(fileURLWithPath: kelp).deletingLastPathComponent().appendingPathComponent("kelpd").path
+    let home = tmp(), fake = home.appendingPathComponent("kelpd").path
+    #expect(Handover.adoptable(real, home: home))
+    try "#!/bin/sh\necho something else\n".write(toFile: fake, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake)
+    #expect(!Handover.adoptable(fake, home: home))
+    let upgrade = Upgrade(executable: fake, root: home) {}
+    #expect(upgrade.refused() == nil)
+    Upgrade.refuse(root: home, executable: fake, "can't take them")
+    #expect(upgrade.refused() == "can't take them")
+    #expect(throws: RPCError.self) { try DaemonUpgrade().handle(upgrade) }
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: fake)   // replaced
+    #expect(upgrade.refused() == nil)
+}
