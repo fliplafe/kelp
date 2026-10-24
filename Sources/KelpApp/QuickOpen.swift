@@ -73,6 +73,8 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         stopChoosing()
         tmuxLoad?.cancel(); tmux = nil
         field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands")
+        let label = commandsOnly ? String(localized: "Commands") : String(localized: "Search")
+        field.setAccessibilityLabel(label); field.cell?.image = NSImage(systemSymbolName: commandsOnly ? "command" : "magnifyingglass", accessibilityDescription: label)
         // The keys it knows, under the list (they're not written anywhere else).
         keys.stringValue = String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests")
         field.stringValue = query
@@ -163,6 +165,7 @@ final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSS
         let effect = NSVisualEffectView(); effect.material = .popover; effect.state = .active
         field.font = .systemFont(ofSize: 18); field.focusRingType = .none; field.delegate = self; field.sendsSearchStringImmediately = true
         field.target = self; field.action = #selector(filterAction)
+        if let bc = field.cell as? NSButtonCell { bc.imagePosition = .imageLeading }
         let col = NSTableColumn(identifier: .init("i")); table.addTableColumn(col); table.headerView = nil
         table.rowHeight = 34; table.dataSource = self; table.delegate = self; table.style = .plain; table.backgroundColor = .clear
         table.target = self; table.doubleAction = #selector(activate)
