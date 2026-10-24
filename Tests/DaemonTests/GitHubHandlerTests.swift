@@ -139,6 +139,12 @@ private let fakeGlab: String = {
     case "$*" in
       *"-X POST projects/:id/merge_requests"*) echo '{"iid":12,"title":"t","web_url":"https://gitlab.example.com/g/r/-/merge_requests/12","author":{"username":"ada"},"source_branch":"feat/mr","state":"opened"}';;
       *"-X PUT projects/:id/merge_requests/12/merge"*) echo '{"state":"merged"}';;
+      *"merge_requests?state=opened"*) echo '[{"iid":4,"title":"Fix y","web_url":"https://gitlab.example.com/g/r/-/merge_requests/4","author":{"username":"bo"},\
+    "source_branch":"fix/y","state":"opened","draft":true,"head_pipeline":{"status":"failed"}}]';;
+      *"merge_requests?source_branch=feat%2Fgl"*) echo '[{"iid":9,"title":"GL","web_url":"u","author":{"username":"bo"},"source_branch":"feat/gl","state":"merged"}]';;
+      *"merge_requests/9"*) echo '{"iid":9,"title":"GL","web_url":"u","author":{"username":"bo"},"source_branch":"feat/gl","state":"merged",\
+    "head_pipeline":{"status":"running"}}';;
+      *"issues?state=opened"*) echo '[{"iid":2,"title":"Bug","description":null,"web_url":"w","labels":["p1"],"assignees":[{"username":"bo"}],"state":"opened"}]';;
       *) echo "unexpected: $*" >&2; exit 1;;
     esac
     """.write(toFile: script, atomically: true, encoding: .utf8)
@@ -174,4 +180,22 @@ private let fakeGlab: String = {
     try Git.run(["remote", "add", "origin", "git@gitlab.example.com:g/r.git"], cwd: wt.path)
     let pages = try await r.c.call("git.webPages", .obj(["worktreeId": .string(wt.id)]))
     #expect(pages["forge"]?.string == "gitlab" && pages["ci"]?.string == "https://gitlab.example.com/g/r/-/pipelines")
+}
+
+/// On GitLab the lists come from its API through glab: merge requests with their pipeline, issues, mine only when asked,
+/// and a branch's newest merge request with its pipeline read in full.
+@Test func onGitLabListsComeFromItsAPI() async throws {
+    let log = fakeGlab
+    let r = try await rig(); defer { r.d.stop() }
+    let wt = try await desk(r, "feat/gl")
+    try Git.run(["remote", "add", "origin", "git@gitlab.example.com:g/r.git"], cwd: r.repo.path)
+    let prs = try await r.c.call("github.prs", .obj(["repoId": .string(r.repo.id), "filter": "mine"])).array ?? []
+    #expect(prs.count == 1 && prs[0]["number"]?.int == 4 && prs[0]["isDraft"]?.bool == true && prs[0]["state"]?.string == "OPEN")
+    #expect(prs[0]["checks"]?["failed"]?.int == 1)
+    let issues = try await r.c.call("github.issues", .obj(["repoId": .string(r.repo.id), "filter": "mine"])).array ?? []
+    #expect(issues.first?["labels"]?.array?.first?.string == "p1" && issues.first?["state"]?.string == "OPEN")
+    let sent = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
+    #expect(sent.contains("scope=created_by_me") && sent.contains("scope=assigned_to_me"))
+    let branch = try await r.c.call("github.branchPR", .obj(["worktreeId": .string(wt.id)]))
+    #expect(branch["number"]?.int == 9 && branch["state"]?.string == "MERGED" && branch["checks"]?["pending"]?.int == 1)
 }
