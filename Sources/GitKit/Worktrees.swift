@@ -125,12 +125,16 @@ extension Git {
                            stderr: "\(branch) has \(n) commit\(n == 1 ? "" : "s") that aren't on any other branch or remote")
         }
         // Commits made on a detached HEAD belong to no branch at all: removing the folder would leave them to `git gc`.
-        if !dropCommits, FileManager.default.fileExists(atPath: path),
-           case let n = Int((try? run(["rev-list", "--count", "HEAD", "--not", "--branches", "--remotes"], cwd: path, remotes: remotes))?   // no commits yet: 0
-               .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0, n > 0 {
+        if !dropCommits, remotes.of(path) != nil || FileManager.default.fileExists(atPath: path), case let n = commitsOnNoBranch(path, remotes: remotes), n > 0 {
             throw GitError(args: ["worktree", "remove"], status: 1,
                            stderr: "This workspace has \(n) commit\(n == 1 ? "" : "s") on no branch (a detached HEAD). Create a branch for them first.")
         }
+    }
+
+    /// Commits made on a detached HEAD in the worktree at `path` that no branch or remote has (no commits yet: 0).
+    public static func commitsOnNoBranch(_ path: String, remotes: Remotes = .none) -> Int {
+        let out = try? run(["rev-list", "--count", "HEAD", "--not", "--branches", "--remotes"], cwd: path, remotes: remotes)
+        return Int(out?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
     }
 
     /// Commits on `branch` that no other local branch and no remote branch has: what deleting it would lose.

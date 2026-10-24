@@ -311,7 +311,8 @@ extension RepoWorktreeSizes: Handled {
         let ours = try Self.ours(workspaces.store, r)
         return try Git.linkedWorktrees(r.path, remotes: workspaces.remotes).filter { FileManager.default.fileExists(atPath: $0.path) }.map { w in
             Item(path: w.path, bytes: Self.du(w.path),
-                 removable: !w.locked && !ours.contains(Self.real(w.path)) && (try? Git.isDirty(w.path, remotes: workspaces.remotes)) == false)
+                 removable: !w.locked && !ours.contains(Self.real(w.path)) && (try? Git.isDirty(w.path, remotes: workspaces.remotes)) == false
+                    && Git.commitsOnNoBranch(w.path, remotes: workspaces.remotes) == 0)
         }.sorted { $0.bytes > $1.bytes }
     }
 
@@ -334,6 +335,10 @@ extension RepoRemoveWorktrees: Handled {
         for p in paths {
             guard let w = linked.first(where: { $0.path == p }), !ours.contains(RepoWorktreeSizes.real(p)) else {
                 out.kept[p] = "Not one of the project's other worktrees."; continue
+            }
+            // git removes one whose commits are on no branch (a detached HEAD): they'd be left to `git gc`.
+            if case let n = Git.commitsOnNoBranch(p, remotes: workspaces.remotes), n > 0 {
+                out.kept[p] = "It has \(n) commit\(n == 1 ? "" : "s") on no branch (a detached HEAD)."; continue
             }
             do {
                 // no --force: git keeps one with changes, untracked files or a lock

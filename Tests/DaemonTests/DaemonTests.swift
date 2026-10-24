@@ -277,15 +277,19 @@ final class NoteBox: @unchecked Sendable {
     let (d, c, _, repo) = try await world(); defer { d.stop() }
     let repoPath = repo.path
     // An agent's leftovers: one where main is, one with a commit of its own, one with a file git doesn't track yet.
+    // And one on a detached HEAD with a commit no branch has.
     for n in ["same", "ahead", "untracked"] { try Git.run(["worktree", "add", "-q", "-b", "agent-" + n, ".claude/worktrees/" + n], cwd: repoPath) }
+    try Git.run(["worktree", "add", "-q", "--detach", ".claude/worktrees/detached"], cwd: repoPath)
     let wt = repoPath + "/.claude/worktrees/"
     try Git.run(["commit", "-q", "--allow-empty", "-m", "own"], cwd: wt + "ahead")
+    try Git.run(["commit", "-q", "--allow-empty", "-m", "loose"], cwd: wt + "detached")
     try "x".write(toFile: wt + "untracked/new.txt", atomically: true, encoding: .utf8)
 
     let sizes = try await c.call(RepoWorktreeSizes(id: repo.id))
     #expect(Set(sizes.filter(\.removable).map { ($0.path as NSString).lastPathComponent }) == ["same", "ahead"])
     let res = try await c.call(RepoRemoveWorktrees(id: repo.id, paths: sizes.map(\.path) + [repoPath]))
-    #expect(res.removed.count == 2 && res.kept.count == 2)   // the untracked file and the main checkout stay
+    #expect(res.removed.count == 2 && res.kept.count == 3)   // the untracked file, the loose commit and the main checkout stay
+    #expect(FileManager.default.fileExists(atPath: wt + "detached"))
     #expect(FileManager.default.fileExists(atPath: wt + "untracked/new.txt") && !FileManager.default.fileExists(atPath: wt + "same"))
     #expect(!Git.branchExists(repoPath, "agent-same") && Git.branchExists(repoPath, "agent-ahead"))   // its commit lives on
 }
