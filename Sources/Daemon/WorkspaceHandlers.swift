@@ -136,7 +136,7 @@ extension WorktreeRemove: Handled {
         if workspaces.isMain(w, r) { try workspaces.removeDesk(w, r); return Done() }
         let force = force == true, drop = dropCommits == true
         // A remote project's folder is on its host: looked for there.
-        let host = workspaces.remotes.of(w.path)
+        let host = workspaces.remotes.of(r.path)   // the project's: its worktrees are on its host too
         let exists = try host.map { String(decoding: try $0.run("[ -e \(RemoteHost.quote(w.path)) ] && echo yes || true"), as: UTF8.self).hasPrefix("yes") }
             ?? FileManager.default.fileExists(atPath: w.path)
         if exists {

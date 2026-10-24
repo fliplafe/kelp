@@ -563,6 +563,10 @@ func trustQuestionStandIn() -> String {
     try ".env.local\n".write(toFile: there + "/.git/info/exclude", atomically: true, encoding: .utf8)
     try "SECRET=1\n".write(toFile: wt.path + "/.env.local", atomically: true, encoding: .utf8)
     _ = try await c.call(WorktreeRemove(id: wt.id, force: true, dropCommits: true))
+    // Its folder was looked for on the host (here the same disk, so only the ssh log tells), not on this Mac.
+    let sshLog = URL(fileURLWithPath: localSSH).deletingLastPathComponent().appendingPathComponent("ssh.log").path
+    let sent = (try? String(contentsOfFile: sshLog, encoding: .utf8)) ?? ""
+    #expect(sent.split(separator: "\n").contains { $0.hasPrefix("sh -c '[ -e ") && $0.contains(wt.path) })
     let trash = try #require(ProcessInfo.processInfo.environment["KELP_TRASH"])
     let kept = (FileManager.default.enumerator(atPath: trash)?.allObjects as? [String] ?? []).filter { $0.hasSuffix(".env.local") }
     #expect(!kept.isEmpty)
