@@ -80,10 +80,15 @@ public struct StatusDetector: Sendable {
     @discardableResult
     public mutating func tick(at now: Date = Date()) -> AgentStatus {
         guard !hooked, status == .working, let last = lastOutput, now.timeIntervalSince(last) >= manifest.quietSeconds else { return status }
-        let r = NSRange(tail.startIndex..., in: tail)
-        status = regexes.contains { $0.firstMatch(in: tail, range: r) != nil } ? .waiting : .done
+        status = asks ? .waiting : .done
         settledAt = now
         return status
+    }
+
+    /// The end of what it printed asks the user something.
+    private var asks: Bool {
+        let r = NSRange(tail.startIndex..., in: tail)
+        return regexes.contains { $0.firstMatch(in: tail, range: r) != nil }
     }
 
     /// Hook event: "working" | "waiting" | "done". Once seen, heuristics are off for this session.
@@ -122,10 +127,17 @@ public struct StatusDetector: Sendable {
         redrawDue = true
     }
 
-    /// Taken over from the kelpd an update replaced: its program went on as `status`, past its first input.
-    public mutating func adopted(_ status: AgentStatus, at now: Date = Date()) {
+    /// Taken over from the kelpd an update replaced: its program went on as `status`, past its first input. `screen`: what it
+    /// printed last. A question that kelpd read there is read again with this one's patterns: one the update fixed (Grok's
+    /// opt-in banner as "allow … to") would otherwise keep an agent idling at its prompt in Needs You until it prints again.
+    /// One the agent reported itself stays: its OSC 7501 is on the screen (the handover doesn't say).
+    public mutating func adopted(_ status: AgentStatus, screen: String = "", at now: Date = Date()) {
         self.status = status; active = true
+        tail = String(Self.stripANSI(screen).suffix(600))
         if status == .working { lastOutput = now }   // it settles once quiet, as it would have
+        guard status == .waiting, !hooked, !screen.contains(ProgramStatus.prefix) else { return }
+        self.status = asks ? .waiting : .done
+        settledAt = now
     }
 
     /// The user typed into the agent: whatever it asked before is answered, only what it prints next can ask again.

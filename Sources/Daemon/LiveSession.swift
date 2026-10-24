@@ -473,7 +473,12 @@ final class LiveSession: Sendable {
         state.withLock { s in
             s.pendingPrompts = pending.map { ($0.text, $0.draft, $0.paste) }
             s.ring = history; s.ringModes.read(Data(modes.utf8))
-            s.detector.adopted(s.record.status)
+            s.detector.adopted(s.record.status, screen: String(decoding: history.suffix(64_000), as: UTF8.self))
+            // A question read again and found to be none: the turn ended long ago, so one already read stays read.
+            if s.detector.status != s.record.status {
+                s.record.status = s.detector.status
+                emit(s.record)
+            }
             s.startedUp = true
             s.typedYet = true
             s.dialogSettled = true
