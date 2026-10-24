@@ -17,6 +17,7 @@ let localSSH: String = {
     #!/bin/sh
     while [ $# -gt 1 ]; do case "$1" in -o) shift 2;; -T|-tt|--) shift;; *) shift; break;; esac; done
     printf '%s\\n' "$1" >> "$(dirname "$0")/ssh.log"
+    case "$1" in *cut-short*) head -c 3 | exec /bin/sh -c "$1";; esac   # a connection dropped part way through
     exec /bin/sh -c "$1"
     """.write(to: shim, atomically: true, encoding: .utf8)
     chmod(shim.path, 0o755)

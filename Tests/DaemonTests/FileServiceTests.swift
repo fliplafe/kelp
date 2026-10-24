@@ -117,17 +117,28 @@ import Core
     let file = repo.path + "/a.txt"
     let read = try await c.call(FilesRead(path: file))
     #expect(read.text == "hello\n" && read.stamp == FileService.digest(Data("hello\n".utf8)))
-    let wrote = try await c.call(FilesWrite(path: file, text: "edited\n", base: read.stamp))
-    #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "edited\n")
+    let wrote = try await c.call(FilesWrite(path: file, text: "édité ✓\n", base: read.stamp))
+    #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "édité ✓\n")
     try "an agent's\n".write(toFile: there + "/a.txt", atomically: true, encoding: .utf8)
     #expect(try await c.call(FilesWrite(path: file, text: "mine\n", base: wrote.stamp)).conflict?.text == "an agent's\n")
     try FileManager.default.removeItem(atPath: there + "/a.txt")
     #expect(try await c.call(FilesWrite(path: file, text: "mine\n", base: wrote.stamp)).missing == true)
     // The old method, as an older app calls it: a file that's gone is written again.
-    #expect(try await c.call(FilesWriteRemote(path: file, text: "again\n", base: "edited\n")) == nil)
+    #expect(try await c.call(FilesWriteRemote(path: file, text: "again\n", base: "édité ✓\n")) == nil)
     #expect(try String(contentsOfFile: there + "/a.txt", encoding: .utf8) == "again\n")
     await #expect(throws: (any Error).self) { _ = try await c.call(FilesCreate(path: repo.path + "/new.txt")) }
     #expect(!FileManager.default.fileExists(atPath: repo.path + "/new.txt"))
+}
+
+/// An upload cut short (the connection dropped) looks finished to the host's `cat`: the file isn't written with half of it.
+@Test func aRemoteSaveCutShortLeavesTheFile() async throws {
+    _ = localSSH
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let there = try makeRepo()
+    try "kept\n".write(toFile: there + "/cut-short.txt", atomically: true, encoding: .utf8)
+    let repo = try await c.call(RepoAddRemote(host: "box", path: there))
+    await #expect(throws: (any Error).self) { _ = try await c.call(FilesWrite(path: repo.path + "/cut-short.txt", text: "a longer text\n", base: nil)) }
+    #expect(try String(contentsOfFile: there + "/cut-short.txt", encoding: .utf8) == "kept\n")
 }
 
 /// A file's round trip through the socket (read, then a save of the same size), as a tab makes it. Opt-in:
