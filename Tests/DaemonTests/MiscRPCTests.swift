@@ -567,3 +567,15 @@ func trustQuestionStandIn() -> String {
     let kept = (FileManager.default.enumerator(atPath: trash)?.allObjects as? [String] ?? []).filter { $0.hasSuffix(".env.local") }
     #expect(!kept.isEmpty)
 }
+
+/// A remote project's locked worktree (`git worktree lock`) isn't moved aside on the host: it's kept, as a local one.
+@Test func aRemoteLockedWorktreeStays() async throws {
+    _ = localSSH
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let there = try makeRepo()
+    let repo: Repo = try await c.call("repo.addRemote", .obj(["host": "box", "path": .string(there)]), as: Repo.self)
+    let wt = try await c.call(WorktreeCreate(repoId: repo.id, branch: "kept")).worktree
+    try Git.run(["worktree", "lock", wt.path], cwd: there)
+    await #expect(throws: RPCError.self) { try await c.call(WorktreeRemove(id: wt.id, force: true, dropCommits: true)) }
+    #expect(FileManager.default.fileExists(atPath: wt.path))
+}

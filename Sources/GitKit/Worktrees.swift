@@ -55,9 +55,13 @@ extension Git {
 
     /// The repo's other checkouts, wherever `git worktree add` put them (an agent's `.claude/worktrees/…`, Kelp's own):
     /// `git worktree list` without its first entry, the main checkout.
+    /// NUL-separated here (`-z`), so a path with a newline in it can't read as another worktree or a lock; a host's git
+    /// may be older than that (2.36), so a remote project's list is read by lines.
     public static func linkedWorktrees(_ repo: String, remotes: Remotes = .none) throws -> [(path: String, branch: String?, locked: Bool)] {
-        try run(["worktree", "list", "--porcelain"], cwd: repo, remotes: remotes).components(separatedBy: "\n\n").dropFirst().compactMap { b in
-            let lines = b.split(separator: "\n")
+        let nul = remotes.of(repo) == nil
+        let out = try run(["worktree", "list", "--porcelain"] + (nul ? ["-z"] : []), cwd: repo, remotes: remotes)
+        return out.components(separatedBy: nul ? "\0\0" : "\n\n").dropFirst().compactMap { b in
+            let lines = b.split(separator: nul ? "\0" : "\n")
             guard let p = lines.first(where: { $0.hasPrefix("worktree ") }) else { return nil }
             let branch = lines.first { $0.hasPrefix("branch refs/heads/") }.map { String($0.dropFirst(18)) }.flatMap { Git.isRevision($0) ? $0 : nil }
             return (String(p.dropFirst(9)), branch, lines.contains { $0 == "locked" || $0.hasPrefix("locked ") })
@@ -82,22 +86,28 @@ extension Git {
     /// local database, submodules' own work) isn't checked above, and `worktree remove --force` would delete it for good.
     public static func removeWorktree(repo: String, path: String, branch: String?, force: Bool, dropCommits: Bool = false, remotes: Remotes = .none) throws {
         try checkRemovable(repo: repo, path: path, branch: branch, force: force, dropCommits: dropCommits, remotes: remotes)
-        let host = remotes.of(repo)
-        if host == nil, remotes.of(path) == nil, FileManager.default.fileExists(atPath: path) {   // a folder on this Mac
-            // Only a folder git lists as this repo's worktree goes to the Trash, whatever the record says.
+        let host = remotes.of(repo), local = host == nil && remotes.of(path) == nil
+        if host != nil || (local && FileManager.default.fileExists(atPath: path)) {
+            // Only a folder git lists as this repo's worktree goes to the Trash (or aside on a host), whatever the record says.
             let real = { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
-            guard let entry = try linkedWorktrees(repo).first(where: { real($0.path) == real(path) }) else {
+            // A host's path as git lists it, links followed there (git lists /private/tmp for /tmp).
+            let here = try host.map { h in
+                String(decoding: try h.run("cd -- \(RemoteHost.quote(path)) 2>/dev/null && pwd -P || printf %s \(RemoteHost.quote(path))"),
+                       as: UTF8.self).trimmingCharacters(in: .newlines)
+            } ?? real(path)
+            guard let entry = try linkedWorktrees(repo, remotes: remotes).first(where: { (local ? real($0.path) : $0.path) == here }) else {
                 throw GitError(args: ["worktree", "remove"], status: 1, stderr: "\(path) is not a worktree of this repository")
             }
             // Locked (`git worktree lock`: kept on purpose): git wouldn't remove its record, so the folder stays too.
             guard !entry.locked else { throw GitError(args: ["worktree", "remove"], status: 1, stderr: "\(path) is locked (git worktree unlock)") }
-            try Trash.move(URL(fileURLWithPath: path))
         }
+        if local, FileManager.default.fileExists(atPath: path) { try Trash.move(URL(fileURLWithPath: path)) }
         // A remote project's: what git doesn't see (ignored .env files, a local database) is moved aside on the host, into
-        // ~/.kelp-trash, rather than deleted for good by `worktree remove --force`.
+        // ~/.kelp-trash, rather than deleted for good by `worktree remove --force`. The shell's pid keeps two removals
+        // of a same-named folder in one second apart.
         if let host {
             let q = RemoteHost.quote, aside = "\((path as NSString).lastPathComponent)-\(Int(Date().timeIntervalSince1970))"
-            _ = try host.run("d=\"${KELP_TRASH:-$HOME/.kelp-trash}\"; mkdir -p \"$d\" && if [ -e \(q(path)) ]; then mv -- \(q(path)) \"$d\"/\(q(aside)); fi")
+            _ = try host.run("d=\"${KELP_TRASH:-$HOME/.kelp-trash}\"; mkdir -p \"$d\" && if [ -e \(q(path)) ]; then mv -- \(q(path)) \"$d\"/\(q(aside))-$$; fi")
         }
         // Its record only: `worktree prune` would also drop worktrees whose folder is just away (an unmounted disk).
         try run(["worktree", "remove", "--force", path], cwd: repo, remotes: remotes)

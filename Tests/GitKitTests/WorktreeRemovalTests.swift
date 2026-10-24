@@ -30,3 +30,12 @@ import TestSupport
     #expect(FileManager.default.fileExists(atPath: p))
     #expect(try Git.linkedWorktrees(repo).map(\.branch) == ["kept"])
 }
+
+/// A worktree whose path has a newline in it ("…\nlocked") reads as itself: not locked, its path whole.
+@Test func aNewlineInAWorktreesPathReadsAsItself() throws {
+    let repo = try tempRepo()
+    let odd = repo + "-odd\nlocked"
+    try Git.run(["worktree", "add", "-q", "-b", "odd", odd, "main"], cwd: repo)
+    let listed = try Git.linkedWorktrees(repo)
+    #expect(listed.count == 1 && listed.first?.path.hasSuffix("-odd\nlocked") == true && listed.first?.locked == false)
+}
