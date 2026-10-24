@@ -30,6 +30,8 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     /// Every change of phase, and what must happen with one (closing the fd, a signal to the pid), is under this lock.
     private let phase = OSAllocatedUnfairLock(initialState: Phase())
     var phases: Phase { phase.withLock { $0 } }
+    /// Its output is still read here: false once the terminal is closed, or its program let go of it (EOF) and runs on.
+    var reading: Bool { phase.withLock { _ in source != nil } }
 
     /// Typing goes out on a queue of its own, from a copy of the terminal's fd that only this queue closes: a program that
     /// isn't reading can't hold up the caller (a connection's reader thread) or anything that needs `phase`, and a write

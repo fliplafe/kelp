@@ -32,7 +32,7 @@ import Testing
 @Test func aProgramThatLetGoOfItsTerminalIsStillHandedOver() async throws {
     let p = try PTY(argv: ["/bin/sh", "-c", "exec </dev/null >/dev/null 2>&1; sleep 30"], cwd: "/tmp", env: [:], trampoline: nil)
     p.start()
-    try await Task.sleep(for: .milliseconds(500))
+    #expect(try await waitFor(5) { p.phases.terminal == .reading && !p.reading })   // its output ended, its program runs on
     let fd = try #require(p.handOver())
     kill(p.pid, SIGKILL); close(fd)
 }
