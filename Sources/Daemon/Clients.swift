@@ -7,8 +7,9 @@ import Core
 ///
 /// Lock order in the daemon, outermost first: a session's wake lock (`Sessions.wakeLocks`, several taken by id) → `Sessions.live` →
 /// `Clients` → a session's own lock →
-/// a `Connection`'s. (A session's lock is never held while another is taken: output, status and hooks call out after.) `attachIfConnected` holds this one while it subscribes, and the reader's cleanup takes it
-/// first, so a connection is either subscribed and then cleaned up, or never subscribed.
+/// a `Connection`'s. (A session's lock is never held while another is taken: output, status and hooks call out after.)
+/// A JSON attach subscribes, then asks `isConnected`; the reader's cleanup removes the client here first, then detaches it
+/// from every session: one of the two always detaches it.
 final class Clients: Sendable {
     private struct State {
         var all: [Int: Connection] = [:], next = 1
@@ -46,7 +47,7 @@ final class Clients: Sendable {
     func peerPID(_ id: Int) -> pid_t? { state.withLock { $0.all[id]?.peerPID } }
     func setRaw(_ id: Int, _ on: Bool) { state.withLock { s in if on { s.raw.insert(id) } else { s.raw.remove(id) } } }
 
-    /// Runs `body` only while `id` is still connected, under this lock (see the lock order above).
+    /// Whether `id` is still connected (see the attach above).
     func isConnected(_ id: Int) -> Bool { state.withLock { $0.all[id] != nil } }
 
     /// Subscribers of a session's output: the raw ones (bytes) and the rest (a JSON event).
