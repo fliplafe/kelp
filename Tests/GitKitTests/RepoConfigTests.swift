@@ -71,3 +71,15 @@ import Core
     _ = try Git.run(["show", "--stat", "HEAD"], cwd: repo)
     #expect(!FileManager.default.fileExists(atPath: marker))
 }
+
+/// A filter defined in a file the repo's config includes is turned off too, also one added there after the config was
+/// last read: the cache follows the included file's stamp, not just .git/config's.
+@Test func aFilterInAnIncludedConfigIsSeenWhenItChanges() throws {
+    let repo = try tempRepo()
+    try Git.run(["config", "include.path", "extra.cfg"], cwd: repo)
+    try "[filter \"x\"]\n\tclean = cat\n".write(toFile: repo + "/.git/extra.cfg", atomically: true, encoding: .utf8)
+    #expect(RepoFilters.names(repo) == ["x"])
+    try "[filter \"x\"]\n\tclean = cat\n[filter \"y\"]\n\tsmudge = cat\n".write(toFile: repo + "/.git/extra.cfg", atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: repo + "/.git/extra.cfg")
+    #expect(RepoFilters.names(repo) == ["x", "y"])
+}

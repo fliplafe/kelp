@@ -141,7 +141,8 @@ extension RemoteHost {
 /// keeps them, so git-crypt and the like still encrypt. Filters from the user's own (global) config are left alone.
 /// Limit: with its filter off, a file whose stat changed reads as modified in a git-crypt-style repo until it's added.
 enum RepoFilters {
-    private static let cache = OSAllocatedUnfairLock<[String: (stamp: Date, names: [String])]>(initialState: [:])
+    /// By config file: the names, and the stamp of every file they were read from (the config and what it includes).
+    private static let cache = OSAllocatedUnfairLock<[String: (stamps: [String: Date], names: [String])]>(initialState: [:])
 
     /// `-c` arguments that turn them off for one run in `cwd`.
     static func off(_ cwd: String) -> [String] {
@@ -150,25 +151,36 @@ enum RepoFilters {
         }
     }
 
-    /// Read again only when the repository's config file changed (its stamp); every run when it can't be found.
+    /// Read again only when the repository's config, or a file it includes, changed (their stamps); every run when it
+    /// can't be found. Limit: an included file with nothing in it yet isn't watched until the config is read again.
     static func names(_ cwd: String) -> [String] {
-        let file = configFile(cwd)
-        let stamp = file.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
-        if let file, let stamp, let hit = cache.withLock({ $0[file] }), hit.stamp == stamp { return hit.names }
-        let names = read(cwd)
-        if let file, let stamp { cache.withLock { $0[file] = (stamp, names) } }
-        return names
+        guard let file = configFile(cwd) else { return read(cwd).names }
+        if let hit = cache.withLock({ $0[file] }), hit.stamps.allSatisfy({ stamp($0.key) == $0.value }) { return hit.names }
+        let r = read(cwd)
+        let stamps = Dictionary((r.files + [file]).compactMap { f in stamp(f).map { (f, $0) } }) { a, _ in a }
+        cache.withLock { $0[file] = (stamps, r.names) }
+        return r.names
     }
 
-    private static func read(_ cwd: String) -> [String] {
-        let args = ["/usr/bin/git", "-c", "core.fsmonitor=false", "config", "--show-scope", "--get-regexp", #"^filter\..*\.(clean|smudge|process)$"#]
-        guard let r = try? Subprocess.run(args, cwd: cwd, env: ProcessInfo.processInfo.environment, timeLimit: 10, limit: 1 << 20) else { return [] }
-        return Set(String(decoding: r.stdout, as: UTF8.self).split(whereSeparator: \.isNewline).compactMap { line -> String? in
-            let f = line.split(separator: "\t", maxSplits: 1)
-            guard f.count == 2, f[0] == "local" || f[0] == "worktree", let key = f[1].split(separator: " ").first else { return nil }
-            let parts = key.split(separator: ".")
-            return parts.count >= 3 ? parts.dropFirst().dropLast().joined(separator: ".") : nil
-        }).sorted()
+    private static func stamp(_ path: String) -> Date? { try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date }
+
+    /// The repository's own filter names, and the files its config was read from (includes followed).
+    private static func read(_ cwd: String) -> (names: [String], files: [String]) {
+        let args = ["/usr/bin/git", "-c", "core.fsmonitor=false", "config", "--show-scope", "--show-origin", "--list"]
+        guard let r = try? Subprocess.run(args, cwd: cwd, env: ProcessInfo.processInfo.environment, timeLimit: 10, limit: 1 << 20) else { return ([], []) }
+        var names = Set<String>(), files = Set<String>()
+        for line in String(decoding: r.stdout, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            // "local<TAB>file:.git/config<TAB>filter.x.clean=cmd"
+            let f = line.split(separator: "\t", maxSplits: 2)
+            guard f.count == 3, f[0] == "local" || f[0] == "worktree" else { continue }
+            if f[1].hasPrefix("file:") { files.insert(String(f[1].dropFirst(5))) }
+            let parts = (f[2].split(separator: "=", maxSplits: 1).first ?? "").split(separator: ".")
+            if parts.count >= 3, parts.first == "filter", ["clean", "smudge", "process"].contains(parts.last ?? "") {
+                names.insert(parts.dropFirst().dropLast().joined(separator: "."))
+            }
+        }
+        let root = URL(fileURLWithPath: cwd)
+        return (names.sorted(), files.map { URL(fileURLWithPath: $0, relativeTo: root).standardizedFileURL.path })
     }
 
     /// The config file of the repository `cwd` is in: .git/config, or the main one's for a linked worktree.
