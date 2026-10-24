@@ -216,7 +216,7 @@ private extension Data {
     #expect(order == Array(0..<8))
 }
 
-private final class Flag: @unchecked Sendable {   // the bool under lock
+final class Flag: @unchecked Sendable {   // the bool under lock
     private let lock = NSLock(); private var on = false
     func set() { lock.withLock { on = true } }
     var value: Bool { lock.withLock { on } }

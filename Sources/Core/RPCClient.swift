@@ -118,7 +118,8 @@ public final class RPCClient: Sendable {
 
     /// Queued for the writer (callers check `closed` first). Nothing is written once the reader is done: the fd is closed
     /// after it, and the number may be someone else's by then.
-    private func write(_ d: Data) { writer.async { [self] in if !state.withLock({ $0.readerDone }) { Unix.writeAll(fd, d) } } }
+    /// A write that gives up part way closes the connection: the next line would be glued to half of this one.
+    private func write(_ d: Data) { writer.async { [self] in if !state.withLock({ $0.readerDone }), !Unix.writeAll(fd, d) { close() } } }
 
     /// `timeout`: throw if no reply came by then — for polls, where one reply that never arrives would stop the loop for good.
     public func call(_ method: String, _ params: JSONValue? = nil, timeout: TimeInterval? = nil) async throws -> JSONValue {
