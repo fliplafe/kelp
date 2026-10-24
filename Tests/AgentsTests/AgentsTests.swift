@@ -118,6 +118,16 @@ import TestSupport
     d.hook("working"); #expect(d.status == .working)
 }
 
+@Test func kiloReportsThroughItsPlugin() throws {
+    let kilo = try #require(AgentManifest.presets.first { $0.id == "kilo" })
+    #expect(kilo.hooked && kilo.hooksConfigDirEnv == "KILO_CONFIG_DIR")
+    var d = StatusDetector(manifest: kilo)
+    d.output("Thinking… esc interrupt", at: Date().addingTimeInterval(10))   // no turn guessed from what it prints
+    #expect(d.status == .idle)
+    d.hook("working"); #expect(d.status == .working)
+    #expect(Hooks.pluginJS.contains("parentID") && Hooks.pluginJS.contains("kelp\", [\"hook\""))
+}
+
 @Test func answeredQuestionIsNotAskedAgain() throws {
     let t0 = Date()
     let codex = try #require(AgentManifest.presets.first { $0.id == "codex" })

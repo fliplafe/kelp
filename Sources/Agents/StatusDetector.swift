@@ -21,7 +21,7 @@ public struct StatusDetector: Sendable {
         self.manifest = manifest
         // Agents with hooks report every change themselves; guessing from output would call a TUI that redraws
         // its idle prompt "working" (a resumed Claude Code sits at its prompt until it gets a task).
-        hooked = manifest.hooksSettingsFlag != nil
+        hooked = manifest.hooked
         regexes = manifest.waitingPatterns.compactMap { try? NSRegularExpression(pattern: $0) }
     }
 

@@ -240,7 +240,8 @@ final class Sessions: Sendable {
         do {
             guard let rec = try store.session(h.id) else { throw RPCError.invalidParams("no session \(h.id)") }
             var m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
-            if remotes.of(rec.cwd) != nil { m.hooksSettingsFlag = nil }   // as `liveManifest`; past startup, nothing is answered for it
+            // As `liveManifest`; past startup, nothing is answered for it.
+            if remotes.of(rec.cwd) != nil { m.hooksSettingsFlag = nil; m.hooksConfigDirEnv = nil }
             let ls = LiveSession(record: rec, manifest: m, pty: pty, historyDir: root.appendingPathComponent("history"), callbacks: callbacks(for: rec))
             ls.adopted(modes: h.modes, bytes: h.bytes)
             try live.add(ls)

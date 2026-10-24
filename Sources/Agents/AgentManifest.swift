@@ -29,6 +29,11 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var quietSeconds: Double = 3
     /// If set, hooks are supported: `{hooksSettingsFlag} <file>` is appended and the file holds Stop/Notification hooks.
     public var hooksSettingsFlag: String?
+    /// If set, hooks are a plugin in an OpenCode-style config dir (Kilo Code, OpenCode): `{hooksConfigDirEnv}=<dir>` for the
+    /// session, the dir's `plugin/kelp.js` runs `kelp hook` on each change. The agent's own config dir is still read.
+    public var hooksConfigDirEnv: String?
+    /// The agent reports its own status (hooks): heuristics stay off.
+    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil }
     /// `--model`-style flag and suggested models for the picker.
     public var modelFlag: String?
     public var models: [String] = []
@@ -51,12 +56,14 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var install: String?, update: String?, npm: String?
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
-                waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3, hooksSettingsFlag: String? = nil,
+                waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3,
+                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil,
                 modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
                 autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil, contextFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
+        self.hooksConfigDirEnv = hooksConfigDirEnv
         self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag; self.contextFlag = contextFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
@@ -72,6 +79,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         waitingPatterns = try c.decodeIfPresent([String].self, forKey: .waitingPatterns) ?? d.waitingPatterns
         quietSeconds = try c.decodeIfPresent(Double.self, forKey: .quietSeconds) ?? d.quietSeconds
         hooksSettingsFlag = try c.decodeIfPresent(String.self, forKey: .hooksSettingsFlag)
+        hooksConfigDirEnv = try c.decodeIfPresent(String.self, forKey: .hooksConfigDirEnv)
         modelFlag = try c.decodeIfPresent(String.self, forKey: .modelFlag)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
@@ -172,7 +180,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "codex", name: "Codex", command: "codex", modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
               effortArgs: ["low": ["-c", "model_reasoning_effort=low"], "medium": ["-c", "model_reasoning_effort=medium"], "high": ["-c", "model_reasoning_effort=high"]],
               autoAnswers: [trust], resumeArgs: ["resume", "--last"]),
-        .init(id: "opencode", name: "OpenCode", command: "opencode", modelFlag: "-m", resumeArgs: ["--continue"]),
+        .init(id: "opencode", name: "OpenCode", command: "opencode", hooksConfigDirEnv: "OPENCODE_CONFIG_DIR", modelFlag: "-m",
+              resumeArgs: ["--continue"]),
         .init(id: "gemini", name: "Gemini CLI", command: "gemini", modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
         .init(id: "pi", name: "Pi", command: "pi"),
@@ -182,7 +191,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "antigravity", name: "Antigravity", command: "agy"),
         .init(id: "qwen", name: "Qwen Code", command: "qwen"),
         .init(id: "kimi", name: "Kimi", command: "kimi"),
-        .init(id: "kilo", name: "Kilo Code", command: "kilo"),
+        .init(id: "kilo", name: "Kilo Code", command: "kilo", hooksConfigDirEnv: "KILO_CONFIG_DIR"),
         .init(id: "crush", name: "Crush", command: "crush"),
         .init(id: "droid", name: "Droid", command: "droid"),
         .init(id: "copilot", name: "GitHub Copilot", command: "copilot"),
@@ -234,6 +243,45 @@ public enum Hooks {
     public static func isIdleReminder(_ payload: JSONValue) -> Bool {
         payload["notification_type"]?.string == "idle_prompt"
             || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
+    }
+
+    /// Kilo Code / OpenCode plugin (`hooksConfigDirEnv`): busy → working, a permission or question → waiting, idle → done.
+    /// A subagent's session (one with a parent) idles before the turn ends: skipped. Hooks run one after another, so they
+    /// arrive in order.
+    public static let pluginJS = """
+        // Kelp's status hooks, for Kelp's sessions only (written by Kelp; changes are overwritten).
+        import { spawn } from "node:child_process";
+        const children = new Set();
+        let last, queue = Promise.resolve();
+        const report = (state) => {
+          if (!process.env.KELP_SESSION || state === last) return;
+          last = state;
+          queue = queue.then(() => new Promise((done) => {
+            const c = spawn("kelp", ["hook", state], { stdio: "ignore" });
+            c.on("exit", done); c.on("error", done);
+          }));
+        };
+        export const KelpStatus = async () => ({
+          event: async ({ event }) => {
+            const p = event?.properties ?? {};
+            if (p.info?.parentID) children.add(p.info.id);
+            if (children.has(p.sessionID ?? p.info?.id)) return;
+            switch (event?.type) {
+              case "session.status": if (p.status?.type === "busy") report("working"); break;
+              case "permission.asked": case "question.asked": report("waiting"); break;
+              case "permission.replied": case "question.replied": case "question.rejected": report("working"); break;
+              case "session.idle": case "session.error": report("done"); break;
+            }
+          },
+        });
+
+        """
+
+    /// The config dir for `hooksConfigDirEnv`, with the plugin in it.
+    public static func writePlugin(dir: URL) throws {
+        let plugins = dir.appendingPathComponent("plugin")
+        try Paths.ensure(plugins)
+        try pluginJS.write(to: plugins.appendingPathComponent("kelp.js"), atomically: true, encoding: .utf8)
     }
 
     public static func writeSettings(to url: URL) throws {

@@ -30,6 +30,11 @@ extension Sessions {
         // Not into tmux: its server keeps the first client's environment for every pane, whichever tab they're shown in.
         if Tmux.session(rec.argv) == nil { env["KELP_SESSION"] = rec.id }
         env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
+        // Written at each start and wake, so a session woken after an update gets this kelpd's plugin.
+        if let key = m.hooksConfigDirEnv, env[key] == nil, remotes.of(rec.cwd) == nil {
+            let dir = root.appendingPathComponent("hooks-\(m.id)")
+            if (try? Hooks.writePlugin(dir: dir)) != nil { env[key] = dir.path }
+        }
         env["PATH"] = Self.childPath
         return env
     }
@@ -60,7 +65,7 @@ extension Sessions {
     /// from the screen, which an agent that has hooks elsewhere would never get read.
     func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String]) -> AgentManifest {
         var out = trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env)
-        if remotes.of(cwd) != nil { out.hooksSettingsFlag = nil }
+        if remotes.of(cwd) != nil { out.hooksSettingsFlag = nil; out.hooksConfigDirEnv = nil }
         return out
     }
 

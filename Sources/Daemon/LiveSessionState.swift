@@ -68,7 +68,7 @@ extension LiveSession {
         init(record: Session, manifest: AgentManifest, logSize: Int, callbacks: Callbacks) {
             self.record = record
             detector = StatusDetector(manifest: manifest)
-            hooked = manifest.hooksSettingsFlag != nil
+            hooked = manifest.hooked
             selfNames = [manifest.id, manifest.name, (record.cwd as NSString).lastPathComponent]
             autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
             self.logSize = logSize
