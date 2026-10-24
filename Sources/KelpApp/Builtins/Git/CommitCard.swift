@@ -170,7 +170,7 @@ final class CommitCardView: NSView {
         let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
         let when = date.formatted(sameYear ? .dateTime.month(.abbreviated).day().hour().minute()
                                            : .dateTime.month(.abbreviated).day().year().hour().minute())
-        let author = label(c.author, font: .ui(11, weight: .medium)); author.textColor = .labelColor
+        let author = label(c.author, font: .ui(11, weight: .medium)); author.textColor = .secondaryLabelColor
         author.setContentCompressionResistancePriority(.init(200), for: .horizontal)
         let row = NSStackView(views: [avatar, author, label("· \(ago) · \(when)", font: .ui(11)), NSView()]); row.spacing = 4
         row.setCustomSpacing(6, after: avatar)

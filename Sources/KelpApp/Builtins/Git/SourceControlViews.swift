@@ -178,7 +178,7 @@ final class CommitCell: NSTableCellView, Hoverable {
         let scope = NSTextField(labelWithString: s.scope ?? ""); scope.font = .ui(11); scope.textColor = .tertiaryLabelColor
         scope.lineBreakMode = .byTruncatingTail; scope.setContentCompressionResistancePriority(.init(250), for: .horizontal)
         scope.widthAnchor.constraint(lessThanOrEqualToConstant: TextSize.of(80)).isActive = true
-        let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .tertiaryLabelColor
+        let date = NSTextField(labelWithString: Self.relative(c.date)); date.font = .ui(11); date.textColor = .secondaryLabelColor
         // Not on the remote yet: an arrow before the time, as in GitHub Desktop.
         let notPushed = String(localized: "Not pushed yet")
         up.image = .symbol("arrow.up", notPushed); up.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
