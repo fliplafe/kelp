@@ -92,3 +92,10 @@ import Core
     try "[core]\n\tbare = false\n[filter \"evil\"]\n\tclean = touch ran\n".write(toFile: modules + "/config", atomically: true, encoding: .utf8)
     #expect(RepoFilters.names(repo).contains("evil"))
 }
+
+/// gh and glab run git themselves: the git they run turns off a repo's fsmonitor as Kelp's own does.
+@Test func programsThatRunGitGetNoFsmonitor() throws {
+    let repo = try tempRepo()
+    let out = try Git.run(["-c", "printf %s \"$GIT_CONFIG_COUNT $GIT_CONFIG_KEY_0=$GIT_CONFIG_VALUE_0\""], cwd: repo, executable: "/bin/sh")
+    #expect(out == "2 core.fsmonitor=false")
+}

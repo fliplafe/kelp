@@ -67,6 +67,12 @@ extension Git {
         var env = ProcessInfo.processInfo.environment
         env["GIT_TERMINAL_PROMPT"] = "0"; env["LC_ALL"] = "C"
         env["GIT_OPTIONAL_LOCKS"] = "0"   // a status doesn't rewrite the index (which would wake the file watchers again)
+        // gh and glab run git themselves: no fsmonitor and no signature program of a repo's own there either.
+        if executable != "/usr/bin/git", env["GIT_CONFIG_COUNT"] == nil {
+            let pairs = [("core.fsmonitor", "false"), ("log.showSignature", "false")]
+            env["GIT_CONFIG_COUNT"] = String(pairs.count)
+            for (i, (k, v)) in pairs.enumerated() { env["GIT_CONFIG_KEY_\(i)"] = k; env["GIT_CONFIG_VALUE_\(i)"] = v }
+        }
         env.merge(extra) { $1 }
         // A host that drops packets or a credential helper waiting on nobody is stopped at the time limit, with its children.
         let r = try Subprocess.run([executable] + args, cwd: cwd, env: env, stdin: stdin, timeLimit: timeLimit, limit: limit)
