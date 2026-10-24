@@ -223,6 +223,7 @@ final class Sessions: Sendable {
     /// A session taken out of `live` with its program still to stop (paused, deleted): the terminals streaming it are
     /// hung up, so `kelp attach` ends instead of showing a screen nothing reaches any more (the app attaches again when
     /// the tab is shown). JSON subscribers just stop getting output; the record's status tells them why.
+    /// A program that ended by itself keeps its terminals attached on purpose: they show its last screen and exit code.
     func hangUpStreams(_ ls: LiveSession) { clients.split(ls.letGo()).raw.forEach { $0.hangUp() } }
 
     /// Deletes a session for good: it stops, its record and log go, and its exit can't save it again.

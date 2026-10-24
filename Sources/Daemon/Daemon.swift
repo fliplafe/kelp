@@ -446,6 +446,8 @@ public final class Daemon: Sendable {
         try? Wire.line(Reply(id: id, result: nil, error: (error as? RPCError) ?? .internalError("\(error)")))
     }
 
+    /// Not ordered with replies on other threads: an event can reach a client before the reply it follows from. Events
+    /// that carry state carry all of it (a session's record, a revision), so the later one read wins either way.
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
 
 }

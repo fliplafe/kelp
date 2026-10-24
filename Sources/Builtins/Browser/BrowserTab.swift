@@ -208,6 +208,8 @@ final class BrowserTab: NSObject, TabContent, WKNavigationDelegate, WKScriptMess
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(msg, forType: .string)
             Banner.show(String(localized: "No agent in this workspace — the element details were copied to the clipboard.")); return
         }
+        // The page wrote most of it (html, styles, selector): a draft the user reads and sends, never Enter, and the
+        // daemon types it as plain text (`typeable`: no escapes or control keys).
         Task { await app.call(SessionSend(id: sid, text: msg, enter: false)) }
         app.workbench.focus(session: sid)
     }
