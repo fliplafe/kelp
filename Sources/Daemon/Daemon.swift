@@ -309,7 +309,7 @@ public final class Daemon: Sendable {
         // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
         if let s = t as? any SessionInput.Type {
             let conn = c.id
-            s.answerInOrder(req.params ?? .null, sessions, allowed: { [clients] in if let r = $0 { try clients.requireApp(conn, r) } }, done: reply)
+            s.answerInOrder(req.params ?? .null, sessions, allowed: { [self] in try allow($0, conn: conn) }, done: reply)
             return
         }
         let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
@@ -366,8 +366,14 @@ public final class Daemon: Sendable {
         // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
         // queued inside the session's lock, which `Handled` can't express.
         if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: c.id))?.id,
-           sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
-           let ls = try? await offloads.runNow({ [self] in try sessions.liveSession(sid) }) {
+           sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated {
+            // A wake that fails says why, once: falling through would wake it a second time, in the slow lane.
+            let ls: LiveSession
+            do { ls = try await offloads.runNow({ [self] in try sessions.liveSession(sid) }) } catch {
+                Self.log(req.method, failed: error, notification: false)
+                if let d = Self.errorLine(id: id, error) { c.send(d) }
+                return
+            }
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
             var attached = true

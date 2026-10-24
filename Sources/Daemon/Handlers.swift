@@ -35,13 +35,11 @@ extension Answered {
     /// The method's params as its type, from a client allowed to call it: checked here, for every method.
     static func checked(_ p: JSONValue, _ d: Daemon, conn: Int) throws -> Self {
         let m = try decoded(p)
-        if let refusal = m.onlyFromKelp { try d.clients.requireApp(conn, refusal) }
-        if let id = m.reportsFor, let pid = d.clients.peerPID(conn), let own = d.sessions.session(running: pid), own != id {
-            throw RPCError.invalidParams("A session reports only its own status.")
-        }
+        try d.allow(m, conn: conn)
         return m
     }
 }
+
 
 /// What a method's handler is given (`Handled.Service`): one of the daemon's services, never the daemon itself, so it
 /// reaches only what that service holds. A handler names the type it takes (`handle(_ sessions: Sessions)`); which of
@@ -66,7 +64,11 @@ extension UIStore: DaemonService { static func of(_ d: Daemon) -> UIStore { UISt
 extension ForgeWork: DaemonService { static func of(_ d: Daemon) -> ForgeWork { ForgeWork(forges: d.forges, workspaces: d.workspaces) } }
 extension Shutdown: DaemonService { static func of(_ d: Daemon) -> Shutdown { Shutdown { [weak d] in d?.stop() } } }
 extension Upgrade: DaemonService {
-    static func of(_ d: Daemon) -> Upgrade { Upgrade(executable: Daemon.executable, root: d.root) { [weak d] in d?.upgrade() } }
+    static func of(_ d: Daemon) -> Upgrade {
+        let root = d.root, offloads = d.offloads
+        return Upgrade(executable: Daemon.executable, root: root, adoptable: { Handover.adoptable(Daemon.executable, home: root) },
+                       waitIdle: { offloads.waitIdle(seconds: 10) }) { [weak d] in d?.upgrade() }
+    }
 }
 
 /// Answered on a thread of its own (`offload`): git, files, the store. `handle(_:conn:)` for the few that need the asking
@@ -186,6 +188,14 @@ extension Daemon {
     /// time limits, so a thread is held only while its program runs; at most `offloadLimit` run at once, the rest wait
     /// their turn in the order they came, holding no thread meanwhile. `quick` work (`Handled.quick`) takes no slot and
     /// starts no program.
+    /// Whether the client on `conn` may make this call: the one place every path asks (`checked`, a session's input).
+    func allow(_ m: any Answered, conn: Int) throws {
+        if let refusal = m.onlyFromKelp { try clients.requireApp(conn, refusal) }
+        if let id = m.reportsFor, let pid = clients.peerPID(conn), let own = sessions.session(running: pid), own != id {
+            throw RPCError.invalidParams("A session reports only its own status.")
+        }
+    }
+
     func offload<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await offloads.run(quick: quick, work)
     }

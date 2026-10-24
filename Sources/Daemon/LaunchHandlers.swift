@@ -184,6 +184,14 @@ extension DaemonUpgrade: Handled {
             throw RPCError.invalidParams("no kelpd to upgrade to at \(upgrade.executable)")
         }
         if let why = upgrade.refused() { throw RPCError.invalidParams(why) }
+        // Before the reply, so a refusal reaches the app as this call's error and it asks the user at once, instead of
+        // reconnecting to a daemon that stayed. The app waits for this answer; only its own connection is held meanwhile.
+        guard Subprocess.allowingPrograms(upgrade.adoptable) else {
+            let why = "The new background service can't take the running sessions over."
+            Upgrade.refuse(root: upgrade.root, executable: upgrade.executable, why)
+            throw RPCError.invalidParams(why)
+        }
+        upgrade.waitIdle()   // a clone or a worktree being made finishes instead of losing its git mid-way
         return Done()
     }
 }
@@ -191,6 +199,10 @@ extension DaemonUpgrade: Handled {
 /// daemon.upgrade's: the binary the daemon runs and its exec in place, nothing else of it.
 struct Upgrade {
     let executable: String, root: URL
+    /// Whether the kelpd at `executable` takes the sessions over (`Handover.adoptable`).
+    var adoptable: () -> Bool = { true }
+    /// Until no slow work is running (at most a few seconds).
+    var waitIdle: () -> Void = {}
     let run: @Sendable () -> Void
 
     /// Why the binary now at `executable` was refused, as long as it's still that one (same modification time).

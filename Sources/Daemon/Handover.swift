@@ -17,12 +17,16 @@ public struct Handover: Codable, Sendable {
     /// prints something else or nothing.
     public static let canAdopt = "kelpd adopts handover 1"
 
-    /// Whether the kelpd at `executable` takes sessions over (`canAdopt`), asked by running it. In this daemon's home: a
-    /// kelpd from before the flag starts as a daemon instead, and stops at once on the lock this one holds.
+    /// Whether the kelpd at `executable` takes sessions over (`canAdopt`), asked by running it. In an empty home of its
+    /// own: a kelpd from before the flag starts as a daemon instead, there, touching nothing of this one's (its store, its
+    /// lock), and is stopped at the time limit. `home`: where that empty one is made.
     static func adoptable(_ executable: String, home: URL) -> Bool {
-        guard let r = Log.start.attempt("asking \(executable) whether it adopts", {
-            try Subprocess.run([executable, "--can-adopt"], cwd: "/", env: ["KELP_HOME": home.path], timeLimit: 10)
-        }) else { return false }
+        let scratch = home.appendingPathComponent("adopt-check-\(getpid())")
+        defer { Log.start.attempt("removing the adopt check's home") { try FileManager.default.removeItem(at: scratch) } }
+        guard Log.start.attempt("making the adopt check's home", { try Paths.ensure(scratch) }) != nil,
+              let r = Log.start.attempt("asking \(executable) whether it adopts", {
+                  try Subprocess.run([executable, "--can-adopt"], cwd: "/", env: ["KELP_HOME": scratch.path], timeLimit: 10)
+              }) else { return false }
         return r.status == 0 && String(decoding: r.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == canAdopt
     }
 

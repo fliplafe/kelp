@@ -34,6 +34,15 @@ public enum Subprocess {
     }
     private static let quickOnlyKey = "dev.kelp.subprocess.quickOnly"
 
+    /// `body` may start programs although it runs in a quick or in-order call: only for a caller that has to answer
+    /// after one and holds up nobody else meanwhile (daemon.upgrade's check of the new kelpd, which the app waits for).
+    public static func allowingPrograms<T>(_ body: () throws -> T) rethrows -> T {
+        let d = Thread.current.threadDictionary, was = d[quickOnlyKey]
+        d[quickOnlyKey] = nil
+        defer { d[quickOnlyKey] = was }
+        return try body()
+    }
+
     /// `argv[0]` is a path. `env` is the whole environment. Past `limit` bytes a stream is still read to its end, so the
     /// program ends as it would have (its exit status, whatever it does besides printing), but the rest is dropped and
     /// the output is `truncated`: a caller that needs all of it fails then, one that can show a part says so.

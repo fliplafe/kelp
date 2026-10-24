@@ -254,7 +254,7 @@ private func codeOnly(_ s: String) -> String {
 /// A `try?` turns a failure into nothing, unseen: right for a probe ("is it there", "does it parse"), wrong for a write,
 /// a cleanup or a store change, which say what failed with `Log.attempt` instead. Each module's count is a ceiling.
 @Test func failuresAreNotSwallowed() throws {
-    let ceilings = ["Daemon": 109, "KelpKit": 66, "Core": 31, "GitKit": 29, "AgentData": 32, "Agents": 23, "kelp": 20, "Builtins": 13,
+    let ceilings = ["Daemon": 108, "KelpKit": 66, "Core": 31, "GitKit": 29, "AgentData": 32, "Agents": 23, "kelp": 20, "Builtins": 13,
                     "Integrations": 11, "LSPKit": 7, "Markdown": 4, "TerminalKit": 3]
     for (module, ceiling) in ceilings {
         let n = try matches(#"\btry\?"#, in: ["Sources/" + module]).count
@@ -267,7 +267,7 @@ private func codeOnly(_ s: String) -> String {
 /// checked for itself could forget, or check after it had already acted.
 @Test func whoMayCallAMethodIsCheckedInOnePlace() throws {
     let checks = try matches(#"\.requireApp\("#, in: ["Sources/Daemon"])
-    let dispatch = ["Sources/Daemon/Handlers.swift:", "Sources/Daemon/Daemon.swift:"]
+    let dispatch = ["Sources/Daemon/Handlers.swift:"]
     #expect(checks.allSatisfy { c in dispatch.contains { c.hasPrefix($0) } }, "who-may-call checks outside the dispatcher: \(checks)")
     // Params are read as a method's type only where the caller is checked too: `checked`, or a session's input, which
     // checks `onlyFromKelp` itself right after (SessionLanes).

@@ -53,12 +53,12 @@ extension SessionInput {
     }
 
     /// On the connection's reader thread: `done` with the reply's result, now or from the lane. `allowed` refuses a caller
-    /// that isn't Kelp's window when the method says only it may call (`onlyFromKelp`), as for every other method.
-    static func answerInOrder(_ p: JSONValue, _ sessions: Sessions, allowed: (_ onlyFromKelp: String?) throws -> Void,
+    /// the method doesn't take (`Daemon.allow`), as for every other method.
+    static func answerInOrder(_ p: JSONValue, _ sessions: Sessions, allowed: (any Answered) throws -> Void,
                               done: @escaping @Sendable (Swift.Result<Data, Error>) -> Void) {
         do {
             let m = try decoded(p)
-            try allowed(m.onlyFromKelp)
+            try allowed(m)
             if sessions.lanes.isClear(m.id), let ls = sessions.existing(m.id), let r = try ls.input({ try m.apply(to: ls) }) {
                 done(.success(try JSONEncoder().encode(r))); return
             }

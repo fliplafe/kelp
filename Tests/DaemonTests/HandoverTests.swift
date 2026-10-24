@@ -113,6 +113,11 @@ private func name(_ pid: pid_t) -> String {
     Upgrade.refuse(root: home, executable: fake, "can't take them")
     #expect(upgrade.refused() == "can't take them")
     #expect(throws: RPCError.self) { try DaemonUpgrade().handle(upgrade) }
+    // Refused in the call itself, before anything is handed over, so the app hears it as the call's error.
+    let other = home.appendingPathComponent("again"), fresh = Upgrade(executable: fake, root: other, adoptable: { false }) {}
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    #expect(throws: RPCError.self) { try DaemonUpgrade().handle(fresh) }
+    #expect(fresh.refused() != nil)
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: fake)   // replaced
     #expect(upgrade.refused() == nil)
 }

@@ -44,3 +44,11 @@ import Core
     while sent <= Daemon.lineLimit + (8 << 20), Unix.writeAll(fd, chunk) { sent += chunk.count }
     #expect(sent <= Daemon.lineLimit + (8 << 20))   // a write failed: the daemon hung up
 }
+
+/// A session's wake lock is kept only while someone holds or waits for it: a deleted session leaves none behind.
+@Test func wakeLocksGoWhenNobodyHoldsThem() {
+    let locks = WakeLocks()
+    locks.withLock("a") { #expect(locks.count == 1) }
+    locks.withLocks(["a", "b"]) { #expect(locks.count == 2) }
+    #expect(locks.count == 0)
+}
