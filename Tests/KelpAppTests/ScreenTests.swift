@@ -117,13 +117,47 @@ extension OneAtATime {
     }
 }
 
-@Test func theAgentWaitingForYouIsNamedInTheLineOverTheListNotRepeatedInIt() throws {
+@Test func theAgentWaitingForYouIsNamedOverTheListToo() throws {
     var ask = Session(worktreeId: "w3", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?", summary: "Needs permission")
     ask.statusAt = Date() - 60   // it has needed you a while (Inbox.settle)
     try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { vc, o in
         let titled: [String] = rows(of: o).flatMap { $0 }.filter { $0 == "Allow rm?" }   // typed: CI's type check gave up on it
         #expect(titled.count == 1)   // under its workspace only
-        #expect(texts(vc.view).contains { $0.contains("Needs permission") && $0.contains("c") })   // who, where, what — over the list
+        #expect(texts(vc.view).filter { $0 == "Allow rm?" }.count == 2)   // over the list too
+    }
+}
+
+@Test func everyAgentThatNeedsYouIsOverTheListAndTheListStaysPut() throws {
+    func asking(_ n: Int) -> [Session] {
+        (1...n).map { i in
+            var s = Session(worktreeId: "w\(i)", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Ask \(i)", summary: "Question \(i)")
+            s.statusAt = Date() - 60
+            return s
+        }
+    }
+    try withSidebar(repos: [project], worktrees: (1...4).map { desk("w\($0)", "b\($0)") }, sessions: asking(1)) { vc, o in
+        let top = { o.convert(o.rect(ofRow: 0), to: nil).minY }   // the project's row, in the window
+        let before = top()
+        vc.app.sessions = asking(4)
+        for case let line as AgentSummary in vc.view.subviews { line.update() }   // what it hears on the main queue's next turn
+        vc.view.layoutSubtreeIfNeeded()
+        #expect((1...4).allSatisfy { i in texts(vc.view).contains("Ask \(i)") })   // no click needed
+        #expect(top() == before)   // the three that came stack over the list: nothing in it moved
+    }
+}
+
+@Test func overTheListAHeadingCountsThemAndEachHasItsRow() throws {
+    func agent(_ w: String, _ status: AgentStatus, _ title: String) -> Session {
+        var s = Session(worktreeId: w, cwd: "/", command: "claude", agent: "claude", status: status, title: title, summary: "Question")
+        s.statusAt = Date() - 60
+        s.unread = true
+        return s
+    }
+    let sessions = [agent("w1", .waiting, "Ask"), agent("w2", .done, "Report A"), agent("w3", .done, "Report B")]
+    try withSidebar(repos: [project], worktrees: (1...3).map { desk("w\($0)", "b\($0)") }, sessions: sessions) { vc, _ in
+        let all = texts(vc.view)
+        #expect(all.contains { $0.contains("NEEDS YOU") && $0.contains("3") })
+        #expect(all.contains("Report A") && all.contains("Report B"))
     }
 }
 
