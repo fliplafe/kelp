@@ -136,11 +136,10 @@ public enum Subprocess {
                 var ready = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
                 while true {
                     let r = poll(&ready, 1, 500)
-                    if r == 0 || (r < 0 && errno == EINTR) {
-                        // Closed here, after the last read: the Process holds the pipe too, so it wouldn't close with this.
-                        if abandoned.withLock({ $0 }) { try? pipe.fileHandleForReading.close(); break }
-                        continue
-                    }
+                    // Closed here, after the last read: the Process holds the pipe too, so it wouldn't close with this.
+                    // Checked on every turn: a child that keeps writing would otherwise keep the thread for its life.
+                    if abandoned.withLock({ $0 }) { try? pipe.fileHandleForReading.close(); break }
+                    if r == 0 || (r < 0 && errno == EINTR) { continue }
                     let n = read(fd, &buf, buf.count)
                     if n > 0 {
                         // Past the limit it's still read (a full pipe would stop the program) and dropped.

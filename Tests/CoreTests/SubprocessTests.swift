@@ -49,6 +49,16 @@ private let env = ProcessInfo.processInfo.environment
     #expect(!FileManager.default.fileExists(atPath: mark))
 }
 
+/// A lingering child that keeps writing is let go of too, not read for as long as it lives.
+@Test func aSubprocessLetsGoOfAChildThatKeepsWriting() throws {
+    let mark = NSTemporaryDirectory() + "sp-\(UUID().uuidString)"
+    defer { try? FileManager.default.removeItem(atPath: mark) }
+    let child = "(for i in $(seq 60); do echo x || exit; sleep 0.1; done; touch \(mark)) &"
+    _ = try Subprocess.run(["/bin/bash", "-c", "echo hi; " + child], cwd: "/tmp", env: env, timeLimit: 30)
+    Thread.sleep(forTimeInterval: 5)
+    #expect(!FileManager.default.fileExists(atPath: mark))
+}
+
 /// Past its limit a stream is still read, so the program runs to its end (its status is its own), but only the first
 /// `limit` bytes are kept, and the output says it's cut.
 @Test func aSubprocessKeepsItsLimitAndRunsToTheEnd() throws {
