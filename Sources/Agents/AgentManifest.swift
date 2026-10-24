@@ -189,11 +189,13 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
               resumeArgs: ["--continue"]),
         .init(id: "gemini", name: "Gemini CLI", command: "gemini", modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
-        .init(id: "pi", name: "Pi", command: "pi"),
+        // Pi and Antigravity report through OSC 7501 only if Kelp's reply to their probe beats the terminal's DA reply;
+        // their variables make them report anyway.
+        .init(id: "pi", name: "Pi", command: "pi", env: ["PI_PROGRAM_STATUS": "1"]),
         .init(id: "amp", name: "Amp", command: "amp"),
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
-        .init(id: "antigravity", name: "Antigravity", command: "agy"),
+        .init(id: "antigravity", name: "Antigravity", command: "agy", env: ["AGY_CLI_OSC7501": "on"]),
         .init(id: "qwen", name: "Qwen Code", command: "qwen", hooksSettingsEnv: "QWEN_CODE_SYSTEM_SETTINGS_PATH"),
         .init(id: "kimi", name: "Kimi", command: "kimi"),
         .init(id: "kilo", name: "Kilo Code", command: "kilo", hooksConfigDirEnv: "KILO_CONFIG_DIR"),
