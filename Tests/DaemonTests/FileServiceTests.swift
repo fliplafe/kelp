@@ -150,3 +150,14 @@ import Core
         #expect(best <= budget)
     }
 }
+
+/// A saved script stays executable (Foundation's atomic write keeps the old file's permissions: this holds it to that).
+@Test func aSaveKeepsTheFilesPermissions() async throws {
+    let (d, c, _) = try daemon(); defer { d.stop() }
+    let file = tmp().path + "/deploy.sh"
+    try "#!/bin/sh\n".write(toFile: file, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file)
+    let read = try await c.call(FilesRead(path: file))
+    _ = try await c.call(FilesWrite(path: file, text: "#!/bin/sh\necho hi\n", base: read.stamp))
+    #expect((try FileManager.default.attributesOfItem(atPath: file)[.posixPermissions] as? Int) == 0o755)
+}
