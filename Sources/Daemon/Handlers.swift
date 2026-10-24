@@ -66,7 +66,7 @@ extension Upgrade: DaemonService {
     static func of(_ d: Daemon) -> Upgrade {
         let root = d.root, offloads = d.offloads
         return Upgrade(executable: Daemon.executable, root: root, adoptable: { Handover.adoptable(Daemon.executable, home: root) },
-                       waitIdle: { offloads.waitIdle(seconds: 5) }) { [weak d] in d?.upgrade() }
+                       waitIdle: { offloads.waitIdle(seconds: 5) }) { [weak d] in d?.upgrade(checked: true) }
     }
 }
 
@@ -256,7 +256,8 @@ final class Slots: Sendable {
         return try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
     }
 
-    /// Waits until no slot is held (what's running has finished), for at most `seconds`.
+    /// Waits until no slot is held (what's running has finished), for at most `seconds`: looked at every 50 ms, which an
+    /// update (the one caller) can afford. Work that keeps coming keeps it waiting to the end, as it should.
     func waitIdle(seconds: Double) {
         let end = Date().addingTimeInterval(seconds)
         while state.withLock({ $0.held > 0 }), Date() < end { usleep(50_000) }

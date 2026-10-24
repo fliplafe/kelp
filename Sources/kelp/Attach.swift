@@ -21,7 +21,7 @@ enum Attach {
         func restore() { if isTTY { var s = saved; tcsetattr(0, TCSANOW, &s) } }
 
         // Size changes go over a separate control connection.
-        let control = try? RPCClient(socket: socket)
+        let control = try? RPCClient(socket: socket, patience: 2)
         control?.notify(ClientEvents(events: false))   // it only sends sizes: no events to read
         func sendSize() {
             var ws = winsize()

@@ -206,16 +206,17 @@ public final class Daemon: Sendable {
     /// only if it couldn't: refused before anything was given up (nil), or with the daemon that took the sessions back
     /// here after the exec failed. `exec`: the exec itself (tests make it fail).
     @discardableResult
-    func upgrade(to executable: String = Daemon.executable,
+    /// `checked`: daemon.upgrade's handler asked the new kelpd and waited for running git before it answered.
+    func upgrade(to executable: String = Daemon.executable, checked: Bool = false,
                  exec: (Handover, _ executable: String, _ file: String) throws -> Void = { try $0.exec($1, file: $2) }) -> Daemon? {
         // Nothing is given up to a kelpd that couldn't take it: every agent would end with this process. The reason is
         // kept, so the app's next daemon.upgrade is refused and it asks the user instead of trying again.
-        guard Handover.adoptable(executable, home: root) else {
+        guard checked || Handover.adoptable(executable, home: root) else {
             Log.start.error("not updating in place: \(executable, privacy: .public) doesn't adopt this hand-over")
             Upgrade.refuse(root: root, executable: executable, "The new background service can't take the running sessions over.")
             return nil
         }
-        offloads.waitIdle(seconds: 10)   // a clone or a worktree being made finishes instead of losing its git mid-way
+        if !checked { offloads.waitIdle(seconds: 5) }   // a clone or a worktree being made finishes, not cut off mid-way
         guard let h = handOver() else { return nil }
         let file = root.appendingPathComponent("handover.json")
         do {

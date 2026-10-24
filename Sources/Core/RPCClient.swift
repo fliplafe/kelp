@@ -37,8 +37,10 @@ public final class RPCClient: Sendable {
         }
     }
 
-    public init(socket: String) throws {
-        fd = try Unix.connect(socket, patience: 1)
+    /// `patience`: how long a full queue is tried again (`Unix.connect`): for a caller that runs while a daemon may be
+    /// taking over (an agent's hook, a terminal's attach). The rest fail at once when nothing answers.
+    public init(socket: String, patience: TimeInterval = 0) throws {
+        fd = try Unix.connect(socket, patience: patience)
         // A daemon alive but no longer reading (hung, stopped): a write gives up instead of holding the writer for good.
         var t = timeval(tv_sec: 10, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))

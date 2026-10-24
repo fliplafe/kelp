@@ -131,7 +131,7 @@ func plist() -> String {
                 Attach.run(id)
             case "hook":   // inside an agent session: report status to the daemon
                 guard let id = ProcessInfo.processInfo.environment["KELP_SESSION"], let ev = args.first else { fail("hook: needs KELP_SESSION and an event") }
-                let c = try RPCClient(socket: ProcessInfo.processInfo.environment["KELP_SOCKET"] ?? Paths.socket.path)
+                let c = try RPCClient(socket: ProcessInfo.processInfo.environment["KELP_SOCKET"] ?? Paths.socket.path, patience: 2)
                 var h = SessionHook(id: id, event: ev)
                 // Claude Code hooks pass a JSON payload on stdin (session id, transcript path).
                 if isatty(0) == 0, let d = try? FileHandle.standardInput.readToEnd(), let v = try? JSONDecoder().decode(JSONValue.self, from: d) {
