@@ -29,6 +29,8 @@ final class LiveSession: Sendable {
 
     let pty: PTY
     let callbacks: Callbacks
+    /// Whether a pause can bring it back (its agent resumes, or it runs in tmux): fixed by what it was started with.
+    let resumable: Bool
     let state: OSAllocatedUnfairLock<State>
     private let log: FileHandle?
     private let logURL: URL
@@ -83,6 +85,7 @@ final class LiveSession: Sendable {
         var logSize = Int((try? log?.seekToEnd()) ?? 0)
         if logSize > Self.logLimit, let tail = Self.trimmed(log, logURL) { logSize = tail }
         self.pty = pty
+        resumable = Sessions.resumable(record, [manifest])
         rec.pid = pty.pid
         self.callbacks = callbacks
         state = OSAllocatedUnfairLock(initialState: State(record: rec, manifest: manifest, logSize: logSize, callbacks: callbacks))

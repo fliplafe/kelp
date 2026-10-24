@@ -14,9 +14,6 @@ final class Sessions: Sendable {
     let pausing = OSAllocatedUnfairLock<Set<String>>(initialState: [])   // sessions an idle pause is stopping: input waits, then wakes them
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker
-    /// The agents' manifests as the idle pause last read them: an idle agent that can't be paused would have the folder
-    /// read twice a second. Read again after 30 s, so an edited manifest counts soon enough.
-    let idleManifests = OSAllocatedUnfairLock<(read: Date, all: [AgentManifest])?>(initialState: nil)
     /// The Mac kept awake while agents work (applyKeepAwake): the ticker and a settings change both apply it.
     let sleepAssertion = OSAllocatedUnfairLock<(id: UInt32, type: String?)>(initialState: (0, nil))
     let store: Store

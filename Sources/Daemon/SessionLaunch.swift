@@ -107,19 +107,10 @@ extension Sessions {
     func hibernateIdle() {
         let minutes = settings.number("sessions.hibernateMinutes") ?? 0
         guard minutes > 0 else { return }
-        // A shell or a command (not in tmux) can't be resumed: one left idle mustn't have the agents' folder read on every tick.
-        let idle = live.all.filter { ls in
-            [.done, .waiting, .idle].contains(ls.snapshot.status) && !ls.isAttached && ls.idleSeconds > minutes * 60
-                && (!["shell", "custom"].contains(ls.snapshot.agent) || Self.tmuxName(ls.snapshot) != nil)
-        }
-        guard !idle.isEmpty else { return }   // twice a second: the agents' folder is read only when someone could pause
-        let manifests = idleManifests.withLock { cache in
-            if let cache, Date().timeIntervalSince(cache.read) < 30 { return cache.all }
-            let all = AgentManifest.load(dir: root.appendingPathComponent("agents"))
-            cache = (Date(), all)
-            return all
-        }
-        let candidates = idle.filter { Self.resumable($0.snapshot, manifests) }.map { ($0, $0.inputs) }
+        // Only one a pause can bring back (`LiveSession.resumable`, known since its start: nothing is read on the tick).
+        let candidates = live.all.filter { ls in
+            ls.resumable && [.done, .waiting, .idle].contains(ls.snapshot.status) && !ls.isAttached && ls.idleSeconds > minutes * 60
+        }.map { ($0, $0.inputs) }
         // Off the ticker: waiting for programs to exit (up to 3 s each) must not hold up status for everyone else.
         let start = pausingIdle.withLock { busy -> Bool in
             guard !busy, !candidates.isEmpty else { return false }

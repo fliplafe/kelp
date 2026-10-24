@@ -198,3 +198,13 @@ import Agents
     await #expect(throws: RPCError.self) { _ = try await w.c.call(SessionAttach(id: s.id)) }
     #expect(w.d.sessions.wakeTries.withLock { $0 } - before == 1)
 }
+
+/// Whether a pause can bring a session back is known from its start: an agent that resumes can, a plain command can't.
+@Test func aSessionKnowsFromItsStartWhetherAPauseCanBringItBack() async throws {
+    let w = try await world(agents: [AgentManifest(id: "sleepy", name: "Sleepy", command: "/bin/zsh", args: ["-c", "exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "resumable")
+    let agent = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "sleepy"))
+    let command = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "exec cat"))
+    #expect(w.d.sessions.live[agent.id]?.resumable == true && w.d.sessions.live[command.id]?.resumable == false)
+}
