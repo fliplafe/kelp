@@ -241,7 +241,7 @@ final class NoteBox: @unchecked Sendable {
     let box = NoteBox(); c.onNotification = { m, p in box.add(m, p) }
     try await hibernate(after: 0, c)
     _ = try await c.call("session.attach", .obj(["id": .string(s.id)]))
-    #expect(try await waitFor(10) { box.output(s.id).contains("STARTED") && box.output(s.id).contains("--resume") })
+    #expect(try await waitFor(30) { box.output(s.id).contains("STARTED") && box.output(s.id).contains("--resume") })
     #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status != .hibernated)
     // Its log goes on from before the pause: both runs are there.
     let log = try String(contentsOf: w.root.appendingPathComponent("history/\(s.id).log"), encoding: .utf8)

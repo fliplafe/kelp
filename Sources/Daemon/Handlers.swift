@@ -268,7 +268,7 @@ final class Slots: Sendable {
     /// doesn't queue behind slow git or ssh, only behind as much of its own kind as its cap allows.
     func runNow<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         if let nowSlots { return try await nowSlots.run(work) }
-        return try await withCheckedThrowingContinuation { c in Thread.detachNewThread { c.resume(with: Result(catching: work)) } }
+        return try await Self.onThread { Result(catching: work) }
     }
 
     /// Waits until no slot is held (what's running has finished), for at most `seconds`: looked at every 50 ms, which an
@@ -285,13 +285,26 @@ final class Slots: Sendable {
     func run<T: Sendable>(quick: Bool = false, _ work: @escaping @Sendable () throws -> T) async throws -> T {
         let slots = quick ? quickSlots : self
         if let slots, await !slots.acquire() { throw RPCError.internalError("Kelp's background service is updating; try again in a moment.") }
-        return try await withCheckedThrowingContinuation { c in
+        return try await Self.onThread {
+            defer { slots?.release() }
+            return quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
+        }
+    }
+
+    /// `body` on a thread of its own, its result handed back under a lock: what it made (a woken session) is seen whole
+    /// by whoever reads it after. The continuation alone would order it too, but the Thread Sanitizer can't see that
+    /// (Swift's concurrency library isn't built for it) and reported the session's fields as a race.
+    private static func onThread<T: Sendable>(_ body: @escaping @Sendable () -> Result<T, Error>) async throws -> T {
+        let handed = OSAllocatedUnfairLock<Result<T, Error>?>(initialState: nil)
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             Thread.detachNewThread {
-                let r = quick ? Result { try Subprocess.quickOnly(work) } : Result(catching: work)
-                slots?.release()
-                c.resume(with: r)
+                let r = body()
+                handed.withLock { $0 = r }
+                c.resume()
             }
         }
+        guard let r = handed.withLock({ $0 }) else { throw RPCError.internalError("no result") }
+        return try r.get()
     }
 }
 

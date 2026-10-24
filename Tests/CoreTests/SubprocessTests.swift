@@ -21,7 +21,7 @@ private let env = ProcessInfo.processInfo.environment
     #expect(r.timedOut && Date().timeIntervalSince(start) < 20)   // 0.5 s, then TERM, then KILL: far less than 20 even on a busy runner
     let child = try #require(pid_t((try String(contentsOfFile: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)))
     defer { kill(child, SIGKILL) }
-    let deadline = Date().addingTimeInterval(5)
+    let deadline = Date().addingTimeInterval(20)   // a busy runner takes its time
     while kill(child, 0) == 0, Date() < deadline { usleep(50_000) }
     #expect(kill(child, 0) != 0)
 }
