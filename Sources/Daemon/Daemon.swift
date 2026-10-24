@@ -227,7 +227,7 @@ public final class Daemon: Sendable {
         Log.start.attempt("removing the hand-over no kelpd read") { try FileManager.default.removeItem(at: file) }
         // Still here: this process takes the sessions back, as the new kelpd would have, and every agent goes on.
         do {
-            let back = try Daemon(root: root)
+            let back = try Daemon(root: root, store: store)   // the same database: one writer, not two in one process
             try back.start(adopting: h)
             running.withLock { $0.successor = back }
             Log.start.notice("the update didn't run: this kelpd took its sessions back")

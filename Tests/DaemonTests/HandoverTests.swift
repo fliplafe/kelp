@@ -132,6 +132,7 @@ private func name(_ pid: pid_t) -> String {
     #expect(try await waitFor { d.sessions.existing(s.id)?.tail(4096).range(of: Data("before".utf8)) != nil })
     let back = try #require(d.upgrade(to: kelpd) { _, _, _ in throw POSIXError(.ENOEXEC) })
     #expect(d.sessions.existing(s.id) == nil && back.sessions.existing(s.id)?.snapshot.pid == s.pid)
+    #expect(back.store === d.store)   // one database writer in the process, not two
     let c2 = try client(root)
     _ = try await c2.call(SessionWrite(id: s.id, text: "y\n"))
     #expect(try await waitFor { try await c2.call(SessionRead(id: s.id)).contains("got-y") })
