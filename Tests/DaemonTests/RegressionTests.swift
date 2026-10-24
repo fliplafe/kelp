@@ -230,7 +230,8 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     _ = try await w.c.call("worktree.unarchive", .obj(["id": .string(wt.id)]))
     #expect(try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status == .hibernated)
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))
-    #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
+    // Up to 25 s: a program that never goes quiet counts as started then (the Thread Sanitizer's run is that slow).
+    #expect(try await waitFor(40) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
     _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
 }
 
