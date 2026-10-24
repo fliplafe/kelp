@@ -228,6 +228,18 @@ private func codeOnly(_ s: String) -> String {
     #expect(taking == [], "handlers that take the daemon")
 }
 
+/// Snapshots and the input they drive (KELP_SNAPSHOT, KELP_CLICK, KELP_TYPE) are a debug build's: in a release, any
+/// program could start the real app and have it press its own buttons (Trust) as the window `onlyFromKelp` trusts.
+@Test func devAidsAreDebugOnly() throws {
+    let text = try #require(sources(["Sources/KelpKit"]).first { $0.path.hasSuffix("/AppDelegate.swift") }?.text)
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    let calls = lines.indices.filter { lines[$0].contains("snapshotLater(") && !lines[$0].contains("func snapshotLater") }
+    #expect(!calls.isEmpty && calls.allSatisfy { i in
+        let before = lines[..<i], open = before.lastIndex { $0.contains("#if DEBUG") }, close = before.lastIndex { $0.contains("#endif") }
+        return open != nil && (close == nil || close! < open!)
+    })
+}
+
 /// A `try?` turns a failure into nothing, unseen: right for a probe ("is it there", "does it parse"), wrong for a write,
 /// a cleanup or a store change, which say what failed with `Log.attempt` instead. Each module's count is a ceiling.
 @Test func failuresAreNotSwallowed() throws {
@@ -244,7 +256,12 @@ private func codeOnly(_ s: String) -> String {
 /// checked for itself could forget, or check after it had already acted.
 @Test func whoMayCallAMethodIsCheckedInOnePlace() throws {
     let checks = try matches(#"\.requireApp\("#, in: ["Sources/Daemon"])
-    #expect(checks.count == 1 && checks.allSatisfy { $0.hasPrefix("Sources/Daemon/Handlers.swift:") }, "who-may-call checks outside the dispatcher: \(checks)")
+    let dispatch = ["Sources/Daemon/Handlers.swift:", "Sources/Daemon/Daemon.swift:"]
+    #expect(checks.allSatisfy { c in dispatch.contains { c.hasPrefix($0) } }, "who-may-call checks outside the dispatcher: \(checks)")
+    // Params are read as a method's type only where the caller is checked too: `checked`, or a session's input, which
+    // checks `onlyFromKelp` itself right after (SessionLanes).
+    let reads = try matches(#"\bdecoded\("#, in: ["Sources/Daemon"]).filter { !$0.hasPrefix("Sources/Daemon/Handlers.swift:") }
+    #expect(reads.map { $0.split(separator: ":")[0] } == ["Sources/Daemon/SessionLanes.swift"], "params read without the caller check: \(reads)")
     #expect(try matches(#"var onlyFromKelp: String\? \{ (?!nil \}|get \})"#, in: ["Sources/Daemon"]).count == 3)   // ui.publish, scripts.trust, state.set
 }
 

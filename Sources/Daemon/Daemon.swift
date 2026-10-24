@@ -260,7 +260,11 @@ public final class Daemon: Sendable {
             }
         }
         // Input for a session answers once the session has it (`SessionInput`), maybe from its lane.
-        if let s = t as? any SessionInput.Type { s.answerInOrder(req.params ?? .null, sessions, done: reply); return }
+        if let s = t as? any SessionInput.Type {
+            let conn = c.id
+            s.answerInOrder(req.params ?? .null, sessions, allowed: { [clients] in if let r = $0 { try clients.requireApp(conn, r) } }, done: reply)
+            return
+        }
         let r = Swift.Result { try answerNow(t, req.params ?? .null, conn: c.id) }
         reply(r)
         // daemon.upgrade: its reply is queued now, and the hand-over sends it before hanging up.
@@ -314,7 +318,7 @@ public final class Daemon: Sendable {
         // connection ahead of it (the screen would show the newest bytes before the history they follow).
         // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
         // queued inside the session's lock, which `Handled` can't express.
-        if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.decoded(req.params ?? .null))?.id,
+        if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: c.id))?.id,
            sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated,
            let ls = try? await offload({ [self] in try sessions.liveSession(sid) }) {
             // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
