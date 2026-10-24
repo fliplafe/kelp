@@ -66,7 +66,7 @@ extension Upgrade: DaemonService {
     static func of(_ d: Daemon) -> Upgrade {
         let root = d.root, offloads = d.offloads
         return Upgrade(executable: Daemon.executable, root: root, adoptable: { Handover.adoptable(Daemon.executable, home: root) },
-                       waitIdle: { offloads.waitIdle(seconds: 10) }) { [weak d] in d?.upgrade() }
+                       waitIdle: { offloads.waitIdle(seconds: 5) }) { [weak d] in d?.upgrade() }
     }
 }
 

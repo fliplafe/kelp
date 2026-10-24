@@ -23,6 +23,7 @@ final class LSPHost: Sendable {
         var docs: [String: Doc] = [:]           // "root|path"
         var owners: [Int: [String: Int]] = [:]  // connection → the docs it opened, and how many times
         var started: [Key: Date] = [:]          // a broken server isn't started again on every open
+        var closed = false                      // the daemon stopped them all: an open arriving after starts none
     }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -45,6 +46,7 @@ final class LSPHost: Sendable {
     func open(conn: Int, _ o: LSPOpen) {
         let key = Key(root: o.root, argv: [o.command] + (o.args ?? [])), id = o.root + "|" + o.path
         let launch = state.withLock { s -> Bool in
+            guard !s.closed else { return false }
             s.docs[id, default: Doc(key: key, path: o.path, languageId: o.languageId, count: 0, text: o.text)].count += 1
             s.docs[id]?.text = o.text
             s.owners[conn, default: [:]][id, default: 0] += 1
@@ -109,7 +111,11 @@ final class LSPHost: Sendable {
 
     /// The daemon is stopping: so do its servers.
     func stopAll() {
-        let all = state.withLock { s in defer { s.servers = [:] }; return s.servers.values.compactMap { if case .running(let c) = $0 { c } else { nil } } }
+        let all = state.withLock { s in
+            s.closed = true
+            defer { s.servers = [:] }
+            return s.servers.values.compactMap { if case .running(let c) = $0 { c } else { nil } }
+        }
         // Gone before this returns: the daemon stops or execs next, and a SIGKILL left for later would never come.
         DispatchQueue.concurrentPerform(iterations: all.count) { all[$0].terminateNow() }
     }

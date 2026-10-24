@@ -52,3 +52,18 @@ import Core
     locks.withLocks(["a", "b"]) { #expect(locks.count == 2) }
     #expect(locks.count == 0)
 }
+
+/// A session's input lane goes once nothing waits on it: one per session ever typed into doesn't stay for good.
+@Test func inputLanesGoWhenIdle() {
+    let lanes = SessionLanes()
+    lanes.runHere("a") { #expect(lanes.count == 1) }
+    #expect(lanes.count == 0)
+}
+
+/// Once the daemon stopped its watches, a watch.start still on its way (a reader applying it in order) starts none.
+@Test func noWatchStartsAfterStopAll() throws {
+    let (d, _, _) = try daemon(); defer { d.stop() }
+    d.watches.stopAll()
+    d.watches.start(.init(topic: .activity, key: ""), conn: 1)
+    #expect(d.watches.count == 0)
+}

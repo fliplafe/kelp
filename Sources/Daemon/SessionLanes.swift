@@ -12,8 +12,7 @@ final class SessionLanes: Sendable {
     /// Nothing for `id` waits on its lane: new input may go straight to the running session.
     func isClear(_ id: String) -> Bool { lanes.withLock { ($0[id]?.waiting ?? 0) == 0 } }
 
-    /// `work` on `id`'s lane, after what's already there. Limit: a lane stays for the daemon's life (one idle queue
-    /// per session that was ever woken by input); drop it when its session ends if that ever adds up.
+    /// `work` on `id`'s lane, after what's already there. A lane goes once nothing waits on it (the next input makes one).
     func run(_ id: String, _ work: @escaping @Sendable () -> Void) {
         let q = enter(id)
         q.async { [self] in work(); leave(id) }
@@ -33,7 +32,15 @@ final class SessionLanes: Sendable {
             return lane.queue
         }
     }
-    private func leave(_ id: String) { lanes.withLock { $0[id]?.waiting -= 1 } }
+    private func leave(_ id: String) {
+        lanes.withLock { l in
+            l[id]?.waiting -= 1
+            if l[id]?.waiting == 0 { l[id] = nil }
+        }
+    }
+
+    /// Sessions with a lane kept now (tests).
+    var count: Int { lanes.withLock { $0.count } }
 }
 
 /// Input for a session (keys, text), in the order sent: to the running session right away when nothing for it waits on

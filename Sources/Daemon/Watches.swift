@@ -20,6 +20,9 @@ final class Watches: Sendable {
         var tag: String?               // context: the session's status at the last read
     }
     private let entries = OSAllocatedUnfairLock<[Key: Entry]>(initialState: [:])
+    private let closed = OSAllocatedUnfairLock(initialState: false)
+    /// Watches running now (tests).
+    var count: Int { entries.withLock { $0.count } }
     private let numbers = OSAllocatedUnfairLock(initialState: 0)   // watches' and scheduled reads'
     /// Reads so far by key: tests see one read for two watchers, and none after the last one left.
     let reads = OSAllocatedUnfairLock<[Key: Int]>(initialState: [:])
@@ -42,6 +45,7 @@ final class Watches: Sendable {
     }
 
     func start(_ k: Key, conn: Int) {
+        guard !closed.withLock({ $0 }) else { return }   // the daemon stopped them all: a late watch.start starts none
         let n = numbers.withLock { $0 += 1; return $0 }
         let (new, again, last) = entries.withLock { e -> (Bool, Bool, Data?) in
             guard var x = e[k] else { e[k] = Entry(number: n, watchers: [conn]); return (true, false, nil) }
@@ -77,6 +81,7 @@ final class Watches: Sendable {
     }
 
     func stopAll() {
+        closed.withLock { $0 = true }
         let all = entries.withLock { e in defer { e = [:] }; return e }
         _ = all   // released off the lock (a file watch's deinit waits on its own queue)
     }
