@@ -34,7 +34,8 @@ package enum Builtins {
         SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
     }
 
-    package static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.", icon: "paintpalette", essential: true) { _ in
+    package static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.",
+                                            icon: "paintpalette", essential: true) { _ in
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", specs: [
             s("workbench.theme", "Color Theme", "theme", "auto",

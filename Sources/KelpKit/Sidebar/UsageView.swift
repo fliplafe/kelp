@@ -63,7 +63,8 @@ package struct UsageView: View {
                     Details(row: r)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(r.lines.map { String(localized: "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used") }.joined(separator: ", "))
+                .accessibilityLabel(r.lines.map { String(localized: "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used") }
+                    .joined(separator: ", "))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -27,7 +27,9 @@ package final class WorkspaceSwitcher {
         let m = app, wb = app.workbench
         let live = app.workbench.workspacesInOrder
         var order: [String] = []
-        for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) { order.append(id) }
+        for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) {
+            order.append(id)
+        }
         order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
         guard items.count > 1, let window = app.workbench.window?.window else { items = []; NSSound.beep(); return }
@@ -81,7 +83,9 @@ package final class WorkspaceSwitcher {
         for (i, r) in rows.enumerated() {
             r.layer?.backgroundColor = i == index ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
             // Tag 2: coloured badges keep their colours.
-            for t in labels(r) where t.tag != 2 { t.textColor = i == index ? .alternateSelectedControlTextColor : (t.tag == 1 ? .secondaryLabelColor : .labelColor) }
+            for t in labels(r) where t.tag != 2 {
+                t.textColor = i == index ? .alternateSelectedControlTextColor : (t.tag == 1 ? .secondaryLabelColor : .labelColor)
+            }
         }
     }
 

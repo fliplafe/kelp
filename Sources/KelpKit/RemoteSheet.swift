@@ -65,9 +65,16 @@ package final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableVie
         for t in [note, status] { t.textColor = .secondaryLabelColor; t.font = .systemFont(ofSize: 11); t.preferredMaxLayoutWidth = 430 }
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
         go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(goPressed)
-        cancel.title = String(localized: "Cancel"); cancel.bezelStyle = .push; cancel.keyEquivalent = "\u{1b}"; cancel.target = self; cancel.action = #selector(close)
+        cancel.title = String(localized: "Cancel")
+        cancel.bezelStyle = .push
+        cancel.keyEquivalent = "\u{1b}"
+        cancel.target = self
+        cancel.action = #selector(close)
         let buttons = NSStackView(views: [spinner, NSView(), cancel, go]); buttons.spacing = 8
-        let stack = NSStackView(views: [title, grid, scroll, note, status, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
+        let stack = NSStackView(views: [title, grid, scroll, note, status, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
         stack.detachesHiddenViews = true
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         for v in [scroll, buttons] { v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true }

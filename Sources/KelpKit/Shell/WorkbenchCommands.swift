@@ -5,7 +5,8 @@ import WorkbenchKit
 extension Builtins {
     /// The shell's own actions (sidebar and inspector, panes, tabs, workspaces, text size, the Run menu, help) as commands,
     /// so the menu bar, Settings › Keyboard, the palette and agents (`kelp run <id>`) reach them the same way.
-    package static let workbench = Builtin("kelp.workbench", "Window & Workbench", "Panes, tabs, workspaces, the sidebar and inspector: the commands of the window.",
+    package static let workbench = Builtin("kelp.workbench", "Window & Workbench",
+                                   "Panes, tabs, workspaces, the sidebar and inspector: the commands of the window.",
                                    icon: "macwindow", essential: true) { app in
         var c = Contributions()
         c.commands = [

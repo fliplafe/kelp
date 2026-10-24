@@ -36,7 +36,9 @@ struct ExtListView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             Divider()
             if let error {
-                ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: { Text(error).font(.caption).textSelection(.enabled) }
+                ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: {
+                    Text(error).font(.caption).textSelection(.enabled)
+                }
                     .frame(maxHeight: .infinity)
             } else if items.isEmpty, !running {
                 ContentUnavailableView(def.empty ?? String(localized: "Nothing here"), systemImage: def.icon ?? "tray")
@@ -47,14 +49,18 @@ struct ExtListView: View {
                         row(item).tag(i)
                             .contextMenu {
                                 ForEach(Array((def.actions ?? []).enumerated()), id: \.offset) { _, a in
-                                    Button { ExtActions(app).perform(a, item: item, folder: folder) { reload() } } label: { Label(a.title, systemImage: a.icon ?? "circle") }
+                                    Button { ExtActions(app).perform(a, item: item, folder: folder) { reload() } } label: {
+                                        Label(a.title, systemImage: a.icon ?? "circle")
+                                    }
                                 }
                             }
                     }
                 }
                 .listStyle(.sidebar)
                 .contextMenu(forSelectionType: Int.self) { _ in } primaryAction: { sel in
-                    if let i = sel.first, items.indices.contains(i), let a = def.actions?.first { ExtActions(app).perform(a, item: items[i], folder: folder) { reload() } }
+                    if let i = sel.first, items.indices.contains(i), let a = def.actions?.first {
+                        ExtActions(app).perform(a, item: items[i], folder: folder) { reload() }
+                    }
                 }
             }
         }
@@ -69,7 +75,8 @@ struct ExtListView: View {
 
     private func row(_ item: JSONValue) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: def.icon.map { ExtActions(app).expand($0, item: item, quote: false) } ?? "circle.fill").foregroundStyle(.secondary).frame(width: 16)
+            Image(systemName: def.icon.map { ExtActions(app).expand($0, item: item, quote: false) } ?? "circle.fill")
+                .foregroundStyle(.secondary).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(ExtActions(app).expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
                 if let s = def.subtitle { Text(ExtActions(app).expand(s, item: item, quote: false)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }

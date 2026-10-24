@@ -54,7 +54,11 @@ package final class CloneSheet: SheetController, NSTextFieldDelegate {
         status.textColor = .secondaryLabelColor; status.font = .systemFont(ofSize: 11); status.isHidden = true
         status.preferredMaxLayoutWidth = 430
         go.title = String(localized: "Clone"); go.bezelStyle = .push; go.keyEquivalent = "\r"; go.target = self; go.action = #selector(start)
-        cancel.title = String(localized: "Cancel"); cancel.bezelStyle = .push; cancel.keyEquivalent = "\u{1b}"; cancel.target = self; cancel.action = #selector(stop)
+        cancel.title = String(localized: "Cancel")
+        cancel.bezelStyle = .push
+        cancel.keyEquivalent = "\u{1b}"
+        cancel.target = self
+        cancel.action = #selector(stop)
         let buttons = NSStackView(views: [NSView(), cancel, go]); buttons.spacing = 8
         let stack = NSStackView(views: [title, grid, bar, status, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
         stack.detachesHiddenViews = true

@@ -19,7 +19,8 @@ final class UnavailableTab: TabContent {
         let stack = NSStackView(views: [icon, t, l, b]); stack.orientation = .vertical; stack.spacing = 8
         let v = NSView(); stack.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(stack)
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: v.centerXAnchor), stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-                                     stack.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32), l.widthAnchor.constraint(lessThanOrEqualToConstant: 420)])
+                                     stack.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32),
+                                     l.widthAnchor.constraint(lessThanOrEqualToConstant: 420)])
         view = v
     }
     func focus() {}

@@ -131,7 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// not a click. Opening a workspace in passing doesn't clear anything; questions and failures wait for an answer.
     private var glanced: [String: Date] = [:]
     private func trackGlances() {
-        guard NSApp.isActive, let w = main?.window, w.isKeyWindow, w.occlusionState.contains(.visible), let e = app.workbench.editor else { glanced = [:]; return }
+        guard NSApp.isActive, let w = main?.window, w.isKeyWindow, w.occlusionState.contains(.visible), let e = app.workbench.editor else {
+            glanced = [:]
+            return
+        }
         let shown = Set(e.visibleSessions)
         glanced = glanced.filter { shown.contains($0.key) }
         for sid in shown {

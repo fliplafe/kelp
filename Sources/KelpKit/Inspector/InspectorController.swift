@@ -66,7 +66,8 @@ final class InspectorController: NSViewController {
                   host.bottomAnchor.constraint(equalTo: rowSep.topAnchor), host.topAnchor.constraint(equalTo: under.topAnchor)]
         NSLayoutConstraint.activate([
             bar.leadingAnchor.constraint(greaterThanOrEqualTo: v.leadingAnchor, constant: 8), bar.heightAnchor.constraint(equalToConstant: 28),
-            panelTitle.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14), panelTitle.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -48),
+            panelTitle.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 14),
+            panelTitle.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -48),
             panelTitle.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height / 2),
             bar.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -8),
             sep.bottomAnchor.constraint(equalTo: under.topAnchor, constant: TabStrip.height),
@@ -386,7 +387,14 @@ final class PanelIcon: NSButton {
 
 /// A panel's mark on its icon (`PanelBadge`): a grey capsule with the number, or a dot; red for a failure.
 final class CountBadge: NSView {
-    var badge: PanelBadge? { didSet { guard badge != oldValue else { return }; isHidden = badge == nil; invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var badge: PanelBadge? {
+        didSet {
+            guard badge != oldValue else { return }
+            isHidden = badge == nil
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
     private var text: NSAttributedString? {
         guard let n = badge?.count, n > 0 else { return nil }
         return NSAttributedString(string: n > 99 ? "99+" : "\(n)",

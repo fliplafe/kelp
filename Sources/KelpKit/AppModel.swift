@@ -110,7 +110,9 @@ package final class AppModel {
         let w = worktree(workbench.workspaceId)
         let reg = extensions
         let state: JSONValue = .obj([
-            "workspace": w.map { .obj(["id": .string($0.id), "name": .string($0.displayName), "path": .string($0.path), "branch": .string($0.branch)]) } ?? .null,
+            "workspace": w.map {
+                .obj(["id": .string($0.id), "name": .string($0.displayName), "path": .string($0.path), "branch": .string($0.branch)])
+            } ?? .null,
             "focusedSession": workbench.focusedSession.map { .string($0) } ?? .null,
             "focusedFile": workbench.focusedFile.map { .string($0) } ?? .null,
             "editor": workbench.editor?.stateForAgents ?? .null,
@@ -164,7 +166,10 @@ package final class AppModel {
         }
         guard let c = client else {
             // Keeps trying (less and less often); every action meanwhile says why it does nothing.
-            if !failing { failing = true; Banner.show(Self.whyNoService(), style: .error, action: (String(localized: "Try Again"), { Task { await self.connect() } })) }
+            if !failing {
+                failing = true
+                Banner.show(Self.whyNoService(), style: .error, action: (String(localized: "Try Again"), { Task { await self.connect() } }))
+            }
             reconnectSoon(); return
         }
         retryDelay = 1; failing = false
@@ -204,7 +209,8 @@ package final class AppModel {
     /// agents keep running); else it restarts right away when no agent is running, and otherwise asks, because restarting
     /// ends running sessions. Returns true when an upgrade or a restart is in progress.
     private func checkDaemonVersion(_ c: RPCClient) async -> Bool {
-        guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970 else { return false }
+        guard let mine = (try? FileManager.default.attributesOfItem(atPath: bundledDaemon.path)[.modificationDate] as? Date)?.timeIntervalSince1970
+        else { return false }
         guard let info = try? await c.call(DaemonInfo()) else { return false }
         // Older daemons don't report binaryMTime (and their "mtime" was read from disk, i.e. already the new file): restart them.
         let samePath = info.path == bundledDaemon.resolvingSymlinksInPath().path

@@ -179,7 +179,10 @@ package struct KelpLinks {
         case "session" where app.session(id) != nil: app.workbench.focus(session: id)
         case "open":
             guard let path = q.first(where: { $0.name == "path" })?.value.map({ ($0 as NSString).expandingTildeInPath }),
-                  FileManager.default.fileExists(atPath: path) else { Banner.show(String(localized: "Kelp can't find the file in that link."), style: .error); return }
+                  FileManager.default.fileExists(atPath: path) else {
+                Banner.show(String(localized: "Kelp can't find the file in that link."), style: .error)
+                return
+            }
             var dir: ObjCBool = false
             FileManager.default.fileExists(atPath: path, isDirectory: &dir)
             if !dir.boolValue {
@@ -249,7 +252,9 @@ package struct WorkspaceActions {
     static func open(_ path: String, in bundle: String) {
         guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { NSSound.beep(); return }
         var p = path, dir: ObjCBool = false
-        if folderOnly.contains(bundle), FileManager.default.fileExists(atPath: p, isDirectory: &dir), !dir.boolValue { p = (p as NSString).deletingLastPathComponent }
+        if folderOnly.contains(bundle), FileManager.default.fileExists(atPath: p, isDirectory: &dir), !dir.boolValue {
+            p = (p as NSString).deletingLastPathComponent
+        }
         NSWorkspace.shared.open([URL(fileURLWithPath: p)], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
@@ -280,8 +285,10 @@ package struct WorkspaceActions {
             var lost: [String] = []
             if dirty { lost.append(String(localized: "It has uncommitted changes that will be lost.")) }
             if commits > 0 { lost.append(String(localized: "\(commits) commits on this branch aren't on any other branch or remote and will be lost.")) }
-            a.informativeText = lost.isEmpty ? String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.") : lost.joined(separator: " ")
-            a.addButton(withTitle: lost.isEmpty ? String(localized: "Delete Workspace and Branch") : String(localized: "Delete and Lose Changes")).hasDestructiveAction = true
+            a.informativeText = lost.isEmpty
+                ? String(localized: "The checkout and branch \(w.branch) are removed. Running agents stop.") : lost.joined(separator: " ")
+            a.addButton(withTitle: lost.isEmpty ? String(localized: "Delete Workspace and Branch") : String(localized: "Delete and Lose Changes"))
+                .hasDestructiveAction = true
             a.addButton(withTitle: String(localized: "Cancel")); a.alertStyle = lost.isEmpty ? .warning : .critical
             guard await runSheet(a) == .alertFirstButtonReturn, await UnsavedChanges.confirm(closing: [w.id], in: app) else { return }
             if app.workbench.workspaceId == w.id, let main = app.worktrees.first(where: { $0.repoId == w.repoId && $0.id != w.id }) {
@@ -312,7 +319,8 @@ package struct WorkspaceActions {
                     Nothing uncommitted is lost: git removes only clean worktrees. A branch goes too if its commits are on another branch. \
                     Ignored files (builds, copied .env) go with the folder.
                     """)
-            a.addButton(withTitle: clean.count == 1 ? String(localized: "Remove Worktree") : String(localized: "Remove \(clean.count) Worktrees")).hasDestructiveAction = true
+            a.addButton(withTitle: clean.count == 1 ? String(localized: "Remove Worktree") : String(localized: "Remove \(clean.count) Worktrees"))
+                .hasDestructiveAction = true
             a.addButton(withTitle: String(localized: "Cancel"))
             guard await runSheet(a) == .alertFirstButtonReturn,
                   let res = await app.call(RepoRemoveWorktrees(id: r.id, paths: clean.map(\.path))) else { return }
@@ -366,7 +374,8 @@ package struct WorkspaceActions {
         let plan = WorkspaceClosing(picked: ws, open: m.worktrees.filter { !$0.archived }, repos: m.repos), closing = plan.ids
         guard !closing.isEmpty else { NSSound.beep(); return }
         let running = m.sessions.filter { s in s.worktreeId.map(closing.contains) == true && s.status != .exited && s.status != .hibernated }
-        let a = NSAlert(); a.messageText = closing.count == 1 ? String(localized: "Close 1 workspace?") : String(localized: "Close \(closing.count) workspaces?")
+        let a = NSAlert()
+        a.messageText = closing.count == 1 ? String(localized: "Close 1 workspace?") : String(localized: "Close \(closing.count) workspaces?")
         a.informativeText = (running.isEmpty ? "" : running.count == 1 ? String(localized: "1 running session stops. ")
             : String(localized: "\(running.count) running sessions stop. "))
             + String(localized: "Files in the projects are not touched.") + (plan.keptSome ? " " + String(localized: "Each project keeps one workspace.") : "")
@@ -405,7 +414,9 @@ package struct WorkspaceActions {
     }
 
     func removeProject(_ r: Repo) {
-        let a = NSAlert(); a.messageText = String(localized: "Remove “\(r.name)” from Kelp?"); a.informativeText = String(localized: "The repository on disk is not touched.")
+        let a = NSAlert()
+        a.messageText = String(localized: "Remove “\(r.name)” from Kelp?")
+        a.informativeText = String(localized: "The repository on disk is not touched.")
         a.addButton(withTitle: String(localized: "Remove")); a.addButton(withTitle: String(localized: "Cancel"))
         Task {
             guard await runSheet(a) == .alertFirstButtonReturn,
@@ -438,7 +449,10 @@ package struct FileActions {
 
     /// Types the reference into the agent's prompt without pressing Return, and shows the agent.
     package func sendToAgent(_ path: String, lines: ClosedRange<Int>? = nil) {
-        guard let s = targetAgent else { Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then send again."), style: .error); return }
+        guard let s = targetAgent else {
+            Banner.show(String(localized: "No agent in this workspace. Start one with ⌥⌘T, then send again."), style: .error)
+            return
+        }
         Task { await app.call(SessionSend(id: s.id, text: reference(path, lines: lines) + " ", enter: false)) }
         app.workbench.focus(session: s.id)
     }
@@ -465,7 +479,9 @@ package struct GitFix {
 
     package func offer(_ error: String, recipe: String, worktree wid: String, vars: [String: String] = [:]) {
         guard FileActions(app).targetAgent != nil else { Banner.show(error, style: .error); return }
-        Banner.show(error, style: .error, action: (String(localized: "Ask Agent to Fix"), { send(recipe, worktree: wid, vars: vars.merging(["error": error]) { a, _ in a }) }))
+        Banner.show(error, style: .error, action: (String(localized: "Ask Agent to Fix"), {
+            send(recipe, worktree: wid, vars: vars.merging(["error": error]) { a, _ in a })
+        }))
     }
 
     package func send(_ recipe: String, worktree wid: String, vars: [String: String]) {

@@ -87,7 +87,8 @@ package enum KeyBindings {
         if k.mods.contains(.option) { s += "⌥" }
         if k.mods.contains(.shift) { s += "⇧" }
         if k.mods.contains(.command) { s += "⌘" }
-        let named: [String: String] = ["\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→", "\r": "↩", "\t": "⇥", " ": String(localized: "Space"),
+        let named: [String: String] = ["\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→", "\r": "↩", "\t": "⇥",
+                                       " ": String(localized: "Space"),
                                        "\u{1b}": "⎋", "\u{8}": "⌫", "\u{7f}": "⌫"]
         return s + (named[k.key] ?? k.key.uppercased())
     }
@@ -112,7 +113,8 @@ package enum KeyBindings {
                                     9: String(localized: "moving focus to the active window"),
                                     27: String(localized: "moving focus to the next window"), 28: String(localized: "a screenshot"),
                                     29: String(localized: "a screenshot to the clipboard"),
-                                    30: String(localized: "a screenshot of an area"), 31: String(localized: "an area screenshot to the clipboard"), 32: "Mission Control",
+                                    30: String(localized: "a screenshot of an area"), 31: String(localized: "an area screenshot to the clipboard"),
+                                    32: "Mission Control",
                                     33: String(localized: "application windows"), 36: String(localized: "Show Desktop"), 52: String(localized: "Dock hiding"),
                                     60: String(localized: "the previous input source"),
                                     61: String(localized: "the next input source"), 64: "Spotlight",

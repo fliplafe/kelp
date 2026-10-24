@@ -137,7 +137,8 @@ struct CardView: View {
                 }
             }
             if !model.ports.isEmpty {
-                Text(String(localized: "Serving \(model.ports.map { "localhost:\($0)" }.joined(separator: ", "))")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(String(localized: "Serving \(model.ports.map { "localhost:\($0)" }.joined(separator: ", "))"))
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             if let t = model.turn { Text(t).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
             if let c = model.context { ContextLine(used: c.used, window: c.window) }

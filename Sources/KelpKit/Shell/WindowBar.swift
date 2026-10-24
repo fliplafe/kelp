@@ -63,7 +63,9 @@ final class WindowBar: NSView {
             sideBySide.widthAnchor.constraint(equalToConstant: 28),
             sideBySide.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -48)   // clear of the inspector toggle
         ])
-        track(owner: self) { [-1, 1].map { app.workbench.visit($0).flatMap { app.worktree(app.workbench.history.visits[$0])?.displayName } } } changed: { [weak self] in
+        track(owner: self) {
+            [-1, 1].map { app.workbench.visit($0).flatMap { app.worktree(app.workbench.history.visits[$0])?.displayName } }
+        } changed: { [weak self] in
             self?.showNav(back: $0[0], forward: $0[1])
         }
         track(owner: self) { [app] in WindowBar.awakeMode(app) } changed: { [weak self] in self?.showAwake($0) }
@@ -119,7 +121,8 @@ final class WindowBar: NSView {
         m.addItem(.separator())
         m.add(String(localized: "Create Branch…")) { [weak self] in
             Task {
-                guard let name = await prompt(String(localized: "Create Branch"), String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
+                guard let name = await prompt(String(localized: "Create Branch"),
+                                              String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
                     !name.isEmpty else { return }
                 self?.switchBranch(GitSwitch(id: wid, branch: name, create: true))
             }

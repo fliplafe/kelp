@@ -36,7 +36,9 @@ package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 Banner.show(String(localized: "Notifications for Kelp are turned off in System Settings, so you won't hear when an agent needs you."), style: .error,
                             action: (String(localized: "Open Settings"), {
                                 let id = Bundle.main.bundleIdentifier ?? ""
-                                if let u = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") { NSWorkspace.shared.open(u) }
+                                if let u = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {
+                                    NSWorkspace.shared.open(u)
+                                }
                             }))
             }
         }
@@ -154,5 +156,7 @@ package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
-    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }
+    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
 }

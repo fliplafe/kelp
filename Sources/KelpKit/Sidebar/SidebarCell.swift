@@ -75,7 +75,8 @@ final class SidebarCell: NSTableCellView {
             // What it does sits on the right, as on a workspace's row.
             slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
             NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 14), slot.heightAnchor.constraint(equalToConstant: 14),
-                                         mark.centerXAnchor.constraint(equalTo: slot.centerXAnchor), mark.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
+                                         mark.centerXAnchor.constraint(equalTo: slot.centerXAnchor),
+                                         mark.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
             layout(row: [icon, title, chip, trailing, slot])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
@@ -331,7 +332,10 @@ final class SidebarRowView: NSTableRowView {
         if card?.last == true { pill.size.height -= 1 }
         pill.origin.y += pad.top; pill.size.height -= pad.top + pad.bottom
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow(); shadow.shadowColor = .black.withAlphaComponent(0.12); shadow.shadowBlurRadius = 2; shadow.shadowOffset = .init(width: 0, height: -0.5)
+        let shadow = NSShadow()
+        shadow.shadowColor = .black.withAlphaComponent(0.12)
+        shadow.shadowBlurRadius = 2
+        shadow.shadowOffset = .init(width: 0, height: -0.5)
         shadow.set()
         Self.pillFill.setFill()
         NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
@@ -354,7 +358,8 @@ final class SidebarRowView: NSTableRowView {
     /// card's foot) the cell would only stretch with it, its text off the chevron. Put it where the outline says.
     override func resizeSubviews(withOldSize old: NSSize) {
         super.resizeSubviews(withOldSize: old)
-        guard let o = superview as? NSOutlineView, case let row = o.row(for: self), row >= 0, let cell = subviews.first(where: { $0 is NSTableCellView }) else { return }
+        guard let o = superview as? NSOutlineView, case let row = o.row(for: self), row >= 0,
+              let cell = subviews.first(where: { $0 is NSTableCellView }) else { return }
         let f = o.frameOfCell(atColumn: 0, row: row)   // only its height: mid-update a project's row comes back narrower
         cell.frame = NSRect(x: cell.frame.minX, y: f.minY - o.rect(ofRow: row).minY, width: cell.frame.width, height: f.height)
     }

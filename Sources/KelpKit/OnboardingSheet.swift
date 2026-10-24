@@ -29,7 +29,8 @@ package final class OnboardingSheet: SheetController {
         let icon = NSImageView(image: NSApp.applicationIconImage); icon.widthAnchor.constraint(equalToConstant: 56).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 56).isActive = true
         let title = NSTextField(labelWithString: String(localized: "Welcome to Kelp")); title.font = .boldSystemFont(ofSize: 17)
-        let sub = NSTextField(wrappingLabelWithString: String(localized: "Agents work in their own workspaces here, with the terminal, editor and git next to them."))
+        let sub = NSTextField(wrappingLabelWithString:
+                              String(localized: "Agents work in their own workspaces here, with the terminal, editor and git next to them."))
         sub.textColor = .secondaryLabelColor; sub.preferredMaxLayoutWidth = 340
         let head = NSStackView(views: [icon, NSStackView(views: [title, sub])]); head.alignment = .top; head.spacing = 14
         (head.arrangedSubviews[1] as? NSStackView).map { $0.orientation = .vertical; $0.alignment = .leading; $0.spacing = 4 }
@@ -44,11 +45,15 @@ package final class OnboardingSheet: SheetController {
         let notifyRow = NSStackView(views: [test, notifyStatus]); notifyRow.spacing = 8
 
         let later = ClosureButton(title: String(localized: "Later")) { [weak self] in self?.close() }; later.bezelStyle = .push; later.keyEquivalent = "\u{1b}"
-        let add = ClosureButton(title: String(localized: "Add Project…")) { [weak self, app] in self?.close(); DispatchQueue.main.async { app.workbench.addProject() } }
+        let add = ClosureButton(title: String(localized: "Add Project…")) { [weak self, app] in
+            self?.close()
+            DispatchQueue.main.async { app.workbench.addProject() }
+        }
         add.bezelStyle = .push; add.keyEquivalent = "\r"
         let buttons = NSStackView(views: [NSView(), later, add]); buttons.spacing = 8
 
-        let stack = NSStackView(views: [head, section(String(localized: "Agents on this Mac")), agents, pickRow, section(String(localized: "Notifications")), notifyRow, buttons])
+        let stack = NSStackView(views: [head, section(String(localized: "Agents on this Mac")), agents, pickRow,
+                                        section(String(localized: "Notifications")), notifyRow, buttons])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.setCustomSpacing(18, after: head); stack.setCustomSpacing(18, after: pickRow); stack.setCustomSpacing(22, after: notifyRow)
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 22, bottom: 20, right: 22)

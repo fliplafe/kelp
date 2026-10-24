@@ -15,7 +15,12 @@ package enum Banner {
         var text = text, action = action
         if let fix {
             text += "\n" + String(localized: "Fix: ") + fix.command
-            if action == nil { action = (String(localized: "Copy Fix"), { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(fix.command, forType: .string) }) }
+            if action == nil {
+                action = (String(localized: "Copy Fix"), {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(fix.command, forType: .string)
+                })
+            }
         }
         current?.removeFromSuperview()
         let fx = NSVisualEffectView(); fx.material = .hudWindow; fx.blendingMode = .withinWindow; fx.state = .active

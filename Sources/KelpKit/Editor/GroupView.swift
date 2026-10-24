@@ -44,13 +44,15 @@ final class GroupView: NSView {
         for v in [strip, container, veil, ring] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         addSubview(hint)
         NSLayoutConstraint.activate([
-            strip.topAnchor.constraint(equalTo: topAnchor), strip.leadingAnchor.constraint(equalTo: leadingAnchor), strip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            strip.topAnchor.constraint(equalTo: topAnchor), strip.leadingAnchor.constraint(equalTo: leadingAnchor),
+            strip.trailingAnchor.constraint(equalTo: trailingAnchor),
             container.topAnchor.constraint(equalTo: strip.bottomAnchor), container.leadingAnchor.constraint(equalTo: leadingAnchor),
             container.trailingAnchor.constraint(equalTo: trailingAnchor), container.bottomAnchor.constraint(equalTo: bottomAnchor),
             veil.topAnchor.constraint(equalTo: container.topAnchor), veil.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             veil.leadingAnchor.constraint(equalTo: container.leadingAnchor), veil.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             ring.topAnchor.constraint(equalTo: container.topAnchor, constant: 1), ring.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -1),
-            ring.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 1), ring.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -1)
+            ring.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 1),
+            ring.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -1)
         ])
         registerForDraggedTypes([.kelpTab, .fileURL])
     }

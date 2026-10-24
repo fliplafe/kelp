@@ -155,7 +155,8 @@ package final class ScriptsMenu: NSObject, NSMenuDelegate {
                 let id = s.id
                 let show: (String, @MainActor @Sendable () -> Void) = (String(localized: "Show Output"), { app.workbench.focus(session: id) })
                 if s.summary.hasPrefix("Ended with an error") {
-                    Banner.show(String(localized: "\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))"), style: .error, action: show)
+                    Banner.show(String(localized: "\(name) failed \(s.summary.replacingOccurrences(of: "Ended with an error ", with: ""))"),
+                                style: .error, action: show)
                 } else { Banner.show(String(localized: "\(name) finished"), action: show) }
             }
         }

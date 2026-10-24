@@ -30,7 +30,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private lazy var bar = WindowBar(app: app)
     /// Fixed in the window bar's corners, whichever panels are open.
     private let sidebarToggle = NSButton.titlebar("sidebar.left", String(localized: "Sidebar"), tip: String(localized: "Show or hide the sidebar (⌘0)"))
-    private let inspectorToggle = NSButton.titlebar("sidebar.trailing", String(localized: "Inspector"), tip: String(localized: "Show or hide the inspector (⌥⌘0)"))
+    private let inspectorToggle = NSButton.titlebar("sidebar.trailing", String(localized: "Inspector"),
+                                                    tip: String(localized: "Show or hide the inspector (⌥⌘0)"))
 
     init(app: AppModel) {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
@@ -54,7 +55,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebarToggle.target = self; sidebarToggle.action = #selector(toggleSidebarPanel)
         inspectorToggle.target = self; inspectorToggle.action = #selector(toggleInspectorPanel)
         root.view.pin(split.view)
-        for v in [bar, leftFloat, rightFloat, sidebarToggle, inspectorToggle, leftEdge, rightEdge] { v.translatesAutoresizingMaskIntoConstraints = false; root.view.addSubview(v) }
+        for v in [bar, leftFloat, rightFloat, sidebarToggle, inspectorToggle, leftEdge, rightEdge] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            root.view.addSubview(v)
+        }
         leftFloat.attach(leading: true); rightFloat.attach(leading: false)
         leftEdge.isHidden = true; rightEdge.isHidden = true
         leftEdge.onEnter = { [weak self] in self?.peek(sidebar: true) }
@@ -177,7 +181,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func setAutoHide(sidebar: Bool, _ on: Bool) {
         guard on != (sidebar ? autoHide.sidebar : autoHide.inspector) else { return }   // the first, unloaded read keeps the saved layout
-        if sidebar { autoHide.sidebar = on; pinned.sidebar = false; focusMode?.sidebar = on } else { autoHide.inspector = on; pinned.inspector = false; focusMode?.inspector = on }
+        if sidebar {
+            autoHide.sidebar = on
+            pinned.sidebar = false
+            focusMode?.sidebar = on
+        } else {
+            autoHide.inspector = on
+            pinned.inspector = false
+            focusMode?.inspector = on
+        }
         let item: NSSplitViewItem = sidebar ? sidebarItem : inspectorItem
         if peeking === item { stopPeek() }
         place()
@@ -501,7 +513,8 @@ final class WelcomeView: NSView {
         let stack = NSStackView(views: [icon, title, body, button])
         stack.orientation = .vertical; stack.spacing = 10; stack.setCustomSpacing(18, after: body)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
-        NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -30),
+        NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+                                     stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -30),
                                      body.widthAnchor.constraint(equalToConstant: 420)])
     }
     required init?(coder: NSCoder) { fatalError() }

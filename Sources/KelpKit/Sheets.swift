@@ -30,7 +30,8 @@ package struct AgentActions {
     package func rename(_ sid: String) {
         let cur = app.session(sid)?.title ?? ""
         Task {
-            guard let t = await prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."), initial: cur) else { return }
+            guard let t = await prompt(String(localized: "Rename"), String(localized: "Leave empty to name it from the task automatically."),
+                                       initial: cur) else { return }
             await app.call(SessionRename(id: sid, title: t))
         }
     }
@@ -74,7 +75,8 @@ package struct AgentActions {
 
     func handoff(_ sid: String, to agent: String, full: Bool) {
         Task {
-            let p = SessionHandoff(id: sid, agent: agent, full: full, prompt: "Continue the task where the previous agent left off: check what's done, then finish it.",
+            let p = SessionHandoff(id: sid, agent: agent, full: full,
+                                   prompt: "Continue the task where the previous agent left off: check what's done, then finish it.",
                                    draft: true)
             guard let s = await app.call(p) else { return }
             app.upsert(s)

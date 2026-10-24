@@ -73,7 +73,8 @@ enum DeclarativeExtension {
             let m = !FileManager.default.fileExists(atPath: own.path) && FileManager.default.fileExists(atPath: vscode.path)
                 ? try JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: vscode)).manifest
                 : try JSONDecoder().decode(ExtManifest.self, from: Data(contentsOf: own))
-            var info = ExtensionInfo(id: m.id, name: m.name, description: m.description ?? "", version: m.version ?? "", icon: m.icon ?? "puzzlepiece.extension",
+            var info = ExtensionInfo(id: m.id, name: m.name, description: m.description ?? "", version: m.version ?? "",
+                                     icon: m.icon ?? "puzzlepiece.extension",
                                      builtin: false, path: folder, enabled: true)
             info.source = IDE.extensionSource(folder)
             info.requires = m.requires ?? []
@@ -151,7 +152,9 @@ enum DeclarativeExtension {
         @unknown default: "\(e)"
         }
     }
-    private static func path(_ c: DecodingError.Context) -> String { c.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".") }
+    private static func path(_ c: DecodingError.Context) -> String {
+        c.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".")
+    }
 }
 
 /// An extension view in the editor area.
@@ -235,7 +238,9 @@ struct ExtActions {
             let cmd = expand(r, item: item, quote: true)
             Task {
                 let res = await Shell.run(app, cmd, cwd: IDEContext.of(app).workspace?.path ?? folder.path, extension: folder.lastPathComponent)
-                if res.code != 0 { Banner.show(String(localized: "\(a.title) failed: ") + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error) }
+                if res.code != 0 {
+                    Banner.show(String(localized: "\(a.title) failed: ") + String((res.stderr.isEmpty ? res.stdout : res.stderr).suffix(400)), style: .error)
+                }
                 after?()
             }
             return
@@ -249,7 +254,8 @@ struct ExtActions {
 /// that extension is off. A failure to reach the daemon or to start the program is code -1 with the reason as stderr.
 package enum Shell {
     package struct Result: Sendable { package var code: Int32; package var stdout: String; package var stderr: String }
-    package static func run(_ app: AppModel, _ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60, extension id: String? = nil) async -> Result {
+    package static func run(_ app: AppModel, _ command: String, cwd: String, input: String? = nil, timeout: TimeInterval = 60,
+                            extension id: String? = nil) async -> Result {
         await exec(app, ["/bin/zsh", "-lc", command], cwd: cwd, input: input, timeout: timeout, extension: id)
     }
 

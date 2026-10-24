@@ -62,14 +62,17 @@ extension AppDelegate {
     private func appMenu(_ b: MenuBuilder) {
         let app = b.sub("Kelp")
         app.addItem(withTitle: "About Kelp", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        if let u = updater { app.addItem(withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "").target = u }
+        if let u = updater {
+            app.addItem(withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "").target = u
+        }
         b.add(app, "-", "workbench.openSettings", "workbench.openExtensions", "workbench.restartService", "-")
         // The standard application menu: Services, Hide / Hide Others / Show All, Quit.
         let services = NSMenu(title: "Services"); NSApp.servicesMenu = services
         app.setSubmenu(services, for: app.addItem(withTitle: "Services", action: nil, keyEquivalent: ""))
         app.addItem(.separator())
         app.addItem(withTitle: "Hide Kelp", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h").keyEquivalentModifierMask = [.command, .option]
+        app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+            .keyEquivalentModifierMask = [.command, .option]
         app.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         app.addItem(.separator())
         app.addItem(withTitle: "Quit Kelp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -131,7 +134,8 @@ extension AppDelegate {
         b.add(view, "-", "view.biggerText")
         // ⌘= enlarges too, as in Ghostty, VS Code and Safari (+ is the shifted =).
         b.hide(view.add("Bigger Text", key: "=") { app.extensions.run("view.biggerText") })
-        b.add(view, "view.smallerText", "view.defaultTextSize", "-", "terminal.splitRight", "terminal.splitDown", "agents.sideBySide", "view.maximizePane", "view.equalizePanes")
+        b.add(view, "view.smallerText", "view.defaultTextSize", "-", "terminal.splitRight", "terminal.splitDown", "agents.sideBySide",
+              "view.maximizePane", "view.equalizePanes")
         let panes = NSMenu(title: "Select Pane")
         b.add(panes, "view.nextPane", "view.previousPane", "-", "view.paneLeft", "view.paneRight", "view.paneAbove", "view.paneBelow")
         view.setSubmenu(panes, for: view.addItem(withTitle: "Select Pane", action: nil, keyEquivalent: ""))
@@ -139,7 +143,8 @@ extension AppDelegate {
         for n in 1...9 { b.add(view, "editor.tab.\(n)").forEach { $0.isHidden = n > 3; $0.allowsKeyEquivalentWhenHidden = true } }
         // ⌃Tab / ⌃⇧Tab: the workspace switcher (Window menu); tabs keep ⇧⌘] / ⇧⌘[.
         b.add(view, "-", "workbench.commandPalette", "files.quickOpen", "agents.history", "-")
-        view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
+        view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+            .keyEquivalentModifierMask = [.command, .control]
     }
 
     /// Run: the project's commands (ScriptsMenu fills in the rest) and the editor's run / test / format.

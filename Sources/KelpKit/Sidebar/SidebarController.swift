@@ -85,7 +85,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         search.sendsSearchStringImmediately = true; search.target = self; search.action = #selector(searchChanged)
         setFilterMenu()
         // Beside the search, over the projects it adds to, where people look for it.
-        let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"), tip: String(localized: "Add a project: a folder, a clone or one over SSH"))
+        let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"),
+                                    tip: String(localized: "Add a project: a folder, a clone or one over SSH"))
         add.target = self; add.action = #selector(addMenu(_:))
         for x in [add, search, summary, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
@@ -133,7 +134,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard on else { return }
         noMatch.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let what = query.isEmpty ? "“\(loc(filter.rawValue))”" : "“\(query)”" + (filter == .all ? "" : String(localized: " in “\(loc(filter.rawValue))”"))
-        let t = NSTextField(wrappingLabelWithString: String(localized: "No workspaces match \(what).")); t.alignment = .center; t.textColor = .secondaryLabelColor
+        let t = NSTextField(wrappingLabelWithString: String(localized: "No workspaces match \(what)."))
+        t.alignment = .center
+        t.textColor = .secondaryLabelColor
         let b = ClosureButton(title: String(localized: "Show All")) { [weak self] in
             guard let self else { return }
             search.stringValue = ""; query = ""; setFilter(.all)
@@ -161,7 +164,10 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
 
     override func mouseMoved(with e: NSEvent) {
         let row = outline.row(at: outline.convert(e.locationInWindow, from: nil))
-        guard row >= 0, renaming == nil, let n = outline.item(atRow: row) as? Node, !n.key.hasPrefix("s:") else { card.hover(nil, rect: .zero, in: outline); return }
+        guard row >= 0, renaming == nil, let n = outline.item(atRow: row) as? Node, !n.key.hasPrefix("s:") else {
+            card.hover(nil, rect: .zero, in: outline)
+            return
+        }
         card.hover(n.workspace.map { "w:" + $0 } ?? n.key, rect: outline.rect(ofRow: row), in: outline)
     }
     override func mouseExited(with e: NSEvent) { card.hover(nil, rect: .zero, in: outline) }
@@ -171,7 +177,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let icon = NSImageView(image: .symbol("folder.badge.plus")); icon.symbolConfiguration = .init(pointSize: 28, weight: .light)
         icon.contentTintColor = .tertiaryLabelColor
         let t = NSTextField(labelWithString: String(localized: "No Projects")); t.font = .ui(13, weight: .semibold)
-        let d = NSTextField(wrappingLabelWithString: String(localized: "Add a project folder to start.")); d.textColor = .secondaryLabelColor; d.alignment = .center
+        let d = NSTextField(wrappingLabelWithString: String(localized: "Add a project folder to start."))
+        d.textColor = .secondaryLabelColor
+        d.alignment = .center
         let b = ClosureButton(title: String(localized: "Add Project…")) { app.workbench.addProject() }; b.bezelStyle = .push
         [icon, t, d, b].forEach { empty.addArrangedSubview($0) }
         empty.orientation = .vertical; empty.spacing = 8
@@ -187,7 +195,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         tree.filter = filter
         tree.current = app.workbench.workspaceId
         tree.statusLabel = { $0.label }
-        tree.hasPR = { [app] w in (app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)).map { [app] in app.rowBadges.prs[$0.id] != nil } ?? false }
+        tree.hasPR = { [app] w in
+            (app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)).map { [app] in app.rowBadges.prs[$0.id] != nil } ?? false
+        }
         func node(_ i: SidebarItem) -> Node {
             let n = Node(i.kind)
             n.children = i.children.map(node); n.workspace = i.workspace

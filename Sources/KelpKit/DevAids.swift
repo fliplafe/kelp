@@ -59,7 +59,8 @@ extension AppDelegate {
             }
             // A run-loop timer rather than the main queue: it also fires while a modal sheet runs.
             let delay = env["KELP_SNAPSHOT_DELAY"].flatMap(Double.init) ?? 1.5
-            RunLoop.main.add(Timer(timeInterval: delay, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)   // main run loop
+            // main run loop
+            RunLoop.main.add(Timer(timeInterval: delay, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)
         }
     }
 
@@ -101,7 +102,8 @@ extension AppDelegate {
         if !Self.hovered, let texts = env["KELP_HOVER"] {
             Self.hovered = true
             for text in texts.split(separator: "|").map(String.init) { Self.hover(text, in: v, window: w) }
-            RunLoop.main.add(Timer(timeInterval: 1.2, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)   // main run loop
+            // main run loop
+            RunLoop.main.add(Timer(timeInterval: 1.2, repeats: false) { [self] _ in MainActor.assumeIsolated { self.snap(env, to: path) } }, forMode: .common)
             return
         }
         print("WINDOW", w.title, w.frame)
@@ -219,7 +221,8 @@ extension AppDelegate {
                 let flags = (123...126).contains(code) ? mods.union([.numericPad, .function]) : mods   // arrows carry these
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
                     if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
-                                                windowNumber: (NSApp.keyWindow ?? main.window)?.windowNumber ?? 0, context: nil, characters: ch, charactersIgnoringModifiers: ch,
+                                                windowNumber: (NSApp.keyWindow ?? main.window)?.windowNumber ?? 0, context: nil,
+                                                characters: ch, charactersIgnoringModifiers: ch,
                                                 isARepeat: false, keyCode: code) { NSApp.sendEvent(e) }
                 }
             }
@@ -258,12 +261,14 @@ extension AppDelegate {
     static func render(_ v: NSView, scale: CGFloat, to path: String) {
         v.layoutSubtreeIfNeeded(); v.displayIfNeeded()
         let size = v.bounds.size
-        guard let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+        guard let layer = v.layer, let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                                                       bitsPerComponent: 8, bytesPerRow: 0,
                                                        space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return }
         ctx.scaleBy(x: scale, y: scale)
-        var bg = NSColor.windowBackgroundColor.cgColor; NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }
+        var bg = NSColor.windowBackgroundColor.cgColor
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { bg = NSColor.windowBackgroundColor.cgColor }
         ctx.setFillColor(bg); ctx.fill(CGRect(origin: .zero, size: size))   // the window frame paints this on screen
         if v.isFlipped { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
         layer.render(in: ctx)
@@ -278,7 +283,8 @@ extension AppDelegate {
         let text = right ? String(text.dropFirst()) : text
         if text.hasPrefix("@"), case let xy = text.dropFirst().split(separator: ",").compactMap({ Double($0) }), xy.count == 2 {
             p = NSPoint(x: xy[0], y: w.frame.height - xy[1])
-        } else if let field = root.allSubviews(of: NSTextField.self).first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }) {
+        } else if let field = root.allSubviews(of: NSTextField.self)
+            .first(where: { $0.stringValue == text && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }) {
             p = field.convert(NSPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)
         } else { print("CLICK no \(text)"); return }
         // A real click makes what it hits first responder; a window in the background (launched from a shell) doesn't.

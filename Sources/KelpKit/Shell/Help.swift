@@ -65,7 +65,8 @@ package enum Help {
 
     ## Shortcuts
     ⌘N workspace · ⌥⌘T agent · ⌘T terminal · ⇧⌘B browser · ⌘P open file · ⇧⌘P commands · ⌘D / ⇧⌘D split ·
-    ⌃⌘T agents side by side / as tabs · ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · ⌘] / ⌘[ next / previous pane · ⌥⌘←→↑↓ pane on that side ·
+    ⌃⌘T agents side by side / as tabs · ⇧⌘↩ maximize pane · ⌘1…9 tabs · ⇧⌘] / ⇧⌘[ or ⌃⇥ / ⌃⇧⇥ next / previous tab · \
+    ⌘] / ⌘[ next / previous pane · ⌥⌘←→↑↓ pane on that side ·
     ⌃1…9 workspaces · ⌃⌘↓ / ⌃⌘↑ next / previous workspace · ⇧⌘U agent that needs you · ⌘F find · ⌥⌘R reveal in Finder ·
     ⌘0 sidebar · ⌥⌘0 right panel · ⌘S save · ⌘W close tab · ⇧⌘W close workspace. Shortcuts work on any keyboard layout.
     """

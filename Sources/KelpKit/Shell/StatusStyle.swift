@@ -207,7 +207,10 @@ package struct AttentionQueue {
     var sessions: [Session] {
         app.sessions
             .filter(SidebarCell.wantsYou)   // what the summary counts, a paused agent's unread result too
-            .sorted { (SidebarCell.shownStatus($0) == .done ? 1 : 0, $0.statusAt ?? $0.createdAt) < (SidebarCell.shownStatus($1) == .done ? 1 : 0, $1.statusAt ?? $1.createdAt) }
+            .sorted {
+                (SidebarCell.shownStatus($0) == .done ? 1 : 0, $0.statusAt ?? $0.createdAt)
+                    < (SidebarCell.shownStatus($1) == .done ? 1 : 0, $1.statusAt ?? $1.createdAt)
+            }
     }
 
     /// The one after `current` (wrapping), so pressing again walks the whole queue.

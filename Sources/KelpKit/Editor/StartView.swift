@@ -122,7 +122,8 @@ final class StartView: NSView, NSTextFieldDelegate {
         let box = StartBox(radius: 10, fill: 0.05)
         row.translatesAutoresizingMaskIntoConstraints = false; box.addSubview(row)
         NSLayoutConstraint.activate([
-            box.heightAnchor.constraint(equalToConstant: 40), icon.widthAnchor.constraint(equalToConstant: 18), icon.heightAnchor.constraint(equalToConstant: 18),
+            box.heightAnchor.constraint(equalToConstant: 40), icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
             row.leadingAnchor.constraint(equalTo: box.leadingAnchor), row.trailingAnchor.constraint(equalTo: box.trailingAnchor),
             row.centerYAnchor.constraint(equalTo: box.centerYAnchor)
         ])

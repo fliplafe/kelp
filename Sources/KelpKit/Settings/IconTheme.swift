@@ -12,7 +12,9 @@ final class IconTheme {
 
         /// Names match case-insensitively, as in VS Code.
         func lowercased() -> Associations {
-            func l(_ d: [String: String]?) -> [String: String]? { d.map { Dictionary($0.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a }) } }
+            func l(_ d: [String: String]?) -> [String: String]? {
+                d.map { Dictionary($0.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a }) }
+            }
             return Associations(file: file, folder: folder, folderExpanded: folderExpanded, fileExtensions: l(fileExtensions), fileNames: l(fileNames),
                                 languageIds: languageIds, folderNames: l(folderNames), folderNamesExpanded: l(folderNamesExpanded))
         }

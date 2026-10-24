@@ -74,7 +74,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         tmuxLoad?.cancel(); tmux = nil
         field.placeholderString = commandsOnly ? String(localized: "Run a command") : String(localized: "Search workspaces, agents, tabs, files and commands")
         let label = commandsOnly ? String(localized: "Commands") : String(localized: "Search")
-        field.setAccessibilityLabel(label); field.cell?.image = NSImage(systemSymbolName: commandsOnly ? "command" : "magnifyingglass", accessibilityDescription: label)
+        field.setAccessibilityLabel(label)
+        field.cell?.image = NSImage(systemSymbolName: commandsOnly ? "command" : "magnifyingglass", accessibilityDescription: label)
         // The keys it knows, under the list (they're not written anywhere else).
         keys.stringValue = String(localized: "↑↓ Select    ↩ Open    ⇧↩ Open in a Split    # Pull Requests")
         field.stringValue = query
@@ -93,7 +94,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
                         choice: v, checked: v == now, image: image)
         }
         field.placeholderString = "\(loc(section.title)) › \(loc(spec.title))"
-        keys.stringValue = choosing?.tries == true ? String(localized: "↑↓ Try On    ↩ Keep    esc Back") : String(localized: "↑↓ Select    ↩ Choose    esc Back")
+        keys.stringValue = choosing?.tries == true
+            ? String(localized: "↑↓ Try On    ↩ Keep    esc Back")
+            : String(localized: "↑↓ Select    ↩ Choose    esc Back")
         field.stringValue = ""
         filter()
     }
@@ -110,52 +113,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
         app.settings.preview(c.key, it.choice)
     }
 
-    /// What a setting can be set to: the values and their names.
-    func choices(_ spec: SettingSpec) -> [(JSONValue, String)] {
-        switch spec.type {
-        case "boolean": return [(.bool(true), String(localized: "On")), (.bool(false), String(localized: "Off"))]
-        case "number":
-            return (spec.options ?? []).compactMap(Double.init).map { v -> (JSONValue, String) in
-                let whole = v == v.rounded()
-                return (whole ? .int(Int(v)) : .double(v), SettingRow.label(spec.key, whole ? String(Int(v)) : String(v), app))
-            }
-        default: return SettingRow.options(spec, app).map { (.string($0), SettingRow.label(spec.key, $0, app)) }
-        }
-    }
-
-    /// A color theme's row: light or dark, and a tile of its colors (Match System shows both of its themes).
-    func themeLook(_ id: String) -> (String, NSImage?) {
-        let themes = app.themes.themes
-        switch id {
-        case "auto": return (String(localized: "Kelp Light or Dark, as macOS is"), Self.swatch(themes.filter { $0.id == "kelp.light" || $0.id == "kelp.dark" }))
-        case "ghostty": return (String(localized: "The terminal keeps your Ghostty colors"), nil)
-        default:
-            guard let t = themes.first(where: { $0.id == id }) else { return ("", nil) }
-            return (t.appearance == "light" ? String(localized: "Light") : String(localized: "Dark"), Self.swatch([t]))
-        }
-    }
-
-    /// Themes side by side in an 18 pt tile: each its background with two lines of "text" in its foreground and blue.
-    static func swatch(_ themes: [Theme]) -> NSImage {
-        func color(_ hex: String?) -> NSColor { hex.flatMap { NSColor(hex: $0) } ?? .gray }
-        return NSImage(size: NSSize(width: 18, height: 18), flipped: true) { r in
-            let tile = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
-            NSGraphicsContext.saveGraphicsState(); tile.addClip()
-            let w = r.width / CGFloat(max(themes.count, 1))
-            for (i, t) in themes.enumerated() {
-                let x = CGFloat(i) * w, c = t.terminal
-                color(c?.background).setFill(); NSRect(x: x, y: 0, width: w, height: r.height).fill()
-                color(c?.foreground).setFill(); NSRect(x: x + 3, y: 5, width: (w - 6) * 0.9, height: 2).fill()
-                color(c?.palette?.dropFirst(4).first).setFill(); NSRect(x: x + 3, y: 10, width: (w - 6) * 0.6, height: 2).fill()
-            }
-            NSGraphicsContext.restoreGraphicsState()
-            NSColor.separatorColor.setStroke(); tile.stroke()
-            return true
-        }
-    }
-
     private func build() {
-        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 460), styleMask: [.titled, .fullSizeContentView, .closable], backing: .buffered, defer: false)
+        panel = QuickPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 460), styleMask: [.titled, .fullSizeContentView, .closable],
+                           backing: .buffered, defer: false)
         panel.onNumber = { [weak self] n in self?.pickRecent(n) ?? false }
         panel.title = String(localized: "Open Quickly")   // hidden; the Window menu and VoiceOver read it
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isMovableByWindowBackground = true
@@ -180,7 +140,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             sv.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -6), sv.bottomAnchor.constraint(equalTo: line.topAnchor, constant: -4),
             line.leadingAnchor.constraint(equalTo: effect.leadingAnchor), line.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
             line.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -28),
-            keys.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 16), keys.centerYAnchor.constraint(equalTo: effect.bottomAnchor, constant: -14)
+            keys.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 16),
+            keys.centerYAnchor.constraint(equalTo: effect.bottomAnchor, constant: -14)
         ])
         panel.contentView = effect
     }
@@ -192,7 +153,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             collectRecents()
             if let e = app.workbench.editor {
                 for (uri, title) in e.openTabs where TabURI.scheme(uri) != "session" {
-                    items.append(Item(kind: "Tab", icon: "square.on.square", title: title, detail: TabURI.scheme(uri) == "file" ? TabURI.filePath(uri).path : uri,
+                    items.append(Item(kind: "Tab", icon: "square.on.square", title: title,
+                                      detail: TabURI.scheme(uri) == "file" ? TabURI.filePath(uri).path : uri,
                                       action: { app.workbench.open(uri) }, split: { app.workbench.open(uri, split: .right) }))
                 }
             }
@@ -205,7 +167,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
                 let wt = app.worktree(s.worktreeId)
                 items.append(Item(kind: "Agent", icon: "terminal", title: app.catalog.displayName(s),
                                   detail: "\(s.status.words) · \(shortAgo(s.statusAt ?? s.createdAt)) · \(wt?.displayName ?? "")",
-                                  action: { app.workbench.focus(session: s.id) }, split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                                  action: { app.workbench.focus(session: s.id) },
+                                  split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                                   session: s))
             }
             filesLoad?.cancel()
@@ -246,7 +209,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
                     continue
                 }
                 let now = app.settings.value(spec.key)
-                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""), action: { [weak self] in self?.pick(section, spec) },
+                items.append(Item(kind: "Setting", icon: section.icon, title: title, detail: loc(spec.description ?? ""),
+                                  action: { [weak self] in self?.pick(section, spec) },
                                   value: choices.first { $0.0 == now }?.1 ?? ""))
             }
         }
@@ -265,7 +229,8 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             let w = m.worktree(s.worktreeId)
             return Item(kind: s.status.words, icon: "terminal", title: app.catalog.displayName(s),
                         detail: [w?.displayName, m.repo(w?.repoId)?.name].compactMap { $0 }.joined(separator: " · "),
-                        action: { app.workbench.focus(session: s.id) }, split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
+                        action: { app.workbench.focus(session: s.id) },
+                        split: { app.workbench.open(TabURI.session(s.id), split: .right, workspace: s.worktreeId) },
                         session: s)
         }
         var seen: Set<String> = []   // each workspace once, at its last visit
@@ -442,7 +407,9 @@ package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDeleg
             if let s = it.session, let i = app.catalog.icon(s.agent, size: 18) { img.image = i }
             lead = img
         }
-        let t1 = NSTextField(labelWithString: ""); t1.attributedStringValue = Self.highlighted(it.title, field.stringValue); t1.lineBreakMode = .byTruncatingTail
+        let t1 = NSTextField(labelWithString: "")
+        t1.attributedStringValue = Self.highlighted(it.title, field.stringValue)
+        t1.lineBreakMode = .byTruncatingTail
         let t2 = NSTextField(labelWithString: it.detail); t2.font = .systemFont(ofSize: 11); t2.textColor = .secondaryLabelColor
         t2.lineBreakMode = it.kind == "Setting" ? .byTruncatingTail : .byTruncatingMiddle   // paths keep both ends, prose its start
         t2.isHidden = it.detail.isEmpty
@@ -507,7 +474,8 @@ extension QuickOpen {
             let app = self.app
             var c = URLComponents(); c.scheme = "terminal"; c.queryItems = [URLQueryItem(name: "tmux", value: name)]
             let uri = c.string ?? "terminal:"
-            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { app.workbench.open(uri) }, split: { app.workbench.open(uri, split: .right) })
+            return Item(kind: "tmux", icon: icon, title: name, detail: detail, action: { app.workbench.open(uri) },
+                        split: { app.workbench.open(uri, split: .right) })
         }
         // Kelp's own (terminal.tmux) are terminals already, and end with their tab: not offered.
         let found = sessions.filter { !Tmux.isOwn($0.name) }.compactMap { s -> (Item, Int)? in

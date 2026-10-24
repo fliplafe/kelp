@@ -55,7 +55,9 @@ package final class EditorArea: NSViewController {
     /// brings the content back.
     private func extensionsChanged() {
         // A reloaded extension may have changed its view: its tabs are built again from the new definition.
-        let stale = contents.filter { TabURI.scheme($0.value.uri) == "ext" || (app.extensions.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab) }.map(\.key)
+        let stale = contents.filter {
+            TabURI.scheme($0.value.uri) == "ext" || (app.extensions.tabProvider(for: $0.value.uri) != nil) == ($0.value is UnavailableTab)
+        }.map(\.key)
         guard !stale.isEmpty else { return }
         stale.forEach { contents[$0] = nil }
         render()
@@ -242,11 +244,13 @@ package final class EditorArea: NSViewController {
         case "session":
             let s = app.session(body)
             let title = s.map(app.catalog.displayName) ?? String(localized: "Session")
-            return .init(id: t.id, title: title, icon: app.catalog.icon(s?.agent), status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
+            return .init(id: t.id, title: title, icon: app.catalog.icon(s?.agent),
+                         status: s.flatMap { $0.agent == "shell" ? nil : $0.endedWithError ? .error : $0.status },
                          unread: s?.unread ?? false, toolTip: title)
         case "file":
             let p = TabURI.filePath(t.uri).path
-            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: app.fileIcons.image((p as NSString).lastPathComponent), status: nil, toolTip: p)
+            return .init(id: t.id, title: (p as NSString).lastPathComponent, icon: app.fileIcons.image((p as NSString).lastPathComponent),
+                         status: nil, toolTip: p)
         case "diff": return .init(id: t.id, title: String(localized: "Changes"), icon: .symbol("plusminus"), status: nil, toolTip: nil)
         case "http", "https", "about":
             return .init(id: t.id, title: URL(string: t.uri)?.host ?? String(localized: "New Page"), icon: .symbol("safari"), status: nil, toolTip: t.uri)

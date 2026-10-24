@@ -53,7 +53,8 @@ final class ExtWebController: NSViewController, WKScriptMessageHandler, WKNaviga
         let ws: JSONValue = .obj(["name": .string(ctx.workspace?.displayName ?? ""), "path": .string(ctx.workspace?.path ?? ""),
                                   "branch": .string(ctx.workspace?.branch ?? ""), "project": .string(ctx.project?.name ?? "")])
         let settings = JSONValue.object(app.settings.values)
-        guard let w = try? String(data: JSONEncoder().encode(ws), encoding: .utf8), let s = try? String(data: JSONEncoder().encode(settings), encoding: .utf8) else { return }
+        guard let w = try? String(data: JSONEncoder().encode(ws), encoding: .utf8),
+              let s = try? String(data: JSONEncoder().encode(settings), encoding: .utf8) else { return }
         web.evaluateJavaScript("window.kelp && window.kelp.__update(\(w), \(s))")
     }
 

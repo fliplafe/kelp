@@ -98,7 +98,8 @@ private struct SearchResults: View {
         let q = query.lowercased()
         let hits = app.extensions.all.settings.flatMap { s in
             // In English and as shown (a Russian search finds Russian titles).
-            s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " " + loc($0.description ?? "")).lowercased().contains(q) }
+            s.specs.filter { ($0.title + " " + loc($0.title) + " " + $0.key + " " + ($0.description ?? "") + " "
+                              + loc($0.description ?? "")).lowercased().contains(q) }
                 .map { (s, $0) }
         }
         let keys = KeyBindings.entries().contains { KeyBindings.matches($0, query) }
@@ -161,7 +162,8 @@ struct SettingRow: View {
         case "theme":
             ThemeGallery(selection: Binding(get: { store.string(spec.key) ?? "auto" }, set: { store.set(spec.key, .string($0)) }))
         case "color":
-            ColorPicker(loc(spec.title), selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor }, set: { store.set(spec.key, .string($0.hex)) }))
+            ColorPicker(loc(spec.title), selection: Binding(get: { Color(hex: store.string(spec.key) ?? "") ?? .accentColor },
+                                                            set: { store.set(spec.key, .string($0.hex)) }))
         case "font":
             // A plain picker, like the enum rows: in a fixed-width frame it ended short of the other rows' trailing edge.
             Picker(loc(spec.title), selection: Binding(get: { store.string(spec.key) ?? "" }, set: { store.set(spec.key, .string($0)) })) {
@@ -191,7 +193,8 @@ struct SettingRow: View {
             return v == "auto" ? String(localized: "Match System") : v == "ghostty" ? String(localized: "Ghostty config")
                 : app.themes.themes.first { $0.id == v }?.name ?? v
         case "workbench.iconTheme": return app.fileIcons.themes.first { $0.id == v }?.label ?? v
-        case "power.keepAwake": return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
+        case "power.keepAwake":
+            return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
         case "sessions.hibernateMinutes":
             let m = Int(v) ?? -1
             return m == 0 ? String(localized: "Never") : m == 60 ? String(localized: "After 1 hour")
@@ -318,7 +321,8 @@ private struct ExtensionsSettings: View {
                     if let p = e.path, !e.builtin {
                         Menu {
                             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([p]) }
-                            let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path) ? "extension.json" : "package.json"
+                            let manifest = FileManager.default.fileExists(atPath: p.appendingPathComponent("extension.json").path)
+                                ? "extension.json" : "package.json"
                             Button("Edit \(manifest)") { app.workbench.open(TabURI.file(p.appendingPathComponent(manifest).path)) }
                             Divider()
                             Button("Uninstall", role: .destructive) { registry.uninstall(e.id) }

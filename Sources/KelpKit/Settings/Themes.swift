@@ -114,7 +114,8 @@ package final class ThemeManager {
 
         let e = theme?.editor
         let palette = e.map { CodeEditor.Palette(background: $0.background, text: $0.text, keyword: $0.keyword, string: $0.string, comment: $0.comment,
-                                                 type: $0.type, number: $0.number, function: $0.function, selection: $0.selection, lineHighlight: $0.lineHighlight) }
+                                                 type: $0.type, number: $0.number, function: $0.function, selection: $0.selection,
+                                                 lineHighlight: $0.lineHighlight) }
         let size = CGFloat(s.number("editor.fontSize") ?? 13), font = s.string("editor.fontFamily").flatMap { $0.isEmpty ? nil : $0 }
         let minimap = s.bool("editor.minimap") ?? false
         TextSize.apply(s.string("workbench.textSize"))
