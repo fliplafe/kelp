@@ -176,7 +176,7 @@ public final class Store: Sendable {
         try db.read { d in
             try Row.fetchAll(d, sql: "SELECT key, value FROM uiState WHERE instr(key, ?) = 1", arguments: [prefix]).reduce(into: [:]) { out, r in
                 let text: String = r["value"]
-                out[r["key"]] = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+                out[r["key"]] = Log.store.attempt("reading UI state \(r["key"] as String)") { try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)) }
             }
         }
     }

@@ -21,7 +21,7 @@ final class SettingsStore: Sendable {
         let old = (try? Data(contentsOf: root.appendingPathComponent("config.json"))).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
         var values: [String: JSONValue] = [:]
         for (k, v) in Self.legacyKeys { if let x = old?[k] { values[v] = x } }
-        file.withLock { try? write(values) }
+        file.withLock { _ = Log.store.attempt("writing settings.json from config.json") { try write(values) } }
     }
 
     var values: [String: JSONValue] { state.withLock { $0 }.values }

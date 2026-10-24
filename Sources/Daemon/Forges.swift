@@ -34,12 +34,14 @@ final class Forges: Sendable {
     /// Jira / Bitbucket credentials: one JSON blob each in the keychain.
     static let jiraAccount = "jira", bitbucketAccount = "bitbucket"
     var jira: JiraClient? {
-        guard let s = Keychain.get(Self.jiraAccount), let v = try? JSONDecoder().decode([String: String].self, from: Data(s.utf8)),
+        guard let s = Keychain.get(Self.jiraAccount),
+              let v = Log.store.attempt("reading Jira's keychain item", { try JSONDecoder().decode([String: String].self, from: Data(s.utf8)) }),
               let site = v["site"], let email = v["email"], let token = v["token"] else { return nil }
         return JiraClient(site: site, email: email, token: token)
     }
     var bitbucket: BitbucketClient? {
-        guard let s = Keychain.get(Self.bitbucketAccount), let v = try? JSONDecoder().decode([String: String].self, from: Data(s.utf8)),
+        guard let s = Keychain.get(Self.bitbucketAccount),
+              let v = Log.store.attempt("reading Bitbucket's keychain item", { try JSONDecoder().decode([String: String].self, from: Data(s.utf8)) }),
               let u = v["user"], let t = v["token"] else { return nil }
         return BitbucketClient(user: u, token: t)
     }

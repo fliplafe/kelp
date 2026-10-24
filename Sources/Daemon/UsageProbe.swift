@@ -170,7 +170,7 @@ extension AgentUsage {
         let file = root.appendingPathComponent("probe/grok-session")
         let id = (try? String(contentsOf: file, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             ?? UUID().uuidString.lowercased()
-        try? id.write(to: file, atomically: true, encoding: .utf8)
+        Log.session.attempt("keeping Grok's probe session id") { try id.write(to: file, atomically: true, encoding: .utf8) }
         return [[path, "--resume", id], [path, "--session-id", id]]   // the first run creates it
     }
 

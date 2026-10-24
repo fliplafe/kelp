@@ -289,7 +289,7 @@ extension RepoRemoveWorktrees: Handled {
             do {
                 try Git.run(["worktree", "remove", p], cwd: r.path, remotes: workspaces.remotes)   // no --force: git keeps one with changes, untracked files or a lock
                 if let b = w.branch, Git.isRevision(b) {   // -d: only if its commits are on another branch
-                    _ = try? Git.run(["branch", "-d", b], cwd: r.path, remotes: workspaces.remotes)
+                    _ = Log.store.attempt("deleting merged branch \(b)") { try Git.run(["branch", "-d", b], cwd: r.path, remotes: workspaces.remotes) }
                 }
                 out.removed.append(p)
             } catch let e as GitError { out.kept[p] = e.message }

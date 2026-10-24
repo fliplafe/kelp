@@ -48,7 +48,8 @@ extension Forges {
             proc.terminationHandler = { c.resume(returning: ($0.terminationStatus, $0.terminationReason)) }
             do { try proc.run() } catch {
                 proc.terminationHandler = nil
-                try? FileManager.default.removeItem(atPath: dest)   // claimed above, nothing written: a retry finds the name free
+                // Claimed above, nothing written: a retry finds the name free.
+                Log.store.attempt("removing an unstarted clone's folder") { try FileManager.default.removeItem(atPath: dest) }
                 c.resume(throwing: error)
             }
         }
@@ -58,7 +59,8 @@ extension Forges {
         await withCheckedContinuation { c in DispatchQueue.global().async { _ = eof.wait(timeout: .now() + 2); c.resume() } }
         err.fileHandleForReading.readabilityHandler = nil
         guard status.0 == 0 else {
-            try? FileManager.default.removeItem(atPath: dest)   // this clone made it (mkdir above), nobody else wrote there
+            // This clone made it (mkdir above), nobody else wrote there.
+            Log.store.attempt("removing a failed clone's folder") { try FileManager.default.removeItem(atPath: dest) }
             if status.1 == .uncaughtSignal || status.0 == 130 { throw RPCError.invalidParams("Clone cancelled.") }
             throw RPCError.invalidParams(log.failure ?? "git clone failed (exit code \(status.0)).")
         }

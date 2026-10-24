@@ -67,7 +67,10 @@ extension Sessions {
     func profile(_ name: String, agent: String) -> (key: String, dir: String)? {
         guard let key = Self.configDirEnv[agent] else { return nil }
         for p in settings["accounts.profiles"]?.array ?? [] where p["name"]?.string == name && p["agent"]?.string == agent {
-            if let d = p["dir"]?.string { try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true); return (key, d) }
+            if let d = p["dir"]?.string {
+                Log.session.attempt("making profile \(name)'s folder") { try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true) }
+                return (key, d)
+            }
         }
         return nil
     }
@@ -313,9 +316,9 @@ extension Sessions {
         let old = ls.snapshot.title
         let s = ls.update { if !$0.titleManual { $0.title = topic } }
         publish(ls)
-        let renamed = try? store.update(Worktree.self, s.worktreeId ?? "") { w in
+        let renamed = Log.store.attempt("naming the workspace after its first prompt") { try store.update(Worktree.self, s.worktreeId ?? "") { w in
             if (!old.isEmpty && w.note == old) || w.note.range(of: Workspaces.placeholderName, options: .regularExpression) != nil { w.note = topic }
-        }
+        } } ?? nil
         if renamed?.note == topic { notify(ChangedEvent.worktree) }
     }
 

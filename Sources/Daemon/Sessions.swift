@@ -131,7 +131,7 @@ final class Sessions: Sendable {
         let sid = rec.id
         // The record first: a program nobody has a record of could be neither seen nor stopped.
         do { rec = try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
-        do { try live.add(ls) } catch { ls.discard(); ls.start(); try? store.delete(rec); throw error }
+        do { try live.add(ls) } catch { ls.discard(); ls.start(); Log.store.attempt("deleting \(rec.id), not started") { try store.delete(rec) }; throw error }
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }
@@ -209,7 +209,10 @@ final class Sessions: Sendable {
             Self.waitGone(pids)   // gone before their project or folder goes (SIGKILL after 2 s)
             for s in all {
                 do { try store.delete(s) } catch { Log.store.error("couldn't delete session \(s.id, privacy: .public): \(error)") }
-                try? FileManager.default.removeItem(at: root.appendingPathComponent("history/\(s.id).log"))   // none when it never ran
+                let log = root.appendingPathComponent("history/\(s.id).log")   // none when it never ran
+                if FileManager.default.fileExists(atPath: log.path) {
+                    Log.store.attempt("removing \(s.id)'s history") { try FileManager.default.removeItem(at: log) }
+                }
             }
         }
     }

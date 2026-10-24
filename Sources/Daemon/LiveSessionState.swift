@@ -70,7 +70,9 @@ extension LiveSession {
             detector = StatusDetector(manifest: manifest)
             hooked = manifest.hooks != nil
             selfNames = [manifest.id, manifest.name, (record.cwd as NSString).lastPathComponent]
-            autoAnswers = manifest.autoAnswers.compactMap { a in (try? NSRegularExpression(pattern: a.pattern)).map { ($0, a) } }
+            autoAnswers = manifest.autoAnswers.compactMap { a in
+                Log.session.attempt("\(manifest.id)'s auto-answer pattern") { try NSRegularExpression(pattern: a.pattern) }.map { ($0, a) }
+            }
             self.logSize = logSize
             wantsTopic = callbacks.topic != nil; wantsURL = callbacks.localURL != nil; wantsLimits = callbacks.limits != nil
         }
@@ -126,7 +128,7 @@ extension LiveSession {
             let r = NSRange(tail.startIndex..., in: tail)
             guard let i = autoAnswers.firstIndex(where: { $0.0.firstMatch(in: tail, range: r) != nil }) else { return nil }
             let a = autoAnswers[i].1
-            if let choose = a.choose, let re = try? NSRegularExpression(pattern: choose) {
+            if let choose = a.choose, let re = Log.session.attempt("an auto-answer's choice pattern", { try NSRegularExpression(pattern: choose) }) {
                 steering = (re, Date(), .distantPast, autoAnswers[i].0); autoAnswers.remove(at: i)   // closed loop, see steer()
                 return nil
             }

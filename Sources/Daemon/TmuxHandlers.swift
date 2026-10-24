@@ -19,7 +19,9 @@ extension Sessions {
     /// Ends the tmux session a session of Kelp's own ran in, in the background (over ssh it can take a while).
     func endOwnTmux(_ s: Session) {
         guard let name = Self.tmuxName(s), Tmux.isOwn(name) else { return }
-        DispatchQueue.global(qos: .utility).async { [self] in _ = try? tmux(["kill-session", "-t", "=" + name], cwd: s.cwd) }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            Log.session.attempt("ending tmux session \(name)") { try tmux(["kill-session", "-t", "=" + name], cwd: s.cwd) }
+        }
     }
 
     /// The first program running in the session's panes other than their shells.

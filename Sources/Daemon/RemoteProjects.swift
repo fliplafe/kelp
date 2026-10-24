@@ -69,12 +69,15 @@ extension RepoAddRemote: Handled {
         // init: a folder that isn't a repository yet becomes one (the sheet's Initialize Git and Open).
         if `init` == true {
             do { _ = try Git.run(["init", "-q"], cwd: folder.path, remotes: workspaces.remotes) }
-            catch let e as GitError { try? FileManager.default.removeItem(at: folder); throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)") }
+            catch let e as GitError {
+                Log.store.attempt("removing a remote project's marker folder") { try FileManager.default.removeItem(at: folder) }
+                throw RPCError.invalidParams("Couldn't run git init in \(path) on \(host): \(e.stderr)")
+            }
         }
         let top: String
         do { top = try Git.root(of: folder.path, remotes: workspaces.remotes) }
         catch let e as GitError {
-            try? FileManager.default.removeItem(at: folder)
+            Log.store.attempt("removing a remote project's marker folder") { try FileManager.default.removeItem(at: folder) }
             throw RPCError.invalidParams("Couldn't open \(path) on \(host): \(e.stderr.isEmpty ? "ssh failed" : e.stderr)")
         }
         try mark(RemoteHost(host: host, path: top))

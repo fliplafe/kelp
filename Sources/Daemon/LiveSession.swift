@@ -118,7 +118,11 @@ final class LiveSession: Sendable {
     /// printed since, and trimming to that would drop most of what the session showed before its pause. Its new size.
     private static func trimmed(_ log: FileHandle?, _ url: URL) -> Int? {
         guard let log, let tail = Data(tailOf: url, bytes: ringLimit) else { return nil }
-        try? log.truncate(atOffset: 0); try? log.write(contentsOf: tail)
+        let trimmed: Void? = Log.session.attempt("trimming \(url.lastPathComponent)") {
+            try log.truncate(atOffset: 0)
+            try log.write(contentsOf: tail)
+        }
+        guard trimmed != nil else { return nil }
         return tail.count
     }
 
@@ -135,7 +139,7 @@ final class LiveSession: Sendable {
         let text = String(decoding: d, as: UTF8.self)
         let heard = state.withLock { hear(d, text, &$0) }
         // Disk, off the lock: a slow disk or the trim (a megabyte read back) doesn't hold up typing, attaching or status.
-        try? log?.write(contentsOf: d)
+        try? log?.write(contentsOf: d)   // per chunk, unlogged: a full disk would flood the log (the trim says so)
         if heard.trimLog, let n = Self.trimmed(log, logURL) { state.withLock { $0.logSize = n } }
         if heard.probe { write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
         if heard.probe, heard.attached.isEmpty, text.contains(ProgramStatus.attributesQuery) {
@@ -190,7 +194,7 @@ final class LiveSession: Sendable {
             s.record.progress = nil; s.record.exitCode = Int((code & 0x7f) == 0 ? (code >> 8) & 0xff : 128 + (code & 0x7f))
             emit(s.sync())
         }
-        try? log?.close()
+        if let log { Log.session.attempt("closing a history log") { try log.close() } }
     }
 
     /// `kelp report`: the record to publish when only what it says changed (a new state goes out through `callbacks.status`).

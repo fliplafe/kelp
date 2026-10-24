@@ -213,6 +213,18 @@ private func codeOnly(_ s: String) -> String {
     #expect(taking == [], "handlers that take the daemon")
 }
 
+/// A `try?` turns a failure into nothing, unseen: right for a probe ("is it there", "does it parse"), wrong for a write,
+/// a cleanup or a store change, which say what failed with `Log.attempt` instead. Each module's count is a ceiling.
+@Test func failuresAreNotSwallowed() throws {
+    let ceilings = ["Daemon": 109, "KelpKit": 66, "Core": 31, "GitKit": 29, "AgentData": 32, "Agents": 23, "kelp": 20, "Builtins": 13,
+                    "Integrations": 11, "LSPKit": 7, "Markdown": 4, "TerminalKit": 3]
+    for (module, ceiling) in ceilings {
+        let n = try matches(#"\btry\?"#, in: ["Sources/" + module]).count
+        #expect(n <= ceiling, "try? in \(module): \(n), over its ceiling")
+        #expect(n >= ceiling, "try? in \(module): \(n), under its ceiling \(ceiling): lower it")
+    }
+}
+
 /// Who may call a method is the method's to say (`onlyFromKelp`), checked in one place for every call: a handler that
 /// checked for itself could forget, or check after it had already acted.
 @Test func whoMayCallAMethodIsCheckedInOnePlace() throws {
