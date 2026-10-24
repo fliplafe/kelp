@@ -41,7 +41,7 @@ private extension Data {
     // The late reply finds nobody waiting (no second resume), and the next call still gets its own.
     let late = try Wire.line(JSONValue.obj(["id": 1, "result": .null])), next = try Wire.line(JSONValue.obj(["id": 2, "result": "ok"]))
     // Sent once both requests came (usage.get, then ping): ahead of the ping it would find no call waiting for it.
-    DispatchQueue.global().async {
+    Thread.detachNewThread {   // its own thread: a blocking read on GCD's pool started late when the suite filled it
         var byte: UInt8 = 0, lines = 0
         while lines < 2, read(peer, &byte, 1) == 1 { if byte == 0x0A { lines += 1 } }
         Unix.writeAll(peer, late + next)
@@ -257,7 +257,7 @@ final class Flag: @unchecked Sendable {   // the bool under lock
         let peer = accept(server, nil, nil)
         // Answered once the request came: a reply sent before it would find no call waiting and be dropped (on a busy
         // machine it did, and the test timed out).
-        DispatchQueue.global().async {
+        Thread.detachNewThread {   // its own thread: a blocking read on GCD's pool started late when the suite filled it
             var byte: UInt8 = 0
             while read(peer, &byte, 1) == 1, byte != 0x0A {}
             Unix.writeAll(peer, (try? Wire.line(JSONValue.obj(["id": 1, "result": .string("r\(round)")]))) ?? Data())
