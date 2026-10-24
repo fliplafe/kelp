@@ -121,7 +121,8 @@ extension OneAtATime {
     var ask = Session(worktreeId: "w3", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?", summary: "Needs permission")
     ask.statusAt = Date() - 60   // it has needed you a while (Inbox.settle)
     try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { vc, o in
-        #expect(rows(of: o).flatMap { $0 }.filter { $0 == "Allow rm?" }.count == 1)   // under its workspace only
+        let titled: [String] = rows(of: o).flatMap { $0 }.filter { $0 == "Allow rm?" }   // typed: CI's type check gave up on it
+        #expect(titled.count == 1)   // under its workspace only
         #expect(texts(vc.view).contains { $0.contains("Needs permission") && $0.contains("c") })   // who, where, what — over the list
     }
 }
