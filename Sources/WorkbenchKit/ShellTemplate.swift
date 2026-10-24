@@ -6,15 +6,15 @@ import Core
 /// placeholder becomes a reference to it, so a value with $(…), quotes or a newline stays data whatever surrounds it.
 /// The variables are exported too, so a command that hands text to another shell can pass `"$KELP_V1"` along as data.
 /// In a single-quoted string another shell runs as code (`sh -c '…'`, `bash -c`, `eval '…'`), a placeholder is left
-/// as `"${KELP_Vn}"` for that shell to expand from the environment, as data. Limit: a string a remote shell runs
-/// (`ssh host "… ${title}"`) gets the value as its text: such a template quotes it for that shell itself.
+/// as `"${KELP_Vn}"` for that shell to expand from the environment, as data. On an ssh line (quoted or bare) the value
+/// goes in as its text, quoted for the host's shell, which this one's variables don't reach.
 public enum ShellTemplate {
     /// `value(name)` nil: the placeholder stays as written (the shell's own `${HOME}`).
     public static func fill(_ template: String, _ value: (String) -> String?) -> String {
         var assign: [String] = [], out = "", rest = Substring(template), quotes = ShellQuotes()
         while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
             out += rest[..<open.lowerBound]; quotes.read(rest[..<open.lowerBound])
-            if let v = value(String(rest[open.upperBound..<close])), let remote = quotes.remoteLiteral(v) {
+            if let v = value(String(rest[open.upperBound..<close])), let remote = quotes.remoteLiteral(v) ?? quotes.bareRemoteLiteral(v) {
                 out += remote; quotes.inserted()   // for a shell on another machine: the value, quoted for that shell
             } else if let v = value(String(rest[open.upperBound..<close])) {
                 let name = "KELP_V\(assign.count + 1)"
@@ -97,7 +97,9 @@ struct ShellQuotes {
         if inDouble && codeQuote { return "\\\"\\${\(name)}\\\"" }   // \"\${KELP_V1}\": left for the inner shell, quoted
         if inDouble { return "${\(name)}" }
         if inSingle && codeQuote { return "\"${\(name)}\"" }   // the inner shell expands it, quoted: data there too
-        return inSingle ? "'\"${\(name)}\"'" : "\"${\(name)}\""
+        if inSingle { return "'\"${\(name)}\"'" }
+        // Bare after `sh -c` or `eval`: the word is the script. It reads "${KELP_V1}" there, one word expanded as data.
+        return Self.runsCode(Substring(line)) ? "'\"${\(name)}\"'" : "\"${\(name)}\""
     }
 
     /// What comes before a quote hands it to a program as code: `sh -c`, `/bin/bash -lc`, `env zsh -c`, `eval`,
@@ -123,6 +125,14 @@ struct ShellQuotes {
             return word.reduce(into: "") { out, ch in if "\\\"$`".contains(ch) { out.append("\\") }; out.append(ch) }
         }
         return nil
+    }
+
+    /// Bare on an ssh line (`ssh host git log ${branch}`): ssh joins its words into one command line for the host's shell,
+    /// so the value goes as a word quoted for that shell, quoted again for this one.
+    func bareRemoteLiteral(_ v: String) -> String? {
+        guard !inSingle, !inDouble, inDoc == nil, !inComment,
+              line.range(of: #"(^|[\s;|&(/])ssh\s(\\[;|&]|[^;|&])*$"#, options: .regularExpression) != nil else { return nil }
+        return IDE.shellWord(IDE.shellWord(v))
     }
 
     /// A line whose here-document a shell runs: `sh <<EOF`, `bash -s <<EOF`, `cat <<EOF | sh`.

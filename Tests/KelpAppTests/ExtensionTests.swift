@@ -125,15 +125,25 @@ extension OneAtATime {
     let shapes = [#"sh -c 'printf %s ${title}'"#, #"bash -lc 'printf %s ${title}'"#, #"eval 'printf %s ${title}'"#,
                   #"/bin/sh -c 'printf %s ${title}'"#, #"env bash -c 'printf %s ${title}'"#, #"sh -c "printf %s ${title}""#,
                   #"/bin/bash -c "printf %s ${title}""#, "sh <<EOF\nprintf %s ${title}\nEOF", "cat <<EOF | sh\nprintf %s ${title}\nEOF",
-                  #"ssh -o x=y host 'printf %s ${title}'"#, #"ssh host "printf %s ${title}""#]
+                  #"ssh -o x=y host 'printf %s ${title}'"#, #"ssh host "printf %s ${title}""#, #"ssh host printf %s ${title}"#,
+                  #"ssh -o x=y host 'cd /' \; printf %s ${title}"#]
     for template in shapes {
         let sh = Process(), out = Pipe()
-        // ssh is a stand-in that runs its command with sh here, as a host's shell would.
-        let shim = "ssh() { for a; do last=$a; done; sh -c \"$last\"; }; "
+        // ssh is a stand-in that joins the words after the host into one command line for sh, as ssh does for a host.
+        let shim = "ssh() { [ \"$1\" = -o ] && shift 2; shift; sh -c \"$*\"; }; "
         sh.executableURL = URL(fileURLWithPath: "/bin/zsh"); sh.arguments = ["-c", shim + actions.expand(template, item: item, quote: true)]
         sh.standardOutput = out
         try? sh.run(); sh.waitUntilExit()
         #expect(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "x$(echo PWNED)", "\(template)")
+    }
+    // Bare after `sh -c` or `eval`, the value is the script's one word, not its code.
+    let script = JSONValue.object(["title": .string("echo PWNED")])
+    for template in ["sh -c ${title}", "eval ${title}"] {
+        let sh = Process(), out = Pipe()
+        sh.executableURL = URL(fileURLWithPath: "/bin/zsh"); sh.arguments = ["-c", actions.expand(template, item: script, quote: true)]
+        sh.standardOutput = out; sh.standardError = Pipe()
+        try? sh.run(); sh.waitUntilExit()
+        #expect(!String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).contains("PWNED"), "\(template)")
     }
     // An ordinary single-quoted string still reads the value as text in it.
     #expect(actions.expand("echo 'Issue: ${title}'", item: item, quote: true).hasSuffix(#"echo 'Issue: '"${KELP_V1}"''"#))
