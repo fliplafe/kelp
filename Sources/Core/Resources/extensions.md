@@ -61,7 +61,9 @@ Both take the same view definitions; `editors` also appear in the editor area's 
 - `command` prints a JSON array, or one JSON object per line. Each object is a row.
 - `${Field}` reads a field of the row (`${a.b}` for nested), `${setting:key}` a setting,
   `${workspace.path}`, `${workspace.branch}`, `${project.path}`, `${file}` (the focused file).
-  Inside commands, values are shell-quoted for you.
+  Inside commands, values are shell-quoted for you: each becomes an exported variable (`$KELP_V1`, …) the command
+  reads. A command that hands text to another shell (`sh -c '…'`, `ssh host "…"`) passes `"$KELP_V1"` in it rather than
+  `${Field}`, which that shell would run as code.
 - `status` maps a field to a status dot: `working`, `waiting`, `done`, `idle`, `ended`.
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
 - `refresh`: seconds between reloads (0 = only on open and after actions).
