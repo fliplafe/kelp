@@ -173,6 +173,7 @@ extension Sessions {
 
     /// Bring a paused session back under the same id (layout and links stay), resuming its conversation.
     func wake(_ id: String, cols: UInt16 = 120, rows: UInt16 = 32) throws -> LiveSession {
+        wakeTries.withLock { $0 += 1 }
         guard var rec = try store.session(id), rec.status == .hibernated else { throw RPCError.invalidParams("no live session \(id)") }
         let m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
         let argv = resumeArgv(rec, m)

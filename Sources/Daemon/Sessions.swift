@@ -9,6 +9,8 @@ import Agents
 final class Sessions: Sendable {
     let live = SessionTable()
     let wakeLocks = WakeLocks()   // one wake per session even when several clients open it at once; pausing holds it too
+    /// Wakes tried so far (tests: one attach wakes once, even when it fails).
+    let wakeTries = OSAllocatedUnfairLock(initialState: 0)
     let pausing = OSAllocatedUnfairLock<Set<String>>(initialState: [])   // sessions an idle pause is stopping: input waits, then wakes them
     let lanes = SessionLanes()   // input for a paused session wakes it off the reader thread, in order
     let pausingIdle = OSAllocatedUnfairLock(initialState: false)   // one round of idle pausing at a time, off the ticker

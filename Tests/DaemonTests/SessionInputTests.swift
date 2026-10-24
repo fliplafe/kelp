@@ -183,3 +183,18 @@ import Agents
     _ = try await sent.value
     #expect(try #require(w.d.sessions.live[s.id]) !== ls)
 }
+
+/// An attach to a paused agent that can't wake says why once: it isn't tried a second time on the slow path.
+@Test func anAttachWhoseWakeFailsTriesOnce() async throws {
+    let w = try await world(agents: [AgentManifest(id: "gone2", name: "Gone", command: "/bin/zsh", args: ["-c", "echo ready; exec cat"],
+                                                   resumeArgs: ["--resume"])]); defer { w.d.stop() }
+    let wt = try await desk(w, "attach-fails")
+    let s = try await w.c.call(SessionCreate(worktreeId: wt.id, agent: "gone2"))
+    try await hibernate(after: 0.03, w.c)
+    #expect(try await waitFor(15) { try await w.c.call(SessionList()).first { $0.id == s.id }?.status == .hibernated })
+    try await hibernate(after: 0, w.c)
+    try FileManager.default.removeItem(at: w.root.appendingPathComponent("agents/gone2.json"))
+    let before = w.d.sessions.wakeTries.withLock { $0 }
+    await #expect(throws: RPCError.self) { _ = try await w.c.call(SessionAttach(id: s.id)) }
+    #expect(w.d.sessions.wakeTries.withLock { $0 } - before == 1)
+}
