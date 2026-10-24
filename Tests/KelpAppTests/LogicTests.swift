@@ -217,3 +217,11 @@ extension OneAtATime {
     for _ in 0..<50 where d.isRunning { try await Task.sleep(for: .milliseconds(100)) }
     #expect(!d.isRunning && d.terminationReason == .uncaughtSignal)
 }
+
+/// The glow's frame is a band with a hole under either fill rule: the shadow path is filled non-zero, and a hole that
+/// filled in would glow over the whole pane.
+@Test func theGlowsFrameHasAHoleUnderTheShadowsRule() {
+    let p = GlowFrame.path(CGRect(x: 0, y: 0, width: 200, height: 100))
+    #expect(!p.contains(CGPoint(x: 100, y: 50), using: .winding) && !p.contains(CGPoint(x: 100, y: 50), using: .evenOdd))
+    #expect(p.contains(CGPoint(x: -10, y: 50), using: .winding))
+}

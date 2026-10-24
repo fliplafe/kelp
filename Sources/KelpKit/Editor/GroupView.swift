@@ -135,6 +135,18 @@ private class Veil: NSView {
     override func hitTest(_ p: NSPoint) -> NSView? { nil }
 }
 
+/// The frame the glow is the shadow of: a band just outside `b`, its inner edge wound against the outer one.
+enum GlowFrame {
+    static func path(_ b: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        path.addRect(b.insetBy(dx: -40, dy: -40))
+        path.addLines(between: [CGPoint(x: b.minX, y: b.minY), CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.maxX, y: b.maxY),
+                                CGPoint(x: b.maxX, y: b.minY)])
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// A hairline and a soft glow inward from the edges: the shadow of a frame drawn just outside, clipped to the bounds.
 private final class Glow: Veil {
     private let frameLayer = CAShapeLayer()
@@ -163,10 +175,15 @@ private final class Glow: Veil {
 
     override func layout() {
         super.layout()
-        let path = CGMutablePath()
-        path.addRect(bounds.insetBy(dx: -40, dy: -40)); path.addRect(bounds)
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        frameLayer.frame = bounds; frameLayer.path = path
+        // The inner edge runs the other way round from the outer one, so the hole stays a hole under the non-zero rule the
+        // shadow path is filled with. Given as the shadow's path, the shadow isn't worked out from the layer's pixels
+        // offscreen on every frame of the breathing animation.
+        let path = GlowFrame.path(bounds)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frameLayer.frame = bounds
+        frameLayer.path = path
+        frameLayer.shadowPath = path
         CATransaction.commit()
     }
 }
