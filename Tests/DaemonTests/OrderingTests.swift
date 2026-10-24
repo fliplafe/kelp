@@ -7,7 +7,8 @@ import Agents
 
 /// `calls` written to the daemon in one write, as one connection sends them back to back; every line read (events
 /// included) until each has its reply and nothing more comes for half a second, at most 10 s.
-private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [JSONValue] {
+/// `onLine`: each line as it comes.
+private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)], onLine: (JSONValue) -> Void = { _ in }) throws -> [JSONValue] {
     let fd = try Unix.connect(root.appendingPathComponent("kelp.sock").path)
     defer { close(fd) }
     var t = timeval(tv_sec: 10, tv_usec: 0)
@@ -20,7 +21,9 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     while true {
         let n = read(fd, &buf, buf.count)
         guard n > 0 else { break }
-        lines += try lb.append(Data(buf[0..<n])).map { try JSONDecoder().decode(JSONValue.self, from: $0) }
+        let new = try lb.append(Data(buf[0..<n])).map { try JSONDecoder().decode(JSONValue.self, from: $0) }
+        new.forEach(onLine)
+        lines += new
         if !replied, lines.filter({ $0["id"] != nil }).count >= calls.count {   // then the events still on their way, for 0.5 s
             replied = true; t = timeval(tv_sec: 0, tv_usec: 500_000)
             _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
@@ -133,11 +136,18 @@ private func sendAtOnce(_ root: URL, _ calls: [(String, JSONValue)]) throws -> [
     func status() async throws -> AgentStatus? { try await w.c.call(SessionList()).first { $0.id == s.id }?.status }
     #expect(try await waitFor(15) { try await status() == .hibernated })
     try await hibernate(after: 0, w.c)
-    // A wake that takes 2 s: its lock held elsewhere (as an idle pause holds it).
-    let held = OSAllocatedUnfairLock(initialState: false)
-    Thread.detachNewThread { w.d.sessions.wakeLocks.withLock(s.id) { held.withLock { $0 = true }; Thread.sleep(forTimeInterval: 2) } }
+    // A wake held up (its lock held elsewhere, as an idle pause holds it) until the ping is answered, not for a time a
+    // slow machine (the Thread Sanitizer's) could outlast.
+    let held = OSAllocatedUnfairLock(initialState: false), pinged = DispatchSemaphore(value: 0)
+    Thread.detachNewThread {
+        w.d.sessions.wakeLocks.withLock(s.id) {
+            held.withLock { $0 = true }
+            _ = pinged.wait(timeout: .now() + 30)
+        }
+    }
     #expect(try await waitFor(5) { held.withLock { $0 } })
-    let lines = try sendAtOnce(w.root, [(SessionSend.name, .obj(["id": .string(s.id), "text": "hello-lane"])), (Ping.name, .null)])
+    let calls: [(String, JSONValue)] = [(SessionSend.name, .obj(["id": .string(s.id), "text": "hello-lane"])), (Ping.name, .null)]
+    let lines = try sendAtOnce(w.root, calls) { if $0["id"]?.int == 2 { pinged.signal() } }
     #expect(lines.contains { $0["id"]?.int == 2 && $0["result"] == "pong" })
     #expect(lines.compactMap { $0["id"]?.int } == [2, 1], "the ping waited for the wake")
     #expect(lines.contains { $0["id"]?.int == 1 && $0["result"] != nil })
