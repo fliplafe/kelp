@@ -204,6 +204,8 @@ extension Daemon {
 
     /// The longest request line read from a client (256 MiB).
     static let lineLimit = 256 << 20
+    /// Requests one client may have waiting for their answer at once (the app's sidebar asks a few hundred at most).
+    static let pendingLimit = 4096
 
     /// 128 at once: wider than any fan-out Kelp makes itself (the sidebar's PR per folder, every watched folder's status),
     /// and than the slow ones that once stalled every request (aRequestIsAnsweredWhileManySlowOnesRun holds 80): the next

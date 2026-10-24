@@ -266,6 +266,8 @@ public final class Daemon: Sendable {
             var received = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)
             var spoke = false
+            // Requests of this client still being answered: past `pendingLimit` more are refused, not queued for good.
+            let pending = OSAllocatedUnfairLock(initialState: 0)
             reading: while true {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
@@ -287,7 +289,20 @@ public final class Daemon: Sendable {
                         stream(client, session: req.params?["id"]?.string ?? "", size: req.params, leftover: after + received.takeRemainder())
                         break reading
                     }
-                    Task { await self.respond(req, conn: client) }
+                    let admitted = pending.withLock { n -> Bool in
+                        guard n < Self.pendingLimit else { return false }
+                        n += 1
+                        return true
+                    }
+                    guard admitted else {
+                        let refusal = Self.errorLine(id: req.id ?? .null, RPCError.internalError("Too many requests at once."))
+                        if !req.isNotification, let refusal { client.send(refusal) }
+                        continue
+                    }
+                    Task {
+                        await self.respond(req, conn: client)
+                        pending.withLock { $0 -= 1 }
+                    }
                 }
             }
             hungUp(client)
