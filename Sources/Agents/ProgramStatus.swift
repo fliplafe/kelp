@@ -7,6 +7,10 @@ public enum ProgramStatus {
     public static let prefix = "\u{1B}]7501;"
     /// The only bytes a terminal that understands the protocol writes back to the `?` probe.
     public static let queryReply = "\u{1B}]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\u{1B}\\"
+    /// Pi and Droid count the protocol as there only if that reply comes before the terminal's answer to the device
+    /// attributes query they send with the probe (`ESC [ c`), and wait for that answer only 150 ms. With no terminal
+    /// attached nobody else answers it, so Kelp does (as a VT220, which is all they read from it).
+    public static let attributesQuery = "\u{1B}[c", attributesReply = "\u{1B}[?62;22c"
     public static let states: Set<String> = ["idle", "working", "done", "blocked", "error", "clear"]
 
     public struct Report: Equatable, Sendable {

@@ -328,6 +328,22 @@ final class NoteBox: @unchecked Sendable {
     #expect(try await c.call("session.list", as: [Session].self).first { $0.id == s.id }?.summary == "Allow rm?")
 }
 
+/// Pi and Droid probe with a device attributes query behind OSC 7501's: with no terminal attached the daemon answers
+/// both, the 7501 reply first, else they never report.
+@Test func probeWithAttributesIsAnsweredHeadless() async throws {
+    let script = #"stty -icanon -echo; printf '\033]7501;?\033\\\033[c'; IFS= read -r -t 3 -d '\' first; IFS= read -r -t 3 -d c da; "#
+        + #"[[ $first == *states=* && $da == *'[?62;22' ]] && echo BOTH-IN-ORDER || echo NO; sleep 30"#
+    let p = try await world(agents: [AgentManifest(id: "osc", name: "OSC", command: "/bin/bash", args: ["-c", script])]); defer { p.d.stop() }
+    let c = p.c, w = try await firstDesk(p)
+    let s: Session = try await c.call("session.create", .obj(["worktreeId": .string(w.id), "agent": "osc"]), as: Session.self)
+    #expect(try await waitFor(10) {
+        let screen = try await c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
+        return screen.contains("BOTH-IN-ORDER") || screen.contains("NO")
+    })
+    let screen = try await c.call("session.read", .obj(["id": .string(s.id)])).string ?? ""
+    #expect(screen.contains("BOTH-IN-ORDER"), "\(screen)")
+}
+
 /// The daemon's own replies (OSC 7501's answer, an auto-answer) wait behind a send: a probe printed between the text and
 /// its Enter gets its answer after the Enter, not inside the line being typed.
 @Test func aReplyDoesntLandInsideASend() async throws {

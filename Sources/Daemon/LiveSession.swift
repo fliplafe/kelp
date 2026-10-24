@@ -138,6 +138,9 @@ final class LiveSession: Sendable {
         try? log?.write(contentsOf: d)
         if heard.trimLog, let n = Self.trimmed(log, logURL) { state.withLock { $0.logSize = n } }
         if heard.probe { write(Data(ProgramStatus.queryReply.utf8)) }   // "I read OSC 7501": the agent starts reporting
+        if heard.probe, heard.attached.isEmpty, text.contains(ProgramStatus.attributesQuery) {
+            write(Data(ProgramStatus.attributesReply.utf8))   // an attached terminal answers it itself
+        }
         if !heard.limits.isEmpty { callbacks.limits?(heard.limits) }
         if let url = heard.url { callbacks.localURL?(url) }
         if let topic = heard.topic { callbacks.topic?(topic) }
