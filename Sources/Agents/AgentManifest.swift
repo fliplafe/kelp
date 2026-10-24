@@ -27,19 +27,8 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     public var waitingPatterns: [String] = AgentManifest.defaultWaiting
     /// Seconds without output before the heuristic decides the agent stopped.
     public var quietSeconds: Double = 3
-    /// If set, hooks are supported: `{hooksSettingsFlag} <file>` is appended and the file holds Stop/Notification hooks.
-    public var hooksSettingsFlag: String?
-    /// If set, hooks are a plugin in an OpenCode-style config dir (Kilo Code, OpenCode): `{hooksConfigDirEnv}=<dir>` for the
-    /// session, the dir's `plugin/kelp.js` runs `kelp hook` on each change. The agent's own config dir is still read.
-    public var hooksConfigDirEnv: String?
-    /// If set, the same hooks file as `hooksSettingsFlag`'s goes in `{hooksSettingsEnv}=<file>` (Qwen Code's system settings).
-    public var hooksSettingsEnv: String?
-    /// The agent reports to herdr (fx): `HERDR_SOCKET_PATH` is kelpd's socket, `HERDR_PANE_ID` the session (`pane.report_agent`).
-    public var hooksHerdr = false
-    /// The agent reports its own status (hooks): heuristics stay off.
-    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil || hooksSettingsEnv != nil || hooksHerdr }
-    /// A remote session's: Kelp's hook files are on this Mac.
-    public mutating func dropHooks() { hooksSettingsFlag = nil; hooksConfigDirEnv = nil; hooksSettingsEnv = nil; hooksHerdr = false }
+    /// How it reports its own status, if it can (heuristics read the screen otherwise).
+    public var hooks: HookTransport?
     /// `--model`-style flag and suggested models for the picker.
     public var modelFlag: String?
     public var models: [String] = []
@@ -63,13 +52,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3,
-                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil, hooksSettingsEnv: String? = nil, hooksHerdr: Bool = false,
+                hooks: HookTransport? = nil,
                 modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
                 autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil, contextFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
-        self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
-        self.hooksConfigDirEnv = hooksConfigDirEnv; self.hooksSettingsEnv = hooksSettingsEnv; self.hooksHerdr = hooksHerdr
+        self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooks = hooks
         self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag; self.contextFlag = contextFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
@@ -84,10 +72,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         env = try c.decodeIfPresent([String: String].self, forKey: .env) ?? d.env
         waitingPatterns = try c.decodeIfPresent([String].self, forKey: .waitingPatterns) ?? d.waitingPatterns
         quietSeconds = try c.decodeIfPresent(Double.self, forKey: .quietSeconds) ?? d.quietSeconds
-        hooksSettingsFlag = try c.decodeIfPresent(String.self, forKey: .hooksSettingsFlag)
-        hooksConfigDirEnv = try c.decodeIfPresent(String.self, forKey: .hooksConfigDirEnv)
-        hooksSettingsEnv = try c.decodeIfPresent(String.self, forKey: .hooksSettingsEnv)
-        hooksHerdr = try c.decodeIfPresent(Bool.self, forKey: .hooksHerdr) ?? false
+        hooks = try HookTransport(from: c)
         modelFlag = try c.decodeIfPresent(String.self, forKey: .modelFlag)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
@@ -100,6 +85,27 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         install = try c.decodeIfPresent(String.self, forKey: .install)
         update = try c.decodeIfPresent(String.self, forKey: .update)
         npm = try c.decodeIfPresent(String.self, forKey: .npm)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, command, args, env, waitingPatterns, quietSeconds, modelFlag, models, effortArgs, autoAnswers, resumeArgs
+        case sessionIdFlag, resumeIdFlag, pluginDirFlag, contextFlag, install, update, npm
+        case hooksSettingsFlag, hooksConfigDirEnv, hooksSettingsEnv, hooksHerdr   // `hooks`, as agent files have it
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id); try c.encode(name, forKey: .name); try c.encode(command, forKey: .command)
+        try c.encode(args, forKey: .args); try c.encode(env, forKey: .env)
+        try c.encode(waitingPatterns, forKey: .waitingPatterns); try c.encode(quietSeconds, forKey: .quietSeconds)
+        try hooks?.encode(to: &c)
+        try c.encodeIfPresent(modelFlag, forKey: .modelFlag); try c.encode(models, forKey: .models)
+        try c.encode(effortArgs, forKey: .effortArgs); try c.encode(autoAnswers, forKey: .autoAnswers)
+        try c.encode(resumeArgs, forKey: .resumeArgs)
+        try c.encodeIfPresent(sessionIdFlag, forKey: .sessionIdFlag); try c.encodeIfPresent(resumeIdFlag, forKey: .resumeIdFlag)
+        try c.encodeIfPresent(pluginDirFlag, forKey: .pluginDirFlag); try c.encodeIfPresent(contextFlag, forKey: .contextFlag)
+        try c.encodeIfPresent(install, forKey: .install); try c.encodeIfPresent(update, forKey: .update)
+        try c.encodeIfPresent(npm, forKey: .npm)
     }
 
     /// What an agent file says instead of a secret's value: the value is in the login keychain (`agent.<id>.<KEY>`).
@@ -183,14 +189,14 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
                                   choose: #"(?i)(yes|trust|allow|proceed)"#)
 
     public static let presets: [AgentManifest] = [
-        .init(id: "claude", name: "Claude Code", command: "claude", hooksSettingsFlag: "--settings",
+        .init(id: "claude", name: "Claude Code", command: "claude", hooks: .settingsFlag("--settings"),
               modelFlag: "--model", models: ["opus", "sonnet", "haiku"],
               autoAnswers: [trust], resumeArgs: ["--continue"], pluginDirFlag: "--plugin-dir", contextFlag: "--append-system-prompt",
               sessionIdFlag: "--session-id", resumeIdFlag: "--resume"),
         .init(id: "codex", name: "Codex", command: "codex", modelFlag: "-m", models: ["gpt-5-codex", "gpt-5"],
               effortArgs: ["low": ["-c", "model_reasoning_effort=low"], "medium": ["-c", "model_reasoning_effort=medium"], "high": ["-c", "model_reasoning_effort=high"]],
               autoAnswers: [trust], resumeArgs: ["resume", "--last"]),
-        .init(id: "opencode", name: "OpenCode", command: "opencode", hooksConfigDirEnv: "OPENCODE_CONFIG_DIR", modelFlag: "-m",
+        .init(id: "opencode", name: "OpenCode", command: "opencode", hooks: .pluginDir(env: "OPENCODE_CONFIG_DIR"), modelFlag: "-m",
               resumeArgs: ["--continue"]),
         .init(id: "gemini", name: "Gemini CLI", command: "gemini", modelFlag: "-m", models: ["gemini-2.5-pro", "gemini-2.5-flash"], autoAnswers: [trust]),
         .init(id: "cursor", name: "Cursor Agent", command: "cursor-agent", modelFlag: "--model", autoAnswers: [trust], resumeArgs: ["resume"]),
@@ -199,13 +205,14 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "pi", name: "Pi", command: "pi", env: ["PI_PROGRAM_STATUS": "1"]),
         .init(id: "amp", name: "Amp", command: "amp"),
         .init(id: "omp", name: "oh-my-pi", command: "omp", modelFlag: "--model", resumeArgs: ["--continue"]),
-        .init(id: "fx", name: "fx", command: "fx", hooksHerdr: true, modelFlag: "--model", resumeArgs: ["--continue"]),
+        .init(id: "fx", name: "fx", command: "fx", hooks: .herdr, modelFlag: "--model", resumeArgs: ["--continue"]),
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy", env: ["AGY_CLI_OSC7501": "on"]),
-        .init(id: "qwen", name: "Qwen Code", command: "qwen", hooksSettingsEnv: "QWEN_CODE_SYSTEM_SETTINGS_PATH"),
+        .init(id: "qwen", name: "Qwen Code", command: "qwen",
+              hooks: .settingsFile(env: "QWEN_CODE_SYSTEM_SETTINGS_PATH", replaces: "/Library/Application Support/QwenCode/settings.json")),
         .init(id: "kimi", name: "Kimi", command: "kimi"),
-        .init(id: "kilo", name: "Kilo Code", command: "kilo", hooksConfigDirEnv: "KILO_CONFIG_DIR"),
+        .init(id: "kilo", name: "Kilo Code", command: "kilo", hooks: .pluginDir(env: "KILO_CONFIG_DIR")),
         .init(id: "crush", name: "Crush", command: "crush"),
         .init(id: "droid", name: "Droid", command: "droid"),
         .init(id: "copilot", name: "GitHub Copilot", command: "copilot"),
@@ -260,7 +267,7 @@ public enum Hooks {
             || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
     }
 
-    /// Kilo Code / OpenCode plugin (`hooksConfigDirEnv`): busy → working, a permission or question → waiting, idle → done.
+    /// Kilo Code / OpenCode plugin (`HookTransport.pluginDir`): busy → working, a permission or question → waiting, idle → done.
     /// A subagent's session (one with a parent) idles before the turn ends: skipped. Hooks run one after another, so they
     /// arrive in order.
     public static let pluginJS = """
@@ -292,7 +299,7 @@ public enum Hooks {
 
         """
 
-    /// The config dir for `hooksConfigDirEnv`, with the plugin in it.
+    /// The config dir for `HookTransport.pluginDir`, with the plugin in it.
     public static func writePlugin(dir: URL) throws {
         let plugins = dir.appendingPathComponent("plugin")
         try Paths.ensure(plugins)
@@ -303,10 +310,6 @@ public enum Hooks {
         try Paths.ensure(url.deletingLastPathComponent())
         try settingsJSON().write(to: url, atomically: true, encoding: .utf8)
     }
-
-    /// The file a `hooksSettingsEnv` would stand in for, where it has one: Qwen Code's system settings are an admin's
-    /// policy, read above the user's own.
-    public static let replacedSettings = ["QWEN_CODE_SYSTEM_SETTINGS_PATH": "/Library/Application Support/QwenCode/settings.json"]
 
     /// Kelp's hooks over what `base` holds (kept as it is, its own hooks run too): the file stands in for that one.
     public static func writeSettings(to url: URL, over base: URL) throws {

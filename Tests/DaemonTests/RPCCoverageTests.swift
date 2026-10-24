@@ -158,7 +158,7 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
 @Test func anAgentReportingToHerdrReportsToKelp() async throws {
     let report = #"r() { zsocket $HERDR_SOCKET_PATH; print -u $REPLY "{\"id\":\"$1\",\"method\":\"pane.report_agent\",\"params\":"#
         + #"{\"pane_id\":\"$HERDR_PANE_ID\",\"source\":\"custom:fx\",\"agent\":\"fx\",\"state\":\"$2\"}}"; read -u $REPLY; exec {REPLY}>&-; }"#
-    let fx = AgentManifest(id: "fx", name: "fx", command: "/bin/zsh", hooksHerdr: true, resumeArgs: ["--continue"])
+    let fx = AgentManifest(id: "fx", name: "fx", command: "/bin/zsh", hooks: .herdr, resumeArgs: ["--continue"])
     var m = fx; m.args = ["-c", "zmodload zsh/net/socket; \(report); r 1 idle; echo ready; read; r 2 working; read; r 3 blocked; read; r 4 idle; cat"]
     let w = try await world(agents: [m]); defer { w.d.stop() }
     let s = try await w.c.call(SessionCreate(worktreeId: try await desk(w, "herdr").id, agent: "fx"))

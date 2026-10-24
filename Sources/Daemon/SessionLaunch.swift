@@ -31,18 +31,29 @@ extension Sessions {
         if Tmux.session(rec.argv) == nil { env["KELP_SESSION"] = rec.id }
         env["KELP_SOCKET"] = socketPath; env["KELP_HOME"] = root.path
         // Written at each start and wake, so a session woken after an update gets this kelpd's hooks.
-        if remotes.of(rec.cwd) == nil {
-            let hooks = root.appendingPathComponent("hooks-\(m.id)")
-            if let key = m.hooksConfigDirEnv, env[key] == nil, (try? Hooks.writePlugin(dir: hooks)) != nil { env[key] = hooks.path }
-            let file = hooks.appendingPathExtension("json")
-            if let key = m.hooksSettingsEnv, env[key] == nil,
-               (try? Hooks.replacedSettings[key].map { try Hooks.writeSettings(to: file, over: URL(fileURLWithPath: $0)) } ?? Hooks.writeSettings(to: file)) != nil {
-                env[key] = file.path
-            }
-            if m.hooksHerdr { env["HERDR_SOCKET_PATH"] = socketPath; env["HERDR_PANE_ID"] = rec.id }
-        }
+        if remotes.of(rec.cwd) == nil, let t = m.hooks { wire(t, m, rec, &env) }
         env["PATH"] = Self.childPath
         return env
+    }
+
+    /// Kelp's plugin dir for an agent; its hooks file is this with ".json".
+    func hooksDir(_ m: AgentManifest) -> URL { root.appendingPathComponent("hooks-\(m.id)") }
+
+    /// What `t` needs in the environment. A variable the user set themselves stays theirs, and the hooks aren't wired
+    /// (`wiredHooks`); `.settingsFlag` is on the command line (`spawn`).
+    private func wire(_ t: HookTransport, _ m: AgentManifest, _ rec: Session, _ env: inout [String: String]) {
+        let dir = hooksDir(m), file = dir.appendingPathExtension("json")
+        if let key = t.env, env[key] != nil { return }
+        do {
+            switch t {
+            case .settingsFlag: break
+            case .pluginDir(let key): try Hooks.writePlugin(dir: dir); env[key] = dir.path
+            case .settingsFile(let key, let base):
+                try base.map { try Hooks.writeSettings(to: file, over: URL(fileURLWithPath: $0)) } ?? Hooks.writeSettings(to: file)
+                env[key] = file.path
+            case .herdr: env["HERDR_SOCKET_PATH"] = socketPath; env["HERDR_PANE_ID"] = rec.id
+            }
+        } catch { Log.session.error("\(m.id, privacy: .public)'s hooks weren't written, its screen is read: \(error)") }
     }
 
     /// Where a session's Claude conversations are: under its profile's config dir when it has one.
@@ -67,22 +78,25 @@ extension Sessions {
         tmuxName(s) != nil || manifests.first { $0.id == s.agent }?.resumeArgs.isEmpty == false
     }
 
-    /// The manifest its live session reads. A remote agent gets no hooks (they're files on this Mac): its status comes
-    /// from the screen, which an agent that has hooks elsewhere would never get read.
+    /// The manifest its live session reads: with the hooks this launch wired, or none.
     func liveManifest(_ m: AgentManifest, cwd: String, worktreeId: String?, env: [String: String], argv: [String]) -> AgentManifest {
-        var out = trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env)
-        if remotes.of(cwd) != nil { out.dropHooks() }
-        return wiredHooks(out, env: env, argv: argv)
+        wiredHooks(trustAnswered(m, cwd: cwd, worktreeId: worktreeId, env: env), env: env, argv: argv)
     }
 
-    /// Only the hooks this launch really wired: one whose variable the user set themselves, whose file couldn't be written,
-    /// or whose flag a custom command line left out never reports, and the screen has to be read instead.
+    /// Only hooks this launch really wired report: not a remote session's (Kelp's files are on this Mac), nor one whose
+    /// variable the user set themselves, whose file couldn't be written, or whose flag a custom command line left out.
+    /// Those have their screen read instead.
     func wiredHooks(_ m: AgentManifest, env: [String: String], argv: [String]) -> AgentManifest {
+        let dir = hooksDir(m)
+        let wired = switch m.hooks {
+        case .settingsFlag(let flag)?: argv.contains(flag)
+        case .pluginDir(let key)?: env[key] == dir.path
+        case .settingsFile(let key, _)?: env[key] == dir.appendingPathExtension("json").path
+        case .herdr?: env["HERDR_PANE_ID"] != nil
+        case nil: false
+        }
         var out = m
-        let hooks = root.appendingPathComponent("hooks-\(m.id)")
-        if let key = out.hooksConfigDirEnv, env[key] != hooks.path { out.hooksConfigDirEnv = nil }
-        if let key = out.hooksSettingsEnv, env[key] != hooks.appendingPathExtension("json").path { out.hooksSettingsEnv = nil }
-        if let flag = out.hooksSettingsFlag, !argv.contains(flag) { out.hooksSettingsFlag = nil }
+        if !wired { out.hooks = nil }
         return out
     }
 

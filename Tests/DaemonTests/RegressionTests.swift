@@ -594,9 +594,9 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
 /// it would otherwise sit at idle for good. One whose hooks are wired doesn't.
 @Test func unwiredHooksLeaveTheScreenRead() async throws {
     let script = "echo ready; read -r; while :; do echo working on the next step; sleep 0.2; done"
-    var own = AgentManifest(id: "own", name: "Own", command: "/bin/bash", args: ["-c", script], hooksConfigDirEnv: "KELP_TEST_HOOKS_DIR")
+    var own = AgentManifest(id: "own", name: "Own", command: "/bin/bash", args: ["-c", script], hooks: .pluginDir(env: "KELP_TEST_HOOKS_DIR"))
     own.env = ["KELP_TEST_HOOKS_DIR": tmp().path]
-    let wired = AgentManifest(id: "wired", name: "Wired", command: "/bin/bash", args: ["-c", script], hooksConfigDirEnv: "KELP_TEST_HOOKS_DIR")
+    let wired = AgentManifest(id: "wired", name: "Wired", command: "/bin/bash", args: ["-c", script], hooks: .pluginDir(env: "KELP_TEST_HOOKS_DIR"))
     let w = try await world(agents: [own, wired]); defer { w.d.stop() }
     let wt = try await firstDesk(w)
     var ids: [String: String] = [:]

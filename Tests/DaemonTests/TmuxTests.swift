@@ -79,7 +79,7 @@ private func end(_ session: String) {
 @Test(.enabled(if: tmux != nil, "tmux isn't installed")) func remoteAgentRunsInTmuxOnTheHost() async throws {
     _ = localSSH
     let worker = AgentManifest(id: "worker", name: "Worker", command: "/bin/sh", args: ["-c", "read x; echo did the work; sleep 60"],
-                               hooksSettingsFlag: "--settings")
+                               hooks: .settingsFlag("--settings"))
     let (d0, c0, root) = try daemon(agents: [worker])
     let repo: Repo = try await c0.call("repo.addRemote", .obj(["host": "box", "path": .string(try makeRepo())]), as: Repo.self)
     let wt = try #require(try await c0.call("worktree.list", as: [Worktree].self).first { $0.repoId == repo.id })

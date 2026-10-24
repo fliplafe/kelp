@@ -102,8 +102,8 @@ final class Sessions: Sendable {
         // A remote project's sessions run on its host (see `launchArgv`). Kelp's hooks and skills are files on this Mac,
         // so they stay out: status comes from what the screen shows.
         let local = remotes.of(cwd) == nil
-        if local, o.argv == nil, let flag = manifest.hooksSettingsFlag {
-            let f = root.appendingPathComponent("hooks-\(manifest.id).json")
+        if local, o.argv == nil, case .settingsFlag(let flag)? = manifest.hooks {
+            let f = hooksDir(manifest).appendingPathExtension("json")
             try Hooks.writeSettings(to: f)
             argv += [flag, f.path]
         }
@@ -241,7 +241,6 @@ final class Sessions: Sendable {
             guard let rec = try store.session(h.id) else { throw RPCError.invalidParams("no session \(h.id)") }
             var m = try manifest(rec.agent, command: nil, fallbackArgv: rec.argv)
             // As `liveManifest`; past startup, nothing is answered for it.
-            if remotes.of(rec.cwd) != nil { m.dropHooks() }
             m = wiredHooks(m, env: launchEnv(m, rec), argv: rec.argv)
             let ls = LiveSession(record: rec, manifest: m, pty: pty, historyDir: root.appendingPathComponent("history"), callbacks: callbacks(for: rec))
             ls.adopted(modes: h.modes, bytes: h.bytes)

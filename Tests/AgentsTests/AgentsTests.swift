@@ -132,15 +132,30 @@ import TestSupport
     d.hook("working"); #expect(d.status == .working)
 }
 
+/// Agent files keep the keys they always had: each one reads as its kind of hooks and is written back the same way.
+@Test func agentFilesKeepTheirHookKeys() throws {
+    let lines = [#""hooksSettingsFlag":"--settings""#, #""hooksConfigDirEnv":"KILO_CONFIG_DIR""#,
+                 #""hooksSettingsEnv":"QWEN_CODE_SYSTEM_SETTINGS_PATH""#, #""hooksHerdr":true"#]
+    let kinds: [HookTransport] = [.settingsFlag("--settings"), .pluginDir(env: "KILO_CONFIG_DIR"),
+                                  .settingsFile(env: "QWEN_CODE_SYSTEM_SETTINGS_PATH", replaces: "/Library/Application Support/QwenCode/settings.json"), .herdr]
+    for (line, kind) in zip(lines, kinds) {
+        let m = try JSONDecoder().decode(AgentManifest.self, from: Data(#"{"id":"a","name":"A","command":"a",\#(line)}"#.utf8))
+        #expect(m.hooks == kind)
+        #expect(String(decoding: try JSONEncoder().encode(m), as: UTF8.self).contains(line))
+        #expect(try JSONDecoder().decode(AgentManifest.self, from: try JSONEncoder().encode(m)) == m)
+    }
+    #expect(try JSONDecoder().decode(AgentManifest.self, from: Data(#"{"id":"a","name":"A","command":"a"}"#.utf8)).hooks == nil)
+}
+
 @Test func kiloAndQwenReportThroughTheirHooks() throws {
     let kilo = try #require(AgentManifest.presets.first { $0.id == "kilo" })
-    #expect(kilo.hooked && kilo.hooksConfigDirEnv == "KILO_CONFIG_DIR")
+    #expect(kilo.hooks == .pluginDir(env: "KILO_CONFIG_DIR"))
     var d = StatusDetector(manifest: kilo)
     d.output("Thinking… esc interrupt", at: Date().addingTimeInterval(10))   // no turn guessed from what it prints
     #expect(d.status == .idle)
     d.hook("working"); #expect(d.status == .working)
     let qwen = try #require(AgentManifest.presets.first { $0.id == "qwen" })
-    #expect(qwen.hooked && qwen.hooksSettingsEnv == "QWEN_CODE_SYSTEM_SETTINGS_PATH")
+    #expect(qwen.hooks?.env == "QWEN_CODE_SYSTEM_SETTINGS_PATH")
     #expect(Hooks.pluginJS.contains("parentID") && Hooks.pluginJS.contains("kelp\", [\"hook\""))
 }
 
