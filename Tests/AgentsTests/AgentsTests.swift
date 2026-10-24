@@ -47,6 +47,7 @@ import TestSupport
 @Test func idleReminderIsNotAQuestion() {
     #expect(Hooks.isIdleReminder(.obj(["notification_type": "idle_prompt", "message": "Claude is waiting for your input"])))
     #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
+    #expect(Hooks.isIdleReminder(.obj(["notification_type": "auth_success", "message": "Login successful"])))
 }
 
 @Test func stripKeepsWordGapsFromCursorMoves() {
@@ -118,13 +119,15 @@ import TestSupport
     d.hook("working"); #expect(d.status == .working)
 }
 
-@Test func kiloReportsThroughItsPlugin() throws {
+@Test func kiloAndQwenReportThroughTheirHooks() throws {
     let kilo = try #require(AgentManifest.presets.first { $0.id == "kilo" })
     #expect(kilo.hooked && kilo.hooksConfigDirEnv == "KILO_CONFIG_DIR")
     var d = StatusDetector(manifest: kilo)
     d.output("Thinking… esc interrupt", at: Date().addingTimeInterval(10))   // no turn guessed from what it prints
     #expect(d.status == .idle)
     d.hook("working"); #expect(d.status == .working)
+    let qwen = try #require(AgentManifest.presets.first { $0.id == "qwen" })
+    #expect(qwen.hooked && qwen.hooksSettingsEnv == "QWEN_CODE_SYSTEM_SETTINGS_PATH")
     #expect(Hooks.pluginJS.contains("parentID") && Hooks.pluginJS.contains("kelp\", [\"hook\""))
 }
 

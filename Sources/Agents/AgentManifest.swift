@@ -32,8 +32,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
     /// If set, hooks are a plugin in an OpenCode-style config dir (Kilo Code, OpenCode): `{hooksConfigDirEnv}=<dir>` for the
     /// session, the dir's `plugin/kelp.js` runs `kelp hook` on each change. The agent's own config dir is still read.
     public var hooksConfigDirEnv: String?
+    /// If set, the same hooks file as `hooksSettingsFlag`'s goes in `{hooksSettingsEnv}=<file>` (Qwen Code's system settings).
+    public var hooksSettingsEnv: String?
     /// The agent reports its own status (hooks): heuristics stay off.
-    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil }
+    public var hooked: Bool { hooksSettingsFlag != nil || hooksConfigDirEnv != nil || hooksSettingsEnv != nil }
+    /// A remote session's: Kelp's hook files are on this Mac.
+    public mutating func dropHooks() { hooksSettingsFlag = nil; hooksConfigDirEnv = nil; hooksSettingsEnv = nil }
     /// `--model`-style flag and suggested models for the picker.
     public var modelFlag: String?
     public var models: [String] = []
@@ -57,13 +61,13 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 
     public init(id: String, name: String, command: String, args: [String] = [], env: [String: String] = [:],
                 waitingPatterns: [String] = AgentManifest.defaultWaiting, quietSeconds: Double = 3,
-                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil,
+                hooksSettingsFlag: String? = nil, hooksConfigDirEnv: String? = nil, hooksSettingsEnv: String? = nil,
                 modelFlag: String? = nil, models: [String] = [], effortArgs: [String: [String]] = [:],
                 autoAnswers: [AutoAnswer] = [], resumeArgs: [String] = [], pluginDirFlag: String? = nil, contextFlag: String? = nil,
                 sessionIdFlag: String? = nil, resumeIdFlag: String? = nil) {
         self.id = id; self.name = name; self.command = command; self.args = args; self.env = env
         self.waitingPatterns = waitingPatterns; self.quietSeconds = quietSeconds; self.hooksSettingsFlag = hooksSettingsFlag
-        self.hooksConfigDirEnv = hooksConfigDirEnv
+        self.hooksConfigDirEnv = hooksConfigDirEnv; self.hooksSettingsEnv = hooksSettingsEnv
         self.modelFlag = modelFlag; self.models = models; self.effortArgs = effortArgs
         self.autoAnswers = autoAnswers; self.resumeArgs = resumeArgs; self.pluginDirFlag = pluginDirFlag; self.contextFlag = contextFlag
         self.sessionIdFlag = sessionIdFlag; self.resumeIdFlag = resumeIdFlag
@@ -80,6 +84,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         quietSeconds = try c.decodeIfPresent(Double.self, forKey: .quietSeconds) ?? d.quietSeconds
         hooksSettingsFlag = try c.decodeIfPresent(String.self, forKey: .hooksSettingsFlag)
         hooksConfigDirEnv = try c.decodeIfPresent(String.self, forKey: .hooksConfigDirEnv)
+        hooksSettingsEnv = try c.decodeIfPresent(String.self, forKey: .hooksSettingsEnv)
         modelFlag = try c.decodeIfPresent(String.self, forKey: .modelFlag)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         effortArgs = try c.decodeIfPresent([String: [String]].self, forKey: .effortArgs) ?? [:]
@@ -189,7 +194,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         // Others people run; Kelp offers whichever of these actually work on this Mac (AgentAvailability).
         .init(id: "grok", name: "Grok", command: "grok"),
         .init(id: "antigravity", name: "Antigravity", command: "agy"),
-        .init(id: "qwen", name: "Qwen Code", command: "qwen"),
+        .init(id: "qwen", name: "Qwen Code", command: "qwen", hooksSettingsEnv: "QWEN_CODE_SYSTEM_SETTINGS_PATH"),
         .init(id: "kimi", name: "Kimi", command: "kimi"),
         .init(id: "kilo", name: "Kilo Code", command: "kilo", hooksConfigDirEnv: "KILO_CONFIG_DIR"),
         .init(id: "crush", name: "Crush", command: "crush"),
@@ -234,14 +239,15 @@ public enum Hooks {
         func hook(_ ev: String, _ matcher: String? = nil) -> String {
             #"[{\#(matcher.map { #""matcher":"\#($0)","# } ?? "")"hooks":[{"type":"command","command":"kelp hook \#(ev)"}]}]"#
         }
-        return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working")),"#
+        return #"{"hooks":{"Stop":\#(hook("done")),"Notification":\#(hook("waiting")),"UserPromptSubmit":\#(hook("working")),"StopFailure":\#(hook("done")),"#
             + #""PreToolUse":\#(hook("waiting", "AskUserQuestion")),"PostToolUse":\#(hook("working", "AskUserQuestion")),"#
             + #""PreCompact":\#(hook("compacting")),"SessionStart":\#(hook("compacted", "compact"))}}"#
     }
 
-    /// Claude Code repeats "waiting for your input" a minute after a turn ends; that's a finished agent, not a question.
+    /// Claude Code (and Qwen Code) repeat "waiting for your input" a minute after a turn ends; that's a finished agent, not a
+    /// question. Nor is a login that went through (auth_success).
     public static func isIdleReminder(_ payload: JSONValue) -> Bool {
-        payload["notification_type"]?.string == "idle_prompt"
+        ["idle_prompt", "auth_success"].contains(payload["notification_type"]?.string)
             || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
     }
 
