@@ -8,7 +8,7 @@ import Agents
 @MainActor
 package struct AgentCatalog {
     let app: AppModel
-    package func installed(_ all: [AgentManifest]) -> [AgentManifest] {
+    func installed(_ all: [AgentManifest]) -> [AgentManifest] {
         let ok = app.availability.ids
         return all.filter { ok.contains($0.id) }
     }
@@ -103,7 +103,7 @@ extension AppModel {
 @Observable
 package final class AgentAvailability {
     @ObservationIgnored let app: AppModel
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
     private(set) package var ids = Set(UserDefaults.standard.stringArray(forKey: "agents.available") ?? [])
     @ObservationIgnored private var checkedAt = Date.distantPast
     @ObservationIgnored private var checking = false

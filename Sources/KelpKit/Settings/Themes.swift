@@ -28,7 +28,7 @@ struct Theme: Codable, Identifiable, Equatable {
 @Observable
 package final class ThemeManager {
     @ObservationIgnored let app: AppModel
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
     @ObservationIgnored private var lastTerminal: TerminalAppearance?
     @ObservationIgnored private var appearanceObserver: NSKeyValueObservation?
     /// Editors' colors and font live in CodeEditor's statics, which Observation can't see: this counts their changes,
@@ -128,7 +128,7 @@ package final class ThemeManager {
 
 extension NSColor {
     /// "#rrggbb", as themes and Ghostty's config write colours.
-    package convenience init?(hex: String) {
+    convenience init?(hex: String) {
         guard let c = GhosttyConfig.rgb(hex.trimmingCharacters(in: .whitespaces)) else { return nil }
         self.init(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
     }

@@ -7,7 +7,7 @@ import Core
 @MainActor
 package final class ScratchWindow: NSObject, NSWindowDelegate {
     let app: AppModel
-    package init(app: AppModel) { self.app = app; super.init() }
+    init(app: AppModel) { self.app = app; super.init() }
     private var panel: NSPanel?
     private var area: EditorArea?
     private var hotKey: EventHotKeyRef?

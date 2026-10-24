@@ -344,7 +344,7 @@ final class ContextMeter: NSView {
 
 extension NSView {
     /// What it shows now, as an image (a dragged tab or pane).
-    package func snapshot() -> NSImage {
+    func snapshot() -> NSImage {
         let img = NSImage(size: bounds.size)
         if let rep = bitmapImageRepForCachingDisplay(in: bounds) { cacheDisplay(in: bounds, to: rep); img.addRepresentation(rep) }
         return img

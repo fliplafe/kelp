@@ -9,9 +9,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var allowed = true
     private let center: UNUserNotificationCenter? = Bundle.main.bundleIdentifier != nil ? .current() : nil   // needs an app bundle
     private let app: AppModel
-    package init(app: AppModel) { self.app = app; super.init() }
+    init(app: AppModel) { self.app = app; super.init() }
 
-    package func start() {
+    func start() {
         center?.delegate = self
         // A permission request can be answered from the banner itself.
         center?.setNotificationCategories([UNNotificationCategory(identifier: "permission", actions: [

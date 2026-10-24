@@ -28,7 +28,7 @@ final class CloneSheet: SheetController, NSTextFieldDelegate {
         super.init(app: app, width: 480)
         build()
     }
-    package required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { fatalError() }
 
     /// Where clones go: the last place used, else next to the newest project, else ~/Developer or home.
     private var lastParent: URL {
@@ -68,7 +68,7 @@ final class CloneSheet: SheetController, NSTextFieldDelegate {
         window?.initialFirstResponder = field
     }
 
-    package func controlTextDidChange(_ n: Notification) {
+    func controlTextDidChange(_ n: Notification) {
         if n.object as? NSTextField === dest { destEdited = !dest.stringValue.isEmpty } else { fill() }
     }
 

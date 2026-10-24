@@ -85,7 +85,7 @@ package struct CommandSpec: Identifiable {
     package let id: String, title: String
     package var key: String?
     /// The menu bar menu it goes in when Kelp's own layout (`AppDelegate.buildMenu`) doesn't place it; nil: Tools.
-    package var menu: String?
+    var menu: String?
     package let run: @MainActor ([String: JSONValue]) -> Void
 }
 
@@ -196,7 +196,7 @@ package final class ExtensionRegistry {
     static func disabled(_ v: JSONValue?) -> Set<String> { v?.array.map { Set($0.compactMap(\.string)) } ?? offByDefault }
     var disabled: Set<String> { Self.disabled(app.settings.value("extensions.disabled")) }
 
-    package func reload() {
+    func reload() {
         var infos: [ExtensionInfo] = []
         var merged = Contributions()
         let off = disabled
@@ -241,7 +241,7 @@ package final class ExtensionRegistry {
     }
 
     /// Live reload while someone (often an agent) edits an extension.
-    package func watch() {
+    func watch() {
         try? FileManager.default.createDirectory(at: Self.userDir, withIntermediateDirectories: true)
         let pending = Debounce()
         // delivered on main
@@ -310,7 +310,7 @@ package final class ExtensionRegistry {
         return all.tabs.first { $0.schemes.contains(scheme) }
     }
 
-    package func command(_ id: String) -> CommandSpec? { all.commands.first { $0.id == id } }
+    func command(_ id: String) -> CommandSpec? { all.commands.first { $0.id == id } }
     /// Runs the command (a menu item's, a key's); one whose extension is off does nothing.
     package func run(_ id: String, _ args: [String: JSONValue] = [:]) { command(id)?.run(args) }
 }

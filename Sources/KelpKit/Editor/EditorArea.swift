@@ -10,7 +10,7 @@ package final class EditorArea: NSViewController {
     let app: AppModel
     let workspaceId: String
     package var layout: WorkspaceLayout
-    package var contents: [String: TabContent] = [:]       // by tab id
+    var contents: [String: TabContent] = [:]       // by tab id
     var groupViews: [String: GroupView] = [:]
     private var renders = 0
     var start: StartView?
@@ -26,13 +26,13 @@ package final class EditorArea: NSViewController {
 
     var worktree: Worktree? { app.worktree(workspaceId) }
 
-    package init(app: AppModel, workspaceId: String) {
+    init(app: AppModel, workspaceId: String) {
         self.app = app
         self.workspaceId = workspaceId
         layout = WorkspaceLayout.load(workspaceId, from: app.uiState)
         super.init(nibName: nil, bundle: nil)
     }
-    package required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { fatalError() }
 
     package override func loadView() {
         let app = self.app

@@ -12,7 +12,7 @@ package final class RowBadges {
     var prs: [String: GitHub.PullRequest] { app.prs }
     private var folders = Set<String>()
 
-    package init(app: AppModel) {
+    init(app: AppModel) {
         self.app = app
         track(owner: self) { [weak self] in
             guard let self else { return Set<String>() }

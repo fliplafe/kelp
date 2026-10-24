@@ -9,7 +9,7 @@ package func loc(_ english: String) -> String { Bundle.main.localizedString(forK
 enum Localize {
     /// The menu bar is built in English and shows the translation; a submenu keeps its English title as its
     /// identifier (Settings › Keyboard names items by command id or English path).
-    package static func menu(_ m: NSMenu) {
+    static func menu(_ m: NSMenu) {
         for i in m.items where !i.isSeparatorItem {
             if i.identifier == nil { i.identifier = NSUserInterfaceItemIdentifier(i.title) }
             let indent = i.title.prefix { $0 == " " }   // the View menu's panel list is indented

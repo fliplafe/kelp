@@ -9,7 +9,7 @@ import WorkbenchKit
 @MainActor
 package final class QuickOpen: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     let app: AppModel
-    package init(app: AppModel) { self.app = app; super.init() }
+    init(app: AppModel) { self.app = app; super.init() }
 
     struct Item {
         let kind: String; let icon: String; let title: String; let detail: String; let action: () -> Void

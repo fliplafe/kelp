@@ -7,8 +7,8 @@ import WorkbenchKit
 extension KeySpec.Modifiers {
     private static let appKit: [(Self, NSEvent.ModifierFlags)] = [(.control, .control), (.option, .option), (.shift, .shift), (.command, .command)]
     /// The shortcut modifiers among `flags`; caps lock, fn and the like are dropped.
-    package init(_ flags: NSEvent.ModifierFlags) { self.init(Self.appKit.filter { flags.contains($0.1) }.map(\.0)) }
-    package var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(Self.appKit.filter { contains($0.0) }.map(\.1)) }
+    init(_ flags: NSEvent.ModifierFlags) { self.init(Self.appKit.filter { flags.contains($0.1) }.map(\.0)) }
+    var flags: NSEvent.ModifierFlags { NSEvent.ModifierFlags(Self.appKit.filter { contains($0.0) }.map(\.1)) }
 }
 
 /// Settings › Keyboard: any menu command's shortcut, set by pressing it. The menu is built with Kelp's defaults and
@@ -28,7 +28,7 @@ enum KeyBindings {
     }
 
     /// Names every item and applies the overrides. Runs while the titles are English.
-    package static func apply(to menu: NSMenu, _ settings: SettingsStore) {
+    static func apply(to menu: NSMenu, _ settings: SettingsStore) {
         let over = overrides(settings)
         func walk(_ m: NSMenu, _ path: [String]) {
             for i in m.items where !i.isSeparatorItem {

@@ -357,7 +357,7 @@ private struct ExtensionsSettings: View {
 }
 
 extension Color {
-    package init?(hex: String) { guard let c = NSColor(hex: hex) else { return nil }; self.init(nsColor: c) }
+    init?(hex: String) { guard let c = NSColor(hex: hex) else { return nil }; self.init(nsColor: c) }
     var hex: String {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
         return String(format: "#%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))

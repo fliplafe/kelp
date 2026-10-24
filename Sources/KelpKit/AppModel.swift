@@ -11,7 +11,7 @@ package final class AppModel {
     /// window, the built-ins' contributions and their views.
     /// The built-in extensions the app was made with (the app's target lists them: KelpKit names none).
     @ObservationIgnored let builtins: [Builtin]
-    package init(builtins: [Builtin] = []) { self.builtins = builtins }
+    init(builtins: [Builtin] = []) { self.builtins = builtins }
 
     @ObservationIgnored private(set) package lazy var workbench = Workbench(app: self)
     @ObservationIgnored private(set) package lazy var settings = SettingsStore(app: self)
@@ -136,7 +136,7 @@ package final class AppModel {
     @ObservationIgnored private var publishRefused = false
 
     /// One connection at a time: launch, a dropped connection and Restart Background Service all come through here.
-    package func connect() async {
+    func connect() async {
         if client != nil { return }
         if let c = connecting { return await c.value }
         let c = Task { await open() }

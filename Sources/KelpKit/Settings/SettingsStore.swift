@@ -8,7 +8,7 @@ import Core
 @Observable
 package final class SettingsStore {
     let app: AppModel
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
     private(set) var values: [String: JSONValue] = [:]
     /// Keys with a set still on its way: the daemon's answer to an older one (a colour dragged, a stepper held) mustn't
     /// put back a value the user already moved past.
@@ -39,7 +39,7 @@ package final class SettingsStore {
     }
 
     /// A setting's value, or the default its spec declares.
-    package func value(_ key: String) -> JSONValue? {
+    func value(_ key: String) -> JSONValue? {
         if let v = values[key] { return v }
         for s in app.extensions.all.settings { if let spec = s.specs.first(where: { $0.key == key }) { return spec.default } }
         return nil

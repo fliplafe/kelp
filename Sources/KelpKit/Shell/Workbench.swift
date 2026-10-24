@@ -20,7 +20,7 @@ package final class Workbench {
     /// The panel's controller once the inspector has built it; nil before it's first shown.
     package func builtPanel(_ id: String) -> NSViewController? { window?.inspector.built(id) }
     package var workspaceId: String? { didSet { app.uiState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
     package var focusedSession: String?
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.
     var focusedTab: String?

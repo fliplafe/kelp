@@ -7,7 +7,7 @@ import Core
 @MainActor
 final class WorkspaceSwitcher {
     let app: AppModel
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
     private var panel: NSPanel?
     private var monitor: Any?
     private var items: [Worktree] = []

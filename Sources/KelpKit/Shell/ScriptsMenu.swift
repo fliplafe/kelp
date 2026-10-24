@@ -8,7 +8,7 @@ import WorkbenchKit
 @MainActor
 package final class ScriptsMenu: NSObject, NSMenuDelegate {
     let app: AppModel
-    package init(app: AppModel) { self.app = app; super.init() }
+    init(app: AppModel) { self.app = app; super.init() }
     private var cached: [String: [ScriptsList.Script]] = [:]   // workspace → its commands, for the menu
     private var setupCommand: [String: String] = [:]
     private var runs: [String: (workspace: String, name: String)] = [:]   // session → what it runs

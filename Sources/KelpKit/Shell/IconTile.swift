@@ -50,7 +50,7 @@ extension NSImage {
 
 extension NSImage {
     /// A copy drawn at `side` points square.
-    package func resized(_ side: CGFloat) -> NSImage {
+    func resized(_ side: CGFloat) -> NSImage {
         let img = copy() as? NSImage ?? self
         img.size = NSSize(width: side, height: side)
         return img

@@ -28,7 +28,7 @@ extension AgentStatus {
         case .error: .systemRed
         }
     }
-    package var color: Color { Color(nsColor: nsColor) }
+    var color: Color { Color(nsColor: nsColor) }
     /// Short, for rows: "Working", "Needs input"…
     package var words: String {
         switch self {
@@ -202,7 +202,7 @@ extension Session {
 @MainActor
 struct AttentionQueue {
     let app: AppModel
-    package init(_ app: AppModel) { self.app = app }
+    init(_ app: AppModel) { self.app = app }
 
     var sessions: [Session] {
         app.sessions

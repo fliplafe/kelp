@@ -9,7 +9,7 @@ import Core
 package final class UIState {
     private let app: AppModel
     private var values: [String: JSONValue] = [:]
-    package init(app: AppModel) { self.app = app }
+    init(app: AppModel) { self.app = app }
 
     /// nil deletes. Without a daemon it's kept for this run only.
     subscript(key: String) -> JSONValue? {

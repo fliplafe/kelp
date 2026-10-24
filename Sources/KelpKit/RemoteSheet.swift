@@ -43,7 +43,7 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
         super.init(app: app, width: 480)
         build()
     }
-    package required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { fatalError() }
 
     private func build() {
         let title = NSTextField(labelWithString: String(localized: "Open a Project over SSH")); title.font = .boldSystemFont(ofSize: 13)
@@ -98,9 +98,9 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
         return (Self.join(l.path, rows[r].name), l.repo || rows[r].git)
     }
 
-    package func tableViewSelectionDidChange(_ n: Notification) { update() }
+    func tableViewSelectionDidChange(_ n: Notification) { update() }
 
-    package func controlTextDidChange(_ n: Notification) { if n.object as? NSComboBox === host { hostEdited() } }
+    func controlTextDidChange(_ n: Notification) { if n.object as? NSComboBox === host { hostEdited() } }
     func comboBoxSelectionDidChange(_ n: Notification) { hostEdited() }
     private func hostEdited() { guard listed != nil else { return }; listed = nil; rows = []; table.reloadData(); update() }
 
@@ -171,9 +171,9 @@ final class RemoteSheet: SheetController, NSComboBoxDelegate, NSTableViewDataSou
 
     // MARK: list
 
-    package func numberOfRows(in t: NSTableView) -> Int { rows.count }
+    func numberOfRows(in t: NSTableView) -> Int { rows.count }
 
-    package func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
+    func tableView(_ t: NSTableView, viewFor c: NSTableColumn?, row: Int) -> NSView? {
         let f = rows[row], up = f.name == ".."
         let icon = NSImageView(image: .symbol(up ? "arrow.turn.left.up" : f.git ? "arrow.triangle.branch" : "folder"))
         icon.contentTintColor = f.git ? .controlAccentColor : .secondaryLabelColor
