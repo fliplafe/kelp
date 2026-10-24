@@ -47,7 +47,7 @@ final class Clients: Sendable {
     func setRaw(_ id: Int, _ on: Bool) { state.withLock { s in if on { s.raw.insert(id) } else { s.raw.remove(id) } } }
 
     /// Runs `body` only while `id` is still connected, under this lock (see the lock order above).
-    func ifConnected(_ id: Int, _ body: () -> Void) { state.withLockUnchecked { if $0.all[id] != nil { body() } } }   // body runs here, never later
+    func isConnected(_ id: Int) -> Bool { state.withLock { $0.all[id] != nil } }
 
     /// Subscribers of a session's output: the raw ones (bytes) and the rest (a JSON event).
     func split(_ subs: Set<Int>) -> (raw: [Connection], json: Set<Int>) {

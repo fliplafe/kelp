@@ -356,7 +356,7 @@ public final class Daemon: Sendable {
 
     /// The connection ended: what it held goes with it.
     private func hungUp(_ client: Connection) {
-        clients.remove(client.id)   // first: an attach finishing now sees it gone (Clients.ifConnected)
+        clients.remove(client.id)   // first: an attach finishing now sees it gone (Clients.isConnected)
         watches.drop(client.id)
         sessions.live.all.forEach { $0.detach(client.id) }
         lsp.closeAll(conn: client.id)   // its files: a server left with none stops a while later
@@ -410,16 +410,16 @@ public final class Daemon: Sendable {
                 if let line = Self.errorLine(id: id, error) { client.send(line) }
                 return
             }
-            // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
-            // watching for good, and the session would never pause).
-            var attached = true
-            clients.ifConnected(client.id) {
-                attached = ls.attach(client.id) { history in
-                    if let reply = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
-                        client.send(Self.replyLine(id: id, result: reply))
-                    }
-                } != nil
-            }
+            // Subscribed, then looked at: one that closed while the session woke is detached again (it would count as
+            // watching for good, and the session would never pause). Its end removes it from `clients` before it detaches
+            // from every session, so one of the two always detaches it. The history (up to 1 MiB) is built under the
+            // session's lock only, not the one every event goes through.
+            let attached = ls.attach(client.id) { history in
+                if let reply = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
+                    client.send(Self.replyLine(id: id, result: reply))
+                }
+            } != nil
+            if attached, !clients.isConnected(client.id) { ls.detach(client.id); return }
             if !attached, let line = Self.errorLine(id: id, Sessions.pausedAsAttached) { client.send(line) }
             return
         }
