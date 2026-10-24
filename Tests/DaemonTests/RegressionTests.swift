@@ -499,7 +499,8 @@ private let stubbornScript = "trap '' HUP TERM; echo up; while :; do sleep 0.1; 
     let wt = try await desk(w, "starting")
     let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(wt.id), "agent": "slow2"]), as: Session.self)
     _ = try await w.c.call("session.send", .obj(["id": .string(s.id), "text": "hello"]))   // running, but still booting
-    #expect(try await waitFor(15) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
+    // Up to 25 s: a program that never goes quiet counts as started then (the Thread Sanitizer's run is that slow).
+    #expect(try await waitFor(40) { (try await w.c.call("session.read", .obj(["id": .string(s.id)]))).string?.contains("GOT:hello") == true })
 }
 
 /// Text sent while the agent asks a question (trust this folder? use the project's new MCP servers?) waits: its Enter

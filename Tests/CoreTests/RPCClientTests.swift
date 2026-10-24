@@ -31,8 +31,9 @@ import TestSupport
     _ = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
     defer { close(fd); unlink(path) }
     // Bound, not listening yet: refused, as a full queue is. It starts listening a moment later.
-    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { _ = listen(fd, 4) }
+    // Its own thread: on a busy runner the global queue started it later than the 2 s it was given.
     #expect(throws: SocketError.self) { _ = try Unix.connect(path) }
-    let c = try Unix.connect(path, patience: 2)
+    Thread.detachNewThread { usleep(300_000); _ = listen(fd, 4) }
+    let c = try Unix.connect(path, patience: 10)
     close(c)
 }

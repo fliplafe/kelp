@@ -18,7 +18,7 @@ private let env = ProcessInfo.processInfo.environment
     let script = "trap '' TERM; (trap '' TERM; while :; do sleep 0.1; done) & echo $! > \(pidFile); wait"
     let start = Date()
     let r = try Subprocess.run(["/bin/bash", "-c", script], cwd: "/tmp", env: env, timeLimit: 0.5)
-    #expect(r.timedOut && Date().timeIntervalSince(start) < 6)
+    #expect(r.timedOut && Date().timeIntervalSince(start) < 20)   // 0.5 s, then TERM, then KILL: far less than 20 even on a busy runner
     let child = try #require(pid_t((try String(contentsOfFile: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)))
     defer { kill(child, SIGKILL) }
     let deadline = Date().addingTimeInterval(5)
