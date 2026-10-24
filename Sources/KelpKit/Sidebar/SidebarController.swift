@@ -88,7 +88,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"),
                                     tip: String(localized: "Add a project: a folder, a clone or one over SSH"))
         add.target = self; add.action = #selector(addMenu(_:))
-        for x in [add, search, summary, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [add, search, scroll, summary, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
             // Under the traffic lights, in the window's second row: level with the tab strips and the inspector's panel icons.
             search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
@@ -97,7 +97,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             // In line with the projects' cards (SidebarRowView.band): 8 pt to the window's edge and to the editor area.
             summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
             summary.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            scroll.topAnchor.constraint(equalTo: summary.line.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: v.bottomAnchor),
@@ -106,6 +106,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             noMatch.centerXAnchor.constraint(equalTo: v.centerXAnchor), noMatch.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
             noMatch.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32)
         ])
+        summary.list = scroll   // the agents that need you stack over the list's top (it's added after it)
         buildEmpty()
         view = v
         track(owner: self) { [app] in app.repos } changed: { [weak self] _ in self?.refresh() }

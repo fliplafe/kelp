@@ -91,6 +91,8 @@ final class StatusMark: NSView {
     var compacting = false { didSet { if compacting != oldValue { update() } } }
     /// How far it got (0…1), when it says: a pie filling a circle, as Finder's and Safari's progress, not the spinning ring.
     var progress: Double? { didSet { if progress != oldValue { update() } } }
+    /// Done in a colour of its own, as an outlined ✓ (Needs You: green); nil, as everywhere.
+    var doneTint: NSColor? { didSet { if doneTint != oldValue { update() } } }
     private let track = CAShapeLayer(), bar = CAShapeLayer()
 
     init(size: CGFloat = 12) {
@@ -165,10 +167,11 @@ final class StatusMark: NSView {
             return
         }
         guard let s else { return }
-        image.image = .symbol(s.symbol, s.words)
+        let tinted = s == .done ? doneTint : nil
+        image.image = .symbol(tinted == nil ? s.symbol : "checkmark.circle", s.words)
         // The moon is wider than the circles: a size smaller, it takes the same room.
         image.symbolConfiguration = .init(pointSize: s == .hibernated ? size - 3 : size - 1, weight: .regular)
-        image.contentTintColor = s.nsColor
+        image.contentTintColor = tinted ?? s.nsColor
     }
 }
 
