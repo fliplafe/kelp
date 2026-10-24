@@ -78,6 +78,21 @@ extension OneAtATime {
     }
 }
 
+@Test func aLongNameAndABackgroundCommandBothStayReadable() throws {
+    var agent = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .working,
+                        title: "Структура и плотность левой панели")
+    agent.background = ["npm run test -- --watch --coverage"]
+    try withSidebar(repos: [project], worktrees: [desk("w1", "main")], sessions: [agent]) { _, o in
+        let cell = try #require(o.view(atColumn: 0, row: 1, makeIfNecessary: true))
+        cell.layoutSubtreeIfNeeded()
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        let chip = try #require(all(cell).compactMap { $0 as? NSButton }.first { !$0.isHidden && $0.title.hasPrefix("npm") })
+        let name = try #require(all(cell).compactMap { $0 as? NSTextField }.first { $0.stringValue.hasPrefix("Структура") })
+        #expect(chip.frame.width >= 40 && chip.frame.width <= 72)   // shortened, not crushed into letters
+        #expect(name.frame.width >= 60)                               // and the name still reads
+    }
+}
+
 @Test func anEndedAgentAndAPlainTerminalAreNotListed() throws {
     let ended = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .exited, title: "Old chat")
     let shell = Session(worktreeId: "w1", cwd: "/", command: "zsh", agent: "shell", status: .idle, title: "zsh")

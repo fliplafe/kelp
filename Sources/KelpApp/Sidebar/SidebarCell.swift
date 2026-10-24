@@ -67,7 +67,11 @@ final class SidebarCell: NSTableCellView {
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
             chip.bezelStyle = .inline; chip.controlSize = .mini; chip.font = .ui(10); chip.imagePosition = .imageLeading
             chip.refusesFirstResponder = true; chip.isHidden = true; chip.lineBreakMode = .byTruncatingTail
-            chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)   // the name keeps its room first
+            // The name keeps its room first; the chip shortens its command down to its icon and an ellipsis, never less
+            // (squeezed past that its text broke into letters), and a long command takes no more than a third of the row.
+            chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)
+            let least = chip.widthAnchor.constraint(greaterThanOrEqualToConstant: 40); least.priority = .init(760)
+            NSLayoutConstraint.activate([least, chip.widthAnchor.constraint(lessThanOrEqualToConstant: 72)])
             // What it does sits on the right, as on a workspace's row.
             slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
             NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 14), slot.heightAnchor.constraint(equalToConstant: 14),
