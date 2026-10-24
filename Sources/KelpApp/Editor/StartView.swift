@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import Agents
 import WorkbenchKit
 
 /// An empty workspace: where it is, a field for the default agent's first task, and what can be opened here, one
@@ -10,6 +11,8 @@ final class StartView: NSView, NSTextFieldDelegate {
     /// The default agent, started with what was typed (the workspace takes its name from it).
     var onPrompt: ((String, String) -> Void)?
     var onOpen: ((String) -> Void)?
+    /// No agent on this Mac: one of the suggested ones, installed in a terminal tab here.
+    var onInstall: ((AgentManifest) -> Void)?
     private let prompt = NSTextField()
     private let def: String
 
@@ -38,9 +41,17 @@ final class StartView: NSView, NSTextFieldDelegate {
         }
         var rows: [NSView] = []
         if agents.isEmpty {
-            let none = NSTextField(wrappingLabelWithString: String(localized: "No agent found. Install Claude Code or another agent CLI — Kelp picks it up when you come back."))
+            let none = NSTextField(wrappingLabelWithString: String(localized: "No agent found on this Mac. Install one: its installer runs in a terminal here, and the agent is offered when it’s done."))
             none.textColor = .secondaryLabelColor
             rows.append(StartView.padded(none))
+            rows += app.catalog.suggested.map { m in
+                StartRow(image: app.catalog.icon(m.id, size: 20), title: m.name, detail: app.catalog.about(m.id), shortcut: nil) { [weak self] in
+                    self?.onInstall?(m)
+                }
+            }
+            rows.append(StartRow(image: .symbol("ellipsis.circle"), title: String(localized: "More Agents…"), shortcut: nil) {
+                SettingsWindow.show(app, section: "agents")
+            })
         } else if tiles.count > 5 {
             let grid = NSGridView(numberOfColumns: 2, rows: 0); grid.columnSpacing = 4; grid.rowSpacing = 0
             for i in stride(from: 0, to: tiles.count, by: 2) {

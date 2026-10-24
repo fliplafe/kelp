@@ -84,12 +84,13 @@ struct AgentsSettings: View {
 
     @ViewBuilder private func versionRow(_ m: AgentManifest) -> some View {
         let v = versions[m.id]
+        if let about = app.catalog.about(m.id) { Text(about).foregroundStyle(.secondary) }
         HStack {
             if let installed = v?.version {
                 Text("Version \(installed)") + Text(newer(v) ? String(localized: " · \(v?.latest ?? "") available") : "").foregroundColor(.orange)
             } else { Text(versions.isEmpty ? String(localized: "Checking…") : String(localized: "Not installed")).foregroundStyle(.secondary) }
             Spacer()
-            if v?.version == nil, let cmd = m.install { Button("Install…") { run(cmd, String(localized: "Install \(m.name)")) }.help(cmd) }
+            if v?.version == nil, let cmd = m.install { Button("Install…") { install(m) }.help(cmd) }
             else if let cmd = m.update {
                 Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) { run(cmd, String(localized: "Update \(m.name)")) }.help(cmd)
             }
@@ -109,6 +110,12 @@ struct AgentsSettings: View {
     private var hosts: [(host: String, folder: String)] {
         var seen = Set<String>()
         return app.repos.compactMap { r in RemoteHost.of(r.path).flatMap { seen.insert($0.host).inserted ? ($0.host, r.path) : nil } }
+    }
+
+    private func install(_ m: AgentManifest) {
+        guard let e = app.workbench.editor else { run(m.install ?? "", String(localized: "Install \(m.name)")); return }   // says what to do
+        app.catalog.install(m, in: e)
+        app.workbench.window?.window?.makeKeyAndOrderFront(nil)
     }
 
     /// The agent's own command, in a terminal in the workspace on screen, so what it does is in plain sight.

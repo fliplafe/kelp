@@ -48,6 +48,34 @@ struct AgentCatalog {
         return "\(base) \(i + 1)"
     }
 
+    /// What an agent is, in a few words: the empty workspace and Settings › Agents say it beside the name.
+    func about(_ id: String) -> String? {
+        switch id {
+        case "claude": String(localized: "Anthropic’s coding agent")
+        case "codex": String(localized: "OpenAI’s coding agent")
+        case "gemini": String(localized: "Google’s agent, free with a Google account")
+        case "opencode": String(localized: "Open source, works with any model provider")
+        case "cursor": String(localized: "Cursor’s agent in the terminal")
+        case "qwen": String(localized: "Alibaba’s open source agent")
+        case "amp": String(localized: "Sourcegraph’s agent")
+        case "copilot": String(localized: "GitHub Copilot in the terminal")
+        case "auggie": String(localized: "Augment Code’s agent")
+        case "crush": String(localized: "Charm’s open source agent, any model")
+        case "aider": String(localized: "Pair programming in git, any model")
+        case "droid": String(localized: "Factory’s agent")
+        default: nil
+        }
+    }
+    /// What the empty workspace offers to install when no agent is on this Mac; the rest are in Settings › Agents.
+    var suggested: [AgentManifest] {
+        ["claude", "codex", "gemini", "opencode", "cursor"].compactMap { id in all.first { $0.id == id && $0.install != nil } }
+    }
+    /// The agent's own install command in a terminal tab of `e`, in plain sight; once it ends, the agent is looked for again.
+    func install(_ m: AgentManifest, in e: EditorArea) {
+        guard let cmd = m.install else { return }
+        e.run(command: cmd, title: String(localized: "Install \(m.name)")) { [app] s in app.availability.watchInstall(s.id) }
+    }
+
     /// The agent's real icon when there is one (AgentIcons), else its initial on a tile of the same shape; a terminal's symbol.
     func icon(_ id: String?, size: CGFloat = 16) -> NSImage? {
         guard let id, id != "shell", id != "custom" else { return .symbol(id == "custom" ? "apple.terminal" : "terminal") }
@@ -77,6 +105,13 @@ final class AgentAvailability {
     private(set) var ids = Set(UserDefaults.standard.stringArray(forKey: "agents.available") ?? [])
     @ObservationIgnored private var checkedAt = Date.distantPast
     @ObservationIgnored private var checking = false
+    @ObservationIgnored private var installs = Set<String>()
+
+    /// An install running in session `id`: when it ends, the agents are looked for again (no wait for the next check).
+    func watchInstall(_ id: String) { installs.insert(id) }
+    func sessionChanged(_ s: Session) {
+        if s.status == .exited, installs.remove(s.id) != nil { refresh(force: true) }
+    }
 
     func refresh(force: Bool = false) {
         let app = self.app

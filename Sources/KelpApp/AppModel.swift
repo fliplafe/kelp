@@ -88,6 +88,7 @@ final class AppModel {
     /// A session as a reply or an event has it; an older copy than the one here (a reply that an event overtook) is dropped.
     func upsert(_ s: Session) {
         if let i = sessions.firstIndex(where: { $0.id == s.id }) { if !s.isOlder(than: sessions[i]) { sessions[i] = s } } else { sessions.append(s) }
+        availability.sessionChanged(s)
     }
 
     /// Tells the daemon what's on screen, so agents can ask (`kelp ui state`). Every tab and focus change calls it:

@@ -18,18 +18,19 @@ extension EditorArea {
         }
         createSession(SessionCreate(worktreeId: workspaceId, tmux: name), split: split)
     }
-    /// `cwd`: run it in another folder (a remote project's runs on its host), as a tab here.
-    func run(command: String?, title: String? = nil, cwd: String? = nil, split: SplitDirection? = nil) {
+    /// `cwd`: run it in another folder (a remote project's runs on its host), as a tab here. `created`: its session.
+    func run(command: String?, title: String? = nil, cwd: String? = nil, split: SplitDirection? = nil, created: ((Session) -> Void)? = nil) {
         guard let command, !command.isEmpty else { newTerminal(split: split); return }
-        createSession(SessionCreate(cwd: cwd, worktreeId: workspaceId, command: command, title: title), split: split)
+        createSession(SessionCreate(cwd: cwd, worktreeId: workspaceId, command: command, title: title), split: split, created: created)
     }
 
-    private func createSession(_ p: SessionCreate, split: SplitDirection?) {
+    private func createSession(_ p: SessionCreate, split: SplitDirection?, created: ((Session) -> Void)? = nil) {
         var p = p
         if let (cols, rows) = terminalSize(split: split) { p.cols = cols; p.rows = rows }
         Task {
             guard let s = await app.call(p) else { return }
             app.upsert(s)
+            created?(s)
             open(TabURI.session(s.id), split: split)
         }
     }
