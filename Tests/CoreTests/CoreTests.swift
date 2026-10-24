@@ -250,7 +250,13 @@ final class Flag: @unchecked Sendable {   // the bool under lock
         old.close()
         let fresh = try RPCClient(socket: path)
         let peer = accept(server, nil, nil)
-        DispatchQueue.global().async { Unix.writeAll(peer, (try? Wire.line(JSONValue.obj(["id": 1, "result": .string("r\(round)")]))) ?? Data()) }
+        // Answered once the request came: a reply sent before it would find no call waiting and be dropped (on a busy
+        // machine it did, and the test timed out).
+        DispatchQueue.global().async {
+            var byte: UInt8 = 0
+            while read(peer, &byte, 1) == 1, byte != 0x0A {}
+            Unix.writeAll(peer, (try? Wire.line(JSONValue.obj(["id": 1, "result": .string("r\(round)")]))) ?? Data())
+        }
         #expect(try await fresh.call("ping", timeout: 5).string == "r\(round)")
         fresh.close(); close(peer); close(oldPeer)
     }
