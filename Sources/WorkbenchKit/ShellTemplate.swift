@@ -5,8 +5,9 @@ import Core
 /// to a shell variable first (as one single-quoted word, at the top level where that is always right) and the
 /// placeholder becomes a reference to it, so a value with $(…), quotes or a newline stays data whatever surrounds it.
 /// The variables are exported too, so a command that hands text to another shell can pass `"$KELP_V1"` along as data.
-/// Limit: a placeholder written inside a string another shell runs as code (`sh -c '… ${title}'`, `eval`, `ssh host "…"`)
-/// is that shell's code once expanded, as any shell variable would be there: such a template has to use `$KELP_Vn` in it.
+/// In a single-quoted string another shell runs as code (`sh -c '…'`, `bash -c`, `eval '…'`), a placeholder is left
+/// as `"${KELP_Vn}"` for that shell to expand from the environment, as data. Limit: a string a remote shell runs
+/// (`ssh host "… ${title}"`) gets the value as its text: such a template quotes it for that shell itself.
 public enum ShellTemplate {
     /// `value(name)` nil: the placeholder stays as written (the shell's own `${HOME}`).
     public static func fill(_ template: String, _ value: (String) -> String?) -> String {
@@ -40,6 +41,8 @@ public enum ShellTemplate {
 /// variable reference is written; a wrong guess garbles the text, it can't make a value run.
 struct ShellQuotes {
     var inSingle = false, inDouble = false, inComment = false
+    /// The single-quoted string open now is code for another shell (`sh -c '…'`, `eval '…'`).
+    var codeQuote = false
     /// A here-document's end word once `<<WORD` was read; `expands`: unquoted WORD, so $(…) inside it runs.
     var pendingDoc: (word: String, expands: Bool)?, inDoc: (word: String, expands: Bool)?
     private var line = "", last: Character = "\n", outer: [(Bool, Bool)] = []
@@ -62,7 +65,10 @@ struct ShellQuotes {
                 outer.append((inSingle, inDouble)); inDouble = false; i = s.index(after: i); continue
             }
             if c == ")", !inSingle, !inDouble, let o = outer.popLast() { (inSingle, inDouble) = o; continue }
-            if c == "'", !inDouble { inSingle.toggle() } else if c == "\"", !inSingle { inDouble.toggle() }
+            if c == "'", !inDouble {
+                inSingle.toggle()
+                if inSingle { codeQuote = Self.runsCode(line.dropLast()) }
+            } else if c == "\"", !inSingle { inDouble.toggle() }
             if c == "<", !inSingle, !inDouble, s[i...].hasPrefix("<<"), !s[i...].hasPrefix("<<<") {
                 var rest = s[s.index(i, offsetBy: 2)...].drop { $0 == "-" || $0 == " " }
                 let quoted = rest.first == "'" || rest.first == "\""
@@ -78,7 +84,13 @@ struct ShellQuotes {
     /// it goes in as is.
     func reference(_ name: String) -> String {
         if inDoc != nil || inComment || inDouble { return "${\(name)}" }
+        if inSingle && codeQuote { return "\"${\(name)}\"" }   // the inner shell expands it, quoted: data there too
         return inSingle ? "'\"${\(name)}\"'" : "\"${\(name)}\""
+    }
+
+    /// What comes before a quote hands it to a shell as code: `sh -c`, `bash -lc`, `zsh -c`, `eval`.
+    static func runsCode(_ before: Substring) -> Bool {
+        before.range(of: #"(^|[\s;|&(])(eval|(ba|z|da|k)?sh(\s+-[a-z]+)*\s+-[a-z]*c[a-z]*)\s*$"#, options: .regularExpression) != nil
     }
 
     mutating func inserted() { last = "x" }   // a value just went in: a # right after it doesn't start a comment

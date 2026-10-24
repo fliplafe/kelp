@@ -116,3 +116,19 @@ extension OneAtATime {
         #expect(titles(web.id) == around.0 + around.1)
     }
 }
+
+/// A value in a string another shell runs as code (`sh -c '…'`) stays data there too: that shell expands it from the
+/// environment, quoted, instead of reading it as its own code.
+@MainActor @Test func aValueInANestedShellStaysData() {
+    let item = JSONValue.object(["title": .string("x$(echo PWNED)")])
+    let actions = ExtActions(AppModel(builtins: Builtins.all))
+    for template in [#"sh -c 'printf %s ${title}'"#, #"bash -lc 'printf %s ${title}'"#, #"eval 'printf %s ${title}'"#] {
+        let sh = Process(), out = Pipe()
+        sh.executableURL = URL(fileURLWithPath: "/bin/zsh"); sh.arguments = ["-c", actions.expand(template, item: item, quote: true)]
+        sh.standardOutput = out
+        try? sh.run(); sh.waitUntilExit()
+        #expect(String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) == "x$(echo PWNED)", "\(template)")
+    }
+    // An ordinary single-quoted string still reads the value as text in it.
+    #expect(actions.expand("echo 'Issue: ${title}'", item: item, quote: true).hasSuffix(#"echo 'Issue: '"${KELP_V1}"''"#))
+}
