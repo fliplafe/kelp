@@ -1,0 +1,313 @@
+import AppKit
+import SwiftUI
+import Core
+import Agents
+import WorkbenchKit
+
+/// What the IDE knows when a contribution runs: the workspace on screen and what has focus.
+@MainActor
+package struct IDEContext {
+    package var workspace: Worktree?
+    var project: Repo?
+    var focusedFile: String?
+
+    /// What's on screen in `app`.
+    package static func of(_ app: AppModel) -> IDEContext {
+        let w = app.worktree(app.workbench.workspaceId)
+        return IDEContext(workspace: w, project: app.repo(w?.repoId), focusedFile: app.workbench.focusedFile)
+    }
+}
+
+/// A right-inspector panel.
+package struct PanelSpec: Identifiable {
+    package init(id: String, title: String, icon: String, extensionId: String,
+                 badge: (@MainActor () -> PanelBadge?)? = nil, poll: (@MainActor () async -> Void)? = nil,
+                 make: @escaping @MainActor () -> NSViewController) {
+        self.id = id; self.title = title; self.icon = icon; self.extensionId = extensionId; self.badge = badge; self.poll = poll; self.make = make
+    }
+    package let id: String, title: String, icon: String, extensionId: String
+    /// What the panel's icon says (nil: nothing). Read under observation, so it must not build the panel.
+    var badge: (@MainActor () -> PanelBadge?)?
+    /// Keeps `badge` current while the inspector lists the panel (an extension's badge command); cancelled on a rebuild.
+    var poll: (@MainActor () async -> Void)?
+    let make: @MainActor () -> NSViewController
+}
+
+/// A panel icon's mark: a number for what's left to go through (changed files), a dot for something that happened
+/// (a failed run). Grey, or red for a failure. A dot goes once its panel has been shown with the same `key`.
+package struct PanelBadge: Equatable {
+    var count = 0, alert = false
+    var key = ""
+
+    /// What an extension's badge command prints (or a page's `kelp.badge`): a number, any other text for a dot (the
+    /// text is its key), "!" first for red; nothing or 0: no badge.
+    package init?(_ text: String) {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        alert = t.hasPrefix("!")
+        if alert { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        if let n = Int(t) { guard n > 0 else { return nil }; count = n } else { guard alert || !t.isEmpty else { return nil }; key = t }
+    }
+    package init(count: Int = 0, alert: Bool = false, key: String = "") { self.count = count; self.alert = alert; self.key = key }
+}
+
+/// An entry of the editor area's "+" menu. `open` runs only when chosen (it may ask questions, start things…).
+package struct EditorSpec: Identifiable {
+    package init(id: String,
+                 title: String,
+                 icon: String,
+                 uri: @escaping @MainActor (IDEContext) -> String?) {
+        self.id = id
+        self.title = title
+        self.icon = icon
+        self.uri = uri
+    }
+    package let id: String, title: String, icon: String
+    /// The tab it opens (nil: none here, as for a workspace that has no changes to review).
+    let uri: @MainActor (IDEContext) -> String?
+
+    @MainActor package func open(_ ctx: IDEContext, in app: AppModel) { if let u = uri(ctx) { app.workbench.open(u) } }
+}
+
+/// An action with a stable id, the one thing the menu bar, key bindings (settings.json `keys`), the command palette
+/// and agents (`kelp run <id>`) call.
+package struct CommandSpec: Identifiable {
+    package init(id: String,
+                 title: String,
+                 key: String? = nil,
+                 menu: String? = nil,
+                 run: @escaping @MainActor ([String: JSONValue]) -> Void) {
+        self.id = id
+        self.title = title
+        self.key = key
+        self.menu = menu
+        self.run = run
+    }
+    package let id: String, title: String
+    package var key: String?
+    /// The menu bar menu it goes in when Kelp's own layout (`AppDelegate.buildMenu`) doesn't place it; nil: Tools.
+    package var menu: String?
+    package let run: @MainActor ([String: JSONValue]) -> Void
+}
+
+/// One setting in Settings and settings.json.
+package struct SettingSpec: Codable, Identifiable {
+    var key: String
+    var title: String
+    var type: String            // boolean · number · string · enum · color · font
+    var `default`: JSONValue?
+    var description: String?
+    var options: [String]?
+    package var id: String { key }
+}
+
+package struct SettingsSection: Identifiable {
+    package init(id: String,
+                 title: String,
+                 icon: String,
+                 specs: [SettingSpec],
+                 custom: (@MainActor () -> AnyView)? = nil) {
+        self.id = id
+        self.title = title
+        self.icon = icon
+        self.specs = specs
+        self.custom = custom
+    }
+    package let id: String, title: String, icon: String
+    var specs: [SettingSpec]
+    /// Optional custom UI under the generated rows (accounts, integrations…).
+    var custom: (@MainActor () -> AnyView)?
+}
+
+/// A file icon theme in VS Code's format (see IconTheme).
+struct IconThemeSpec {
+    let id: String, label: String, file: URL
+}
+
+/// Opens tabs for URIs of a scheme ("session", "file", "https"…).
+package struct TabProvider {
+    package init(schemes: [String], make: @escaping @MainActor (String) -> TabContent?,
+                 closeUnbuilt: (@MainActor (_ uri: String) async -> Bool)? = nil,
+                 menu: (@MainActor (_ menu: NSMenu, _ uri: String, _ workspace: String, _ openBeside: @escaping @MainActor (String) -> Void) -> Void)? = nil) {
+        self.schemes = schemes; self.make = make; self.closeUnbuilt = closeUnbuilt; self.menu = menu
+    }
+    let schemes: [String]
+    let make: @MainActor (String) -> TabContent?
+    /// Closing a tab of its URI that was never built (in the background since launch); false keeps it.
+    var closeUnbuilt: (@MainActor (_ uri: String) async -> Bool)?
+    /// Its items in the tab's context menu, added to `menu` above Close Tab: `workspace` is the editor area's, and
+    /// `openBeside` opens a URI in a pane to the right.
+    var menu: (@MainActor (_ menu: NSMenu, _ uri: String, _ workspace: String, _ openBeside: @escaping @MainActor (String) -> Void) -> Void)?
+}
+
+/// Everything one extension adds. Built-ins fill it in Swift; folders from extension.json.
+package struct Contributions {
+    package init() {}
+    package var panels: [PanelSpec] = []
+    package var editors: [EditorSpec] = []
+    package var commands: [CommandSpec] = []
+    package var settings: [SettingsSection] = []
+    var themes: [Theme] = []
+    var iconThemes: [IconThemeSpec] = []
+    var agents: [AgentManifest] = []
+    package var tabs: [TabProvider] = []
+    /// In load order: `LanguageSpec.find` lets a later one replace an earlier one with the same id.
+    package var languages: [LanguageSpec] = []
+}
+
+struct ExtensionInfo: Identifiable {
+    let id: String, name: String, description: String, version: String, icon: String
+    let builtin: Bool
+    /// Can't be turned off (the IDE needs it).
+    var essential = false
+    var path: URL?
+    /// The GitHub folder it was installed from (the library's, or another), for updates.
+    var source: String?
+    var error: String?
+    /// A required tool is missing; shown, but contributes nothing.
+    var unavailable: String?
+    var enabled: Bool
+    /// The tools it needs (its manifest's `requires`).
+    var requires: [String] = []
+}
+
+/// The IDE is a shell around this: everything visible comes from an extension, built-in or a folder in ~/.kelp/extensions.
+@MainActor
+@Observable
+package final class ExtensionRegistry {
+    /// The app whose extensions these are: built-ins contribute with it.
+    let app: AppModel
+    package init(app: AppModel) { self.app = app }
+    private(set) var extensions: [ExtensionInfo] = []
+    private(set) package var all = Contributions()
+    /// Bumped on every reload so views can refresh.
+    private(set) package var revision = 0
+    private(set) var disabledLoaded: Set<String> = []
+    @ObservationIgnored private var watcher: FileWatcher?
+
+    static var userDir: URL { Paths.root.appendingPathComponent("extensions") }
+    /// Required tools (`requires`) the daemon found on its login-shell PATH, or didn't: command → found. One not asked yet
+    /// counts as there (the daemon may still be reading that PATH, which takes seconds); each reload asks again, so a
+    /// tool installed meanwhile counts, and an answer that changes anything reloads.
+    static var tools: [String: Bool] = [:]
+    @ObservationIgnored private var askingTools = false
+
+    /// Built-ins a clean install starts with switched off; once settings.json has its own list, that list decides.
+    static let offByDefault: Set<String> = ["kelp.activity"]
+    static func disabled(_ v: JSONValue?) -> Set<String> { v?.array.map { Set($0.compactMap(\.string)) } ?? offByDefault }
+    var disabled: Set<String> { Self.disabled(app.settings.value("extensions.disabled")) }
+
+    package func reload() {
+        var infos: [ExtensionInfo] = []
+        var merged = Contributions()
+        let off = disabled
+        disabledLoaded = off
+        DeclarativeExtension.forget()
+        func take(_ info: ExtensionInfo, _ c: Contributions) {
+            var info = info; info.enabled = info.essential || !off.contains(info.id)
+            infos.append(info)
+            guard info.enabled else { DeclarativeExtension.forget(info.id); return }
+            merged.panels += c.panels; merged.editors += c.editors; merged.commands += c.commands
+            merged.settings += c.settings; merged.themes += c.themes; merged.iconThemes += c.iconThemes; merged.agents += c.agents; merged.tabs += c.tabs
+            merged.languages += c.languages
+        }
+        for b in app.builtins { take(b.info, b.contribute(app)) }
+        for folder in (try? FileManager.default.contentsOfDirectory(at: Self.userDir, includingPropertiesForKeys: nil)) ?? [] where Self.isFolder(folder) {
+            let loaded = DeclarativeExtension.load(folder, tools: Self.tools, app: app)
+            take(loaded.info, loaded.contributions)
+        }
+        merged.tabs.append(DeclarativeExtension.tabProvider(app))
+        extensions = infos.sorted { ($0.builtin ? 0 : 1, $0.name) < ($1.builtin ? 0 : 1, $1.name) }
+        all = merged
+        revision += 1
+        app.themes.apply()
+        AgentSkills.write(app)
+        app.publishUIState()
+        askTools(Set(infos.flatMap(\.requires)))
+    }
+
+    /// Asks the daemon where `commands` are; reloads when that changes what's missing. Without a daemon, nothing: the
+    /// reload after it connects asks.
+    private func askTools(_ commands: Set<String>) {
+        guard !commands.isEmpty, !askingTools else { return }
+        askingTools = true
+        Task {
+            defer { askingTools = false }
+            guard let found = await app.quiet(ProcessWhich(commands: commands.sorted())) else { return }
+            let now = Dictionary(uniqueKeysWithValues: commands.map { ($0, found[$0] != nil) })
+            guard now.contains(where: { Self.tools[$0.key] != $0.value }) else { return }
+            Self.tools.merge(now) { _, new in new }
+            reload()
+        }
+    }
+
+    /// Live reload while someone (often an agent) edits an extension.
+    package func watch() {
+        try? FileManager.default.createDirectory(at: Self.userDir, withIntermediateDirectories: true)
+        let pending = Debounce()
+        watcher = FileWatcher(root: Self.userDir.path) { [weak self] _ in MainActor.assumeIsolated { pending.after(0.3) { self?.reload() } } }   // delivered on main
+    }
+
+    /// Follows symlinks: a VS Code extension can be linked in rather than copied.
+    private static func isFolder(_ u: URL) -> Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: u.path, isDirectory: &dir) && dir.boolValue
+    }
+
+    /// Like VS Code's "Install from VSIX…": a .vsix (a zip with the extension in `extension/`) or an extension folder,
+    /// copied into ~/.kelp/extensions. A version already there goes to the Trash.
+    func install(_ src: URL) async throws {
+        let app = self.app
+        let dir = Self.userDir
+        try await Task.detached {
+            let fm = FileManager.default
+            var folder = src, name = src.lastPathComponent
+            let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? fm.removeItem(at: tmp) }
+            if src.pathExtension.lowercased() == "vsix" {
+                let unzip = await Shell.exec(app, ["/usr/bin/ditto", "-x", "-k", src.path, tmp.path])
+                folder = tmp.appendingPathComponent("extension")
+                guard unzip.code == 0, fm.fileExists(atPath: folder.appendingPathComponent("package.json").path) else {
+                    throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: src.path])
+                }
+                name = (try? JSONDecoder().decode(VSCodePackage.self, from: Data(contentsOf: folder.appendingPathComponent("package.json"))).manifest.id)
+                    ?? src.deletingPathExtension().lastPathComponent
+            }
+            try IDE.installExtension(folder, as: name, in: dir)
+        }.value
+        reload()
+    }
+
+    /// From GitHub (the library's `source`, or any GitHub folder): downloaded, then installed once the user has seen what
+    /// it runs. False when they said no or it failed (a banner says why).
+    func install(source: String) async -> Bool {
+        guard let fetched = await app.call(ExtensionFetch(source: source)) else { return false }
+        let folder = URL(fileURLWithPath: fetched.folder), dir = Self.userDir
+        guard await ExtensionReview.approve(folder) else { try? FileManager.default.removeItem(at: folder); return false }
+        do { _ = try await Task.detached { try IDE.installExtension(folder, as: folder.lastPathComponent, in: dir, move: true) }.value }
+        catch { Banner.show(String(localized: "Couldn't install \(folder.lastPathComponent): \(AppModel.message(error))"), style: .error); return false }
+        reload()
+        return true
+    }
+
+    func setEnabled(_ id: String, _ on: Bool) {
+        var off = disabled
+        if on { off.remove(id) } else { off.insert(id) }
+        app.settings.set("extensions.disabled", .array(off.sorted().map { .string($0) }))
+    }
+
+    func uninstall(_ id: String) {
+        guard let e = extensions.first(where: { $0.id == id }), let path = e.path, !e.builtin else { return }
+        try? FileManager.default.trashItem(at: path, resultingItemURL: nil)
+        reload()
+    }
+
+    func tabProvider(for uri: String) -> TabProvider? {
+        let scheme = TabURI.scheme(uri)
+        if scheme == "ext", DeclarativeExtension.viewInfo(uri) == nil { return nil }   // its extension is off or gone
+        return all.tabs.first { $0.schemes.contains(scheme) }
+    }
+
+    package func command(_ id: String) -> CommandSpec? { all.commands.first { $0.id == id } }
+    /// Runs the command (a menu item's, a key's); one whose extension is off does nothing.
+    package func run(_ id: String, _ args: [String: JSONValue] = [:]) { command(id)?.run(args) }
+}

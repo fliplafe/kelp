@@ -2,6 +2,13 @@ import Foundation
 import Testing
 import Core
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// A session list that was on its way while an event about a session came doesn't take that session back: the event
 /// (sent after the list was read, or as it was) wins; the others come from the list.
@@ -32,7 +39,7 @@ import Core
 /// a restart is replacing, whose tab the new session takes when the restart comes back.
 @MainActor
 @Test func aRemovedSessionLeavesTheListUnlessARestartReplacesIt() {
-    let m = AppModel()
+    let m = AppModel(builtins: Builtins.all)
     let gone = Session(worktreeId: "w", cwd: "/tmp", command: "zsh", agent: "shell")
     let restarted = Session(worktreeId: "w", cwd: "/tmp", command: "claude", agent: "claude")
     m.upsert(gone); m.upsert(restarted)
@@ -46,7 +53,7 @@ import Core
 /// A reply that an event overtook, or a list read before a change, is an older copy: the newer one (by revision) stays.
 @MainActor
 @Test func anOlderCopyOfASessionIsDropped() {
-    let m = AppModel()
+    let m = AppModel(builtins: Builtins.all)
     var s = Session(worktreeId: "w", cwd: "/tmp", command: "claude", agent: "claude"); s.status = .done; s.revision = 3
     var old = s; old.status = .working; old.revision = 2
     m.upsert(s); m.upsert(old)

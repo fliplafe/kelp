@@ -5,6 +5,13 @@ import Core
 import GitKit
 import Daemon
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 @MainActor private func buttons(in v: NSView) -> [NSButton] { ((v as? NSButton).map { [$0] } ?? []) + v.subviews.flatMap(buttons) }
 @MainActor private func tables(in v: NSView) -> [NSTableView] { ((v as? NSTableView).map { [$0] } ?? []) + v.subviews.flatMap(tables) }

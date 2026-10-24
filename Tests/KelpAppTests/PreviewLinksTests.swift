@@ -3,6 +3,13 @@ import Testing
 import Core
 import PDFKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// A preview's links open web pages, the repo's files and mail; an app shipped in a cloned repo, a folder or another
 /// app's scheme doesn't open from a click.
@@ -58,7 +65,7 @@ import PDFKit
 @MainActor
 @Test func anOpenActionCantRunWhatItsDataSays() {
     let item: JSONValue = .obj(["link": "terminal://x?cmd=curl%20example.com%7Csh", "agent": "agent://claude?prompt=go", "url": "https://example.com/i/1"])
-    let actions = ExtActions(AppModel())
+    let actions = ExtActions(AppModel(builtins: Builtins.all))
     #expect(actions.openURI("${link}", item: item) == nil)
     #expect(actions.openURI("${agent}", item: item) == nil)
     #expect(actions.openURI("${url}", item: item) == "https://example.com/i/1")
@@ -72,7 +79,7 @@ import PDFKit
     defer { try? FileManager.default.removeItem(at: url) }
     let doc = PDFDocument(); doc.insert(PDFPage(), at: 0)
     #expect(doc.write(to: url))
-    let view = try #require(Preview.view(for: url, app: AppModel()) as? LinkedPDFView)
+    let view = try #require(Preview.view(for: url, app: AppModel(builtins: Builtins.all)) as? LinkedPDFView)
     #expect(view.delegate === view.links)
 }
 

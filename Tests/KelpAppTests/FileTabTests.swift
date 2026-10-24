@@ -3,6 +3,13 @@ import Foundation
 import Testing
 import WorkbenchKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// A file tab as an agent and the user share it: the agent's change shows when nothing is edited here, ⌘S writes the
 /// user's edit, and never over a change the agent made meanwhile.

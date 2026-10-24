@@ -4,6 +4,13 @@ import Testing
 import Core
 import WorkbenchKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 private func folder(_ files: [String: String]) throws -> URL {
     _ = testHome
@@ -15,7 +22,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func templatesTakeFieldsAndQuoteThem() {
     let item = JSONValue.object(["name": .string("it's"), "n": .int(3), "pr": .object(["id": .int(7)])])
-    let actions = ExtActions(AppModel())
+    let actions = ExtActions(AppModel(builtins: Builtins.all))
     #expect(actions.expand("echo ${name}", item: item, quote: false) == "echo it's")
     #expect(actions.expand("echo ${name}", item: item, quote: true) == #"KELP_V1='it'\''s'; echo "${KELP_V1}""#)   // a variable, not text
     #expect(actions.expand("${pr.id}-${n}-${missing}", item: item, quote: false) == "7-3-")
@@ -44,7 +51,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 @MainActor @Test func aManifestFolderBecomesContributions() throws {
     let d = try folder(["extension.json":
         #"{"id":"t.one","name":"One","contributes":{"commands":[{"title":"Hi","terminal":"echo hi"}],"panels":[{"id":"p","title":"P","web":"p.html"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel(builtins: Builtins.all))
     #expect(info.id == "t.one" && info.error == nil && info.unavailable == nil)
     #expect(c.commands.map(\.title) == ["Hi"])
     #expect(c.panels.map(\.id) == ["t.one.p"])
@@ -52,7 +59,7 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func aBrokenManifestIsReportedNotThrown() throws {
     let d = try folder(["extension.json": #"{"name":"no id"}"#])
-    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel(builtins: Builtins.all))
     #expect(info.error != nil)
     #expect(info.id == d.lastPathComponent)   // still listed, so it can be fixed or removed
     #expect(c.commands.isEmpty && c.panels.isEmpty)
@@ -60,16 +67,16 @@ private func folder(_ files: [String: String]) throws -> URL {
 
 @MainActor @Test func missingRequirementKeepsTheExtensionInactive() throws {
     let d = try folder(["extension.json": #"{"id":"t.req","name":"R","requires":["kelp-no-such-tool"],"contributes":{"commands":[{"title":"X","run":"x"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, tools: ["kelp-no-such-tool": false], app: AppModel())
+    let (info, c) = DeclarativeExtension.load(d, tools: ["kelp-no-such-tool": false], app: AppModel(builtins: Builtins.all))
     #expect(info.unavailable?.contains("kelp-no-such-tool") == true)
     #expect(c.commands.isEmpty)
     // Until the daemon has said (it may still be reading the login shell's PATH), a tool counts as there.
-    #expect(DeclarativeExtension.load(d, app: AppModel()).info.unavailable == nil)
+    #expect(DeclarativeExtension.load(d, app: AppModel(builtins: Builtins.all)).info.unavailable == nil)
 }
 
 @MainActor @Test func aVSCodePackageIsReadForItsIconThemes() throws {
     let d = try folder(["package.json": #"{"name":"icons","publisher":"me","displayName":"Icons","contributes":{"iconThemes":[{"id":"i","label":"I","path":"./i.json"}]}}"#])
-    let (info, c) = DeclarativeExtension.load(d, app: AppModel())
+    let (info, c) = DeclarativeExtension.load(d, app: AppModel(builtins: Builtins.all))
     #expect(info.id == "me.icons" && info.name == "Icons")
     #expect(c.iconThemes.map(\.id) == ["i"])
 }
@@ -92,7 +99,7 @@ extension OneAtATime {
 extension OneAtATime {
     @Test func aTabsMenuHasWhatItsProviderAdds() {
         _ = testHome; _ = NSApplication.shared   // reload applies the theme to NSApp
-        let app = AppModel()
+        let app = AppModel(builtins: Builtins.all)
         app.extensions.reload()
         let area = EditorArea(app: app, workspaceId: "menu-test")
         let agent = area.layout.add("session:s1"), page = area.layout.add(TabURI.file("/tmp/a.html")), web = area.layout.add("https://example.com")

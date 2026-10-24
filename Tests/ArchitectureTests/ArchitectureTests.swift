@@ -6,6 +6,9 @@ import Testing
 
 private let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
+/// The app: its target (main.swift and the list of built-ins), the shell (KelpKit) and the built-ins' modules.
+private let appDirs = ["Sources/KelpApp", "Sources/KelpKit", "Sources/Builtins"]
+
 /// Every .swift file under these folders (relative to the repo), with its text.
 private func sources(_ dirs: [String]) -> [(path: String, text: String)] {
     dirs.flatMap { dir -> [(path: String, text: String)] in
@@ -29,7 +32,7 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// The app and the CLI name a method by its `RPCMethod` type: with a string and hand-built params, a renamed field still
 /// compiles and only breaks when it runs.
 @Test func theAppAndTheCLICallTheDaemonThroughItsTypes() throws {
-    let app = try matches(#"\b(call|tryCall|notify)\(\s*""#, in: ["Sources/KelpApp"])
+    let app = try matches(#"\b(call|tryCall|notify)\(\s*""#, in: appDirs)
     let cli = try matches(#"\b(call|tryCall|notify)\(\s*""#, in: ["Sources/kelp"])
     #expect(app.count <= 0, "string-named calls in KelpApp: \(app)")
     #expect(cli.count <= 0, "string-named calls in the kelp CLI: \(cli)")
@@ -39,9 +42,9 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// (decorations, which say so). `try?` around a call turned a failure into an empty list; the raw client skipped all of it.
 /// AppModel.swift itself is the way (it also manages the connection), so it isn't counted.
 @Test func daemonErrorsAreNotSwallowed() throws {
-    func outside(_ found: [String]) -> [String] { found.filter { !$0.hasPrefix("Sources/KelpApp/AppModel.swift:") } }
-    let swallowed = outside(try matches(#"try\? await (?:[^=\n]*\.)?(call|get|tryCall)\("#, in: ["Sources/KelpApp"]))
-    let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: ["Sources/KelpApp"]))
+    func outside(_ found: [String]) -> [String] { found.filter { !$0.hasPrefix("Sources/KelpKit/AppModel.swift:") } }
+    let swallowed = outside(try matches(#"try\? await (?:[^=\n]*\.)?(call|get|tryCall)\("#, in: appDirs))
+    let raw = outside(try matches(#"\bclient\??\.call\(|\bc\??\.call\("#, in: appDirs))
     #expect(swallowed == [], "try? around a call: \(swallowed)")
     #expect(raw == [], "the client called directly: \(raw)")
 }
@@ -50,65 +53,36 @@ private func matches(_ pattern: String, in dirs: [String]) throws -> [String] {
 /// daemon's job. (Package.swift enforces it too; this says why when someone adds the dependency back.)
 @Test func theAppDoesNotImportTheDaemonsLibraries() {
     let banned = ["Daemon", "GitKit", "Integrations", "AgentData", "LSPKit"]
-    let found = sources(["Sources/KelpApp"]).filter { f in banned.contains { f.text.hasPrefix("import \($0)\n") || f.text.contains("\nimport \($0)\n") } }
+    let found = sources(appDirs).filter { f in banned.contains { f.text.hasPrefix("import \($0)\n") || f.text.contains("\nimport \($0)\n") } }
     #expect(found.map(\.path) == [])
 }
 
-/// The shell knows tabs as `TabContent`: a contributed tab's own type anywhere outside `Builtins/` (the window, the editor
-/// area, the app delegate…) is a feature reached around the contribution points. The types are read from the sources:
-/// every `TabContent` / `SavableTab` declared in `Builtins/` or `Extensions/`.
-@Test func theShellKnowsTabsOnlyAsContributions() throws {
-    let declared = try NSRegularExpression(pattern: #"(?:class|struct) (\w+)\s*:[^{]*\b(?:TabContent|SavableTab)\b"#)
-    var tabs: [String: String] = [:]   // type → the file that declares it (which may name itself)
-    for f in sources(["Sources/KelpApp/Builtins", "Sources/KelpApp/Extensions"]) {
-        for m in declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
-            if let r = Range(m.range(at: 1), in: f.text) { tabs[String(f.text[r])] = f.path }
-        }
+/// A built-in is a module of its own (`Sources/Builtins/<Feature>`): it reaches the shell only through what KelpKit
+/// declares `package` (tabs, panels, commands, `app.workbench`…, never the window, the sidebar or the inspector), and
+/// the shell can't name it. The compiler holds that once the targets are wired so: the shell and every built-in depend
+/// on no built-in, and only the app's target lists them.
+@Test func builtinsAreModulesTheShellCantName() throws {
+    let folders = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Sources/Builtins").path).filter { !$0.hasPrefix(".") }
+    let modules = folders.map { "Builtin" + $0 }
+    #expect(modules.contains("BuiltinAgents") && modules.contains("BuiltinFiles"), "\(modules)")   // the scan finds them
+    let importing = sources(["Sources/KelpKit", "Sources/Builtins"]).filter { f in modules.contains { f.text.contains("import \($0)\n") } }
+    #expect(importing.map(\.path) == [], "a built-in imported by the shell or by another built-in")
+    let manifest = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+    for line in manifest.split(separator: "\n") where line.contains(".target(name: \"KelpKit\"") || line.contains(".target(name: \"Builtin") {
+        let own = modules.first { line.contains("name: \"\($0)\"") }
+        #expect(!modules.contains { $0 != own && line.contains("\"\($0)\"") }, "depends on a built-in: \(line)")
     }
-    #expect(tabs.keys.contains("FileTab") && tabs.keys.contains("ExtViewTab"), "\(tabs.keys.sorted())")   // the scan finds them
-    let cast = try NSRegularExpression(pattern: #"(?:as[?!]?|is) ("# + tabs.keys.joined(separator: "|") + #")\b"#)
-    var found: [String] = []
-    for f in sources(["Sources/KelpApp"]) where !f.path.hasPrefix("Sources/KelpApp/Builtins/") {
-        for m in cast.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
-            guard let r = Range(m.range(at: 1), in: f.text), tabs[String(f.text[r])] != f.path else { continue }
-            found.append("\(f.path): \(f.text[r])")
-        }
-    }
-    #expect(found == [])
-}
-
-/// The shell (everything outside `Builtins/`) reaches a built-in through what it contributed (its `TabProvider`, commands,
-/// panels…), never by its type: a built-in named there is one the shell can't do without. The names are read from the
-/// sources: every type a file in `Builtins/` declares at its top level, other than private ones (nested types are the
-/// feature's own). `Builtins` itself is the list the registry loads.
-@Test func theShellNamesNoBuiltin() throws {
-    let declared = try NSRegularExpression(
-        pattern: #"^(?:@\w+(?:\([^)\n]*\))?\s+)*(?:(?:public|internal|final|nonisolated)\s+)*(?:class|struct|enum|protocol|actor|typealias)\s+([A-Z]\w*)"#,
-        options: [.anchorsMatchLines])
-    var names = Set<String>()
-    for f in sources(["Sources/KelpApp/Builtins"]) {
-        for m in declared.matches(in: f.text, range: NSRange(f.text.startIndex..., in: f.text)) {
-            if let r = Range(m.range(at: 1), in: f.text) { names.insert(String(f.text[r])) }
-        }
-    }
-    names.remove("Builtins")
-    #expect(names.contains("SessionTab") && names.contains("PaneView"), "\(names.sorted())")   // the scan finds them
-    let named = try NSRegularExpression(pattern: #"\b("# + names.sorted().joined(separator: "|") + #")\b"#)
-    var found: [String] = []
-    for f in sources(["Sources/KelpApp"]) where !f.path.hasPrefix("Sources/KelpApp/Builtins/") {
-        let code = codeOnly(f.text)
-        for m in named.matches(in: code, range: NSRange(code.startIndex..., in: code)) {
-            guard let r = Range(m.range(at: 1), in: code) else { continue }
-            found.append("\(f.path):\(code[..<r.lowerBound].filter { $0 == "\n" }.count + 1): \(code[r])")
-        }
-    }
-    #expect(found == [], "built-ins named outside Builtins/")
+    // The window's own parts stay the shell's: nothing in them is declared for a built-in to reach.
+    let shared = ["UsageView.swift", "RowBadges.swift"]   // the sidebar's, shown by the Agents built-in too
+    let windowParts = sources(["Sources/KelpKit/Sidebar", "Sources/KelpKit/Inspector"]).filter { !shared.contains(($0.path as NSString).lastPathComponent) }
+        + sources(["Sources/KelpKit/Shell"]).filter { $0.path.hasSuffix("/MainWindow.swift") }
+    #expect(windowParts.filter { codeOnly($0.text).contains("package ") }.map(\.path) == [])
 }
 
 /// What the shell asks of every tab stays short: a question only one kind of tab answers is that tab's own (its provider's
 /// menu, its badge), not one more requirement every tab carries a "not this one" default for.
 @Test func tabContentAsksLittle() throws {
-    let text = try #require(sources(["Sources/KelpApp/Editor"]).first { $0.path.hasSuffix("/TabContent.swift") }?.text)
+    let text = try #require(sources(["Sources/KelpKit/Editor"]).first { $0.path.hasSuffix("/TabContent.swift") }?.text)
     let start = try #require(text.range(of: "protocol TabContent: AnyObject {"))
     let end = try #require(text.range(of: "\n}", range: start.upperBound..<text.endIndex))
     let body = text[start.upperBound..<end.lowerBound]
@@ -141,20 +115,20 @@ private func codeOnly(_ s: String) -> String {
 /// The daemon's events reach the app as their types (`RPCClient.onEvent`, decoded once on the client's reader thread):
 /// the app doesn't switch on their names or decode them from JSON on the main thread.
 @Test func theAppTakesEventsByType() throws {
-    #expect(try matches(#"onNotification|case [A-Z]\w*\.name\b|\.decode\(\w*(Event|Session|Repo|Worktree)\.self"#, in: ["Sources/KelpApp"]) == [])
+    #expect(try matches(#"onNotification|case [A-Z]\w*\.name\b|\.decode\(\w*(Event|Session|Repo|Worktree)\.self"#, in: appDirs) == [])
 }
 
 /// Questions are sheets that are awaited: a nested modal loop (runModal for a sheet) runs every timer, event and task of
 /// the app inside it, and a semaphore on the main thread stops them all. (The hang watcher's semaphore is on a thread of
 /// its own: it's what notices a stuck main thread.)
 @Test func theMainThreadNeverWaitsInALoopOfItsOwn() throws {
-    #expect(try matches(#"runAsSheet|NSApp\.runModal\(for"#, in: ["Sources/KelpApp"]) == [])
-    #expect(try matches(#"DispatchSemaphore"#, in: ["Sources/KelpApp"]).filter { !$0.hasPrefix("Sources/KelpApp/DevAids.swift") } == [])
+    #expect(try matches(#"runAsSheet|NSApp\.runModal\(for"#, in: appDirs) == [])
+    #expect(try matches(#"DispatchSemaphore"#, in: appDirs).filter { !$0.hasPrefix("Sources/KelpKit/DevAids.swift") } == [])
     // Until a `.terminateLater` reply AppKit runs a modal mode in which the main actor's tasks don't run: an async
     // question asked from there never shows (quitting with an unsaved file closed nothing and asked nothing).
-    #expect(try matches(#"\.terminateLater"#, in: ["Sources/KelpApp"]) == [])
+    #expect(try matches(#"\.terminateLater"#, in: appDirs) == [])
     // One loop of its own, on purpose: a logout's quit needs its answer before applicationShouldTerminate returns.
-    #expect(try matches(#"nextEvent\(matching: \.any"#, in: ["Sources/KelpApp"]).map { $0.split(separator: ":")[0] } == ["Sources/KelpApp/AppDelegate.swift"])
+    #expect(try matches(#"nextEvent\(matching: \.any"#, in: appDirs).map { $0.split(separator: ":")[0] } == ["Sources/KelpKit/AppDelegate.swift"])
 }
 
 /// A line too long to take in at once: a call, a condition or a chain split over lines reads better. Comment lines and
@@ -176,8 +150,8 @@ private func codeOnly(_ s: String) -> String {
 /// start one count too: LoginPath runs the login shell (the app asks the daemon: `process.which`), the library's index and
 /// download run curl and tar.
 @Test func theAppStartsNoPrograms() throws {
-    let allowed = ["Sources/KelpApp/AppModel.swift", "Sources/KelpApp/DevAids.swift"]
-    let found = try matches(#"\bProcess\(\)|\bSubprocess\.|posix_spawn|\bNSTask\b|\bLoginPath\.|\bfetchExtension\(|\blibrary\(index"#, in: ["Sources/KelpApp"])
+    let allowed = ["Sources/KelpKit/AppModel.swift", "Sources/KelpKit/DevAids.swift"]
+    let found = try matches(#"\bProcess\(\)|\bSubprocess\.|posix_spawn|\bNSTask\b|\bLoginPath\.|\bfetchExtension\(|\blibrary\(index"#, in: appDirs)
         .filter { f in !allowed.contains { f.hasPrefix($0 + ":") } }
     #expect(found == [])
     // A new Core helper that starts a program: add what the app could call to the pattern above.
@@ -189,23 +163,23 @@ private func codeOnly(_ s: String) -> String {
 /// A clock left in the app is the app's own, each listed with why; a new one that polls the daemon belongs in a watch.
 @Test func theAppDoesntPollTheDaemon() throws {
     let clocks: [String: String] = [
-        "AppDelegate.swift": "a finished agent counts as read after a second on screen; a 30 ms wait for the window at launch",
-        "Sidebar/SidebarController.swift": "relative times on the rows (\"now\" becomes \"1m\")",
-        "AppModel.swift": "connecting: waiting for the socket, retries and backoff",
-        "Notifier.swift": "a notification's summary waits a moment for the agent's last line",
-        "Shell/Latency.swift": "\"Loading…\" only once a wait is long enough to notice",
+        "KelpKit/AppDelegate.swift": "a finished agent counts as read after a second on screen; a 30 ms wait for the window at launch",
+        "KelpKit/Sidebar/SidebarController.swift": "relative times on the rows (\"now\" becomes \"1m\")",
+        "KelpKit/AppModel.swift": "connecting: waiting for the socket, retries and backoff",
+        "KelpKit/Notifier.swift": "a notification's summary waits a moment for the agent's last line",
+        "KelpKit/Shell/Latency.swift": "\"Loading…\" only once a wait is long enough to notice",
         "Builtins/Agents/UsageTab.swift": "a \"still reading\" hint after 3 s",
         "Builtins/Agents/PaneView.swift": "a terminal out of sight lets go of its agent once it could pause idle",
         "Builtins/Files/FileTab.swift": "typing settles before the language server hears it",
         "Builtins/Files/MarkdownTab.swift": "typing settles before the preview renders again",
         "Builtins/Git/CommitCard.swift": "a commit's card opens once the pointer rests on its row, and closes a moment after it leaves",
-        "Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list",
-        "Extensions/DeclarativeExtension.swift": "an extension's own refresh interval for its panel's badge command"
+        "KelpKit/Extensions/ExtListView.swift": "an extension's own refresh interval for its command's list",
+        "KelpKit/Extensions/DeclarativeExtension.swift": "an extension's own refresh interval for its panel's badge command"
     ]
-    let all = try matches(#"repeats: true|Task\.sleep\("#, in: ["Sources/KelpApp"])
-    let found = all.filter { m in !clocks.keys.contains { m.hasPrefix("Sources/KelpApp/" + $0 + ":") } }
+    let all = try matches(#"repeats: true|Task\.sleep\("#, in: appDirs)
+    let found = all.filter { m in !clocks.keys.contains { m.hasPrefix("Sources/" + $0 + ":") } }
     #expect(found == [], "a clock asking the daemon: watch a topic instead (WatchTopic)")
-    let gone = clocks.keys.filter { k in !all.contains { $0.hasPrefix("Sources/KelpApp/" + k + ":") } }
+    let gone = clocks.keys.filter { k in !all.contains { $0.hasPrefix("Sources/" + k + ":") } }
     #expect(gone == [], "listed, but its clock is gone: take it off the list")
 }
 
@@ -296,32 +270,32 @@ private func codeOnly(_ s: String) -> String {
 /// why and how often (a ceiling per file): its own folders, a viewer's bytes, whether a path is there. Nothing else does.
 @Test func theAppDoesntTouchProjectFiles() throws {
     let own: [String: (Int, String)] = [
-        "AgentCatalog.swift": (1, "an agent CLI's date: it isn't asked its version again until it changes"),
-        "AgentIcons.swift": (4, "agents' icons, cached in Kelp's home"),
-        "AppModel.swift": (2, "why kelpd didn't start, in Kelp's home"),
-        "DevAids.swift": (3, "snapshots for tests"),
-        "RemoteSheet.swift": (1, "the hosts in ~/.ssh/config"),
-        "CloneSheet.swift": (2, "whether the folder new projects go in is there"),
-        "Settings/IconTheme.swift": (2, "an icon theme an extension brings"),
-        "Settings/SettingsWindow.swift": (1, "an extension's own folder"),
-        "Extensions/Registry.swift": (7, "extensions' folders, Kelp's own"),
-        "Extensions/DeclarativeExtension.swift": (4, "an extension's manifest"),
-        "Extensions/ExtensionReview.swift": (1, "an extension's manifest, before it's installed"),
-        "Extensions/AgentSkills.swift": (4, "the skills Kelp gives agents, in Kelp's home"),
-        "Shell/Help.swift": (1, "the guide, written to Kelp's home"),
-        "Shell/WorkbenchActions.swift": (4, "a dropped or linked path: a file, a folder, or nothing"),
-        "Sidebar/ProjectIcon.swift": (3, "a project's icon, shown"),
-        "Sidebar/SidebarCell.swift": (1, "a project folder that's gone"),
-        "Sidebar/SidebarActions.swift": (1, "a project folder that's gone"),
+        "KelpKit/AgentCatalog.swift": (1, "an agent CLI's date: it isn't asked its version again until it changes"),
+        "KelpKit/AgentIcons.swift": (4, "agents' icons, cached in Kelp's home"),
+        "KelpKit/AppModel.swift": (2, "why kelpd didn't start, in Kelp's home"),
+        "KelpKit/DevAids.swift": (3, "snapshots for tests"),
+        "KelpKit/RemoteSheet.swift": (1, "the hosts in ~/.ssh/config"),
+        "KelpKit/CloneSheet.swift": (2, "whether the folder new projects go in is there"),
+        "KelpKit/Settings/IconTheme.swift": (2, "an icon theme an extension brings"),
+        "KelpKit/Settings/SettingsWindow.swift": (1, "an extension's own folder"),
+        "KelpKit/Extensions/Registry.swift": (7, "extensions' folders, Kelp's own"),
+        "KelpKit/Extensions/DeclarativeExtension.swift": (4, "an extension's manifest"),
+        "KelpKit/Extensions/ExtensionReview.swift": (1, "an extension's manifest, before it's installed"),
+        "KelpKit/Extensions/AgentSkills.swift": (4, "the skills Kelp gives agents, in Kelp's home"),
+        "KelpKit/Shell/Help.swift": (1, "the guide, written to Kelp's home"),
+        "KelpKit/Shell/WorkbenchActions.swift": (4, "a dropped or linked path: a file, a folder, or nothing"),
+        "KelpKit/Sidebar/ProjectIcon.swift": (3, "a project's icon, shown"),
+        "KelpKit/Sidebar/SidebarCell.swift": (1, "a project folder that's gone"),
+        "KelpKit/Sidebar/SidebarActions.swift": (1, "a project folder that's gone"),
         "Builtins/Agents/PathPreview.swift": (3, "a path a terminal printed is a file, before it's a link"),
         "Builtins/Browser/BrowserTab.swift": (2, "a local page, shown: it reloads as its folder changes; a page's screenshot"),
         "Builtins/Files/Preview.swift": (2, "an image's bytes, shown")
     ]
     let all = try matches(#"FileManager\.default\.(contents|createFile|moveItem|trashItem|copyItem|removeItem|createDirectory|fileExists|isWritableFile"#
         + #"|enumerator|attributesOfItem|destinationOfSymbolicLink)|FileWatcher\(|FileHandle\(|(String|Data|NSImage|NSDictionary)\(contentsOf"#
-        + #"|\.write\(to(File)?:|\bstat\([^()]*&"#, in: ["Sources/KelpApp"])
+        + #"|\.write\(to(File)?:|\bstat\([^()]*&"#, in: appDirs)
     var found: [String: Int] = [:]
-    for m in all { found[String(m.dropFirst("Sources/KelpApp/".count).split(separator: ":")[0]), default: 0] += 1 }
+    for m in all { found[String(m.dropFirst("Sources/".count).split(separator: ":")[0]), default: 0] += 1 }
     let left = found.filter { f, n in n > own[f]?.0 ?? 0 }
     #expect(left == [:], "a project's files touched by the app: go through the daemon (files.*)")
     let gone = own.filter { found[$0.key, default: 0] < $0.value.0 }.keys.sorted()
@@ -334,11 +308,11 @@ private func codeOnly(_ s: String) -> String {
 /// (Workbench's statics: `files` alone reads nothing but a drag), no `IDEContext.current`, no `NSApp.delegate`. A view
 /// that reached one could only ever show the one app, and every test that makes its own would share it.
 @Test func theAppIsHandedItsModel() throws {
-    let made = try matches(#"^\s*(?:@\w+\s+)*(?:private\s+|fileprivate\s+)?static (?:let|var) shared\b"#, in: ["Sources/KelpApp"])
+    let made = try matches(#"^\s*(?:@\w+\s+)*(?:private\s+|fileprivate\s+)?static (?:let|var) shared\b"#, in: appDirs)
     #expect(made == [], "a singleton of the app's own: make it the app's (`AppModel`) and hand it down")
-    let starts = ["Sources/KelpApp/main.swift", "Sources/KelpApp/AppDelegate.swift"]
+    let starts = ["Sources/KelpApp/main.swift", "Sources/KelpKit/AppDelegate.swift"]
     let reach = try NSRegularExpression(pattern: #"\bWorkbench\.(?!files\b)[a-z]\w*|\bIDEContext\.current\b|\bNSApp(?:lication\.shared)?\.delegate\b"#)
-    let found = sources(["Sources/KelpApp"]).filter { !starts.contains($0.path) }.flatMap { f in
+    let found = sources(appDirs).filter { !starts.contains($0.path) }.flatMap { f in
         let code = codeOnly(f.text)
         return reach.matches(in: code, range: NSRange(code.startIndex..., in: code)).compactMap { Range($0.range, in: code).map { "\(f.path): \(code[$0])" } }
     }

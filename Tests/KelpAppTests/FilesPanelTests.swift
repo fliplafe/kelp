@@ -3,6 +3,13 @@ import Foundation
 import Testing
 import Core
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// Files moved in the Files panel (by the daemon, `files.move`) come back with ⌘Z and go again with ⇧⌘Z: an agent's
 /// folder isn't left half-moved. A trashed file comes back from the Trash; an operation that did nothing leaves no step.

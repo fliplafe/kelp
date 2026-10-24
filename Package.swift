@@ -33,10 +33,20 @@ let package = Package(
         .target(name: "Integrations", dependencies: ["Core", "GitKit"]),
         .target(name: "Markdown", resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/mermaid-LICENSE.txt")]),   // mermaid 11.17.2, MIT
         .target(name: "EditorKit", dependencies: [.product(name: "CodeEditSourceEditor", package: "CodeEditSourceEditor")], swiftSettings: [.swiftLanguageMode(.v5)]),
+        // The shell, and what an extension is given (`package` declarations): the window, the editor area, tabs, panels.
+        .target(name: "KelpKit", dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "Markdown", "WorkbenchKit",
+                                                .product(name: "Sparkle", package: "Sparkle")]),
+        // The built-in extensions: each sees only what KelpKit declares `package`, never the shell's own parts, nor another.
+        .target(name: "BuiltinAgents", dependencies: ["KelpKit", "Core", "Agents", "TerminalKit", "WorkbenchKit"], path: "Sources/Builtins/Agents"),
+        .target(name: "BuiltinFiles", dependencies: ["KelpKit", "Core", "Agents", "EditorKit", "Markdown", "WorkbenchKit"], path: "Sources/Builtins/Files"),
+        .target(name: "BuiltinGit", dependencies: ["KelpKit", "Core", "Agents", "EditorKit", "WorkbenchKit"], path: "Sources/Builtins/Git"),
+        .target(name: "BuiltinBrowser", dependencies: ["KelpKit", "Core", "Agents", "WorkbenchKit"], path: "Sources/Builtins/Browser"),
+        .target(name: "BuiltinIssues", dependencies: ["KelpKit", "Core", "Agents", "WorkbenchKit"], path: "Sources/Builtins/Issues"),
+        .target(name: "BuiltinActivity", dependencies: ["KelpKit", "Core", "Agents", "WorkbenchKit"], path: "Sources/Builtins/Activity"),
         .executableTarget(
             name: "KelpApp",
-            dependencies: ["Core", "Agents", "TerminalKit", "EditorKit", "Markdown", "WorkbenchKit", "GhosttyKit",
-                           .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["KelpKit", "BuiltinAgents", "BuiltinFiles", "BuiltinGit", "BuiltinBrowser", "BuiltinIssues", "BuiltinActivity",
+                           "GhosttyKit"],
             // SwiftPM records the deployment target (14.0) as the SDK the app was built with, and AppKit then draws the
             // macOS 14 look (compatibility mode). Naming a current SDK gets the system's own design on macOS 26+.
             // Limit: fixed at 26.0; raise it when a later SDK's look is wanted.
@@ -57,7 +67,8 @@ let package = Package(
         .testTarget(name: "WorkbenchKitTests", dependencies: ["WorkbenchKit", "Core", "TestSupport"]),
         .testTarget(name: "TerminalKitTests", dependencies: ["TerminalKit"]),
         .testTarget(name: "ArchitectureTests"),   // reads the sources: the rules in docs/architecture.md
-        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"]),
+        .testTarget(name: "KelpAppTests", dependencies: ["KelpApp", "KelpKit", "BuiltinAgents", "BuiltinFiles", "BuiltinGit", "BuiltinBrowser", "BuiltinIssues",
+                                                  "BuiltinActivity", "Core", "Daemon", "GitKit", "WorkbenchKit", "TestSupport"]),
         .binaryTarget(name: "GhosttyKit", path: "Vendor/GhosttyKit.xcframework"),
     ]
 )

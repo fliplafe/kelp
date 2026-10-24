@@ -6,6 +6,13 @@ import Core
 import GitKit
 import Daemon
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// KelpApp code reads `Paths` (scratch, extensions, skills) and agents' folders: the process is isolated (TestIsolation).
 let testHome: String = { _ = TestIsolation.root; return String(cString: getenv("KELP_HOME")) }()
@@ -28,7 +35,7 @@ final class AppRig {
 
     init(files: [String: String] = ["f.txt": "a\n"]) async throws {
         _ = testHome
-        app = AppModel()
+        app = AppModel(builtins: Builtins.all)
         root = URL(fileURLWithPath: "/tmp/kr-\(UUID().uuidString.prefix(6))")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         daemon = try Daemon(root: root); try daemon.start()

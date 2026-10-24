@@ -5,6 +5,13 @@ import Core
 import Daemon
 import EditorKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// Settings as the app and everything else share them: a change made in the app lands in settings.json through the
 /// daemon, and one made elsewhere (`kelp settings set`, an agent) shows in the app without a restart.
@@ -18,7 +25,7 @@ extension OneAtATime {
         let d = try Daemon(root: root); try d.start(); defer { d.stop() }
         let app = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
         let cli = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-        let m = AppModel(), s = m.settings
+        let m = AppModel(builtins: Builtins.all), s = m.settings
         m.client = app; m.listen(app)
         await s.load()
 
@@ -42,7 +49,7 @@ extension OneAtATime {
         let d = try Daemon(root: root); try d.start(); defer { d.stop() }
         let app = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
         let cli = try RPCClient(socket: root.appendingPathComponent("kelp.sock").path)
-        let m = AppModel(), s = m.settings
+        let m = AppModel(builtins: Builtins.all), s = m.settings
         m.client = app; m.listen(app)
         m.extensions.reload()
         await s.load()
@@ -82,7 +89,7 @@ extension OneAtATime {
     /// A stepper held sends 14 then 15: the daemon's answer to 14 arriving after 15 was shown doesn't put 14 back.
     @Test func anOlderSettingsEchoDoesntUndoANewerChange() async throws {
         _ = NSApplication.shared   // the theme applies to NSApp
-        let m = AppModel(), s = m.settings   // no daemon: its set fails later, on a task of its own: what matters is what's shown meanwhile
+        let m = AppModel(builtins: Builtins.all), s = m.settings   // no daemon: its set fails later, on a task of its own: what matters is what's shown meanwhile
         s.set("terminal.fontSize", .int(15))
         s.received(s.values.merging(["terminal.fontSize": .int(14)]) { $1 })   // the echo of the set before it
         #expect(s.values["terminal.fontSize"] == .int(15))

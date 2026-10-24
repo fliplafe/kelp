@@ -1,0 +1,158 @@
+import AppKit
+@preconcurrency import UserNotifications   // its center and settings aren't marked Sendable
+import Core
+
+/// Banner + dock badge when an agent finishes or waits; clicking opens the right pane.
+@MainActor
+package final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+    /// macOS lets Kelp show banners (false: they're off in System Settings).
+    private var allowed = true
+    private let center: UNUserNotificationCenter? = Bundle.main.bundleIdentifier != nil ? .current() : nil   // needs an app bundle
+    private let app: AppModel
+    package init(app: AppModel) { self.app = app; super.init() }
+
+    package func start() {
+        center?.delegate = self
+        // A permission request can be answered from the banner itself.
+        center?.setNotificationCategories([UNNotificationCategory(identifier: "permission", actions: [
+            UNNotificationAction(identifier: "allow", title: String(localized: "Allow")),
+            UNNotificationAction(identifier: "deny", title: String(localized: "Deny"), options: [.destructive])
+        ], intentIdentifiers: [])])
+        center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in Task { @MainActor in self.checkAllowed() } }
+        track(owner: self) { [app] in app.sessions } changed: { [weak self] _ in self?.updateBadge() }
+    }
+
+    /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.
+    /// Called at launch and when Kelp comes to the front.
+    package func checkAllowed() {
+        center?.getNotificationSettings { s in
+            let off = s.authorizationStatus == .denied || s.alertSetting == .disabled
+            Task { @MainActor in
+                self.allowed = !off
+                let d = UserDefaults.standard
+                guard off else { d.removeObject(forKey: "notifications.warnedOff"); return }
+                guard !d.bool(forKey: "notifications.warnedOff") else { return }
+                d.set(true, forKey: "notifications.warnedOff")
+                Banner.show(String(localized: "Notifications for Kelp are turned off in System Settings, so you won't hear when an agent needs you."), style: .error,
+                            action: (String(localized: "Open Settings"), {
+                                let id = Bundle.main.bundleIdentifier ?? ""
+                                if let u = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") { NSWorkspace.shared.open(u) }
+                            }))
+            }
+        }
+    }
+
+    /// First launch's "Send Test Notification": a banner now, or `false` when macOS has them turned off for Kelp.
+    func sendTest(_ done: @escaping @MainActor (Bool) -> Void) {
+        guard let center else { done(false); return }
+        Task {
+            let s = await center.notificationSettings()
+            let off = s.authorizationStatus == .denied || s.alertSetting == .disabled
+            if !off {
+                let c = UNMutableNotificationContent()
+                c.title = String(localized: "Kelp can reach you")
+                c.body = String(localized: "This is how you'll hear that an agent finished or needs you."); c.sound = .default
+                try? await center.add(UNNotificationRequest(identifier: "kelp-test", content: c, trigger: nil))
+            }
+            done(!off)
+        }
+    }
+
+    func updateBadge() {
+        let n = app.sessions.filter { $0.unread && $0.status != .exited }.count
+        let label = n > 0 ? "\(n)" : nil
+        if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
+        clearSeen()
+    }
+
+    /// Banners already answered (the agent was looked at, or moved on) leave Notification Center, like Messages does.
+    private var posted: [String: String] = [:]   // session → request id
+    private func clearSeen() {
+        let stale = posted.filter { sid, rid in
+            guard let s = app.session(sid) else { return true }
+            return !s.unread || !rid.hasSuffix(s.status.rawValue)
+        }
+        guard !stale.isEmpty else { return }
+        center?.removeDeliveredNotifications(withIdentifiers: Array(stale.values))
+        stale.keys.forEach { posted[$0] = nil }
+    }
+
+    /// Each `event.session`, as it comes: a status that changes back within a moment still gets its banner.
+    func statusChanged(_ s: Session, _ old: Session?) {
+        guard old?.status != s.status, [.done, .waiting, .error].contains(s.status), s.agent != "shell" else { return }
+        // What the agent itself said with this change (a permission request, an error) beats its last reply.
+        if s.status != .done, !s.summary.isEmpty, s.summary != old?.summary { post(s); return }
+        Task { await summarizeThenNotify(s) }
+    }
+
+    /// One-line summary for the banner and sidebar from the agent's own last reply, then the notification.
+    private func summarizeThenNotify(_ s: Session) async {
+        var s = s
+        // Claude Code: its own last reply (the terminal around it — spinners, mode lines — reads as nonsense when summarized).
+        // The Stop hook can come a moment before the transcript has the final message.
+        try? await Task.sleep(for: .milliseconds(1200))
+        if let reply = await app.quiet(SessionLastReply(id: s.id)) ?? nil {
+            let line = Self.firstSentence(reply)
+            s.summary = line
+            _ = await app.quiet(SessionAnnotate(id: s.id, summary: line))
+        }
+        post(s)   // other agents: no summary; the state says enough
+    }
+
+    /// "I added `mul(a, b)` to `calc.py`. It returns…" → "Added mul(a, b) to calc.py".
+    static func firstSentence(_ text: String) -> String {
+        let line = text.replacingOccurrences(of: "`", with: "").split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        // A sentence ends at . ! or ? followed by a space or the end: the dot in "calc.py" doesn't end it.
+        let end = line.indices.first { i in
+            let next = line.index(after: i)
+            return ".!?".contains(line[i]) && (next == line.endIndex || line[next].isWhitespace)
+        }.map { line.index(after: $0) } ?? line.endIndex
+        var s = String(line[..<end]).trimmingCharacters(in: .whitespaces)
+        if s.hasSuffix(".") { s.removeLast() }
+        for lead in ["I've ", "I have ", "I "] where s.hasPrefix(lead) {
+            s = String(s.dropFirst(lead.count)); s = s.prefix(1).uppercased() + s.dropFirst(); break
+        }
+        return s.count > 90 ? String(s.prefix(89)) + "…" : s
+    }
+
+    private func post(_ s: Session) {
+        let app = self.app
+        // No banner if the user is already looking at that pane (what it asks stays marked until it's answered).
+        if NSApp.isActive, app.workbench.isViewing(session: s.id) { return }
+        let m = app, wt = m.worktree(s.worktreeId)
+        let c = UNMutableNotificationContent()
+        c.title = app.catalog.displayName(s) + (s.status == .waiting ? String(localized: " needs you")
+            : s.status == .error ? String(localized: " ran into an error") : String(localized: " finished"))
+        c.subtitle = [wt?.displayName, m.repo(wt?.repoId)?.name].compactMap { $0 }.joined(separator: " · ")   // as its Needs You row
+        c.body = s.summary.isEmpty ? (s.status == .waiting ? String(localized: "Waiting for your answer") : String(localized: "Ready for review")) : s.summary
+        c.sound = .default; c.userInfo = ["session": s.id]
+        if Self.asksPermission(s) { c.categoryIdentifier = "permission" }
+        if !allowed, NSApp.isActive {   // banners are off: say it inside Kelp instead
+            Banner.show("\(c.title)\(s.summary.isEmpty ? "" : ": " + s.summary)", action: (String(localized: "Show"), { app.workbench.focus(session: s.id) }))
+        }
+        let rid = "\(s.id)-\(s.status.rawValue)"
+        center?.add(UNNotificationRequest(identifier: rid, content: c, trigger: nil))
+        posted[s.id] = rid
+        NSApp.requestUserAttention(.informationalRequest)
+    }
+
+    /// "Claude needs your permission to use Bash", a blocked OSC report of kind permission…
+    static func asksPermission(_ s: Session) -> Bool {
+        let t = s.summary.lowercased()
+        return s.status == .waiting && ["permission", "approve", "allow"].contains { t.contains($0) }
+    }
+
+    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse) async {
+        guard let id = r.notification.request.content.userInfo["session"] as? String else { return }
+        let action = r.actionIdentifier
+        await MainActor.run {
+            guard action == "allow" || action == "deny" else { NSApp.activate(); app.workbench.focus(session: id); return }
+            Task {
+                // Answered without Kelp coming forward; if the menu is gone (answered in the terminal), show the agent.
+                let ok = await app.call(SessionChoose(id: id, answer: action)) ?? false
+                if !ok { NSApp.activate(); app.workbench.focus(session: id) }
+            }
+        }
+    }
+    package nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }
+}

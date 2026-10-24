@@ -52,12 +52,18 @@ Every action of the app is a command with an id (`workbench.toggleSidebar`, `edi
 VS Code and Zed: the menu bar is laid out by id (`AppDelegate.buildMenu`), settings.json `keys` rebinds by id, and agents
 run the same ids with `kelp run`.
 
-Built-ins (Git, Files, Issues, Browser) can be turned off like any other extension. Kelp ships no example
+Built-ins (Agents, Files, Git, Issues, Browser, Activity) can be turned off like any other extension. Each is a
+module of its own (`Sources/Builtins/<Feature>`, target `Builtin<Feature>`) that depends on KelpKit — the shell — and on
+no other built-in. It sees only what KelpKit declares `package`: the contribution types (`TabContent`, `PanelSpec`,
+`CommandSpec`…), `AppModel` and its one error path, `app.workbench` (open a URI, show a panel), shared views and
+helpers. The window, the sidebar and the inspector stay the shell's, so the compiler, not a convention, keeps a
+feature from reaching into them, and the shell can't name a built-in either: the app's target alone lists them
+(`Builtins.all`, handed to `runApp`). Kelp ships no example
 extensions: user extensions live in `~/.kelp/extensions/<id>/` — see [extensions.md](extensions.md) — and can be
 turned off or removed.
 
 ## Source Control
-The Git built-in is a VS Code-style Source Control panel (`Builtins/Git/SourceControl.swift`): branch menu, commit box
+The Git built-in is a VS Code-style Source Control panel (`Sources/Builtins/Git/SourceControl.swift`): branch menu, commit box
 (Commit / Commit & Push / Amend), Merge / Staged / Changes sections with stage, unstage and discard, and a history graph
 whose lanes GitKit computes (`GitKit/History.swift`). Rows open `diff:` tabs, side by side or inline with hunk staging.
 Git runs in the daemon (`Daemon/GitHandlers.swift`: `git.branches`, `git.switch`, `git.graph`, `git.commitFiles`,

@@ -5,6 +5,13 @@ import TestSupport
 import Core
 import WorkbenchKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 private func session(_ status: AgentStatus, unread: Bool = false, agent: String? = "claude", summary: String = "") -> Session {
     Session(cwd: "/", command: "x", agent: agent, status: status, unread: unread, summary: summary)
@@ -23,7 +30,7 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
 /// A layout change still waiting out the save's pause is saved when the app quits, not lost with it.
 @MainActor @Test func aLayoutChangedJustBeforeQuittingIsSaved() {
     let id = "quit-\(UUID().uuidString.prefix(6))", key = "layout/\(id)"
-    let app = AppModel()
+    let app = AppModel(builtins: Builtins.all)
     let area = EditorArea(app: app, workspaceId: id)
     area.scheduleSave()
     #expect(app.uiState[key] == nil)   // waiting

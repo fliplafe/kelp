@@ -3,6 +3,13 @@ import Foundation
 import Testing
 import Core
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// What a window would show, without showing one: the real controllers, filled from the model, laid out in a window that
 /// is never ordered on screen. The rows are read back out of the outline the user would be looking at.
@@ -26,7 +33,7 @@ import Core
 
 @MainActor private func withSidebar(repos: [Repo], worktrees: [Worktree], sessions: [Session], _ check: (SidebarController, NSOutlineView) throws -> Void) throws {
     _ = testHome
-    let m = AppModel()
+    let m = AppModel(builtins: Builtins.all)
     m.repos = repos; m.worktrees = worktrees; m.sessions = sessions
     let vc = SidebarController(app: m)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 600), styleMask: [.titled], backing: .buffered, defer: true)   // never shown
@@ -140,7 +147,7 @@ extension OneAtATime {
 /// their columns after.
 @Test func focusModesPanelsFloatOverTheEditorAreaAndComeBack() throws {
     _ = testHome
-    let app = AppModel(), main = MainWindowController(app: app)
+    let app = AppModel(builtins: Builtins.all), main = MainWindowController(app: app)
     #expect(app.workbench.window === main)   // what acts on the window (open, show, focus) reaches it through the workbench
     let split = try #require(main.window?.contentView?.subviews.first)   // the split's view; the bar and the floaters lie over it
     #expect(main.inspector.view.isDescendant(of: split))

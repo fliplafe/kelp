@@ -5,6 +5,13 @@ import Core
 import GitKit
 import Daemon
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// Source Control as the user sees it: the real controller, a real daemon and a real git repository, in a window that's
 /// never shown. Rows are read back out of its outline.

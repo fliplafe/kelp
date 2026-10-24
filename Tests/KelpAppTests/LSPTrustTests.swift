@@ -3,6 +3,13 @@ import Foundation
 import Testing
 import Core
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// Language servers run a project's own code (build scripts, Package.swift, its node_modules' TypeScript): none starts
 /// in a project until the user trusts it, and the tabs that wanted one start it then.
@@ -11,7 +18,7 @@ extension OneAtATime {
         _ = testHome
         _ = NSApplication.shared   // the question is a banner in the window
         let root = "/tmp/cloned-\(UUID().uuidString.prefix(6))"
-        let app = AppModel(), lsp = app.lsp
+        let app = AppModel(builtins: Builtins.all), lsp = app.lsp
         var started = 0
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // asks; nothing starts
         #expect(!lsp.whenTrusted(app, root) { started += 1 })        // a second tab of it waits too (asked once)

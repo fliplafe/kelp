@@ -3,6 +3,13 @@ import Foundation
 import Testing
 import WorkbenchKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// A project's icon is looked for off the main thread: its initial shows at once, the icon once it's found.
 @MainActor @Test func aProjectsIconIsFoundOffTheMainThread() async throws {
@@ -43,7 +50,7 @@ import WorkbenchKit
 
 /// Restart from the sidebar: the new agent takes its old tab in its own workspace, which isn't the one on screen.
 @MainActor @Test func aRestartedAgentKeepsItsTabInItsOwnWorkspace() {
-    let app = AppModel(), host = EditorHost(app: app)
+    let app = AppModel(builtins: Builtins.all), host = EditorHost(app: app)
     var l = WorkspaceLayout()
     let old = l.add("session:old"); l.add("file:///x"); l.save("other", to: app.uiState)
     host.replaceInBackground("session:old", with: "session:new", workspace: "other")
@@ -55,7 +62,7 @@ import WorkbenchKit
 /// The shell follows what a tab shows through observed state, not a callback the tab calls: an untitled file that
 /// gets text shows its dot.
 @MainActor @Test func aTabsLookIsObserved() async throws {
-    let tab = UntitledTab(uri: "untitled:1", app: AppModel())
+    let tab = UntitledTab(uri: "untitled:1", app: AppModel(builtins: Builtins.all))
     var looks: [TabLook] = []
     track(owner: tab, now: false) { TabLook(tab) } changed: { looks.append($0) }
     tab.editor.setText("x"); tab.editor.onChange?("x")   // as typing does

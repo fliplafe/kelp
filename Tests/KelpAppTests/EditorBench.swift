@@ -4,6 +4,13 @@ import Testing
 import Core
 import WorkbenchKit
 @testable import KelpApp
+@testable import KelpKit
+@testable import BuiltinAgents
+@testable import BuiltinFiles
+@testable import BuiltinGit
+@testable import BuiltinBrowser
+@testable import BuiltinIssues
+@testable import BuiltinActivity
 
 /// What typing, saving and the language server's copy of the text cost the main thread in a file near the editable
 /// limit. Opt-in, it takes seconds: KELP_BENCH=1 swift test --filter editorBench
