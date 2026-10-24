@@ -158,6 +158,19 @@ private func codeOnly(_ s: String) -> String {
     #expect(dense == [])
 }
 
+/// A contraction a rename went through ("isn't" made "isn'handler"): English has only n't, 's, 'll, 're, 've, 'd, 'm.
+@Test func noWordWasRenamedInsideAContraction() throws {
+    let broken = try matches(#"[A-Za-z]'(?!(t|s|ll|re|ve|d|m)\b)[a-z]{2,}\b"#, in: ["Sources"])
+        .filter { !$0.hasPrefix("Sources/Markdown/Resources") }
+    let inText = broken.filter { hit in
+        let parts = hit.split(separator: ":"), path = String(parts[0]), line = Int(parts[1]) ?? 0
+        let text = (try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: false)
+        let l = text.flatMap { line - 1 < $0.count ? String($0[line - 1]) : nil } ?? ""
+        return l.contains("//") || l.contains("\"")
+    }
+    #expect(inText.isEmpty, "\(inText)")
+}
+
 /// A file past 450 lines of code (blank and comment lines aside) is two things: split it.
 @Test func filesStaySmall() {
     let big = sources(["Sources"]).compactMap { f -> String? in

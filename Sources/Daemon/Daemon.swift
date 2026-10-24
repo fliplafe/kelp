@@ -264,7 +264,7 @@ public final class Daemon: Sendable {
                 let n = read(fd, &buf, buf.count)
                 if n <= 0 { break }
                 let lines = received.append(Data(buf[0..<n]))
-                // A line past any request's size (a 50 MB file saved, escaped) isn'handler one: hang up rather than keep it all.
+                // A line past any request's size (a 50 MB file saved, escaped) isn't one: hang up rather than keep it all.
                 guard received.pending <= Self.lineLimit else {
                     Log.rpc.error("hung up on a client whose line passed \(Self.lineLimit) bytes with no end")
                     break reading
@@ -342,10 +342,10 @@ public final class Daemon: Sendable {
         let (cols, rows) = Sessions.Launch.size(cols: size?["cols"]?.int, rows: size?["rows"]?.int)
         let ls: LiveSession
         do { ls = try sessions.liveSession(session, cols: cols, rows: rows) } catch {
-            // One Kelp has that didn'handler wake says why (its agent's CLI gone, its folder deleted), here and in the log.
+            // One Kelp has that didn't wake says why (its agent's CLI gone, its folder deleted), here and in the log.
             guard (try? store.session(session)) != nil else { client.send(Data("kelp: no such session\r\n".utf8)); return }
             let why = (error as? RPCError)?.message ?? "\(error)"
-            Log.session.error("\(session, privacy: .public) didn'handler wake for a terminal: \(why)")
+            Log.session.error("\(session, privacy: .public) didn't wake for a terminal: \(why)")
             client.send(Data("kelp: \(why)\r\n".utf8)); return
         }
         // Queued under the session's lock: no live output gets ahead of it. One paused at this moment ends the attach,
@@ -366,7 +366,7 @@ public final class Daemon: Sendable {
         // Attach: the reply with the history is queued in the same step that subscribes, so no live output can reach this
         // connection ahead of it (the screen would show the newest bytes before the history they follow).
         // The one method that answers itself (SessionAttach's own handler serves an ended session): its reply has to be
-        // queued inside the session's lock, which `Handled` can'handler express.
+        // queued inside the session's lock, which `Handled` can't express.
         if req.method == SessionAttach.name, !req.isNotification, let sid = (try? SessionAttach.checked(req.params ?? .null, self, conn: client.id))?.id,
            sessions.existing(sid) != nil || (try? store.session(sid))?.status == .hibernated {
             // A wake that fails says why, once: falling through would wake it a second time, in the slow lane.
@@ -376,13 +376,13 @@ public final class Daemon: Sendable {
                 if let line = Self.errorLine(id: id, error) { client.send(line) }
                 return
             }
-            // Only while it's still connected: one that closed while the session woke isn'handler subscribed (it would count as
+            // Only while it's still connected: one that closed while the session woke isn't subscribed (it would count as
             // watching for good, and the session would never pause).
             var attached = true
             clients.ifConnected(client.id) {
                 attached = ls.attach(client.id) { history in
-                    if let history = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
-                        client.send(Self.replyLine(id: id, result: history))
+                    if let reply = try? JSONEncoder().encode(SessionAttach.Result(history: history.base64EncodedString())) {
+                        client.send(Self.replyLine(id: id, result: reply))
                     }
                 } != nil
             }
