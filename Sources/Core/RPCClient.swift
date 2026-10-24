@@ -38,7 +38,7 @@ public final class RPCClient: Sendable {
     }
 
     public init(socket: String) throws {
-        fd = try Unix.connect(socket)
+        fd = try Unix.connect(socket, patience: 1)
         // A daemon alive but no longer reading (hung, stopped): a write gives up instead of holding the writer for good.
         var t = timeval(tv_sec: 10, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))

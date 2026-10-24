@@ -19,3 +19,20 @@ import TestSupport
     for _ in 0..<400 where !closed.value { try await Task.sleep(for: .milliseconds(100)) }
     #expect(closed.value)
 }
+
+/// A listener whose queue is full (a burst of clients while a new kelpd takes over) is tried again for a moment, not
+/// taken for nobody answering at once.
+@Test func aFullQueueIsTriedAgain() throws {
+    let path = NSTemporaryDirectory() + "kelp-q-\(getpid()).sock"
+    unlink(path)
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    var a = sockaddr_un(); a.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &a.sun_path) { b in for (i, c) in path.utf8.enumerated() { b[i] = c } }
+    _ = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+    defer { close(fd); unlink(path) }
+    // Bound, not listening yet: refused, as a full queue is. It starts listening a moment later.
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { _ = listen(fd, 4) }
+    #expect(throws: SocketError.self) { _ = try Unix.connect(path) }
+    let c = try Unix.connect(path, patience: 2)
+    close(c)
+}

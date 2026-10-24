@@ -22,6 +22,17 @@ public enum Unix {
         return a
     }
 
+    /// `patience`: how long a full queue (a burst of clients while a new kelpd takes over, ECONNREFUSED / EAGAIN) is
+    /// tried again before it counts as nobody answering.
+    public static func connect(_ path: String, patience: TimeInterval) throws -> Int32 {
+        let end = Date().addingTimeInterval(patience)
+        while true {
+            do { return try connect(path) } catch SocketError.connect(let e) where (e == ECONNREFUSED || e == EAGAIN) && Date() < end {
+                usleep(50_000)
+            }
+        }
+    }
+
     public static func connect(_ path: String) throws -> Int32 {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SocketError.socket(errno) }
@@ -52,7 +63,7 @@ public enum Unix {
         let r = withUnsafePointer(to: &a) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard r == 0, Darwin.listen(fd, 16) == 0 else { let e = errno; close(fd); throw SocketError.bind(e) }
+        guard r == 0, Darwin.listen(fd, SOMAXCONN) == 0 else { let e = errno; close(fd); throw SocketError.bind(e) }
         chmod(path, 0o600)   // the socket is the auth boundary locally
         return fd
     }
