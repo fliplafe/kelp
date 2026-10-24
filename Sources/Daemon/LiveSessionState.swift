@@ -74,7 +74,9 @@ extension LiveSession {
                 Log.session.attempt("\(manifest.id)'s auto-answer pattern") { try NSRegularExpression(pattern: a.pattern) }.map { ($0, a) }
             }
             self.logSize = logSize
-            wantsTopic = callbacks.topic != nil; wantsURL = callbacks.localURL != nil; wantsLimits = callbacks.limits != nil
+            wantsTopic = callbacks.topic != nil
+            wantsURL = callbacks.localURL != nil
+            wantsLimits = callbacks.limits != nil
         }
 
         /// The last `bytes` of what it printed, without escapes: what's on screen, near enough.
@@ -82,7 +84,9 @@ extension LiveSession {
 
         /// The modes in effect where the history (the ring's last `ringLimit` bytes) starts.
         var historyModes: TerminalModes {
-            var m = ringModes; m.read(ring.dropLast(LiveSession.ringLimit)); return m
+            var m = ringModes
+            m.read(ring.dropLast(LiveSession.ringLimit))
+            return m
         }
 
         // What a chunk of output says. Whether a chunk has a sequence at all is asked of its bytes: String.contains

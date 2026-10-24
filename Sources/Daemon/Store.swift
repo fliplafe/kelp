@@ -138,7 +138,11 @@ public final class Store: Sendable {
     public func session(_ id: String) throws -> Session? { try db.read { try Session.fetchOne($0, key: id) } }
     @discardableResult
     public func save<R: PersistableRecord>(_ r: R) throws -> R {
-        try ordered.withLock { let r = try db.write { d in try Self.revised(r, d).saved(d) }; report(r); return r }
+        try ordered.withLock {
+            let r = try db.write { d in try Self.revised(r, d).saved(d) }
+            report(r)
+            return r
+        }
     }
     /// Changes a record (a workspace, a session) in one write: read, change, save with nothing in between. Saving a copy
     /// read earlier would put back fields someone else changed meanwhile (a rename, a PR, archiving). Nil when it's gone.
@@ -156,7 +160,15 @@ public final class Store: Sendable {
     /// Only a row that's there: a session deleted meanwhile stays deleted (`save` would insert it again).
     @discardableResult
     public func update<R: PersistableRecord>(_ r: R) throws -> R {
-        try ordered.withLock { let r = try db.write { d in let x = try Self.revised(r, d); try x.update(d); return x }; report(r); return r }
+        try ordered.withLock {
+            let r = try db.write { d in
+                let x = try Self.revised(r, d)
+                try x.update(d)
+                return x
+            }
+            report(r)
+            return r
+        }
     }
 
     /// The record with the next revision, read in the write that saves it: what a client gets later is newer.

@@ -27,8 +27,15 @@ final class Sessions: Sendable {
 
     init(root: URL, socketPath: String, store: Store, remotes: Remotes, settings: SettingsStore, agentUsage: AgentUsage, clients: Clients,
          watches: Watches, offloads: Slots) {
-        self.root = root; self.socketPath = socketPath; self.store = store; self.remotes = remotes; self.settings = settings
-        self.agentUsage = agentUsage; self.clients = clients; self.watches = watches; self.offloads = offloads
+        self.root = root
+        self.socketPath = socketPath
+        self.store = store
+        self.remotes = remotes
+        self.settings = settings
+        self.agentUsage = agentUsage
+        self.clients = clients
+        self.watches = watches
+        self.offloads = offloads
     }
 
     /// `kelp` (hooks, the ctty trampoline) first, then the user's login-shell PATH.
@@ -130,8 +137,17 @@ final class Sessions: Sendable {
         rec = ls.snapshot
         let sid = rec.id
         // The record first: a program nobody has a record of could be neither seen nor stopped.
-        do { rec = try store.save(rec) } catch { ls.discard(); ls.start(); throw error }   // start: so its exit is reaped, no zombie
-        do { try live.add(ls) } catch { ls.discard(); ls.start(); Log.store.attempt("deleting \(rec.id), not started") { try store.delete(rec) }; throw error }
+        do { rec = try store.save(rec) } catch {
+            ls.discard()
+            ls.start()   // so its exit is reaped, no zombie
+            throw error
+        }
+        do { try live.add(ls) } catch {
+            ls.discard()
+            ls.start()
+            Log.store.attempt("deleting \(rec.id), not started") { try store.delete(rec) }
+            throw error
+        }
         if let p = o.prompt {
             ls.queuePrompt(p, draft: o.draft)
             if o.title == nil { DispatchQueue.global(qos: .utility).async { [weak self] in self?.autoTitle(session: sid, prompt: p) } }

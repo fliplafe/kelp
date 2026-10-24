@@ -147,6 +147,20 @@ private func codeOnly(_ s: String) -> String {
     #expect(terminal.count <= 8)
 }
 
+/// Three statements on one line (`a; b; c`) are read as one: the daemon's code has one or two a line. String and regex
+/// literals and comments don't count.
+@Test func theDaemonSaysOneThingALine() {
+    let dense = sources(["Sources/Daemon"]).flatMap { f in
+        f.text.split(separator: "\n").enumerated().compactMap { i, l -> String? in
+            let code = String(l.split(separator: "//", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+                .replacingOccurrences(of: #""(?:\\.|[^"\\])*""#, with: "\"\"", options: .regularExpression)
+                .replacingOccurrences(of: #"/\\x1B.*/"#, with: "", options: .regularExpression)
+            return code.filter { $0 == ";" }.count >= 2 ? "\(f.path):\(i + 1)" : nil
+        }
+    }
+    #expect(dense == [])
+}
+
 /// A file past 450 lines of code (blank and comment lines aside) is two things: split it. TerminalKit's view is its own.
 @Test func filesStaySmall() {
     let big = sources(["Sources"]).filter { !$0.path.hasPrefix("Sources/TerminalKit/") }.compactMap { f -> String? in

@@ -22,7 +22,10 @@ final class Forges: Sendable {
     let store: Store, clients: Clients, remotes: Remotes
 
     init(offloads: Slots, store: Store, clients: Clients, remotes: Remotes) {
-        self.offloads = offloads; self.store = store; self.clients = clients; self.remotes = remotes
+        self.offloads = offloads
+        self.store = store
+        self.clients = clients
+        self.remotes = remotes
     }
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }

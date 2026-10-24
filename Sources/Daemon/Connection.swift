@@ -21,7 +21,9 @@ final class Connection: Sendable {
     let peer: String?
 
     init(id: Int, fd: Int32) {
-        self.id = id; self.fd = fd; peer = Unix.peerExecutable(fd)
+        self.id = id
+        self.fd = fd
+        peer = Unix.peerExecutable(fd)
         var t = Self.stall
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, socklen_t(MemoryLayout<timeval>.size))
     }

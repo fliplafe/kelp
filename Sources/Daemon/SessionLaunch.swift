@@ -183,7 +183,11 @@ extension Sessions {
                                  argv: try launchArgv(argv, cwd: rec.cwd, manifest: m, tmux: rec.tmux), env: env,
                                  historyDir: root.appendingPathComponent("history"), cols: cols, rows: rows, callbacks: callbacks(for: rec))
         if rec.tmux != nil { ls.attachedToRunning() }
-        do { try live.add(ls) } catch { ls.discard(); ls.start(); throw error }   // its record stays paused
+        do { try live.add(ls) } catch {   // its record stays paused
+            ls.discard()
+            ls.start()
+            throw error
+        }
         publish(ls)
         ls.start()
         return ls
@@ -246,7 +250,11 @@ extension Sessions {
     /// before would otherwise write "working" over it, and a paused agent would never wake.
     func publishLast(_ ls: LiveSession) {
         let done = DispatchSemaphore(value: 0)
-        ls.inOrder { [self] in save(ls.snapshot); ls.finish(); done.signal() }
+        ls.inOrder { [self] in
+            save(ls.snapshot)
+            ls.finish()
+            done.signal()
+        }
         done.wait()
     }
 

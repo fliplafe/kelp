@@ -36,7 +36,10 @@ final class LSPHost: Sendable {
 
     /// Tests shorten the delays.
     init(store: Store, remotes: Remotes, retryDelay: TimeInterval, idleDelay: TimeInterval) {
-        self.store = store; self.remotes = remotes; self.retryDelay = retryDelay; self.idleDelay = idleDelay
+        self.store = store
+        self.remotes = remotes
+        self.retryDelay = retryDelay
+        self.idleDelay = idleDelay
     }
 
     func open(conn: Int, _ o: LSPOpen) {

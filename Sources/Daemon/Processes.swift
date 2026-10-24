@@ -50,7 +50,9 @@ extension Sessions {
         for (pid, sid) in owner {
             guard let r = rows[pid] else { continue }
             var u = by[sid] ?? Usage(session: sid, cpu: 0, memory: 0, processes: 0)
-            u.cpu += r.cpu; u.memory += r.rss; u.processes += 1
+            u.cpu += r.cpu
+            u.memory += r.rss
+            u.processes += 1
             by[sid] = u
         }
         return by.values.filter { $0.memory > 0 }.sorted { ($0.cpu, $0.memory) > ($1.cpu, $1.memory) }   // 0: already gone

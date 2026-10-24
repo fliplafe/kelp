@@ -8,7 +8,9 @@ extension Sessions {
 
     /// What a short command prints (stdout, then stderr), or nil if it fails or takes longer than `timeout`.
     static func run(_ argv: [String], path: String, timeout: Double) -> String? {
-        var env = ProcessInfo.processInfo.environment; env["PATH"] = path; env["NO_COLOR"] = "1"
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = path
+        env["NO_COLOR"] = "1"
         guard let r = try? Subprocess.run(argv, cwd: NSHomeDirectory(), env: env, timeLimit: timeout),
               r.status == 0, !r.timedOut, !r.truncated else { return nil }
         return String(decoding: r.stdout + r.stderr, as: UTF8.self)
@@ -40,7 +42,13 @@ extension SessionRename: Handled {
     func handle(_ sessions: Sessions) throws -> Done {
         // Under its wake lock: a paused record read here and saved back must not land over a wake that started meanwhile.
         try sessions.wakeLocks.withLock(id) {
-            if let ls = sessions.existing(id) { _ = ls.update { $0.title = title; $0.titleManual = !title.isEmpty }; sessions.publish(ls) }
+            if let ls = sessions.existing(id) {
+            _ = ls.update {
+                $0.title = title
+                $0.titleManual = !title.isEmpty
+            }
+            sessions.publish(ls)
+        }
             else { try sessions.change(id) { $0.title = title; $0.titleManual = !title.isEmpty } }
         }
         return Done()
@@ -51,6 +59,8 @@ extension Sessions {
     /// argv without `--session-id <id>`: two sessions can't share an id (Claude Code refuses one already used).
     static func withoutSessionId(_ argv: [String], flag: String?) -> [String] {
         guard let flag, let i = argv.firstIndex(of: flag) else { return argv }
-        var a = argv; a.removeSubrange(i...min(i + 1, a.count - 1)); return a
+        var a = argv
+        a.removeSubrange(i...min(i + 1, a.count - 1))
+        return a
     }
 }

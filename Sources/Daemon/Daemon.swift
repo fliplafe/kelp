@@ -133,12 +133,23 @@ public final class Daemon: Sendable {
         settingsEvents.watch()
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "kelp.ticker"))
         t.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        t.setEventHandler { [self] in sessions.live.all.forEach { $0.tick() }; sessions.applyKeepAwake(); sessions.hibernateIdle() }
+        t.setEventHandler { [self] in
+            sessions.live.all.forEach { $0.tick() }
+            sessions.applyKeepAwake()
+            sessions.hibernateIdle()
+        }
         let prune = DispatchSource.makeTimerSource(queue: .global(qos: .background))
         prune.schedule(deadline: .now() + 60, repeating: 86400)   // ended sessions past `keepEnded`
         prune.setEventHandler { [self] in sessions.pruneEnded() }
-        running.withLock { $0.listenFD = listenFD; $0.accept = src; $0.ticker = t; $0.prune = prune }
-        src.resume(); t.resume(); prune.resume()
+        running.withLock {
+            $0.listenFD = listenFD
+            $0.accept = src
+            $0.ticker = t
+            $0.prune = prune
+        }
+        src.resume()
+        t.resume()
+        prune.resume()
         // not once stopped
         workspaces.headQueue.async { [weak self] in
             if self?.running.withLock({ $0.accept != nil }) == true { self?.workspaces.followHeads() }
@@ -150,7 +161,10 @@ public final class Daemon: Sendable {
     public func stop() {
         let r = running.withLock { r in defer { r = Running() }; return r }
         r.successor?.stop()
-        r.accept?.cancel(); r.ticker?.cancel(); r.prune?.cancel()   // the accept source's cancel closes the socket
+        // The accept source's cancel closes the socket
+        r.accept?.cancel()
+        r.ticker?.cancel()
+        r.prune?.cancel()
         if r.accept == nil, r.listenFD >= 0 { close(r.listenFD) }
         // Every program ends with the daemon, whole trees (a job in a process group of its own, an agent that ignores the
         // hangup), each recorded as pausing records it: a resumable agent comes back paused, not as a second copy.
@@ -170,7 +184,10 @@ public final class Daemon: Sendable {
         let r = running.withLock { r in defer { r = Running() }; return r }
         guard let accept = r.accept else { return nil }
         let socket = dup(r.listenFD)
-        accept.cancel(); r.ticker?.cancel(); r.prune?.cancel()   // the accept source's cancel closes its own fd, not the copy
+        // The accept source's cancel closes its own fd, not the copy
+        accept.cancel()
+        r.ticker?.cancel()
+        r.prune?.cancel()
         let h = Handover(socket: socket, lock: dup(r.instanceLock), sessions: sessions.handOver())
         lsp.stopAll()
         watches.stopAll()
@@ -384,7 +401,9 @@ public final class Daemon: Sendable {
     static func replyLine(id: JSONValue, result: Data) -> Data {
         var d = Data(#"{"jsonrpc":"2.0","id":"#.utf8)
         d.append((try? JSONEncoder().encode(id)) ?? Data("null".utf8))
-        d.append(Data(#","result":"#.utf8)); d.append(result); d.append(Data("}\n".utf8))
+        d.append(Data(#","result":"#.utf8))
+        d.append(result)
+        d.append(Data("}\n".utf8))
         return d
     }
     static func errorLine(id: JSONValue, _ error: Error) -> Data? {

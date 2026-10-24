@@ -11,7 +11,9 @@ final class WakeLocks: Sendable {
     private func lock(_ id: String) -> NSLock {
         locks.withLock { all in
             if let l = all[id] { return l }
-            let l = NSLock(); all[id] = l; return l
+            let l = NSLock()
+            all[id] = l
+            return l
         }
     }
 

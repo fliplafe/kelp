@@ -35,7 +35,11 @@ final class Watches: Sendable {
 
     private let remotes: Remotes
 
-    init(store: Store, clients: Clients, remotes: Remotes) { self.store = store; self.clients = clients; self.remotes = remotes }
+    init(store: Store, clients: Clients, remotes: Remotes) {
+        self.store = store
+        self.clients = clients
+        self.remotes = remotes
+    }
 
     func start(_ k: Key, conn: Int) {
         let n = numbers.withLock { $0 += 1; return $0 }
@@ -72,13 +76,18 @@ final class Watches: Sendable {
         _ = gone   // released here, out of the lock: their FileWatchers stop as they go
     }
 
-    func stopAll() { let all = entries.withLock { e in defer { e = [:] }; return e }; _ = all }
+    func stopAll() {
+        let all = entries.withLock { e in defer { e = [:] }; return e }
+        _ = all   // released off the lock (a file watch's deinit waits on its own queue)
+    }
 
     /// Something says it may have changed (a session's status, for its context): read again if it did.
     func touched(_ k: Key, tag: String) {
         let go = entries.withLock { e -> Bool in
             guard var x = e[k], x.tag != tag else { return false }
-            x.tag = tag; e[k] = x; return true
+            x.tag = tag
+            e[k] = x
+            return true
         }
         if go { read(k) }
     }
@@ -124,7 +133,9 @@ final class Watches: Sendable {
         let n = numbers.withLock { $0 += 1; return $0 }
         let ok = entries.withLock { e -> Bool in
             guard var x = e[k] else { return false }
-            x.timer = n; e[k] = x; return true
+            x.timer = n
+            e[k] = x
+            return true
         }
         guard ok else { return }
         DispatchQueue.global().asyncAfter(deadline: .now() + t) { [weak self] in
@@ -136,8 +147,14 @@ final class Watches: Sendable {
     private func read(_ k: Key) {
         let go = entries.withLock { e -> (Date, Int)? in
             guard var x = e[k] else { return nil }
-            if x.reading { x.again = true; e[k] = x; return nil }
-            x.reading = true; x.timer = nil; e[k] = x
+            if x.reading {
+                x.again = true
+                e[k] = x
+                return nil
+            }
+            x.reading = true
+            x.timer = nil
+            e[k] = x
             return (x.fastUntil, x.number)
         }
         guard let (fastUntil, number) = go else { return }

@@ -32,7 +32,10 @@ final class AgentUsage: Sendable {
     let remotes: Remotes
 
     init(root: URL, settings: SettingsStore, store: Store, remotes: Remotes) {
-        self.root = root; self.settings = settings; self.store = store; self.remotes = remotes
+        self.root = root
+        self.settings = settings
+        self.store = store
+        self.remotes = remotes
         self.usageIndex = UsageIndex(cache: root.appendingPathComponent("usage-index-2.json"))   // new number: a parser change reads everything again
     }
 

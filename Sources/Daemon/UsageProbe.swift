@@ -14,7 +14,11 @@ extension AgentUsage {
         let shown: @Sendable (String) -> Bool    // the usage screen has loaded
         let parse: @Sendable (String) -> [ClaudeLimits.Reading]
     }
-    struct PlanState { var readings: [ClaudeLimits.Reading] = []; var at: Date?; var running = false; var readAt: Date? }
+    struct PlanState {
+        var readings: [ClaudeLimits.Reading] = []
+        var at: Date?, readAt: Date?
+        var running = false
+    }
 
     static let planProbes = [
         PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
@@ -122,7 +126,9 @@ extension AgentUsage {
     /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up.
     private func probeDir(_ agent: String) -> String? {
         if agent == "grok" {
-            let d = root.appendingPathComponent("probe"); try? Paths.ensure(d); return d.path
+            let d = root.appendingPathComponent("probe")
+            try? Paths.ensure(d)
+            return d.path
         }
         let used = ((try? store.sessions()) ?? []).filter { $0.agent == agent }.sorted { $0.createdAt > $1.createdAt }.map(\.cwd)
         let trusted = agent == "antigravity" ? Self.antigravityTrusted() : agent == "claude" ? Self.claudeTrusted() : []
@@ -196,7 +202,9 @@ extension AgentUsage {
         // unanswered and the probe gives up. Typing /usage and Enter there would pick its default, usually "Yes".
         let drawn = StatusDetector.stripANSI(String(screen.text.suffix(3000)))
         if StartupQuestion.trustAsked(drawn) || StartupQuestion.menuOpen(drawn) { return ([], drawn) }
-        pty.write(Data("/usage".utf8)); Thread.sleep(forTimeInterval: 0.6); pty.write(Data("\r".utf8))
+        pty.write(Data("/usage".utf8))
+        Thread.sleep(forTimeInterval: 0.6)
+        pty.write(Data("\r".utf8))
         _ = screen.wait(20) { p.shown($0) && screen.quietFor > 1.5 }
         pty.write(Data("\u{1B}".utf8))
         let text = StatusDetector.stripANSI(screen.text).replacingOccurrences(of: "\r", with: "\n")

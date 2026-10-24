@@ -83,7 +83,9 @@ extension RepoAddRemote: Handled {
         try mark(RemoteHost(host: host, path: top))
         let r = Repo(name: (top as NSString).lastPathComponent.isEmpty ? name : Workspaces.remoteFolderName(top), path: folder.path,
                      baseBranch: Git.defaultBranch(repo: folder.path, remotes: workspaces.remotes))
-        try workspaces.store.save(r); try workspaces.syncMainWorkspaces(); workspaces.notify(ChangedEvent.repo)
+        try workspaces.store.save(r)
+        try workspaces.syncMainWorkspaces()
+        workspaces.notify(ChangedEvent.repo)
         return r
     }
 }

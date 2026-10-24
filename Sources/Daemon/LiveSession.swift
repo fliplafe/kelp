@@ -43,7 +43,9 @@ final class LiveSession: Sendable {
 
     /// One turn of the agent: the tree when it started working, and what it changed by the time it stopped.
     struct Turn: Codable, Sendable {
-        struct File: Codable, Sendable { var path: String; var added: Int; var removed: Int }
+        struct File: Codable, Sendable {
+            var path: String, added: Int, removed: Int
+        }
         var files: [File]; var seconds: Double
     }
 
@@ -166,8 +168,12 @@ final class LiveSession: Sendable {
         if let arm = s.interruptArmed { s.interruptArmed = (arm.at, String((arm.seen + plain).suffix(4000))) }
         if Date() > s.redrawUntil { s.detector.output(text); s.lastOutputAt = Date() }
         s.notePasteMode(d)
-        h.answer = s.autoAnswer(); h.url = s.localURL(plain); h.limits = s.newLimits(d)
-        h.attached = s.attached; h.id = s.record.id; h.trimLog = s.logSize > Self.logLimit
+        h.answer = s.autoAnswer()
+        h.url = s.localURL(plain)
+        h.limits = s.newLimits(d)
+        h.attached = s.attached
+        h.id = s.record.id
+        h.trimLog = s.logSize > Self.logLimit
         emit(s.sync() ?? (said != (s.record.summary, s.record.progress) ? s.record : nil))
         return h
     }
@@ -227,7 +233,11 @@ final class LiveSession: Sendable {
             // would copy the index and hash the tree again.
             let shell = s.record.agent == "shell" || s.record.agent == "custom"
             let starting = status == .working && !s.inTurn, ending = s.inTurn && status != .working
-            if starting { s.inTurn = true; s.turnStart = Date(); s.turnFolder = s.record.currentDir }
+            if starting {
+                s.inTurn = true
+                s.turnStart = Date()
+                s.turnFolder = s.record.currentDir
+            }
             if ending { s.inTurn = false }
             return (shell, starting, ending, s.turnStart, s.turnFolder ?? s.record.cwd)
         }
@@ -253,7 +263,9 @@ final class LiveSession: Sendable {
             if let arm = s.interruptArmed {
                 if s.lastHookAt > arm.at { s.interruptArmed = nil }
                 else if Self.stoppedMarkers.contains(where: arm.seen.contains) {
-                    s.detector.override(.idle); s.record.summary = "Stopped by you"; s.interruptArmed = nil
+                    s.detector.override(.idle)
+                    s.record.summary = "Stopped by you"
+                    s.interruptArmed = nil
                 } else if Date().timeIntervalSince(arm.at) > 10 { s.interruptArmed = nil }
             }
             emit(s.sync())
@@ -278,7 +290,9 @@ final class LiveSession: Sendable {
         let firstPrompt = state.withLock { s -> String? in
             // Keys that answer a question or menu on screen ("1", Return on an option) aren't a line being written.
             let answering = s.trustQuestionOpen() || s.menuOpen() || (s.record.status == .waiting && d.count == 1 && (0x31...0x39).contains(d[0]))
-            s.typedYet = true; s.dialogSettled = true; s.draftWaiting = false
+            s.typedYet = true
+            s.dialogSettled = true
+            s.draftWaiting = false
             s.detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
             var read: Session?
             if s.record.unread { s.record.unread = false; read = s.record }   // typing into it is having read it
@@ -313,7 +327,9 @@ final class LiveSession: Sendable {
             let compacting = "Compacting the conversation…"
             switch event {
             case "compacting":
-                s.compactManual = trigger == "manual"; s.record.summary = compacting; s.detector.hook("working")
+                s.compactManual = trigger == "manual"
+                s.record.summary = compacting
+                s.detector.hook("working")
             case "compacted":
                 if s.record.summary == compacting { s.record.summary = "" }
                 if s.compactManual { s.detector.override(.idle) }   // /compact finished: back at the prompt; an auto one carries on
@@ -386,14 +402,22 @@ final class LiveSession: Sendable {
     }
     func detach(_ conn: Int) { state.withLock { _ = $0.attached.remove(conn) } }
     /// Out of `live` with its program still to stop (paused, deleted): nobody attaches from now on. Who was attached.
-    func letGo() -> Set<Int> { state.withLock { s in s.letGo = true; defer { s.attached = [] }; return s.attached } }
+    func letGo() -> Set<Int> {
+        state.withLock { s in
+            s.letGo = true
+            defer { s.attached = [] }
+            return s.attached
+        }
+    }
 
     /// Input from a client, `work` writing it: nil (nothing done) once the session was let go, its program stopping, so
     /// the caller wakes it again instead. An idle pause doesn't let go of one with input on its way (`letGoIdle`).
     func input<T>(_ work: () throws -> T) rethrows -> T? {
         let open = state.withLock { s -> Bool in
             guard !s.letGo else { return false }
-            s.inputs += 1; s.inputsInFlight += 1; return true
+            s.inputs += 1
+            s.inputsInFlight += 1
+            return true
         }
         guard open else { return nil }
         defer { state.withLock { $0.inputsInFlight -= 1 } }
@@ -425,7 +449,10 @@ final class LiveSession: Sendable {
         state.withLock { s in
             s.ring = history; s.ringModes.read(Data(modes.utf8))
             s.detector.adopted(s.record.status)
-            s.startedUp = true; s.typedYet = true; s.dialogSettled = true; s.sawFirstPrompt = true
+            s.startedUp = true
+            s.typedYet = true
+            s.dialogSettled = true
+            s.sawFirstPrompt = true
         }
     }
 }

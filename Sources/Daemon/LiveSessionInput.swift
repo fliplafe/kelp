@@ -33,7 +33,9 @@ extension LiveSession {
             }
             guard let option = AgentManifest.AutoAnswer.optionAtCursor(screen) else { return nil }
             if st.choose.firstMatch(in: option, range: NSRange(option.startIndex..., in: option)) != nil {
-                s.steering = nil; s.dialogSettled = true; return "\r"
+                s.steering = nil
+                s.dialogSettled = true
+                return "\r"
             }
             s.steering?.lastKey = Date(); return "\u{1B}[B"   // menus wrap, so stepping down always reaches it
         }

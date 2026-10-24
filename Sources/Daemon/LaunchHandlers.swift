@@ -8,7 +8,11 @@ import Integrations
 extension Sessions.Launch {
     init(_ o: some LaunchOptions) {
         self.init()
-        model = o.model; effort = o.effort; prompt = o.prompt; title = o.title; profile = o.profile
+        model = o.model
+        effort = o.effort
+        prompt = o.prompt
+        title = o.title
+        profile = o.profile
         draft = o.draft == true; openURLs = o.openURLs == true
         (cols, rows) = Self.size(cols: o.cols, rows: o.rows)
     }
@@ -249,7 +253,9 @@ extension TaskFromIssue: AsyncHandled {
         // The record, the repo's config and the agent's PTY: disk and a process, through `offload` like the rest.
         let (w, s) = try await work.forges.offloads.run { () throws -> (Worktree, Session) in
             guard let w = try work.workspaces.store.update(Worktree.self, created.worktree.id, {
-                $0.issue = ref; $0.issueURL = url; $0.linearIssueId = linearId ?? ""
+                $0.issue = ref
+                $0.issueURL = url
+                $0.linearIssueId = linearId ?? ""
             }) else { throw RPCError.internalError("worktree vanished") }
             let cfg = work.workspaces.trustedConfig(r.path)   // its issueCommand / recipes only once the user trusts the file
             let vars = ["title": title, "body": body, "url": url, "ref": ref, "branch": unique]
@@ -257,7 +263,11 @@ extension TaskFromIssue: AsyncHandled {
             if let extra = prompt, !extra.isEmpty { text += "\n\n" + extra }
             var o = Sessions.Launch()
             // Typed, not sent, unless asked: the issue's text is whoever filed it, not the user (it could tell the agent anything).
-            o.model = model; o.effort = effort; o.profile = profile; o.draft = draft != false; o.openURLs = openURLs == true
+            o.model = model
+            o.effort = effort
+            o.profile = profile
+            o.draft = draft != false
+            o.openURLs = openURLs == true
             (o.cols, o.rows) = Sessions.Launch.size(cols: cols, rows: rows)
             o.prompt = text; o.title = "\(ref) \(title)".prefix(48).description
             return (w, try work.workspaces.sessions.spawn(cwd: w.path, manifest: work.workspaces.sessions.manifest(agent ?? "claude", command: nil),
@@ -288,7 +298,9 @@ extension ProcessRun: Handled {
         if let extensionId { try sessions.requireEnabledExtension(extensionId) }
         // What sessions get (PATH with `kelp` on it, this home), minus the markers of whatever started the daemon.
         var env = ProcessInfo.processInfo.environment.filter { k, _ in !PTY.scrubbed.contains { k.hasPrefix($0) } }
-        env["PATH"] = Sessions.childPath; env["KELP_HOME"] = sessions.root.path; env["KELP_SOCKET"] = sessions.socketPath
+        env["PATH"] = Sessions.childPath
+        env["KELP_HOME"] = sessions.root.path
+        env["KELP_SOCKET"] = sessions.socketPath
         let dir = cwd.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? NSHomeDirectory()
         let r = try Subprocess.run(argv, cwd: dir, env: env, stdin: stdin.map { Data($0.utf8) }, timeLimit: max(0.1, min(timeLimit ?? 60, 86400)),
                                    limit: Self.outputLimit)

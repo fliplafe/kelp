@@ -84,7 +84,11 @@ final class SettingsEvents: Sendable {
     private let clients: Clients, sessions: Sessions
     private let queue = DispatchQueue(label: "kelp.settings-events")
 
-    init(store: SettingsStore, clients: Clients, sessions: Sessions) { self.store = store; self.clients = clients; self.sessions = sessions }
+    init(store: SettingsStore, clients: Clients, sessions: Sessions) {
+        self.store = store
+        self.clients = clients
+        self.sessions = sessions
+    }
 
     func changed() {
         queue.async { [self] in

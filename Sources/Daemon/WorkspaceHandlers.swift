@@ -21,7 +21,9 @@ extension RepoAdd: Handled {
         }
         if let r = try workspaces.store.repos().first(where: { $0.path == root }) { return r }
         let r = Repo(name: name ?? (root as NSString).lastPathComponent, path: root, baseBranch: Git.defaultBranch(repo: root, remotes: workspaces.remotes))
-        try workspaces.store.save(r); try workspaces.syncMainWorkspaces(); workspaces.notify(ChangedEvent.repo)
+        try workspaces.store.save(r)
+        try workspaces.syncMainWorkspaces()
+        workspaces.notify(ChangedEvent.repo)
         return r
     }
 }
@@ -38,7 +40,9 @@ extension ScratchEnsure: Handled {
         var r = try workspaces.store.repos().first { $0.path == path }
         if r == nil {
             let n = Repo(name: "Scratch", path: path, baseBranch: Git.defaultBranch(repo: path, remotes: workspaces.remotes))
-            try workspaces.store.save(n); try workspaces.syncMainWorkspaces(); r = n
+            try workspaces.store.save(n)
+            try workspaces.syncMainWorkspaces()
+            r = n
         }
         guard let repo = r, let w = try workspaces.store.worktrees(repo: repo.id).first(where: { !$0.archived }) else {
             throw RPCError.internalError("no scratch workspace")

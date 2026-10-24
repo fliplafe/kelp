@@ -33,15 +33,24 @@ extension Forges {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         proc.arguments = ["clone", "--progress", "--", url, dest]
-        var env = ProcessInfo.processInfo.environment; env["GIT_TERMINAL_PROMPT"] = "0"; env["LC_ALL"] = "C"
+        var env = ProcessInfo.processInfo.environment
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["LC_ALL"] = "C"
         proc.environment = env
-        let err = Pipe(); proc.standardError = err; proc.standardOutput = FileHandle.nullDevice; proc.standardInput = FileHandle.nullDevice
+        let err = Pipe()
+        proc.standardError = err
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardInput = FileHandle.nullDevice
         // git rewrites its progress line with \r: pass the latest one on, at most a few times a second.
         let log = CloneLog(), eof = DispatchSemaphore(value: 0)
         err.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
             // The end: the handler goes (it would be called again and again with nothing), and the failure can be read.
-            guard !d.isEmpty else { h.readabilityHandler = nil; eof.signal(); return }
+            guard !d.isEmpty else {
+                h.readabilityHandler = nil
+                eof.signal()
+                return
+            }
             guard let line = log.add(d) else { return }
             self?.notify(CloneEvent(id: id, line: line), to: [conn])
         }

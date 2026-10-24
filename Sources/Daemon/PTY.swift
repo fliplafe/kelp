@@ -165,7 +165,11 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
             while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) < 0 && errno == EINTR {}
             // Handed over: the kelpd that takes over reaps it (exiting before the exec, it's that one's zombie to read).
             let handedOver = self.map { me in
-                me.phase.withLock { p -> Bool in if p.program == .handedOver { return true }; p.program = .reaped; return false }
+                me.phase.withLock { p -> Bool in
+                    if p.program == .handedOver { return true }
+                    p.program = .reaped
+                    return false
+                }
             }
             if handedOver == true { return }
             var st: Int32 = 0
@@ -189,7 +193,11 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
         var buf = [UInt8](repeating: 0, count: 65536)
         if phase.withLock({ $0.open }) {   // already hung up (dropped): the fd isn't ours any more
             let fl = fcntl(primaryFD, F_GETFL); _ = fcntl(primaryFD, F_SETFL, fl | O_NONBLOCK)
-            while true { let n = read(primaryFD, &buf, buf.count); if n <= 0 { break }; onOutput?(Data(buf[0..<n])) }
+            while true {
+                let n = read(primaryFD, &buf, buf.count)
+                if n <= 0 { break }
+                onOutput?(Data(buf[0..<n]))
+            }
         }
         hangUp()
         onExit?(status)
@@ -241,7 +249,12 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
     public func write(_ d: Data) {
         guard phase.withLock({ $0.open }) else { return }
         // A program that stops reading doesn't make the daemon keep whatever is pasted at it: past the limit, it's dropped.
-        guard queued.withLock({ q -> Bool in guard q + d.count <= Self.queueLimit else { return false }; q += d.count; return true }) else {
+        let room = queued.withLock { q -> Bool in
+            guard q + d.count <= Self.queueLimit else { return false }
+            q += d.count
+            return true
+        }
+        guard room else {
             Log.session.error("dropped \(d.count) bytes of input: \(self.pid) isn't reading what it was sent")
             return
         }

@@ -21,7 +21,11 @@ final class Workspaces: Sendable {
     let trustLock = NSLock()   // trusted-configs.json: read-modify-write under it
 
     init(root: URL, store: Store, remotes: Remotes, sessions: Sessions, clients: Clients) {
-        self.root = root; self.store = store; self.remotes = remotes; self.sessions = sessions; self.clients = clients
+        self.root = root
+        self.store = store
+        self.remotes = remotes
+        self.sessions = sessions
+        self.clients = clients
     }
 
     func notify(_ e: some RPCEvent, to only: Set<Int>? = nil) { clients.notify(e, to: only) }
