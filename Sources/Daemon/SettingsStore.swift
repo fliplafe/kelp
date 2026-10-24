@@ -32,25 +32,30 @@ final class SettingsStore: Sendable {
     /// nil or .null removes the key.
     func set(_ key: String, _ value: JSONValue?) throws -> [String: JSONValue] {
         try file.withLock {
-            // A hand edit saved since the last poll is merged, not overwritten; a file that doesn't parse is the user's
-            // work in progress, so nothing is written over it.
-            var values = self.values
-            if let d = try? Data(contentsOf: url) {
-                guard case .object(let onDisk)? = try? JSONDecoder().decode(JSONValue.self, from: d) else {
-                    throw RPCError.invalidParams("settings.json has an error, so the change wasn't saved. Fix the file (or remove it) and try again.")
+            // A hand edit saved before this is merged, not overwritten; a file that doesn't parse is the user's work in
+            // progress, so nothing is written over it. One saved while this merged (an editor's save) is read again.
+            for _ in 0..<3 {
+                let seen = modified()
+                var values = self.values
+                if let d = try? Data(contentsOf: url) {
+                    guard case .object(let onDisk)? = try? JSONDecoder().decode(JSONValue.self, from: d) else {
+                        throw RPCError.invalidParams("settings.json has an error, so the change wasn't saved. Fix the file (or remove it) and try again.")
+                    }
+                    values = onDisk
                 }
-                values = onDisk
+                values[key] = value == .null ? nil : value
+                guard modified() == seen else { continue }
+                try write(values)
+                return values
             }
-            values[key] = value == .null ? nil : value
-            try write(values)
-            return values
+            throw RPCError.invalidParams("settings.json keeps changing, so the change wasn't saved. Try again.")
         }
     }
 
-    /// true when the file changed on disk and parsed.
-    /// From the ticker: a set writing now is left to finish (it's read again on the next tick).
+    /// true when the file changed on disk and parsed. After a set writing now has finished: a hand edit saved meanwhile
+    /// is read then (no later event may come to read it).
     func reloadIfChanged() -> Bool {
-        guard file.try() else { return false }
+        file.lock()
         defer { file.unlock() }
         let m = modified()
         guard m != state.withLock({ $0.mtime }) else { return false }
@@ -106,6 +111,7 @@ final class SettingsEvents: Sendable {
             guard let self, paths.contains(where: { $0.hasSuffix(name) }), store.reloadIfChanged() else { return }
             changed()
         }
+        if fw == nil { Log.store.error("settings.json isn't watched: hand edits are read when the daemon restarts") }
         let old = watcher.withLock { w in defer { w = fw }; return w }
         _ = old   // stopped here, off the lock (its deinit waits on its own queue)
     }
