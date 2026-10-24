@@ -262,6 +262,10 @@ public final class Daemon: Sendable {
 
     private func serve(_ fd: Int32) {
         let client = clients.add(fd: fd)
+        // Accepted as this one stopped or handed over (its cancel doesn't stop an accept already running): added first,
+        // then looked at, so either the stop's hang-up has it or it's hung up here (its reader then reads the end and
+        // cleans up as for any other), and connects to the next one.
+        if !running.withLock({ $0.accept != nil }) { client.hangUp() }
         Thread.detachNewThread { [self] in
             var received = LineBuffer()
             var buf = [UInt8](repeating: 0, count: 65536)

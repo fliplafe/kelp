@@ -39,7 +39,7 @@ extension LiveSession {
             }
             s.steering?.lastKey = Date(); return "\u{1B}[B"   // menus wrap, so stepping down always reaches it
         }
-        if let key { pty.write(Data(key.utf8)) }
+        if let key { write(Data(key.utf8)) }   // after what's being typed: never between a send's text and its Enter
     }
 
     /// Answers the menu the agent shows (a permission request) from outside the terminal — a notification's Allow / Deny.
