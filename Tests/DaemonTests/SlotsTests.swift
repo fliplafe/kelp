@@ -100,3 +100,11 @@ import Core
     await #expect(throws: RPCError.self) { _ = try await waiting.value }
     await #expect(throws: RPCError.self) { _ = try await slots.run { 3 } }
 }
+
+/// A lane holds at most `limit` waiting inputs: past that it says it's full.
+@Test func aSessionLaneSaysWhenItsFull() {
+    let lanes = SessionLanes(), gate = DispatchSemaphore(value: 0)
+    for _ in 0..<SessionLanes.limit { lanes.run("s") { gate.wait() } }
+    #expect(lanes.isFull("s") && !lanes.isFull("other"))
+    for _ in 0..<SessionLanes.limit { gate.signal() }
+}

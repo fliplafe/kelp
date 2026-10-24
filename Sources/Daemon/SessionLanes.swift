@@ -11,6 +11,9 @@ final class SessionLanes: Sendable {
 
     /// Nothing for `id` waits on its lane: new input may go straight to the running session.
     func isClear(_ id: String) -> Bool { lanes.withLock { ($0[id]?.waiting ?? 0) == 0 } }
+    /// So much waits for `id` (a session slow to wake, sent to in a loop) that more is refused, not kept.
+    func isFull(_ id: String) -> Bool { lanes.withLock { ($0[id]?.waiting ?? 0) >= Self.limit } }
+    static let limit = 1024
 
     /// `work` on `id`'s lane, after what's already there. A lane goes once nothing waits on it (the next input makes one).
     func run(_ id: String, _ work: @escaping @Sendable () -> Void) {
@@ -70,6 +73,7 @@ extension SessionInput {
                 done(.success(try JSONEncoder().encode(r))); return
             }
             try sessions.mustWake(m.id)
+            guard !sessions.lanes.isFull(m.id) else { throw RPCError.internalError("Too much input waits for this session to wake.") }
             sessions.lanes.run(m.id) { done(Swift.Result { try JSONEncoder().encode(sessions.withInput(m.id) { try m.apply(to: $0) }) }) }
         } catch { done(.failure(error)) }
     }
