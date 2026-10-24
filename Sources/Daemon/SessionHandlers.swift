@@ -134,14 +134,14 @@ extension Sessions {
 extension SessionRead: Handled { func handle(_ sessions: Sessions) throws -> String { try sessions.printed(id, bytes: bytes ?? 8192) } }
 extension SessionContext: Handled { func handle(_ sessions: Sessions) throws -> String { try sessions.printed(id, bytes: bytes ?? 24_000) } }
 
-/// Never re-inserts a deleted one (publish only updates).
+/// Never re-inserts a deleted one (publish and change only update).
 extension SessionMarkRead: Handled {
     static var quick: Bool { true }
-    func handle(_ sessions: Sessions) throws -> Done { if let ls = sessions.existing(id), ls.setUnread(false) != nil { sessions.publish(ls) }; return Done() }
+    func handle(_ sessions: Sessions) throws -> Done { try sessions.setUnread(id, false); return Done() }
 }
 extension SessionMarkUnread: Handled {
     static var quick: Bool { true }
-    func handle(_ sessions: Sessions) throws -> Done { if let ls = sessions.existing(id), ls.setUnread(true) != nil { sessions.publish(ls) }; return Done() }
+    func handle(_ sessions: Sessions) throws -> Done { try sessions.setUnread(id, true); return Done() }
 }
 
 extension SessionTurn: Handled {

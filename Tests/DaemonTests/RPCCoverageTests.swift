@@ -261,3 +261,14 @@ private func sessions(_ r: Rig) async throws -> [Session] { try await r.c.call("
     _ = try await r.c.call(SessionReport(id: other.id, state: "blocked"))   // this test process is in no session
     #expect(try await waitFor { try await sessions(r).first { $0.id == other.id }?.status == .waiting })
 }
+
+/// An agent that ended unread is read at a glance too: its record, as it isn't live any more.
+@Test func anEndedSessionCanBeMarkedRead() async throws {
+    let r = try await rig(); defer { r.d.stop() }
+    let s = try await session(r, "true")
+    #expect(try await waitFor { try await sessions(r).first { $0.id == s.id }?.status == .exited })
+    _ = try await r.c.call("session.markUnread", .obj(["id": .string(s.id)]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.unread == true)
+    _ = try await r.c.call("session.markRead", .obj(["id": .string(s.id)]))
+    #expect(try await sessions(r).first { $0.id == s.id }?.unread == false)
+}

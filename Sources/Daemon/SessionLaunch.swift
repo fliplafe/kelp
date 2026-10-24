@@ -260,6 +260,17 @@ extension Sessions {
 
     /// A session that isn't running, changed in the store and said. A running one changes in its LiveSession and is
     /// published from there (`publish(ls)`): these are the only ways a session's record is written and sent.
+    /// Read or unread, live or not: an agent that ended or paused unread is read at a glance too (its record only).
+    func setUnread(_ id: String, _ on: Bool) throws {
+        try wakeLocks.withLock(id) {   // not woken meanwhile: then the live session's own record would be the one
+            if let ls = existing(id) {
+                if ls.setUnread(on) != nil { publish(ls) }
+            } else {
+                try change(id) { $0.unread = on }
+            }
+        }
+    }
+
     func change(_ id: String, _ body: (inout Session) -> Void) throws {
         if let s = try store.update(Session.self, id, body) { said(s) }
     }

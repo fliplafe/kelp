@@ -40,7 +40,6 @@ extension Answered {
     }
 }
 
-
 /// What a method's handler is given (`Handled.Service`): one of the daemon's services, never the daemon itself, so it
 /// reaches only what that service holds. A handler names the type it takes (`handle(_ sessions: Sessions)`); which of
 /// the daemon's that is, each service says once, here.
