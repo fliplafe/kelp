@@ -1,0 +1,21 @@
+import Foundation
+import Testing
+@testable import GitKit
+@testable import Core
+import TestSupport
+
+/// Removing one worktree keeps the record of another whose folder is away for now (an unmounted disk, a rename).
+@Test func removingAWorktreeKeepsOneThatIsAway() throws {
+    let repo = try tempRepo()
+    let a = try Git.addWorktree(repo: repo, branch: "a", base: "main", into: URL(fileURLWithPath: repo + "-a"), copyFiles: [])
+    let b = try Git.addWorktree(repo: repo, branch: "b", base: "main", into: URL(fileURLWithPath: repo + "-b"), copyFiles: [])
+    try FileManager.default.moveItem(atPath: a, toPath: a + "-away")
+    try Git.removeWorktree(repo: repo, path: b, branch: "b", force: true)
+    #expect(try Git.linkedWorktrees(repo).map(\.branch) == ["a"])
+    try FileManager.default.moveItem(atPath: a + "-away", toPath: a)
+    #expect(try Git.run(["status", "--short"], cwd: a).isEmpty)
+    // A folder that isn't a worktree of the repo stays where it is.
+    let other = tmp().path
+    #expect(throws: GitError.self) { try Git.removeWorktree(repo: repo, path: other, branch: nil, force: true) }
+    #expect(FileManager.default.fileExists(atPath: other))
+}
