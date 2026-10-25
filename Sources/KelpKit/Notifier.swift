@@ -26,7 +26,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var limitAlerts = LimitAlerts()
     private func limitsChanged(_ u: UsageGet.Result?) {
         guard let u else { return }
-        for a in limitAlerts.update(u) {
+        for a in limitAlerts.update(u, first: Int(app.settings.string("usage.alertAt") ?? "80")) {
             let name = app.catalog.all.first { $0.id == a.agent }?.name ?? a.agent
             let c = UNMutableNotificationContent()
             c.title = name + String(localized: " is at ") + "\(Int(a.percent.rounded())) %"

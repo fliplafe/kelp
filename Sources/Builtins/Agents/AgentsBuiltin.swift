@@ -28,7 +28,9 @@ extension Builtins {
                 s("power.keepAwake", "Keep Mac awake", "enum", "agents", options: ["agents", "always", "off"]),
                 s("usage.readPlans", "Show plan limits", "boolean", true,
                   "Opens /usage of Claude Code (every 10 minutes), Grok, Antigravity and Kimi (every 30) in the background, asks Codex for its limits "
-                    + "(every 10 minutes) and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens.")
+                    + "(every 10 minutes) and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens."),
+                s("usage.alertAt", "Warn about limits at (%)", "enum", "80", "A notification when a plan limit reaches this, and again at 95. “off”: none.",
+                  options: ["off", "70", "80", "90"])
             ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings(app: app).frame(height: 300); AccountsSettings(app: app) }) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),

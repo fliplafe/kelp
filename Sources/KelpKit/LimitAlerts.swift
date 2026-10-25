@@ -1,9 +1,11 @@
 import Core
 
-/// Plan limits crossing 80 % or 95 %: one alert per level, until the limit falls back under 70 % (its window reset).
+/// Plan limits crossing a level (Settings › usage.alertAt, 80 % by default) or 95 %: one alert per level, until the limit
+/// falls back 10 points under the lowest (its window reset).
 struct LimitAlerts {
     struct Alert: Equatable { var agent: String, kind: String, percent: Double, level: Int, resets: String? }
-    static let levels = [80, 95]
+    /// `first` and 95; none when `first` is nil (off).
+    static func levels(first: Int?) -> [Int] { first.map { $0 < 95 ? [$0, 95] : [$0] } ?? [] }
 
     private var told: [String: Int] = [:]   // "agent|kind" → highest level already announced
     private var seeded = false
@@ -20,12 +22,13 @@ struct LimitAlerts {
     }
 
     /// The first reading only sets the baseline: what was already full when Kelp opened isn't news.
-    mutating func update(_ u: UsageGet.Result) -> [Alert] {
+    mutating func update(_ u: UsageGet.Result, first: Int? = 80) -> [Alert] {
+        let levels = Self.levels(first: first)
         var alerts: [Alert] = []
         for (agent, l) in Self.readings(u) {
             let key = agent + "|" + l.kind
-            let level = Self.levels.last { l.percent >= Double($0) } ?? 0
-            if l.percent < 70 { told[key] = nil }
+            let level = levels.last { l.percent >= Double($0) } ?? 0
+            if l.percent < Double((levels.first ?? 100) - 10) { told[key] = nil }
             guard level > (told[key] ?? 0) else { continue }
             told[key] = level
             if seeded { alerts.append(Alert(agent: agent, kind: l.kind, percent: l.percent, level: level, resets: l.resets)) }

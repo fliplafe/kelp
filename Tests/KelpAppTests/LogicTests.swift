@@ -236,3 +236,12 @@ extension OneAtATime {
     #expect(a.update(u(10)).isEmpty)                 // window reset
     #expect(a.update(u(81)).map(\.level) == [80])
 }
+
+@Test func limitAlertsFollowTheChosenLevel() {
+    func u(_ p: Double) -> UsageGet.Result { .init(claude: [], codex: [], plans: ["grok": [.init(kind: "week", percent: p, resets: nil)]]) }
+    var a = LimitAlerts()
+    #expect(a.update(u(50), first: 70).isEmpty)
+    #expect(a.update(u(72), first: 70).map(\.level) == [70])
+    #expect(a.update(u(99), first: nil).isEmpty)     // off
+    #expect(LimitAlerts.levels(first: 95) == [95])
+}
