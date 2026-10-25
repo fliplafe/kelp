@@ -69,9 +69,8 @@ Both take the same view definitions; `editors` also appear in the editor area's 
 - Plainest of all: every field of the row and each value above is also exported by name, `KELP_<name>` (`.` and other
   signs as `_`: `$KELP_title`, `$KELP_workspace_path`). Write `"$KELP_title"` in a command, or read it from the
   environment in any program, and nothing has to be quoted. Over `ssh` the host doesn't get them: use `${Field}` there.
-- Plainest of all: every field of the row and each value above is also exported by name, `KELP_<name>` (`.` and other
-  signs as `_`: `$KELP_title`, `$KELP_workspace_path`). Write `"$KELP_title"` in a command, or read it from the
-  environment in any program, and nothing has to be quoted. Over `ssh` the host doesn't get them: use `${Field}` there.
+- A row shows `icon` only when it reads a field (`"${kind}"`): a fixed icon is the panel's, already on its tab.
+  A `subtitle` that comes out empty takes no line.
 - `status` maps a field to a status dot: `working`, `waiting`, `done`, `idle`, `ended`.
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
 - `refresh`: seconds between reloads (0 = only on open and after actions).

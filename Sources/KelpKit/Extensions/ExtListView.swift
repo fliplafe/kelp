@@ -78,12 +78,18 @@ struct ExtListView: View {
     }
 
     private func row(_ item: JSONValue) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: def.icon.map { ExtActions(app).expand($0, item: item, quote: false) } ?? "circle.fill")
-                .foregroundStyle(.secondary).frame(width: 16)
+        let x = ExtActions(app)
+        let subtitle = def.subtitle.map { x.expand($0, item: item, quote: false) } ?? ""
+        return HStack(spacing: 8) {
+            // An icon that's the same on every row is the panel's own (its tab shows it): only one that names a field tells rows apart.
+            if let icon = def.icon, icon.contains("${") {
+                Image(systemName: x.expand(icon, item: item, quote: false)).foregroundStyle(.secondary).frame(width: 16)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(ExtActions(app).expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
-                if let s = def.subtitle { Text(ExtActions(app).expand(s, item: item, quote: false)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                Text(x.expand(def.title ?? "${name}", item: item, quote: false)).lineLimit(1)
+                if !subtitle.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             Spacer(minLength: 4)
             if let st = status(item) { StatusIcon(status: st) }
