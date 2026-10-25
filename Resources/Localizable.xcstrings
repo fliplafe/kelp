@@ -11315,6 +11315,196 @@
           }
         }
       }
+    },
+    "Collapse All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свернуть всё"
+          }
+        }
+      }
+    },
+    "Commit (⌥⌘C)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить (⌥⌘C)"
+          }
+        }
+      }
+    },
+    "Commit all changes on “%@” (⌘↩ in the message)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить все изменения в «%@» (⌘↩ в сообщении)"
+          }
+        }
+      }
+    },
+    "Commit the staged files on “%@” (⌘↩ in the message)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закоммитить подготовленные файлы в «%@» (⌘↩ в сообщении)"
+          }
+        }
+      }
+    },
+    "Fetch (⌥⌘F)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Получить (⌥⌘F)"
+          }
+        }
+      }
+    },
+    "Fetched": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Получено"
+          }
+        }
+      }
+    },
+    "Has changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Есть изменения"
+          }
+        }
+      }
+    },
+    "Message": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сообщение"
+          }
+        }
+      }
+    },
+    "More Panels: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё панели: %@"
+          }
+        }
+      }
+    },
+    "No open issues": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет открытых задач"
+          }
+        }
+      }
+    },
+    "No open pull requests": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет открытых pull request’ов"
+          }
+        }
+      }
+    },
+    "Nothing to push to %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нечего отправлять в %@"
+          }
+        }
+      }
+    },
+    "Publish Branch (⌥⌘P)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Опубликовать ветку (⌥⌘P)"
+          }
+        }
+      }
+    },
+    "Pull %lld from %@ (⌥⌘X)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть %lld из %@ (⌥⌘X)"
+          }
+        }
+      }
+    },
+    "Pull (no upstream)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть (нет upstream)"
+          }
+        }
+      }
+    },
+    "Pull (⌥⌘X)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть (⌥⌘X)"
+          }
+        }
+      }
+    },
+    "Pull from %@ (⌥⌘X)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтянуть из %@ (⌥⌘X)"
+          }
+        }
+      }
+    },
+    "Push %lld to %@ (⌥⌘P)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить %lld в %@ (⌥⌘P)"
+          }
+        }
+      }
+    },
+    "Push (⌥⌘P)": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить (⌥⌘P)"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
