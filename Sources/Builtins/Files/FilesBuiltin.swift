@@ -24,6 +24,7 @@ extension Builtins {
             s("editor.fontFamily", "Font", "font", "", "Default: SF Mono."),
             s("editor.fontSize", "Font size", "number", 13),
             s("editor.minimap", "Show minimap", "boolean", false),
+            s("editor.wordWrap", "Wrap long lines", "boolean", false, "On: a long line continues on the next row instead of running past the edge."),
             s("editor.autoSave", "Save automatically", "boolean", false,
               "Off: edited files show a dot and you save with ⌘S. On: they save a moment after you stop typing."),
             s("editor.lsp", "Language servers (completion, jump to definition)", "boolean", true),

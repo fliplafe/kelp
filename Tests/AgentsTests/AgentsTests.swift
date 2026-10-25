@@ -483,3 +483,19 @@ import TestSupport
     #expect(two == [.init(kind: "plan", percent: 41, resets: "in 3d")])   // the last redraw wins
     #expect(ClaudeLimits.parseCopilotUsage("Session: 0 AIC used").isEmpty)
 }
+
+@Test func cursorUsageScreenParses() {
+    let screen = """
+    Usage • Free Resets Nov 23
+    Monthly plan and on-demand usage
+    Category Current Usage
+    Included 0% used ░░░░░░░░░░
+    Auto 12.5% used ██░░░░░░░░
+    API 0% used ░░░░░░░░░░
+    On-Demand Disabled ————————
+    """
+    let r = ClaudeLimits.parseCursorUsage(screen)
+    #expect(r.map(\.kind) == ["month", "Auto", "API"])
+    #expect(r[1].percent == 12.5 && r[1].resets == "Nov 23")
+    #expect(ClaudeLimits.parseCursorUsage("Loading usage data...").isEmpty)
+}

@@ -27,7 +27,7 @@ public final class CodeEditor: NSObject {
         let lang = CodeLanguage.detectLanguageFrom(url: url, prefixBuffer: String(text.prefix(200)))
         big = text.utf8.lazy.filter { $0 == 10 }.dropFirst(Self.bigLines).first != nil   // stops at the line past the limit
         let cfg = SourceEditorConfiguration(
-            appearance: .init(theme: Self.theme, font: Self.font, wrapLines: false),
+            appearance: .init(theme: Self.theme, font: Self.font, wrapLines: Self.wrapLines),
             behavior: .init(isEditable: editable),
             peripherals: .init(showMinimap: Self.showMinimap && !big)
         )
@@ -128,12 +128,15 @@ public final class CodeEditor: NSObject {
     public static var fontName: String?
     /// Off by default: in a split next to an agent the minimap is a wide, mostly empty column.
     public static var showMinimap = false
+    /// Off by default, as in most editors: a long line runs past the edge. On: it continues on the next row.
+    public static var wrapLines = false
 
     /// Re-applies theme and font (after Settings change them).
     public func refreshAppearance() {
         var c = controller.configuration
         c.appearance.theme = Self.theme
         c.appearance.font = Self.font
+        c.appearance.wrapLines = Self.wrapLines
         c.peripherals.showMinimap = Self.showMinimap && !big
         controller.configuration = c
         evenFoldRibbon()

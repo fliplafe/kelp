@@ -281,5 +281,6 @@ extension OneAtATime {
     #expect(three.map { cal.component(.hour, from: $0) } == 15 && three! > now)
     #expect(ResetTime.parse("7:40am", now: now, calendar: cal).map { cal.component(.minute, from: $0) } == 40)
     #expect(ResetTime.parse("Oct 20 at 5am", now: now, calendar: cal).map { cal.component(.day, from: $0) } == 20)
+    #expect(ResetTime.parse("Nov 23", now: now, calendar: cal).map { cal.component(.month, from: $0) } == 11)
     #expect(ResetTime.parse("soon", now: now, calendar: cal) == nil)
 }

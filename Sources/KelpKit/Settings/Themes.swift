@@ -121,13 +121,15 @@ package final class ThemeManager {
                                                  type: $0.type, number: $0.number, function: $0.function, selection: $0.selection,
                                                  lineHighlight: $0.lineHighlight) }
         let size = CGFloat(s.number("editor.fontSize") ?? 13), font = s.string("editor.fontFamily").flatMap { $0.isEmpty ? nil : $0 }
-        let minimap = s.bool("editor.minimap") ?? false
+        let minimap = s.bool("editor.minimap") ?? false, wrap = s.bool("editor.wordWrap") ?? false
         TextSize.apply(s.string("workbench.textSize"))
-        if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap {
+        if palette != CodeEditor.palette || size != CodeEditor.fontSize || font != CodeEditor.fontName || minimap != CodeEditor.showMinimap
+            || wrap != CodeEditor.wrapLines {
             CodeEditor.palette = palette
             CodeEditor.fontSize = size
             CodeEditor.fontName = font
             CodeEditor.showMinimap = minimap
+            CodeEditor.wrapLines = wrap
             editorRevision += 1
         }
     }

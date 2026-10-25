@@ -140,6 +140,22 @@ public enum ClaudeLimits {
         return order.compactMap { found[$0] }
     }
 
+    /// Cursor Agent's `/usage`: "Usage • Free  Resets Nov 23", then "Included 0% used ░░░", "Auto 0% used", "API 0% used" (the
+    /// plan's monthly pools); "On-Demand" has no percentage.
+    public static func parseCursorUsage(_ text: String) -> [Reading] {
+        let lines = text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║")).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let head = lines.lastIndex(where: { $0.hasPrefix("Usage") && $0.contains("Resets") }) else { return [] }
+        let resets = lines[head].firstMatch(of: /Resets\s+(.+?)\s*$/).map { String($0.1) }
+        var found: [String: Reading] = [:], order: [String] = []
+        for line in lines[(head + 1)...] {
+            guard let m = line.firstMatch(of: /^([A-Za-z][A-Za-z ]{0,20}?)\s+(\d{1,3}(?:\.\d+)?)% used/), let p = Double(m.2) else { continue }
+            let kind = m.1 == "Included" ? "month" : String(m.1)
+            if found[kind] == nil { order.append(kind) }
+            found[kind] = Reading(kind: kind, percent: bounded(p), resets: resets)
+        }
+        return order.compactMap { found[$0] }
+    }
+
     /// A TUI's text in pieces: lines, split again at dialog borders (│) and wide gaps between columns.
     static func cells(_ text: String) -> [String] {
         text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))

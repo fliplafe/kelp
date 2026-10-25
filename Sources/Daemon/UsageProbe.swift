@@ -5,7 +5,7 @@ import Agents
 import GitKit
 import AgentData
 
-/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok, Antigravity, Kimi, Copilot). A hidden copy of
+/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok, Antigravity, Kimi, Copilot, Cursor). A hidden copy of
 /// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
 extension AgentUsage {
     struct PlanProbe: Sendable {
@@ -36,7 +36,10 @@ extension AgentUsage {
                   env: ["KIMI_CODE_TRUST_WORKSPACE": "1"]),
         // "Plan ■■■■ 2% used 5 / 200 AIC". Its folder question is answered with Enter: "1. Yes", for this session only.
         PlanProbe(agent: "copilot", command: "copilot", every: 1800, ready: { $0.contains("/ commands") },
-                  shown: { $0.contains("Plan") && $0.contains("% used") }, parse: ClaudeLimits.parseCopilotUsage, answersTrust: true)
+                  shown: { $0.contains("Plan") && $0.contains("% used") }, parse: ClaudeLimits.parseCopilotUsage, answersTrust: true),
+        // Opens where Cursor already trusts: its "[a] Trust this workspace" is nobody's to answer.
+        PlanProbe(agent: "cursor", command: "cursor-agent", every: 1800, ready: { $0.contains("build anything") },
+                  shown: { $0.contains("Included") && $0.contains("% used") }, parse: ClaudeLimits.parseCursorUsage)
     ]
 
     /// Settings › Show plan limits.

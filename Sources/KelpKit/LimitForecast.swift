@@ -53,9 +53,13 @@ enum ResetTime {
             }
             return secs > 0 ? now.addingTimeInterval(secs) : nil
         }
-        let clock = /(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})\s+at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)/
-        guard let m = t.wholeMatch(of: clock), var hour = Int(m.3), (1...12).contains(hour) else { return nil }
-        hour = hour % 12 + (m.5 == "pm" ? 12 : 0)
+        let clock = /(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:\s+at\s+|$))?(?:(\d{1,2})(?::(\d{2}))?\s*(am|pm))?/
+        guard let m = t.wholeMatch(of: clock), m.1 != nil || m.3 != nil else { return nil }   // a date, a time, or both
+        var hour = 0
+        if let h = m.3.flatMap({ Int($0) }) {
+            guard (1...12).contains(h) else { return nil }
+            hour = h % 12 + (m.5 == "pm" ? 12 : 0)
+        }
         var c = calendar.dateComponents([.year, .month, .day], from: now)
         c.hour = hour
         c.minute = m.4.flatMap { Int($0) } ?? 0
