@@ -113,6 +113,8 @@ package struct SettingSpec: Codable, Identifiable {
     var `default`: JSONValue?
     var description: String?
     var options: [String]?
+    /// A heading over this row and the ones after it that share it ("Sidebar"); nil: the section's first, untitled group.
+    var group: String?
     package var id: String { key }
 }
 

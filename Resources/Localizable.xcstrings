@@ -11070,6 +11070,68 @@
           }
         }
       }
+    },
+    "Text size": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Размер текста"
+          }
+        }
+      }
+    },
+    "Sidebar and inspector. The terminal and the editor have their own font sizes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Боковая панель и инспектор. У терминала и редактора свои размеры шрифта."
+          }
+        }
+      }
+    },
+    "When They Need You": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Когда нужен ответ"
+          }
+        }
+      }
+    },
+    "Other Agents Only": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только у других агентов"
+          }
+        }
+      }
+    },
+    "Agents First": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала с агентами"
+          }
+        }
+      }
+    },
+    "As You Arrange Them": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Как вы расставили"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -85,8 +85,18 @@ private struct SettingsIcon: View {
 private struct SectionForm: View {
     let section: SettingsSection
     var body: some View {
+        // Rows keep their order; each run of a group under its heading, as System Settings groups its panes.
+        let groups = section.specs.reduce(into: [(String?, [SettingSpec])]()) { g, s in
+            if let last = g.indices.last, g[last].0 == s.group { g[last].1.append(s) } else { g.append((s.group, [s])) }
+        }
         Form {
-            if !section.specs.isEmpty { Section { ForEach(section.specs) { SettingRow(spec: $0) } } }
+            ForEach(groups.indices, id: \.self) { i in
+                if let title = groups[i].0 {
+                    Section(loc(title)) { ForEach(groups[i].1) { SettingRow(spec: $0) } }
+                } else {
+                    Section { ForEach(groups[i].1) { SettingRow(spec: $0) } }
+                }
+            }
             if let custom = section.custom { Section { custom() } }
         }
         .formStyle(.grouped)
@@ -197,6 +207,11 @@ struct SettingRow: View {
         case "workbench.iconTheme": return app.fileIcons.themes.first { $0.id == v }?.label ?? v
         case "power.keepAwake":
             return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
+        case "workbench.sidebar.rowHeight" where v == "system": return String(localized: "Match System")
+        case "workbench.sidebar.agentDetail" where v == "needsYou": return String(localized: "When They Need You")
+        case "workbench.sidebar.agentIcons" where v == "others": return String(localized: "Other Agents Only")
+        case "workbench.sidebar.order":
+            return v == "active" ? String(localized: "Agents First") : String(localized: "As You Arrange Them")
         case "sessions.hibernateMinutes":
             let m = Int(v) ?? -1
             return m == 0 ? String(localized: "Never") : m == 60 ? String(localized: "After 1 hour")

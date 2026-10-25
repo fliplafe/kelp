@@ -30,8 +30,9 @@ package enum Builtins {
         return app.workbench.editor
     }
 
-    package static func s(_ key: String, _ title: String, _ type: String, _ def: JSONValue?, _ desc: String? = nil, options: [String]? = nil) -> SettingSpec {
-        SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options)
+    package static func s(_ key: String, _ title: String, _ type: String, _ def: JSONValue?, _ desc: String? = nil, options: [String]? = nil,
+                          group: String? = nil) -> SettingSpec {
+        SettingSpec(key: key, title: title, type: type, default: def, description: desc, options: options, group: group)
     }
 
     package static let appearance = Builtin("kelp.appearance", "Appearance", "Themes for the window, terminal and editor.",
@@ -42,19 +43,24 @@ package enum Builtins {
               "The window, terminal and editor together. Match System switches Kelp Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors."),
             s("workbench.iconTheme", "File Icon Theme", "enum", .string(FileIcon.system),
               "Icons in Files, Source Control and tabs. VS Code icon themes work as they are: Settings › Extensions › Install…"),
-            s("workbench.textSize", "Sidebar and inspector text", "enum", "normal", "The terminal and the editor have their own font sizes.",
-              options: ["normal", "large", "larger"]),
             s("workbench.inspectorIcons", "Inspector icons", "enum", "center", "Where the panel icons sit in their row.",
               options: ["left", "center", "right"]),
             s("workbench.inspectorIconsPosition", "Inspector icons position", "enum", "top",
               "Level with the tabs or under the panel. Drag an icon to move it; right-click the icons to hide them.",
               options: ["top", "bottom"]),
-            s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock."),
             s("workbench.inspector.autoHide", "Auto-hide inspector", "boolean", false, "Comes in while the pointer is at the window's right edge."),
             s("workbench.sideBySideButton", "Agents Side by Side button", "boolean", true,
               "In the title bar, right of the search; right-click it to hide it. ⌃⌘T works either way.")
-        ]), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", specs: [],
+        ] + sidebar), SettingsSection(id: "keyboard", title: "Keyboard", icon: "keyboard", specs: [],
                             custom: { AnyView(KeyboardSettings()) })]
         return c
     }
+
+    /// Appearance › Sidebar: what people see differently in the list, each read where the sidebar draws it.
+    private static let sidebar = [
+        s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock.",
+          group: "Sidebar"),
+        s("workbench.textSize", "Text size", "enum", "normal", "Sidebar and inspector. The terminal and the editor have their own font sizes.",
+          options: ["normal", "large", "larger"], group: "Sidebar")
+    ]
 }
