@@ -19,7 +19,14 @@ package final class Workbench {
     package func showPanel(_ id: String) { window?.showInspector(panel: id) }
     /// The panel's controller once the inspector has built it; nil before it's first shown.
     package func builtPanel(_ id: String) -> NSViewController? { window?.inspector.built(id) }
-    package var workspaceId: String? { didSet { app.uiState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string) } }
+    package var workspaceId: String? {
+        didSet {
+            app.uiState["workbench.lastWorkspace"] = workspaceId.map(JSONValue.string)
+            if let id = workspaceId { app.uiState["workbench.recentWorkspaces"] = .array(([id] + recentWorkspaces.filter { $0 != id }).prefix(50).map(JSONValue.string)) }
+        }
+    }
+    /// Workspaces by when they were last on screen, latest first, kept across launches: ⌃Tab's order.
+    var recentWorkspaces: [String] { app.uiState.strings("workbench.recentWorkspaces") }
     init(app: AppModel) { self.app = app }
     package var focusedSession: String?
     /// The tab with focus in the workspace on screen (its URI): the sidebar marks its agent's row.

@@ -2,7 +2,8 @@ import AppKit
 import Core
 
 /// ⌃Tab, like ⌘Tab for apps: hold ⌃ and press Tab to walk the workspaces you used last (⇧ goes back, ↑↓ too), let go
-/// to switch; Esc stays. A quick ⌃Tab flips to the previous workspace. Each row says what's there: project and branch,
+/// or click a row to switch; Esc stays. A quick ⌃Tab flips to the previous workspace. The one on screen isn't listed, so
+/// the first row is where you were before. Each row says what's there: project and branch,
 /// changes not committed, the pull request, and the agent that matters most (what it's doing and its last words).
 @MainActor
 final class WorkspaceSwitcher {
@@ -13,12 +14,20 @@ final class WorkspaceSwitcher {
     private var items: [Worktree] = []
     private var index = 0
     private var rows: [NSView] = []
+    private var pointerFrom: NSPoint?
+    private var stepped: TimeInterval?
 
     /// The menu's ⌃Tab / ⌃⇧Tab.
     func step(_ by: Int) {
-        if panel == nil { open() }
+        // With the panel open a Tab reaches both its keys and the menu's ⌃Tab: one press, one row.
+        if let e = NSApp.currentEvent, e.type == .keyDown {
+            guard e.timestamp != stepped else { return }
+            stepped = e.timestamp
+        }
+        let opening = panel == nil
+        if opening { open() }
         guard !items.isEmpty else { return }
-        index = (index + by + items.count) % items.count
+        index = opening ? (by > 0 ? 0 : items.count - 1) : (index + by + items.count) % items.count
         highlight()
         if !NSEvent.modifierFlags.contains(.control) { commit() }   // already let go: a quick flip
     }
@@ -26,25 +35,30 @@ final class WorkspaceSwitcher {
     private func open() {
         let m = app, wb = app.workbench
         let live = app.workbench.workspacesInOrder
+        // Ones not on screen since Kelp started keeping the order: by their agents' last stir, else when they were made.
+        let stirred = live.map { w in (w.id, m.sessions.filter { $0.worktreeId == w.id }.map { $0.statusAt ?? $0.createdAt }.max() ?? w.createdAt) }
         var order: [String] = []
-        for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) {
+        for id in wb.recentWorkspaces + stirred.sorted { $0.1 > $1.1 }.map(\.0) where id != wb.workspaceId && !order.contains(id) && live.contains(where: { $0.id == id }) {
             order.append(id)
         }
-        order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
-        guard items.count > 1, let window = app.workbench.window?.window else {
-            items = []
+        guard !items.isEmpty, let window = app.workbench.window?.window else {
             NSSound.beep()
             return
         }
-        index = 0
 
         let list = NSStackView()
         list.orientation = .vertical
         list.spacing = 2
         list.alignment = .leading
         list.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        rows = items.map { row($0) }
+        rows = items.enumerated().map { i, w in
+            let r = row(w)
+            r.onClick = { [weak self] in self?.index = i; self?.commit() }
+            r.onHover = { [weak self] in self?.hover(i) }
+            return r
+        }
+        pointerFrom = NSEvent.mouseLocation
         rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -16).isActive = true }
         let fx = NSVisualEffectView()
         fx.material = .hudWindow
@@ -79,6 +93,17 @@ final class WorkspaceSwitcher {
         return nil   // while it's open, keys belong to it
     }
 
+    /// The pointer picks once it really moves: the panel opens under it, and brushing the trackpad shouldn't take the pick.
+    private func hover(_ i: Int) {
+        if let p = pointerFrom {
+            guard hypot(NSEvent.mouseLocation.x - p.x, NSEvent.mouseLocation.y - p.y) > 10 else { return }
+            pointerFrom = nil
+        }
+        guard index != i else { return }
+        index = i
+        highlight()
+    }
+
     private func commit() {
         let pick = items.indices.contains(index) ? items[index].id : nil
         close()
@@ -103,7 +128,7 @@ final class WorkspaceSwitcher {
         }
     }
 
-    private func row(_ w: Worktree) -> NSView {
+    private func row(_ w: Worktree) -> SwitcherRow {
         let m = app
         let agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }
         let top = AgentStatus.mostUrgent(agents.map(SidebarCell.shownStatus))
@@ -146,7 +171,7 @@ final class WorkspaceSwitcher {
         text.spacing = 2
         top1.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
 
-        let r = NSStackView(views: [icon, text])
+        let r = SwitcherRow(views: [icon, text])
         r.spacing = 10
         r.alignment = .centerY
         r.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
@@ -162,4 +187,19 @@ final class WorkspaceSwitcher {
         t.setContentCompressionResistancePriority(tag == 0 ? .init(400) : .defaultLow, for: .horizontal)
         return t
     }
+}
+
+/// A switcher row the pointer picks, ⌃ still held as with ⌘Tab: moving over it highlights it (letting go of ⌃ goes
+/// there), a click goes at once. The click is the row's, not its labels'.
+private final class SwitcherRow: NSStackView {
+    var onClick: (() -> Void)?
+    var onHover: (() -> Void)?
+    override func viewDidMoveToWindow() {
+        if trackingAreas.isEmpty { addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self)) }
+    }
+    override func mouseMoved(with e: NSEvent) { onHover?() }
+    override func hitTest(_ p: NSPoint) -> NSView? { frame.contains(p) ? self : nil }
+    override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
+    override func mouseDown(with e: NSEvent) { onClick?() }
+    override func rightMouseDown(with e: NSEvent) { onClick?() }   // ⌃-click comes as a right click
 }
