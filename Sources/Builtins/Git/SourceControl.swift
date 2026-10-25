@@ -116,7 +116,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         // Open, the graph keeps at least the height it was dragged to and takes whatever the changes leave.
         let gh = graphScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 0)
-        gh.priority = .defaultHigh
+        gh.priority = .init(495)   // over the changes' fit, under windowSizeStayPut: neither stretches the window
         graphHeight = gh
         graphClosed = graphScroll.heightAnchor.constraint(equalToConstant: 0)
         graphClosed?.priority = .defaultHigh
@@ -330,7 +330,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         graphBar.isHidden = !has; graphBar.expanded = open
         graphOutline.enclosingScrollView?.isHidden = !open
         barHeight?.constant = has ? GraphBar.height : 0
-        graphHeight?.constant = UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260
+        // At most half the screen: a height saved while the window was being stretched stays out.
+        let saved = UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260
+        graphHeight?.constant = min(saved, (NSScreen.main?.visibleFrame.height ?? 800) / 2)
         graphHeight?.isActive = open
         changesFit?.isActive = open
         graphClosed?.isActive = !open
