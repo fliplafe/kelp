@@ -121,7 +121,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         graphClosed = graphScroll.heightAnchor.constraint(equalToConstant: 0)
         graphClosed?.priority = .defaultHigh
         changesFit = scroll.heightAnchor.constraint(equalToConstant: 0)
-        changesFit?.priority = .init(740)
+        changesFit?.priority = .init(490)   // under windowSizeStayPut: a long list scrolls instead of stretching the window
         let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
         let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
         changesRoom = room
