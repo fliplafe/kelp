@@ -271,7 +271,7 @@ final class SidebarCell: NSTableCellView {
     /// The agent's icon: before its name when Agent icons is Always, a grey glyph after it for an agent other than the
     /// default one (Other Agents Only), none for Never.
     private func showIcon(_ s: Session) {
-        let mode = app.settings.string("workbench.sidebar.agentIcons") ?? "others", image = app.catalog.icon(s.agent, size: 16)
+        let mode = app.settings.string("workbench.sidebar.agentIcons") ?? "always", image = app.catalog.icon(s.agent, size: 16)
         icon.isHidden = mode != "always"
         // Paused: the same icon without its colour, not see-through (a faded tile read wider than the others).
         icon.image = s.status == .hibernated ? image?.grayscale : image
