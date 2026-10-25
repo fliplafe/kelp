@@ -241,7 +241,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     /// Same shape → refresh the visible cells; new shape → reload, keeping expansion and selection.
     func refresh() {
         let next = build()
-        func flat(_ ns: [Node]) -> [String] { ns.flatMap { [$0.key] + flat($0.children) } }
+        // A project's row also stands for its one workspace: when that arrives after the project (or changes), the nodes
+        // must be new, or the row the workspace on screen is looked up by (workspaceNode) isn't found and nothing is picked.
+        func flat(_ ns: [Node]) -> [String] { ns.flatMap { [$0.key + ($0.workspace.map { "=" + $0 } ?? "")] + flat($0.children) } }
         let nextShape = flat(next)
         let projects = app.repos.filter { !ScratchWindow.isScratch($0) }
         empty.isHidden = !projects.isEmpty

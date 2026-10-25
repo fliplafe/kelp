@@ -115,6 +115,14 @@ extension OneAtATime {
     }
 }
 
+@Test func aProjectsRowFindsItsWorkspaceWhenThatArrivesAfterIt() throws {
+    try withSidebar(repos: [project], worktrees: [], sessions: []) { vc, _ in
+        vc.app.worktrees = [desk("w1", "main")]   // the daemon's projects came first, their workspaces a moment later
+        vc.refresh()
+        #expect(vc.workspaceNode("w1") != nil)   // else the workspace on screen is never picked in the list
+    }
+}
+
 @Test func anEndedAgentAndAPlainTerminalAreNotListed() throws {
     let ended = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .exited, title: "Old chat")
     let shell = Session(worktreeId: "w1", cwd: "/", command: "zsh", agent: "shell", status: .idle, title: "zsh")
