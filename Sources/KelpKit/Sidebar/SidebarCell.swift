@@ -17,7 +17,7 @@ final class SidebarCell: NSTableCellView {
     /// An agent's mark keeps its column (times line up) unless the row has neither.
     private let slot = NSView()
     /// What an agent goes on with by itself: its /goal, or a command it started in the background.
-    private let chip = NSButton(title: "", target: nil, action: nil)
+    private let chip = Chip()
     private var add: NSButton?
     /// A project's: the name of the one workspace it stands for (grey), what its agents do while it's folded, and the fold.
     private let detail = NSTextField(labelWithString: "")
@@ -78,15 +78,9 @@ final class SidebarCell: NSTableCellView {
             title.font = .ui(13)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            chip.bezelStyle = .inline
-            chip.controlSize = .mini
-            chip.font = .ui(10)
-            chip.imagePosition = .imageLeading
-            chip.refusesFirstResponder = true
             chip.isHidden = true
-            chip.lineBreakMode = .byTruncatingTail
-            // The name keeps its room first; the chip shortens its command down to its icon and an ellipsis, never less
-            // (squeezed past that its text broke into letters), and a long command takes no more than a third of the row.
+            // The name keeps its room first; the chip shortens its command down to its icon and an ellipsis, never less,
+            // and a long command takes no more than a third of the row.
             chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)
             let least = chip.widthAnchor.constraint(greaterThanOrEqualToConstant: 40); least.priority = .init(760)
             NSLayoutConstraint.activate([least, chip.widthAnchor.constraint(lessThanOrEqualToConstant: 72)])
@@ -281,13 +275,13 @@ final class SidebarCell: NSTableCellView {
         let running = s.background ?? []
         chip.isHidden = s.goal == nil && running.isEmpty
         if let g = s.goal {
-            chip.image = .symbol("scope")
-            chip.title = String(localized: "goal")
+            chip.icon.image = .symbol("scope")
+            chip.label.stringValue = String(localized: "goal")
             chip.toolTip = String(localized: "Goal: \(g)")
         } else if !running.isEmpty {
             let waits = s.status == .working, first = running[0]
-            chip.image = .symbol("apple.terminal")
-            chip.title = waits ? first : "\(running.count)"
+            chip.icon.image = .symbol("apple.terminal")
+            chip.label.stringValue = waits ? first : "\(running.count)"
             chip.toolTip = (waits ? String(localized: "Waits for its command:") : String(localized: "Running in the background:"))
                 + "\n" + running.joined(separator: "\n")
         }
@@ -415,4 +409,40 @@ final class SidebarRowView: NSTableRowView {
     override var allowsVibrancy: Bool { false }
     /// The pill isn't the accent colour, so the cell draws as unselected (white text on it would vanish).
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+}
+
+/// What an agent goes on with by itself, beside its name: a symbol and a word on a faint capsule. A label, not a button:
+/// a squeezed inline-bezel button wrapped its title ("p/" over "cl") taller than the row; a label shortens with "…".
+@MainActor
+final class Chip: NSView {
+    let icon = NSImageView(), label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        icon.symbolConfiguration = .init(pointSize: 9, weight: .medium)
+        icon.contentTintColor = .secondaryLabelColor
+        label.font = .ui(10)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.usesSingleLineMode = true
+        label.maximumNumberOfLines = 1
+        label.setContentCompressionResistancePriority(.init(200), for: .horizontal)
+        let s = NSStackView(views: [icon, label])
+        s.spacing = 3
+        s.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
+        s.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(s)
+        NSLayoutConstraint.activate([s.leadingAnchor.constraint(equalTo: leadingAnchor), s.trailingAnchor.constraint(equalTo: trailingAnchor),
+                                     s.centerYAnchor.constraint(equalTo: centerYAnchor), heightAnchor.constraint(equalToConstant: TextSize.of(16))])
+        setContentCompressionResistancePriority(.init(200), for: .horizontal)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)   // read by its label (SidebarCell.showChip): the whole command
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {   // the appearance is current here: the fill follows light and dark
+        layer?.cornerRadius = 4
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.09).cgColor
+    }
 }
