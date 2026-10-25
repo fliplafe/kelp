@@ -1,8 +1,8 @@
 import AppKit
 import Core
 
-/// What the branch chip opens: where the branch stands against its upstream, what a pull or push would move, the buttons
-/// that do it, and a line to commit what's changed. Everything bigger (staging, history, diffs) stays in Source Control.
+/// What the branch chip opens: one line on where the branch stands against its upstream, the one sync that matters, the
+/// commits it would move, and a line to commit what's changed. Everything bigger (staging, history, diffs) stays in Source Control.
 @MainActor
 final class SyncPopover: NSViewController {
     private static let width: CGFloat = 332, shown = 5
@@ -18,22 +18,22 @@ final class SyncPopover: NSViewController {
     private let wid: String
     weak var popover: NSPopover?
 
-    private let name = NSTextField(labelWithString: ""), upstream = NSTextField(labelWithString: "")
-    private let switchButton = NSButton(title: String(localized: "Switch"), target: nil, action: nil)
-    private lazy var pull = button(String(localized: "Pull")) { [weak self] in self?.sync(["pull"]) }
-    private lazy var push = button(String(localized: "Push")) { [weak self] in self?.sync(["push"]) }
-    private lazy var fetch = button("") { [weak self] in self?.sync(["fetch"]) }
-    private lazy var retry = button(String(localized: "Pull, then push")) { [weak self] in self?.sync(["pull", "push"]) }
-    private lazy var commit = button(String(localized: "Commit")) { [weak self] in self?.commitPressed() }
+    private let name = NSButton(title: "", target: nil, action: nil), state = NSTextField(labelWithString: "")
+    private lazy var fetch = ClosureButton(title: String(localized: "Fetch")) { [weak self] in self?.sync(["fetch"]) }
+    private lazy var primary = ClosureButton(title: "") { [weak self] in self.map { $0.sync($0.primaryOps) } }
+    private lazy var commit = ClosureButton(title: String(localized: "Commit")) { [weak self] in self?.commitPressed() }
     private let busy = NSProgressIndicator(), note = NSTextField(wrappingLabelWithString: ""), status = NSStackView()
-    private let outgoing = NSStackView(), incoming = NSStackView(), upToDate = NSTextField(labelWithString: "")
-    private let changes = NSTextField(labelWithString: ""), message = NSTextField()
-    private let changeBlock = NSStackView()
+    private let outgoing = NSStackView(), incoming = NSStackView()
+    private let changes = NSTextField(labelWithString: ""), stats = NSTextField(labelWithString: ""), message = NSTextField()
+    private let nothing = NSTextField(labelWithString: String(localized: "Nothing to commit"))
+    private let hint = NSTextField(labelWithString: String(localized: "⏎ commit · ⌘⏎ commit and push"))
+    private let field = NSStackView()
     private let root = NSStackView()
 
     private var unsynced: Unsynced?
     private var listKey = ""
     private var result: (text: String, failed: Bool, rejected: Bool)?
+    private var primaryOps: [String] = []
     private var showIncoming = false, committing = false
 
     init(app: AppModel, worktree: String) {
@@ -46,32 +46,41 @@ final class SyncPopover: NSViewController {
     // MARK: layout
 
     override func loadView() {
-        name.font = .ui(14, weight: .semibold)
-        upstream.font = .ui(12)
-        upstream.textColor = .secondaryLabelColor
-        for l in [name, upstream] {
-            l.lineBreakMode = .byTruncatingMiddle
-            l.setContentCompressionResistancePriority(.init(250), for: .horizontal)
-        }
-        switchButton.bezelStyle = .rounded
-        switchButton.controlSize = .small
-        switchButton.target = self
-        switchButton.action = #selector(switchMenu)
-        let head = NSStackView(views: [column([name, upstream], spacing: 1), switchButton])
-        head.spacing = 8
-
+        name.isBordered = false
+        name.imagePosition = .imageTrailing
+        name.lineBreakMode = .byTruncatingMiddle
+        name.setContentCompressionResistancePriority(.init(250), for: .horizontal)
+        name.target = self
+        name.action = #selector(switchMenu)
+        name.toolTip = String(localized: "Switch Branch")
+        state.font = .ui(12)
+        state.textColor = .secondaryLabelColor
+        state.lineBreakMode = .byTruncatingMiddle
+        state.setContentCompressionResistancePriority(.init(250), for: .horizontal)
+        fetch.isBordered = false
         fetch.image = .symbol("arrow.clockwise", String(localized: "Fetch"))
-        fetch.toolTip = String(localized: "Fetch")
-        let actions = NSStackView(views: [pull, push, fetch])
-        actions.spacing = 8
-        NSLayoutConstraint.activate([push.widthAnchor.constraint(equalTo: pull.widthAnchor), fetch.widthAnchor.constraint(equalToConstant: 36)])
+        fetch.imagePosition = .imageLeading
+        fetch.attributedTitle = NSAttributedString(string: fetch.title,
+                                                   attributes: [.font: NSFont.ui(12), .foregroundColor: NSColor.secondaryLabelColor])
+        fetch.contentTintColor = .secondaryLabelColor
+        fetch.toolTip = String(localized: "Fetch from the remote")
+        let head = NSStackView()
+        head.alignment = .top
+        head.setViews([column([name, state], spacing: 2)], in: .leading)
+        head.setViews([fetch], in: .trailing)
+
+        primary.bezelStyle = .push
+        primary.controlSize = .large
+        primary.imagePosition = .imageLeading
+        primary.imageHugsTitle = true
+        primary.bezelColor = .controlAccentColor
+        primary.contentTintColor = .white
 
         busy.style = .spinning
         busy.controlSize = .small
         note.font = .ui(12)
         note.maximumNumberOfLines = 4
         note.preferredMaxLayoutWidth = Self.width - 22
-        retry.controlSize = .small
         status.setViews([busy, note], in: .top)
         status.spacing = 6
         status.alignment = .top
@@ -81,38 +90,58 @@ final class SyncPopover: NSViewController {
             s.alignment = .leading
             s.spacing = 2
         }
-        upToDate.font = .ui(12)
-        upToDate.textColor = .secondaryLabelColor
 
+        let changeHead = NSStackView()
+        changeHead.setViews([changes], in: .leading)
+        changeHead.setViews([stats], in: .trailing)
         message.placeholderString = String(localized: "Commit message")
         message.delegate = self
         message.target = self
         message.action = #selector(commitPressed)
-        let field = NSStackView(views: [message, commit])
+        field.setViews([message, commit], in: .leading)
         field.spacing = 8
-        field.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
-        changes.font = .ui(12)
-        changeBlock.orientation = .vertical
-        changeBlock.alignment = .leading
-        changeBlock.spacing = 8
-        changeBlock.setViews([rule(), changes, field], in: .top)
+        nothing.font = .ui(12)
+        nothing.textColor = .secondaryLabelColor
+        hint.font = .ui(11)
+        hint.textColor = .tertiaryLabelColor
 
         let open = ClosureButton(title: String(localized: "Open Source Control")) { [weak self] in
             self?.app.workbench.showPanel("git.changes")
             self?.popover?.performClose(nil)
         }
         open.isBordered = false
-        open.attributedTitle = NSAttributedString(string: open.title,
-                                                  attributes: [.font: NSFont.ui(12, weight: .medium), .foregroundColor: NSColor.controlAccentColor])
+        open.attributedTitle = NSAttributedString(string: open.title, attributes: [.font: NSFont.ui(13), .foregroundColor: NSColor.labelColor])
+        let chevron = NSImageView(image: .symbol("chevron.right", ""))
+        chevron.contentTintColor = .tertiaryLabelColor
+        let footer = NSStackView()
+        footer.setViews([open], in: .leading)
+        footer.setViews([chevron], in: .trailing)
 
+        let rules = (rule(), rule())
         root.orientation = .vertical
         root.alignment = .leading
-        root.spacing = 12
-        root.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 12, right: 14)
-        root.setViews([head, actions, status, retry, outgoing, incoming, upToDate, changeBlock, rule(), open], in: .top)
-        root.setCustomSpacing(8, after: status)
-        for v in [head, actions, status] as [NSView] { v.widthAnchor.constraint(equalToConstant: Self.width).isActive = true }
-        view = root
+        root.spacing = 8
+        root.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 8, right: 14)
+        root.setViews([head, status, primary, outgoing, incoming, rules.0, changeHead, field, nothing, hint, rules.1, footer], in: .top)
+        let gaps: [(NSView, CGFloat)] = [(head, 12), (primary, 16), (outgoing, 12), (incoming, 16), (rules.0, 12), (field, 6), (hint, 12), (rules.1, 4)]
+        for (v, gap) in gaps {
+            root.setCustomSpacing(gap, after: v)
+        }
+        for v in [head, status, primary, changeHead, field, footer] as [NSView] { v.widthAnchor.constraint(equalToConstant: Self.width).isActive = true }
+
+        view = Self.ground(root)
+    }
+
+    /// A denser ground than the popover's glass: code scrolling behind it shouldn't tint what's written here.
+    private static func ground(_ content: NSView) -> NSView {
+        let box = NSBox()
+        box.boxType = .custom
+        box.borderWidth = 0
+        box.cornerRadius = 0
+        box.contentViewMargins = .zero
+        box.fillColor = NSColor.windowBackgroundColor.withAlphaComponent(0.6)
+        box.contentView = content
+        return box
     }
 
     override func viewDidLoad() {
@@ -121,11 +150,10 @@ final class SyncPopover: NSViewController {
         track(owner: self) { [app, wid] in app.syncing[wid] } changed: { [weak self] _ in self?.update() }
     }
 
-    private func button(_ title: String, _ action: @escaping () -> Void) -> NSButton {
-        let b = ClosureButton(title: title, action: action)
-        b.bezelStyle = .push
-        b.imagePosition = .imageLeading
-        return b
+    /// Opened for a pull or a push, not to type: the commit field waits for a click.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(nil)
     }
 
     private func column(_ views: [NSView], spacing: CGFloat) -> NSStackView {
@@ -157,52 +185,68 @@ final class SyncPopover: NSViewController {
         let info = app.git[wid]?.branches, running = app.syncing[wid]
         let ahead = info?.ahead ?? 0, behind = info?.behind ?? 0, published = info?.upstream != nil
         let hasRemote = published || !(info?.remote.isEmpty ?? true)
-        name.stringValue = info?.current ?? info?.head ?? "HEAD"
-        upstream.stringValue = info?.upstream ?? (hasRemote ? String(localized: "Not published yet") : String(localized: "No remote branch yet"))
-        switchButton.isEnabled = info != nil && running == nil
+        name.attributedTitle = NSAttributedString(string: info?.current ?? info?.head ?? "HEAD",
+                                                  attributes: [.font: NSFont.ui(15, weight: .semibold), .foregroundColor: NSColor.labelColor])
+        name.image = .symbol("chevron.down", String(localized: "Switch Branch"))
+        name.isEnabled = info != nil && running == nil
+        state.stringValue = Self.standing(upstream: info?.upstream, ahead: ahead, behind: behind, hasRemote: hasRemote)
 
-        let idle = running == nil && info?.current != nil && hasRemote
-        pull.isHidden = !published
         fetch.isHidden = !hasRemote
-        push.isHidden = !hasRemote
-        let pushFirst = behind == 0 && (ahead > 0 || !published)
-        show(pull, published ? String(localized: "Pull") : "", count: behind, symbol: "arrow.down", prominent: behind > 0)
-        show(push, published ? String(localized: "Push") : String(localized: "Publish Branch"), count: published ? ahead : 0,
-             symbol: published ? "arrow.up" : "icloud.and.arrow.up", prominent: pushFirst)
-        pull.isEnabled = idle && behind > 0
-        push.isEnabled = idle && (ahead > 0 || !published)
-        fetch.isEnabled = idle
-
+        fetch.isEnabled = running == nil
+        showPrimary(ahead: ahead, behind: behind, published: published, possible: hasRemote && info?.current != nil, running: running)
         showStatus(running)
         loadLists(info)
-        showLists(ahead: ahead, behind: behind, published: published, upstream: info?.upstream)
+        showLists(ahead: ahead, behind: behind, published: published)
         showChanges()
-        preferredContentSize = root.fittingSize
+        preferredContentSize = view.fittingSize
     }
 
-    private func show(_ b: NSButton, _ title: String, count: Int, symbol: String, prominent: Bool) {
-        let text = count > 0 ? "\(title) \(count)" : title
-        let color: NSColor = prominent ? .white : .labelColor
-        b.attributedTitle = NSAttributedString(string: text, attributes: [.foregroundColor: color, .font: NSFont.ui(13)])
-        b.image = .symbol(symbol, title)
-        b.bezelColor = prominent ? .controlAccentColor : nil
-        b.contentTintColor = prominent ? .white : nil
-        b.setAccessibilityLabel(count > 0 ? "\(title), \(count)" : title)
+    /// Where the branch stands, in one line.
+    private static func standing(upstream: String?, ahead: Int, behind: Int, hasRemote: Bool) -> String {
+        guard let upstream else { return hasRemote ? String(localized: "Not on a remote yet") : String(localized: "No remote — add one in Source Control") }
+        switch (ahead, behind) {
+        case (0, 0): return String(localized: "Up to date with \(upstream)")
+        case (_, 0): return ahead == 1 ? String(localized: "1 commit ahead of \(upstream)") : String(localized: "\(ahead) commits ahead of \(upstream)")
+        case (0, _): return behind == 1 ? String(localized: "1 commit behind \(upstream)") : String(localized: "\(behind) commits behind \(upstream)")
+        default: return String(localized: "\(ahead) ahead, \(behind) behind \(upstream)")
+        }
+    }
+
+    /// The one sync that matters now, full width; none when there's nothing to move. A rejected push turns it into the fix.
+    private func showPrimary(ahead: Int, behind: Int, published: Bool, possible: Bool, running: String?) {
+        let (title, symbol, ops) = Self.action(ahead: ahead, behind: behind, published: published, rejected: result?.rejected == true)
+        primaryOps = ops
+        primary.isHidden = !possible || ops.isEmpty
+        let text = running ?? title
+        primary.attributedTitle = NSAttributedString(string: text, attributes: [.foregroundColor: NSColor.white, .font: NSFont.ui(13, weight: .semibold)])
+        primary.image = .symbol(running == nil ? symbol : "arrow.triangle.2.circlepath", text)
+        primary.isEnabled = running == nil
+    }
+
+    private static func action(ahead: Int, behind: Int, published: Bool, rejected: Bool) -> (String, String, [String]) {
+        if !published { return (String(localized: "Publish Branch"), "icloud.and.arrow.up", ["push"]) }
+        if rejected || (ahead > 0 && behind > 0) {
+            let title = behind > 0 ? String(localized: "Pull \(behind), then push \(ahead)") : String(localized: "Pull, then push")
+            return (title, "arrow.up.arrow.down", ["pull", "push"])
+        }
+        if behind > 0 { return (behind == 1 ? String(localized: "Pull 1 commit") : String(localized: "Pull \(behind) commits"), "arrow.down", ["pull"]) }
+        if ahead > 0 { return (ahead == 1 ? String(localized: "Push 1 commit") : String(localized: "Push \(ahead) commits"), "arrow.up", ["push"]) }
+        return ("", "", [])
     }
 
     private func showStatus(_ running: String?) {
-        busy.isHidden = running == nil
+        let inButton = running != nil && !primary.isHidden
+        busy.isHidden = running == nil || inButton
         if let running {
             busy.startAnimation(nil)
-            note.stringValue = running
+            note.stringValue = inButton ? "" : running
             note.textColor = .secondaryLabelColor
         } else {
             busy.stopAnimation(nil)
             note.stringValue = result?.text ?? ""
-            note.textColor = result?.failed == true ? .systemRed : .secondaryLabelColor
+            note.textColor = result?.failed == true ? .systemRed : .systemGreen
         }
         note.isHidden = note.stringValue.isEmpty
-        retry.isHidden = !(running == nil && result?.failed == true && result?.rejected == true)
         status.isHidden = note.isHidden
     }
 
@@ -220,14 +264,12 @@ final class SyncPopover: NSViewController {
         }
     }
 
-    private func showLists(ahead: Int, behind: Int, published: Bool, upstream: String?) {
+    private func showLists(ahead: Int, behind: Int, published: Bool) {
         let out = unsynced?.outgoing ?? [], inc = unsynced?.incoming ?? []
         outgoing.isHidden = ahead == 0
         incoming.isHidden = behind == 0
-        upToDate.isHidden = !(published && ahead == 0 && behind == 0)
-        upToDate.stringValue = String(localized: "Up to date with \(upstream ?? "")")
 
-        let title = published ? String(localized: "To push") : String(localized: "Not on a remote yet")
+        let title = published ? String(localized: "To push") : String(localized: "To publish")
         outgoing.setViews([caption(title, ahead)] + out.map { row($0, trailing: when($0)) } + more(ahead - out.count), in: .top)
 
         let toggle = ClosureButton(title: "") { [weak self] in
@@ -270,18 +312,21 @@ final class SyncPopover: NSViewController {
     }
 
     private func showChanges() {
-        let list = app.git[wid]?.changes ?? [], n = list.count
-        let words = n == 1 ? String(localized: "1 uncommitted change") : String(localized: "\(n) uncommitted changes")
-        let text = NSMutableAttributedString(string: n == 0 ? String(localized: "No uncommitted changes") : words,
-                                             attributes: [.font: NSFont.ui(12), .foregroundColor: n == 0 ? NSColor.secondaryLabelColor : .labelColor])
-        if n > 0, let s = app.git[wid]?.stats {
+        let git = app.git[wid], list = git?.changes ?? [], n = list.count
+        let hasRemote = git?.branches.map { $0.upstream != nil || !$0.remote.isEmpty } ?? false
+        changes.attributedStringValue = NSAttributedString(string: String(localized: "Changes").uppercased() + (n > 0 ? " · \(n)" : ""),
+                                                           attributes: Self.captionAttributes)
+        let text = NSMutableAttributedString()
+        if n > 0, let s = git?.stats {
             let mono = NSFont.monospacedSystemFont(ofSize: TextSize.of(11), weight: .regular)
             for (count, sign, color) in [(s.totalAdded, "+", NSColor.systemGreen), (s.totalRemoved, "−", .systemRed)] where count > 0 {
-                text.append(NSAttributedString(string: "   \(sign)\(count)", attributes: [.font: mono, .foregroundColor: color]))
+                text.append(NSAttributedString(string: (text.length > 0 ? "  " : "") + "\(sign)\(count)", attributes: [.font: mono, .foregroundColor: color]))
             }
         }
-        changes.attributedStringValue = text
-        for v in changeBlock.arrangedSubviews where v !== changes && !(v is NSBox) { v.isHidden = n == 0 }
+        stats.attributedStringValue = text
+        field.isHidden = n == 0
+        nothing.isHidden = n > 0
+        hint.isHidden = n == 0 || !hasRemote
         let blocked = list.contains(where: \.conflicted) || app.syncing[wid] != nil || committing
         commit.isEnabled = !message.stringValue.trimmingCharacters(in: .whitespaces).isEmpty && !blocked
         message.isEnabled = !committing
@@ -329,7 +374,10 @@ final class SyncPopover: NSViewController {
             .replacingOccurrences(of: "fatal: ", with: "").replacingOccurrences(of: "error: ", with: "")
     }
 
-    @objc private func commitPressed() {
+    @objc private func commitPressed() { commitAll(thenPush: false) }
+
+    /// ⌘⏎ in the field: commit, then push (or publish) what's now ahead.
+    private func commitAll(thenPush: Bool) {
         let text = message.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard commit.isEnabled, !text.isEmpty else { return }
         committing = true
@@ -344,7 +392,12 @@ final class SyncPopover: NSViewController {
             guard let status = await app.call(GitStatus(id: wid)) else { return }
             let all = !status.contains { $0.staged && !$0.conflicted }
             let r = await app.tryCall(GitCommit(id: wid, message: text, all: all))
-            if let e = r.error { GitFix(app).offer(e, recipe: "fixCommit", worktree: wid) } else { message.stringValue = "" }
+            if let e = r.error { GitFix(app).offer(e, recipe: "fixCommit", worktree: wid); return }
+            message.stringValue = ""
+            if thenPush {
+                committing = false
+                sync(["push"])
+            }
         }
     }
 
@@ -363,7 +416,7 @@ final class SyncPopover: NSViewController {
                 self?.switchBranch(GitSwitch(id: wid, branch: name, create: true))
             }
         }
-        m.popUp(positioning: nil, at: NSPoint(x: 0, y: switchButton.bounds.height + 4), in: switchButton)
+        m.popUp(positioning: nil, at: NSPoint(x: 0, y: name.bounds.height + 4), in: name)
     }
 
     private func switchBranch(_ m: GitSwitch) {
@@ -376,4 +429,11 @@ final class SyncPopover: NSViewController {
 
 extension SyncPopover: NSTextFieldDelegate {
     func controlTextDidChange(_ n: Notification) { showChanges() }
+
+    func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
+        guard sel == #selector(NSResponder.insertNewline(_:)) || sel == Selector(("noop:")),
+              let e = NSApp.currentEvent, e.keyCode == 36 || e.keyCode == 76, e.modifierFlags.contains(.command) else { return false }
+        if commit.isEnabled { commitAll(thenPush: true) }
+        return true
+    }
 }

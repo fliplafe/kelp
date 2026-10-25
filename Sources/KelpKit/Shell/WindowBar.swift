@@ -43,7 +43,6 @@ final class WindowBar: NSView {
         folder.toolTip = String(localized: "Open In, Reveal in Finder, Copy Path")
         branch.target = self
         branch.action = #selector(branchClicked)
-        branch.toolTip = String(localized: "Sync, commit or switch branch")
         pr.target = self; pr.action = #selector(openPR)
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2
@@ -139,6 +138,10 @@ final class WindowBar: NSView {
         if ahead > 0 { t.append(NSAttributedString(string: "  ↑\(ahead)", attributes: [.font: count, .foregroundColor: NSColor.controlAccentColor])) }
         if dirty { t.append(NSAttributedString(string: "  •", attributes: [.font: count, .foregroundColor: NSColor.secondaryLabelColor])) }
         branch.attributedTitle = t
+        let changed = app.git[app.workbench.workspaceId ?? ""]?.changes?.count ?? 0
+        let parts = [info.current ?? info.head ?? "HEAD"] + (ahead > 0 ? [String(localized: "\(ahead) to push")] : [])
+            + (behind > 0 ? [String(localized: "\(behind) to pull")] : []) + (changed > 0 ? [String(localized: "\(changed) changed")] : [])
+        branch.toolTip = parts.joined(separator: " · ")
         let running = syncing
         branch.image = running == nil ? (Glyph.image("arrow.triangle.branch", size: 13) ?? .symbol("arrow.triangle.branch", ""))
                                       : .symbol("arrow.triangle.2.circlepath", running ?? "")
