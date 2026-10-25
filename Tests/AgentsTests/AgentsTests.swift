@@ -38,6 +38,34 @@ import TestSupport
     #expect(all.contains { $0.id == "mine" } && all.contains { $0.id == "claude" })
 }
 
+@Test func hermesPresetUsesSupportedInstallAndModelFlow() throws {
+    let hermes = try #require(AgentManifest.presets.first { $0.id == "hermes" })
+    #expect(hermes.command == "hermes")
+    #expect(hermes.modelFlag == nil)
+    #expect(hermes.autoAnswers.isEmpty)
+    let installed = AgentManifest.withInstall(hermes)
+    #expect(installed.install == "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
+    #expect(installed.update == "hermes update")
+}
+
+@Test func kimiCodeUsesDocumentedModelAndContinueFlags() throws {
+    let kimi = try #require(AgentManifest.presets.first { $0.id == "kimi" })
+    #expect(kimi.argv(model: "kimi-k2.5") == ["kimi", "--model", "kimi-k2.5"])
+    #expect(kimi.argv(resume: true) == ["kimi", "--continue"])
+    #expect(kimi.autoAnswers.contains(AgentManifest.trust))
+    #expect(kimi.sessionIdFlag == nil && kimi.resumeIdFlag == nil)  // --session resumes only; no create-under-id
+    #expect(AgentManifest.withInstall(kimi).install?.contains("code.kimi.com") == true)
+}
+
+@Test func installedAgentsKeepTheirModelAndContinueFlags() throws {
+    for id in ["pi", "grok", "antigravity", "qwen", "kilo", "crush", "droid", "copilot"] {
+        let m = try #require(AgentManifest.presets.first { $0.id == id })
+        #expect(m.argv(resume: true) != m.argv(), "\(id) resumes")
+    }
+    let agy = try #require(AgentManifest.presets.first { $0.id == "antigravity" })
+    #expect(agy.argv(model: "m", effort: "high", resume: true) == ["agy", "--model", "m", "--effort", "high", "--continue"])
+}
+
 @Test func hooksSettingsIsValidJSON() throws {
     let v = try JSONDecoder().decode(JSONValue.self, from: Data(Hooks.settingsJSON().utf8))
     #expect(v["hooks"]?["Stop"] != nil)
@@ -95,6 +123,7 @@ import TestSupport
     let b = ClaudeLimits.parse("You've used 93% of your session limit · resets 3pm")
     #expect(b.first?.kind == "session" && b.first?.percent == 93 && b.first?.resets == "3pm")
     #expect(ClaudeLimits.parse("5-hour limit reached ∙ resets 11pm").first?.percent == 100)
+    #expect(ClaudeLimits.parse("You've used 82.5% of your weekly limit").first?.percent == 82.5)
     #expect(ClaudeLimits.parse("nothing to see").isEmpty)
 }
 
@@ -105,7 +134,7 @@ import TestSupport
     █                                                    2% used
     Resets 7:40am (Europe/Helsinki)
     Current week (all models)
-    █████████████████████████████████████████            82% used
+    █████████████████████████████████████████            82.5% used
     Resets Oct 20 at 5am (Europe/Helsinki)
     Scanning local sessions…
     Current week (Fable)
@@ -114,7 +143,7 @@ import TestSupport
     """
     let r = ClaudeLimits.parseUsageScreen(screen)
     #expect(r.map(\.kind) == ["session", "week", "week · Fable"])
-    #expect(r[1].percent == 82 && r[1].resets == "Oct 20 at 5am")
+    #expect(r[1].percent == 82.5 && r[1].resets == "Oct 20 at 5am")
     #expect(r[0].resets == "7:40am")
 }
 
@@ -205,8 +234,8 @@ import TestSupport
 }
 
 @Test func grokAndAntigravityUsageScreensParse() {
-    let grok = "Context usage │ Usage limit │ Session info\n Weekly limit (X Premium)\n ██████░░░░ 45%\n Resets: October 24, 19:36\n Loading session usage…"
-    #expect(ClaudeLimits.parseGrokUsage(grok) == [.init(kind: "week", percent: 45, resets: "October 24, 19:36")])
+    let grok = "Context usage │ Usage limit │ Session info\n Weekly limit (X Premium)\n ██████░░░░ 45.5%\n Resets: October 24, 19:36\n Loading session usage…"
+    #expect(ClaudeLimits.parseGrokUsage(grok) == [.init(kind: "week", percent: 45.5, resets: "October 24, 19:36")])
     let framed = "│ Weekly limit (X Premium)          │\n│ ██████░░░░ 45%                    │\n│ Resets: October 24, 19:36         │"
     #expect(ClaudeLimits.parseGrokUsage(framed).first?.percent == 45)
     let agy = """
@@ -214,13 +243,34 @@ import TestSupport
     GEMINI MODELS
     Models within this group: Gemini Flash, Gemini Pro
     Weekly Limit Remaining
-    [████████████] 88.00%
+    [████████████] 88.25%
     Quota available
     CLAUDE AND GPT MODELS
     Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
     Within each group, models share a weekly limit.
     """
-    #expect(ClaudeLimits.parseAntigravityUsage(agy) == [.init(kind: "Gemini week", percent: 12, resets: nil)])
+    #expect(ClaudeLimits.parseAntigravityUsage(agy) == [.init(kind: "Gemini week", percent: 11.75, resets: nil)])
+}
+
+@Test func kimiUsageScreenParses() {
+    let screen = """
+    Session usage
+      No token usage recorded yet.
+    Context window
+      ░░░░░░░░░░░░░░░░░░░░      0%  (0 / 1M)
+    Plan usage
+      5h limit       ████░░░░░░░░░░░░░░░░  20% used  resets in 1h
+      Weekly limit   ████████████░░░░░░░░  60% used  resets in 3d
+      Monthly limit  ████████░░░░░░░░░░░░  40% used
+                     kimi 15% · code 25%
+    """
+    let r = ClaudeLimits.parseKimiUsage(screen)
+    #expect(r.map(\.kind) == ["session", "week", "month"])
+    #expect(r[0].percent == 20 && r[0].resets == "in 1h")
+    #expect(r[1].percent == 60 && r[2].percent == 40)
+    let precise = ClaudeLimits.parseKimiUsage("Plan usage\n  Weekly limit  ███░░  42.5% used  resets in 1h 30m")
+    #expect(precise == [.init(kind: "week", percent: 42.5, resets: "in 1h 30m")])
+    #expect(ClaudeLimits.parseKimiUsage("Plan usage\n  No usage data available.").isEmpty)
 }
 
 @Test func programStatusReports() {
@@ -339,13 +389,16 @@ import TestSupport
 @Test func agentTrustIsReadFromEachAgentsOwnConfig() throws {
     let home = tmp().path
     let fm = FileManager.default
-    for d in ["/p/known/desk", "/p/other", "/.codex", "/.gemini", "/profile"] { try fm.createDirectory(atPath: home + d, withIntermediateDirectories: true) }
+    for d in ["/p/known/desk", "/p/other", "/.codex", "/.gemini", "/.kimi-code/workspace-trust", "/profile"] {
+        try fm.createDirectory(atPath: home + d, withIntermediateDirectories: true)
+    }
     try #"{"projects":{"\#(home)/p/known":{"hasTrustDialogAccepted":true},"\#(home)/p/other":{"hasTrustDialogAccepted":false}}}"#
         .write(toFile: home + "/.claude.json", atomically: true, encoding: .utf8)
     try "model = \"x\"\n[projects.\"\(home)/p/known\"]\ntrust_level = \"trusted\"\n[projects.\"\(home)/p/other\"]\ntrust_level = \"untrusted\"\n"
         .write(toFile: home + "/.codex/config.toml", atomically: true, encoding: .utf8)
     try #"{"\#(home)/p/known/desk":"TRUST_PARENT","\#(home)/p/other":"DO_NOT_TRUST"}"#.write(toFile: home + "/.gemini/trustedFolders.json", atomically: true, encoding: .utf8)
-    for agent in ["claude", "codex", "gemini"] {
+    try #"{"root":"\#(home)/p/known","trustedAt":1}"#.write(toFile: home + "/.kimi-code/workspace-trust/wd_known", atomically: true, encoding: .utf8)
+    for agent in ["claude", "codex", "gemini", "kimi"] {
         #expect(AgentTrust.trusts(agent: agent, folders: [home + "/p/known"], home: home), "\(agent)")
         #expect(AgentTrust.trusts(agent: agent, folders: [home + "/p/known/desk"], home: home), "\(agent): a folder inside a trusted one")
         #expect(!AgentTrust.trusts(agent: agent, folders: [home + "/p/other"], home: home), "\(agent): explicitly not trusted")

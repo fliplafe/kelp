@@ -38,7 +38,7 @@ they touch is one tab away to read, review and edit.
 ## Features
 
 - **Code at hand.** Editor with language servers, file tree, diffs, browser; any tab in any split.
-- **Agents first.** Claude Code, Codex, OpenCode, Gemini CLI and 15 more out of the box, or any CLI. Live status,
+- **Agents first.** Claude Code, Codex, OpenCode, Gemini CLI and 17 more out of the box, or any CLI. Live status,
   review as a diff; agents keep working after you quit the app.
 - **Git built in.** Source Control as in VS Code: stage or discard a hunk, commit, push, branch graph. Pull requests
   and CI from GitHub and GitLab; Linear and Jira issues.

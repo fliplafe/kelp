@@ -17,14 +17,14 @@ public enum AgentTrust {
         case "claude": claude(env["CLAUDE_CONFIG_DIR"].map { $0 + "/.claude.json" } ?? home + "/.claude.json")
         case "codex": codex((env["CODEX_HOME"] ?? home + "/.codex") + "/config.toml")
         case "gemini": gemini(home + "/.gemini/trustedFolders.json")
+        case "kimi": kimi(env["KIMI_CODE_HOME"] ?? home + "/.kimi-code")
         default: []   // no way to read its trust: Kelp doesn't answer for it
         }
     }
 
     /// `projects[path].hasTrustDialogAccepted`.
     static func claude(_ file: String) -> [String] {
-        guard let d = FileManager.default.contents(atPath: file), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let projects = o["projects"] as? [String: Any] else { return [] }
+        guard let projects = json(file)?["projects"] as? [String: Any] else { return [] }
         return projects.compactMap { path, v in (v as? [String: Any])?["hasTrustDialogAccepted"] as? Bool == true ? path : nil }
     }
 
@@ -45,10 +45,20 @@ public enum AgentTrust {
 
     /// `{"<path>": "TRUST_FOLDER" | "TRUST_PARENT" | "DO_NOT_TRUST"}`; a trusted parent covers the folders in it.
     static func gemini(_ file: String) -> [String] {
-        guard let d = FileManager.default.contents(atPath: file), let o = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [] }
+        guard let o = json(file) as? [String: String] else { return [] }
         return o.compactMap { path, level in
             level == "TRUST_FOLDER" ? path : level == "TRUST_PARENT" ? (path as NSString).deletingLastPathComponent : nil
         }
+    }
+
+    /// One JSON file per workspace under `workspace-trust/`: `{"root":"/path","trustedAt":…}`.
+    static func kimi(_ home: String) -> [String] {
+        let dir = home + "/workspace-trust"
+        return (FileManager.default.enumerator(atPath: dir)?.allObjects as? [String] ?? []).compactMap { json(dir + "/" + $0)?["root"] as? String }
+    }
+
+    private static func json(_ file: String) -> [String: Any]? {
+        FileManager.default.contents(atPath: file).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     }
 
     /// Symlinks resolved where the folder exists (/tmp is /private/tmp), no trailing slash.

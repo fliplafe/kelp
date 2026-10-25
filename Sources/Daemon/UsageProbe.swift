@@ -5,7 +5,7 @@ import Agents
 import GitKit
 import AgentData
 
-/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok Build, Antigravity). A hidden copy of
+/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok, Antigravity, Kimi). A hidden copy of
 /// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
 extension AgentUsage {
     struct PlanProbe: Sendable {
@@ -13,6 +13,7 @@ extension AgentUsage {
         let ready: @Sendable (String) -> Bool    // its prompt is drawn
         let shown: @Sendable (String) -> Bool    // the usage screen has loaded
         let parse: @Sendable (String) -> [ClaudeLimits.Reading]
+        var env: [String: String] = [:]          // extra launch env (e.g. Kimi's trust-this-run)
     }
     struct PlanState {
         var readings: [ClaudeLimits.Reading] = []
@@ -26,7 +27,12 @@ extension AgentUsage {
         PlanProbe(agent: "grok", command: "grok", every: 1800, ready: { $0.contains("Ctrl+x:shortcuts") },
                   shown: { $0.contains("Weekly limit") && $0.contains("Resets") }, parse: ClaudeLimits.parseGrokUsage),
         PlanProbe(agent: "antigravity", command: "agy", every: 1800, ready: { $0.contains("for shortcuts") },
-                  shown: { $0.contains("Weekly Limit Remaining") && $0.contains("%") }, parse: ClaudeLimits.parseAntigravityUsage)
+                  shown: { $0.contains("Weekly Limit Remaining") && $0.contains("%") }, parse: ClaudeLimits.parseAntigravityUsage),
+        // Trust for this process only: the probe has no one to answer "Trust this folder?".
+        PlanProbe(agent: "kimi", command: "kimi", every: 1800,
+                  ready: { $0.contains("│ >") || $0.contains("context:") },
+                  shown: { $0.contains("Plan usage") }, parse: ClaudeLimits.parseKimiUsage,
+                  env: ["KIMI_CODE_TRUST_WORKSPACE": "1"])
     ]
 
     /// Settings › Show plan limits.
@@ -123,9 +129,10 @@ extension AgentUsage {
     }
 
     /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
-    /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up.
+    /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up. Kimi's probe
+    /// trusts via env, so it can use that same folder.
     private func probeDir(_ agent: String) -> String? {
-        if agent == "grok" {
+        if agent == "grok" || agent == "kimi" {
             let d = root.appendingPathComponent("probe")
             try? Paths.ensure(d)
             return d.path
@@ -177,7 +184,8 @@ extension AgentUsage {
         let id = (try? String(contentsOf: file, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             ?? UUID().uuidString.lowercased()
         Log.session.attempt("keeping Grok's probe session id") { try id.write(to: file, atomically: true, encoding: .utf8) }
-        return [[path, "--resume", id], [path, "--session-id", id]]   // the first run creates it
+        // Resume, then same id, then a fresh one if another probe still holds the lock ("already in use").
+        return [[path, "--resume", id], [path, "--session-id", id], [path, "--session-id", UUID().uuidString.lowercased()]]
     }
 
     /// Folders the user trusted in Antigravity (read only).
@@ -190,7 +198,8 @@ extension AgentUsage {
     static func probe(_ p: PlanProbe, argv: [String], cwd: String) -> ([ClaudeLimits.Reading], String) {
         let screen = ScreenBuffer()
         let pty: PTY
-        do { pty = try PTY(argv: argv, cwd: cwd, env: ["PATH": LoginPath.value], cols: 120, rows: 80) }
+        let env = ["PATH": LoginPath.value].merging(p.env) { _, n in n }
+        do { pty = try PTY(argv: argv, cwd: cwd, env: env, cols: 120, rows: 80) }
         catch { Log.session.error("the usage probe for \(argv.first ?? "", privacy: .public) didn't start: \(error)"); return ([], "") }
         pty.onOutput = { screen.append($0) }
         pty.start()
@@ -202,13 +211,22 @@ extension AgentUsage {
         // unanswered and the probe gives up. Typing /usage and Enter there would pick its default, usually "Yes".
         let drawn = StatusDetector.stripANSI(String(screen.text.suffix(3000)))
         if StartupQuestion.trustAsked(drawn) || StartupQuestion.menuOpen(drawn) { return ([], drawn) }
+        // Tips that say "esc to dismiss" steal the first keystrokes; clear them before typing /usage.
+        if drawn.localizedCaseInsensitiveContains("esc to dismiss") {
+            pty.write(Data("\u{1B}".utf8))
+            _ = screen.wait(5) { !StatusDetector.stripANSI($0).localizedCaseInsensitiveContains("esc to dismiss") && screen.quietFor > 0.5 }
+        }
         pty.write(Data("/usage".utf8))
         Thread.sleep(forTimeInterval: 0.6)
         pty.write(Data("\r".utf8))
-        _ = screen.wait(20) { p.shown($0) && screen.quietFor > 1.5 }
-        pty.write(Data("\u{1B}".utf8))
+        // Wait until the screen has the numbers; don't insist on quiet — Claude/Antigravity keep refreshing while open.
+        _ = screen.wait(25) { p.shown($0) }
+        _ = screen.wait(2) { _ in screen.quietFor > 1.0 }
+        // Parse before Esc: many TUIs put /usage on an alt screen that Esc discards.
         let text = StatusDetector.stripANSI(screen.text).replacingOccurrences(of: "\r", with: "\n")
-        return (p.parse(text), text)
+        let readings = p.parse(text)
+        pty.write(Data("\u{1B}".utf8))
+        return (readings, text)
     }
 }
 

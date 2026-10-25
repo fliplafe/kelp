@@ -29,7 +29,7 @@ package enum Help {
     ⇧⌘U goes to the next agent that needs you, wherever it is (also in the Dock icon's menu).
 
     **Limits** at the bottom: a ring per agent — how full its fullest limit is (orange from 70 %, red from 90 %), read
-    from the agents' own /usage (Claude Code, Grok, Antigravity) and Codex's logs. Hover or click for every limit and
+    from the agents' own /usage (Claude Code, Grok, Antigravity, Kimi) and Codex's logs. Hover or click for every limit and
     when it resets. Settings › Agents › Show plan limits turns it off.
 
     ## The middle: tabs and splits

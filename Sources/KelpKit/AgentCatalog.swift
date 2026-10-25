@@ -63,6 +63,7 @@ package struct AgentCatalog {
         case "crush": String(localized: "Charm’s open source agent, any model")
         case "aider": String(localized: "Pair programming in git, any model")
         case "droid": String(localized: "Factory’s agent")
+        case "hermes": String(localized: "Nous Research’s self-improving agent")
         case "omp": String(localized: "Pi with an IDE’s tools wired in, any model")
         case "fx": String(localized: "Vercel’s small native agent, any model")
         default: nil
@@ -88,7 +89,8 @@ package struct AgentCatalog {
     /// Colours for the initials of agents whose icon isn't found (yet): the vendor's, near enough.
     private static let brand: [String: NSColor] = ["claude": NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1),
                                                    "codex": NSColor(white: 0.15, alpha: 1), "grok": NSColor(white: 0.15, alpha: 1),
-                                                   "cursor": NSColor(white: 0.15, alpha: 1), "gemini": .systemBlue]
+                                                   "cursor": NSColor(white: 0.15, alpha: 1), "gemini": .systemBlue,
+                                                   "hermes": NSColor(srgbRed: 0.25, green: 0.55, blue: 0.85, alpha: 1)]
 }
 
 extension AppModel {

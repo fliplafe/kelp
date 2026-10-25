@@ -9,7 +9,8 @@ public enum ClaudeLimits {
         public var resets: String?
     }
 
-    private static let used = try? NSRegularExpression(pattern: #"(\d{1,3})% of your ([A-Za-z0-9\- ]{1,30}?) limit(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#)
+    private static let used = try? NSRegularExpression(pattern:
+        #"(\d{1,3}(?:\.\d+)?)% of your ([A-Za-z0-9\- ]{1,30}?) limit(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#)
     private static let reached = try? NSRegularExpression(pattern: #"([A-Za-z0-9\- ]{1,30}?) limit reached(?:\s*[·∙•|-]\s*resets ([^\n(·]{2,40}))?"#,
                                                           options: .caseInsensitive)
 
@@ -20,7 +21,7 @@ public enum ClaudeLimits {
         }
         var out = (used?.matches(in: text, range: r) ?? []).compactMap { m -> Reading? in
             guard let p = group(m, 1).flatMap(Double.init), let kind = group(m, 2) else { return nil }
-            return Reading(kind: kind, percent: min(p, 100), resets: group(m, 3))
+            return Reading(kind: kind, percent: bounded(p), resets: group(m, 3))
         }
         out += (reached?.matches(in: text, range: r) ?? []).compactMap { m in
             group(m, 1).map { Reading(kind: $0.replacingOccurrences(of: "Claude AI usage", with: "usage"), percent: 100, resets: group(m, 2)) }
@@ -42,8 +43,8 @@ public enum ClaudeLimits {
             var percent: Double?, resets: String?
             for next in lines[(i + 1)..<min(i + 4, lines.count)] {
                 if next.hasPrefix("Current ") { break }
-                if percent == nil, let r = next.range(of: #"(\d{1,3})% used"#, options: .regularExpression) {
-                    percent = Double(next[r].prefix { $0.isNumber })
+                if percent == nil, let r = next.range(of: #"\d{1,3}(?:\.\d+)?% used"#, options: .regularExpression) {
+                    percent = Double(next[r].dropLast("% used".count)).map(bounded)
                 } else if resets == nil, next.hasPrefix("Resets ") {
                     resets = String(next.dropFirst("Resets ".count)).replacingOccurrences(of: #"\s*\(.*\)$"#, with: "", options: .regularExpression)
                 }
@@ -61,7 +62,9 @@ public enum ClaudeLimits {
         guard let i = lines.lastIndex(where: { $0.hasPrefix("Weekly limit") }) else { return [] }
         var percent: Double?, resets: String?
         for next in lines[(i + 1)..<min(i + 4, lines.count)] {
-            if percent == nil, let r = next.range(of: #"\d{1,3}(\.\d+)?%"#, options: .regularExpression) { percent = Double(next[r].dropLast()) }
+            if percent == nil, let r = next.range(of: #"\d{1,3}(?:\.\d+)?%"#, options: .regularExpression) {
+                percent = Double(next[r].dropLast()).map(bounded)
+            }
             if next.hasPrefix("Resets:") { resets = next.dropFirst("Resets:".count).trimmingCharacters(in: .whitespaces) }
         }
         return percent.map { [Reading(kind: "week", percent: $0, resets: resets)] } ?? []
@@ -77,15 +80,45 @@ public enum ClaudeLimits {
             var percent: Double?, resets: String?
             for next in lines[(i + 1)..<min(i + 6, lines.count)] {
                 if next.hasSuffix(" MODELS") { break }
-                if percent == nil, let r = next.range(of: #"\d{1,3}(\.\d+)?%"#, options: .regularExpression) { percent = Double(next[r].dropLast()) }
+                if percent == nil, let r = next.range(of: #"\d{1,3}(?:\.\d+)?%"#, options: .regularExpression) {
+                    percent = Double(next[r].dropLast()).map(bounded)
+                }
                 if let r = next.range(of: #"(?i)resets in .*"#, options: .regularExpression) { resets = String(next[r].dropFirst("resets ".count)) }
             }
             guard let left = percent else { continue }
             let kind = "\(group) week"
             if found[kind] == nil { order.append(kind) }
-            found[kind] = Reading(kind: kind, percent: (100 - left).rounded(), resets: resets)
+            found[kind] = Reading(kind: kind, percent: bounded(100 - left), resets: resets)
         }
         return order.compactMap { found[$0] }
+    }
+
+    /// Kimi Code's `/usage`: under "Plan usage", rows like "5h limit  ███░…  20% used  resets in 1h" (and Weekly / Monthly).
+    public static func parseKimiUsage(_ text: String) -> [Reading] {
+        let lines = text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard let start = lines.lastIndex(where: { $0 == "Plan usage" }) else { return [] }
+        var out: [Reading] = []
+        for line in lines[(start + 1)...] {
+            if line == "Session usage" || line == "Context window" || line == "Extra Usage" { break }
+            guard let pct = line.range(of: #"\d{1,3}(?:\.\d+)?% used"#, options: .regularExpression),
+                  let percent = Double(line[pct].dropLast("% used".count)) else { continue }
+            let before = line[..<pct.lowerBound]
+            let label = before.replacingOccurrences(of: #"[█░]+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            let kind: String = if label.hasPrefix("5h") || label.hasPrefix("5-hour") { "session" }
+                else if label.hasPrefix("weekly") { "week" }
+                else if label.hasPrefix("monthly") { "month" }
+                else if label.isEmpty { "plan" } else { label }
+            var resets: String?
+            if let r = line.range(of: #"(?i)resets in .+$"#, options: .regularExpression) {
+                resets = String(line[r].dropFirst("resets ".count))
+            } else if line.range(of: #"(?i)\breset\b"#, options: .regularExpression) != nil {
+                resets = "now"
+            }
+            out.append(Reading(kind: kind, percent: bounded(percent), resets: resets))
+        }
+        return out
     }
 
     /// A TUI's text in pieces: lines, split again at dialog borders (│) and wide gaps between columns.
@@ -94,4 +127,6 @@ public enum ClaudeLimits {
             .flatMap { $0.components(separatedBy: "   ") }
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
+
+    private static func bounded(_ percent: Double) -> Double { min(max(percent, 0), 100) }
 }

@@ -18,7 +18,7 @@ final class AgentIcons {
         "grok": (["Grok"], "grok.com"), "qwen": ([], "qwen.ai"), "kimi": (["Kimi"], "kimi.com"), "kilo": ([], "kilo.ai"),
         "crush": ([], "charm.land"), "droid": (["Factory"], "factory.ai"), "opencode": ([], "opencode.ai"), "amp": ([], "ampcode.com"),
         "copilot": ([], "github.com"), "aider": ([], "aider.chat"), "auggie": ([], "augmentcode.com"),
-        "omp": ([], "omp.sh"), "fx": ([], "fx.sh")
+        "omp": ([], "omp.sh"), "fx": ([], "fx.sh"), "hermes": ([], "hermes-agent.nousresearch.com")
     ]
 
     func image(_ id: String) -> NSImage? {
