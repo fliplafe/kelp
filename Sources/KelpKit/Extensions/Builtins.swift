@@ -61,6 +61,12 @@ package enum Builtins {
         s("workbench.sidebar.autoHide", "Auto-hide sidebar", "boolean", false, "Comes in while the pointer is at the window's left edge, like the Dock.",
           group: "Sidebar"),
         s("workbench.textSize", "Text size", "enum", "normal", "Sidebar and inspector. The terminal and the editor have their own font sizes.",
-          options: ["normal", "large", "larger"], group: "Sidebar")
+          options: ["normal", "large", "larger"], group: "Sidebar"),
+        s("workbench.sidebar.rowHeight", "Row height", "enum", "system",
+          "Match System follows Sidebar icon size in System Settings › Appearance.", options: ["system", "compact", "regular", "large"], group: "Sidebar"),
+        s("workbench.sidebar.agentDetail", "What agents ask", "enum", "needsYou",
+          "A second line under an agent: its question, or what went wrong.", options: ["needsYou", "always", "never"], group: "Sidebar"),
+        s("workbench.sidebar.agentIcons", "Agent icons", "enum", "others", "The default agent is set in Agents.",
+          options: ["others", "always", "never"], group: "Sidebar")
     ]
 }

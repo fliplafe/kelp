@@ -129,6 +129,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track(owner: self) { [app] in app.rowBadges.stats } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { [app] in app.rowBadges.prs } changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { [app] in app.settings.string("workbench.textSize") } changed: { [weak self] _ in self?.refresh() }
+        track(owner: self) { [app] in ["rowHeight", "agentDetail", "agentIcons"].map { app.settings.string("workbench.sidebar." + $0) } }
+            changed: { [weak self] _ in self?.updateVisibleCells() }
         // "now" becomes "1m": the times on the right move on their own (a clock: nothing is asked of the daemon).
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in   // main run loop
             MainActor.assumeIsolated { if self?.view.window?.occlusionState.contains(.visible) == true { self?.updateVisibleCells() } }
@@ -320,11 +322,25 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, shouldShowOutlineCellForItem item: Any) -> Bool {
         if case .section? = (item as? Node)?.kind { false } else { true }
     }
-    // One line per row, as dense as Finder's and Xcode's sidebars; headers a little taller for air above them.
+    // One line per row, as tall as Finder's at the same sidebar size; an agent that asks gets a second line.
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        guard let n = item as? Node else { return TextSize.of(24) }
+        guard let n = item as? Node else { return TextSize.of(rowBase) }
         let pad = pads(n)
-        return TextSize.of(Self.isHeader(item) ? 28 : 24) + pad.top + pad.bottom
+        return TextSize.of(rowBase + (hasAsk(n) ? 16 : 0)) + pad.top + pad.bottom
+    }
+    /// Settings › Appearance › Row height; Match System reads macOS's Sidebar icon size (small, medium, large), as
+    /// Finder and Mail do. Limit: only the height follows it, the text stays 13 pt (Text size scales that).
+    private var rowBase: CGFloat {
+        switch app.settings.string("workbench.sidebar.rowHeight") {
+        case "compact": 24
+        case "regular": 28
+        case "large": 32
+        default: [1: 24, 3: 32][UserDefaults.standard.integer(forKey: "NSTableViewDefaultSizeMode")] ?? 28
+        }
+    }
+    private func hasAsk(_ n: Node) -> Bool {
+        guard case .agent(let id) = n.kind, let s = app.session(id) else { return false }
+        return SidebarCell.askLine(s, mode: app.settings.string("workbench.sidebar.agentDetail") ?? "needsYou") != nil
     }
     /// Room in a row for its project's card to open (over the project's name) and close (under its last row).
     private func pads(_ n: Node) -> (top: CGFloat, bottom: CGFloat) {

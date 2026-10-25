@@ -13,9 +13,14 @@ final class SidebarCell: NSTableCellView {
     private let count = NSTextField(labelWithString: "")
     /// Right side: how long ago the state changed ("4m"), or on a project what needs you.
     private let trailing = NSTextField(labelWithString: "")
-    private let mark = StatusMark(size: 14)
-    /// An agent's mark keeps its column (times line up) unless the row has neither.
+    private let mark = StatusMark(size: 12)
+    /// An agent's mark, first in its row: the column people scan for who needs them. Kept when empty, so names line up.
     private let slot = NSView()
+    /// An agent's own icon after its name, grey, when it isn't the default agent (Settings › Appearance › Agent icons).
+    private let glyph = NSImageView()
+    /// Under an agent that asks or failed: what it asks, or what went wrong (Settings › Appearance › What agents ask).
+    private let ask = NSTextField(labelWithString: "")
+    private var rowY: NSLayoutConstraint?
     /// What an agent goes on with by itself: its /goal, or a command it started in the background.
     private let chip = Chip()
     private var add: NSButton?
@@ -82,20 +87,32 @@ final class SidebarCell: NSTableCellView {
             layout(row: [title, changes, pr, trailing, mark])
         case .agent:
             title.font = .ui(13)
-            icon.imageScaling = .scaleProportionallyUpOrDown
-            icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            for (v, side) in [(icon, 14.0), (glyph, 12.0)] {
+                v.imageScaling = .scaleProportionallyUpOrDown
+                NSLayoutConstraint.activate([v.widthAnchor.constraint(equalToConstant: side), v.heightAnchor.constraint(equalToConstant: side)])
+            }
+            glyph.alphaValue = 0.75
+            ask.font = .ui(11.5)
+            ask.lineBreakMode = .byTruncatingTail
+            ask.usesSingleLineMode = true
+            ask.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            ask.isHidden = true
             chip.isHidden = true
             // The name keeps its room first; the chip shortens its command down to its icon and an ellipsis, never less,
             // and a long command takes no more than a third of the row.
             chip.setContentCompressionResistancePriority(.init(200), for: .horizontal)
             let least = chip.widthAnchor.constraint(greaterThanOrEqualToConstant: 40); least.priority = .init(760)
             NSLayoutConstraint.activate([least, chip.widthAnchor.constraint(lessThanOrEqualToConstant: 72)])
-            // What it does sits on the right, as on a workspace's row.
             slot.translatesAutoresizingMaskIntoConstraints = false; slot.addSubview(mark)
-            NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 14), slot.heightAnchor.constraint(equalToConstant: 14),
+            NSLayoutConstraint.activate([slot.widthAnchor.constraint(equalToConstant: 12), slot.heightAnchor.constraint(equalToConstant: 12),
                                          mark.centerXAnchor.constraint(equalTo: slot.centerXAnchor),
                                          mark.centerYAnchor.constraint(equalTo: slot.centerYAnchor)])
-            layout(row: [icon, title, chip, trailing, slot])
+            layout(row: [slot, icon, title, glyph, chip, trailing])
+            (title.superview as? NSStackView)?.setCustomSpacing(8, after: slot)
+            ask.translatesAutoresizingMaskIntoConstraints = false; addSubview(ask)
+            NSLayoutConstraint.activate([ask.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+                                         ask.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
+                                         ask.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2)])
         }
         for v in [title, count] { v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         // The name takes the room up to what's on the right: no spacer views, whose spacing on both sides read as a gap.
@@ -137,8 +154,9 @@ final class SidebarCell: NSTableCellView {
         r.detachesHiddenViews = true
         for v in row where v === changes || v === pr { r.setVisibilityPriority(.notVisible, for: v) }
         r.translatesAutoresizingMaskIntoConstraints = false; addSubview(r)
-        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2), r.trailingAnchor.constraint(equalTo: trailingAnchor),
-                                     r.centerYAnchor.constraint(equalTo: centerYAnchor)])
+        let y = r.centerYAnchor.constraint(equalTo: centerYAnchor)
+        rowY = y
+        NSLayoutConstraint.activate([r.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2), r.trailingAnchor.constraint(equalTo: trailingAnchor), y])
     }
 
     /// The folder this row stands for, if any (RowBadges.folder).
@@ -222,10 +240,7 @@ final class SidebarCell: NSTableCellView {
             toolTip = nil   // the hover card shows the workspace in full
         case .agent(let sid):
             guard let s = m.session(sid) else { return }
-            let image = app.catalog.icon(s.agent, size: 16)
-            // Paused: the same icon without its colour, not see-through (a faded tile read wider than the others).
-            icon.image = s.status == .hibernated ? image?.grayscale : image; icon.contentTintColor = .secondaryLabelColor
-            icon.alphaValue = s.status == .hibernated ? 0.7 : 1
+            showIcon(s)
             title.stringValue = app.catalog.displayName(s)
             title.font = .ui(13, weight: Self.isNews(s) ? .semibold : .regular)
             mark.status = Self.shownStatus(s)
@@ -233,9 +248,52 @@ final class SidebarCell: NSTableCellView {
             mark.compacting = s.summary.hasPrefix("Compacting")
             mark.progress = s.progress.map { Double($0) / 100 }
             trailing.stringValue = s.status == .idle ? "" : shortAgo(s.statusAt ?? s.createdAt)
-            slot.isHidden = trailing.stringValue.isEmpty && mark.isHidden
             showChip(s)
             showState(s)
+            showAsk(s)
+        }
+    }
+
+    /// The agent's icon: before its name when Agent icons is Always, a grey glyph after it for an agent other than the
+    /// default one (Other Agents Only), none for Never.
+    private func showIcon(_ s: Session) {
+        let mode = app.settings.string("workbench.sidebar.agentIcons") ?? "others", image = app.catalog.icon(s.agent, size: 16)
+        icon.isHidden = mode != "always"
+        // Paused: the same icon without its colour, not see-through (a faded tile read wider than the others).
+        icon.image = s.status == .hibernated ? image?.grayscale : image
+        icon.alphaValue = s.status == .hibernated ? 0.7 : 1
+        glyph.isHidden = mode != "others" || s.agent == app.catalog.defaultAgent
+        glyph.image = image?.grayscale
+        glyph.toolTip = app.catalog.name(s.agent)
+        glyph.setAccessibilityLabel(glyph.toolTip)
+    }
+
+    /// The second line, and the name moved up to make room for it; the outline gives the row the height (`hasAsk`).
+    private func showAsk(_ s: Session) {
+        let line = Self.askLine(s, mode: app.settings.string("workbench.sidebar.agentDetail") ?? "needsYou")
+        ask.isHidden = line == nil
+        rowY?.constant = line == nil ? 0 : -TextSize.of(8)
+        guard let line else { return }
+        let grey = selected ? Self.onPill : NSColor.secondaryLabelColor, font = NSFont.ui(11.5)
+        let t = NSMutableAttributedString()
+        if let (word, color) = line.prefix {   // on the pill the word goes grey too: orange there is 3:1, the mark keeps the colour
+            t.append(NSAttributedString(string: word + " ", attributes: [.font: font, .foregroundColor: selected ? grey : color]))
+        }
+        t.append(NSAttributedString(string: line.text, attributes: [.font: font, .foregroundColor: grey]))
+        ask.attributedStringValue = t
+        ask.toolTip = line.text
+    }
+
+    /// "Asks: may I run npm test?", "Failed: rate limit until 14:00": what an agent that needs you wants, in its own
+    /// words (its summary); with `always` every agent says what it's on. Nil: no second line.
+    static func askLine(_ s: Session, mode: String) -> (prefix: (String, NSColor)?, text: String)? {
+        let st = shownStatus(s), text = s.summary.isEmpty ? st.words : s.summary
+        switch (mode, st) {
+        case ("never", _): return nil
+        case (_, .waiting): return ((String(localized: "Asks:"), .textOrange), text)
+        case (_, .error): return ((String(localized: "Failed:"), .textRed), text)
+        case ("always", _): return (nil, text)
+        default: return nil
         }
     }
 

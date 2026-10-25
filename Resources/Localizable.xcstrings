@@ -11132,6 +11132,125 @@
           }
         }
       }
+    },
+    "Asks:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Спрашивает:"
+          }
+        }
+      }
+    },
+    "Failed:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка:"
+          }
+        }
+      }
+    },
+    "Row height": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Высота строк"
+          }
+        }
+      }
+    },
+    "Match System follows Sidebar icon size in System Settings › Appearance.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Как в системе» берёт размер значков бокового меню из Системных настроек › Оформление."
+          }
+        }
+      }
+    },
+    "What agents ask": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вопросы агентов"
+          }
+        }
+      }
+    },
+    "A second line under an agent: its question, or what went wrong.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вторая строка под агентом: его вопрос или что пошло не так."
+          }
+        }
+      }
+    },
+    "Agent icons": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значки агентов"
+          }
+        }
+      }
+    },
+    "The default agent is set in Agents.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент по умолчанию выбирается в разделе «Агенты»."
+          }
+        }
+      }
+    },
+    "Compact": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Компактная"
+          }
+        }
+      }
+    },
+    "Regular": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обычная"
+          }
+        }
+      }
+    },
+    "Large": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Крупная"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

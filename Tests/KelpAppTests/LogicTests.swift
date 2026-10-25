@@ -76,6 +76,15 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(SidebarCell.isNews(session(.hibernated, unread: true)))   // bold as long as it's counted
 }
 
+@MainActor @Test func anAgentThatNeedsYouSaysWhatUnderItsName() {
+    let ask = SidebarCell.askLine(session(.waiting, summary: "May I run npm test?"), mode: "needsYou")
+    #expect(ask?.prefix?.0 == "Asks:" && ask?.text == "May I run npm test?")
+    #expect(SidebarCell.askLine(session(.error), mode: "needsYou")?.prefix?.0 == "Failed:")       // no summary: its state in words
+    #expect(SidebarCell.askLine(session(.working, summary: "Editing"), mode: "needsYou") == nil)   // one line unless it needs you
+    #expect(SidebarCell.askLine(session(.working, summary: "Editing"), mode: "always")?.text == "Editing")
+    #expect(SidebarCell.askLine(session(.waiting, summary: "May I?"), mode: "never") == nil)
+}
+
 @MainActor @Test func activityNumbersAndPercentagesAreReadable() {
     #expect(ActivityController.percent(0) == "0.0%" && ActivityController.percent(9.94) == "9.9%")
     #expect(ActivityController.percent(10) == "10%" && ActivityController.percent(99.6) == "100%")   // from 10 up no decimals
