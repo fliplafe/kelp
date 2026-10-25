@@ -20,6 +20,21 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         ], intentIdentifiers: [])])
         center?.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in Task { @MainActor in self.checkAllowed() } }
         track(owner: self) { [app] in app.sessions } changed: { [weak self] _ in self?.updateBadge() }
+        track(owner: self) { [app] in app.limits } changed: { [weak self] u in self?.limitsChanged(u) }
+    }
+
+    private var limitAlerts = LimitAlerts()
+    private func limitsChanged(_ u: UsageGet.Result?) {
+        guard let u else { return }
+        for a in limitAlerts.update(u) {
+            let name = app.catalog.all.first { $0.id == a.agent }?.name ?? a.agent
+            let c = UNMutableNotificationContent()
+            c.title = name + String(localized: " is at ") + "\(Int(a.percent.rounded())) %"
+            c.body = a.kind + (a.resets.map { " · " + String(localized: "resets ") + $0 } ?? "")
+            c.sound = a.level >= 95 ? .default : nil
+            center?.add(UNNotificationRequest(identifier: "limit-\(a.agent)-\(a.kind)-\(a.level)", content: c, trigger: nil))
+            if !allowed, NSApp.isActive { Banner.show("\(c.title) · \(c.body)") }
+        }
     }
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.

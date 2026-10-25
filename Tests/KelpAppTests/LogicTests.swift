@@ -225,3 +225,14 @@ extension OneAtATime {
     #expect(!p.contains(CGPoint(x: 100, y: 50), using: .winding) && !p.contains(CGPoint(x: 100, y: 50), using: .evenOdd))
     #expect(p.contains(CGPoint(x: -10, y: 50), using: .winding))
 }
+
+@Test func limitAlertsFireOncePerLevel() {
+    func u(_ p: Double) -> UsageGet.Result { .init(claude: [], codex: [], plans: ["grok": [.init(kind: "week", percent: p, resets: "Sat")]]) }
+    var a = LimitAlerts()
+    #expect(a.update(u(85)).isEmpty)                 // baseline: already full at launch
+    #expect(a.update(u(90)).isEmpty)
+    #expect(a.update(u(96)).map(\.level) == [95])
+    #expect(a.update(u(99)).isEmpty)
+    #expect(a.update(u(10)).isEmpty)                 // window reset
+    #expect(a.update(u(81)).map(\.level) == [80])
+}
