@@ -55,7 +55,8 @@ final class AgentSummary: NSView {
         lineHeight = lh
         NSLayoutConstraint.activate([
             lh, heightAnchor.constraint(equalTo: line.heightAnchor),
-            line.topAnchor.constraint(equalTo: topAnchor), line.leadingAnchor.constraint(equalTo: leadingAnchor), line.trailingAnchor.constraint(equalTo: trailingAnchor),
+            line.topAnchor.constraint(equalTo: topAnchor),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor), line.trailingAnchor.constraint(equalTo: trailingAnchor),
             capsule.centerYAnchor.constraint(equalTo: line.centerYAnchor), capsule.heightAnchor.constraint(equalToConstant: TextSize.of(24)),
             capsule.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -16),
             glass.topAnchor.constraint(equalTo: capsule.topAnchor), glass.bottomAnchor.constraint(equalTo: capsule.bottomAnchor),
@@ -105,7 +106,8 @@ final class AgentSummary: NSView {
                                             attributes: [.font: NSFont.ui(12), .foregroundColor: NSColor.secondaryLabelColor]))
             }
         } else if busy > 0 {
-            t.append(NSAttributedString(string: String(localized: "\(busy) working"), attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.secondaryLabelColor]))
+            t.append(NSAttributedString(string: String(localized: "\(busy) working"),
+                                        attributes: [.font: NSFont.ui(11), .foregroundColor: NSColor.secondaryLabelColor]))
         }
         title.attributedStringValue = t
         capsule.setAccessibilityRole(asking ? .button : .staticText)

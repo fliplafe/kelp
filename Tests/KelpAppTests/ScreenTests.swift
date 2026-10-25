@@ -140,6 +140,9 @@ extension OneAtATime {
         #expect(all.filter { $0 == "Allow rm?" }.count == 1)                   // listed once, under its workspace
         #expect(all.contains { $0.contains("Needs permission") })              // what it asks, under its name
         #expect(texts(vc.view).contains("1 need you"))                         // and counted over the list
+        let row = (0..<o.numberOfRows).compactMap { o.view(atColumn: 0, row: $0, makeIfNecessary: true) }
+            .first { ($0.accessibilityLabel() ?? "").hasPrefix("Allow rm?") }
+        #expect(row?.accessibilityLabel() == "Allow rm?, Needs your input, Asks: Needs permission, Atlas, 1m")   // one sentence for VoiceOver
     }
 }
 

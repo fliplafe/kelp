@@ -95,8 +95,8 @@ final class StatusMark: NSView {
     var compacting = false { didSet { if compacting != oldValue { update() } } }
     /// How far it got (0…1), when it says: a pie filling a circle, as Finder's and Safari's progress, not the spinning ring.
     var progress: Double? { didSet { if progress != oldValue { update() } } }
-    /// Done in a colour of its own, as an outlined ✓ (Needs You: green); nil, as everywhere.
-    var doneTint: NSColor? { didSet { if doneTint != oldValue { update() } } }
+    /// Read by VoiceOver on its own; off where its row says the state in its own label (a sidebar agent).
+    var announces = true { didSet { if announces != oldValue { update() } } }
     private let track = CAShapeLayer(), bar = CAShapeLayer()
 
     init(size: CGFloat = 12) {
@@ -142,7 +142,7 @@ final class StatusMark: NSView {
         isHidden = s == nil
         toolTip = filling.map { "\(s?.words ?? "") · \(Int($0 * 100)) %" } ?? s?.words
         // VoiceOver reads the state (the spinning ring is only a layer): the same words as the tooltip.
-        setAccessibilityElement(s != nil); setAccessibilityRole(.image)
+        setAccessibilityElement(s != nil && announces); setAccessibilityRole(.image)
         setAccessibilityLabel(compacting && s == .working ? String(localized: "Compacting its conversation") : toolTip)
         track.isHidden = filling == nil; bar.isHidden = filling == nil
         if let filling {
@@ -190,11 +190,10 @@ final class StatusMark: NSView {
             return
         }
         guard let s else { return }
-        let tinted = s == .done ? doneTint : nil
-        image.image = .symbol(tinted == nil ? s.symbol : "checkmark.circle", s.words)
+        image.image = .symbol(s.symbol, s.words)
         // The moon is wider than the circles: a size smaller, it takes the same room.
         image.symbolConfiguration = .init(pointSize: s == .hibernated ? size - 3 : size - 1, weight: .regular)
-        image.contentTintColor = tinted ?? s.nsColor
+        image.contentTintColor = s.nsColor
     }
 }
 

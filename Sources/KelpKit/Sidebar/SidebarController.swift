@@ -91,7 +91,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let v = NSView()
         search.placeholderString = String(localized: "Workspace or agent")
         search.delegate = self
-        search.controlSize = .small
+        search.controlSize = .regular   // 22 pt, level with the add button beside it (small was 19 pt, off its axis)
         search.sendsSearchStringImmediately = true
         search.target = self
         search.action = #selector(searchChanged)

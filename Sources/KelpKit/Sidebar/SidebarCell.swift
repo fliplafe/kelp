@@ -264,6 +264,7 @@ final class SidebarCell: NSTableCellView {
             showChip(s)
             showState(s)
             showAsk(s)
+            speak(s)
         }
     }
 
@@ -295,6 +296,20 @@ final class SidebarCell: NSTableCellView {
         t.append(NSAttributedString(string: line.text, attributes: [.font: font, .foregroundColor: grey]))
         ask.attributedStringValue = t
         ask.toolTip = line.text
+    }
+
+    /// VoiceOver reads the row as one sentence: "Fix login, needs your input, Asks: may I run npm test?, Atlas, now",
+    /// not its mark, name, line and time one by one.
+    private func speak(_ s: Session) {
+        let st = Self.shownStatus(s), project = app.repo(app.worktree(s.worktreeId)?.repoId)?.name
+        let state = mark.isHidden ? nil : st.words
+        let line = ask.isHidden ? nil : ask.stringValue
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel([title.stringValue, state, line, project, trailing.stringValue].compactMap { $0 }.filter { !$0.isEmpty }
+            .joined(separator: ", "))
+        mark.announces = false
+        for v in [title, ask, trailing] as [NSView] { v.setAccessibilityElement(false) }
     }
 
     /// "Asks: may I run npm test?", "Failed: rate limit until 14:00": what an agent that needs you wants, in its own
