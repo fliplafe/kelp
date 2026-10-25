@@ -34,7 +34,8 @@ package struct UsageView: View {
         VStack(alignment: .leading, spacing: 0) {
             if !rows.isEmpty {
                 Divider()
-                bars.padding(.horizontal, 14).padding(.vertical, 10)
+                // A minute at a time: a reading ages while nothing else changes.
+                TimelineView(.periodic(from: .now, by: 60)) { _ in bars.padding(.horizontal, 14).padding(.vertical, 10) }
             }
         }
         // Watched while shown: the daemon says when a plan read or the token count changed.
@@ -54,7 +55,8 @@ package struct UsageView: View {
                         Bar(used: main.used)
                         if let o = r.other { Bar(used: o.used, height: 2) }
                     }
-                    column(Self.percent(main.used), ["100%"], .trailing).monospacedDigit().foregroundStyle(UsageView.tint(main.used))
+                    column((r.stale ? "~" : "") + Self.percent(main.used), [rows.contains(where: \.stale) ? "~100%" : "100%"], .trailing)
+                        .monospacedDigit().foregroundStyle(UsageView.tint(main.used))
                     if !sessionResets.isEmpty {
                         column(main.session ? main.resets ?? "" : "", sessionResets, .leading).foregroundStyle(.secondary)
                     }
@@ -144,7 +146,9 @@ package struct UsageView: View {
             var r = Row(id: a.id, name: Self.short(a.name), fullName: a.name)
             r.readAt = u.plansReadAt?[a.id].map { Date(timeIntervalSince1970: $0) }
             switch a.id {
-            case "claude": r.lines = Self.claude(u)
+            case "claude":
+                r.lines = Self.claude(u)
+                if r.readAt == nil { r.readAt = u.claudeLimits?.compactMap(\.observedAt).max().map { Date(timeIntervalSince1970: $0) } }
             // Codex logs its limits only when it's used: an old reading is dimmed and says how old it is.
             case "codex": r.lines = Self.codex(u); r.readAt = u.codex.first.map { Date(timeIntervalSince1970: $0.observedAt) }
             default: r.lines = Self.lines(u.plans?[a.id] ?? [])

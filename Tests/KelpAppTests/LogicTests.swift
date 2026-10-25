@@ -245,3 +245,13 @@ extension OneAtATime {
     #expect(a.update(u(99), first: nil).isEmpty)     // off
     #expect(LimitAlerts.levels(first: 95) == [95])
 }
+
+@Test func staleLimitReadingsDontAlert() {
+    let now = Date()
+    func u(_ ago: Double) -> UsageGet.Result {
+        .init(claude: [], codex: [], plans: ["grok": [.init(kind: "week", percent: 99, resets: nil)]],
+              plansReadAt: ["grok": now.timeIntervalSince1970 - ago])
+    }
+    #expect(LimitAlerts.readings(u(60), now: now).count == 1)
+    #expect(LimitAlerts.readings(u(7200), now: now).isEmpty)
+}

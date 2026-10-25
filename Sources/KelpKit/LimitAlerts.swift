@@ -1,3 +1,4 @@
+import Foundation
 import Core
 
 /// Plan limits crossing a level (Settings › usage.alertAt, 80 % by default) or 95 %: one alert per level, until the limit
@@ -11,10 +12,12 @@ struct LimitAlerts {
     private var seeded = false
 
     /// Every limit the agents report now, as the sidebar's rings show them.
-    static func readings(_ u: UsageGet.Result) -> [(agent: String, limit: UsageGet.Limit)] {
-        var out = (u.plans ?? [:]).flatMap { a, ls in ls.map { (a, $0) } }.filter { $0.0 != "claude" }
-        out += (u.plans?["claude"] ?? u.claudeLimits ?? []).map { ("claude", $0) }
-        if let x = u.codex.first {
+    /// Not the ones the sidebar dims: a reading from more than half an hour ago says nothing about now.
+    static func readings(_ u: UsageGet.Result, now: Date = Date()) -> [(agent: String, limit: UsageGet.Limit)] {
+        let fresh = { (agent: String) in u.plansReadAt?[agent].map { now.timeIntervalSince1970 - $0 <= 1800 } ?? true }
+        var out = (u.plans ?? [:]).filter { fresh($0.key) }.flatMap { a, ls in ls.map { (a, $0) } }.filter { $0.0 != "claude" }
+        if fresh("claude") { out += (u.plans?["claude"] ?? u.claudeLimits ?? []).map { ("claude", $0) } }
+        if let x = u.codex.first, now.timeIntervalSince1970 - x.observedAt <= 1800 {
             if let p = x.primaryUsedPercent { out.append(("codex", .init(kind: "session", percent: p, resets: nil))) }
             if let p = x.secondaryUsedPercent { out.append(("codex", .init(kind: "week", percent: p, resets: nil))) }
         }
