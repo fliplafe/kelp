@@ -25,6 +25,15 @@ private func kinds(_ items: [SidebarItem]) -> [SidebarItem.Kind] { items.map(\.k
     #expect(kinds(out[0].children[0].children) == [.agent("a1")])   // an ended agent and a plain terminal aren't
 }
 
+@Test func agentsFirstLiftsProjectsWithAgentsAndKeepsTheRestInOrder() {
+    let r3 = Repo(id: "r3", name: "gamma", path: "/c")
+    var t = SidebarTree(projects: [r1, r2, r3], workspaces: [wt("w1", "r1", "main"), wt("w2", "r2", "main"), wt("w3", "r3", "main")],
+                        sessions: [agent("a3", in: "w3", .working)])
+    #expect(kinds(t.build()) == [.project("r1"), .project("r2"), .project("r3")])   // as arranged, by default
+    t.activeFirst = true
+    #expect(kinds(t.build()) == [.project("r3"), .project("r1"), .project("r2")])
+}
+
 @Test func aProjectWithOneWorkspaceStandsForIt() {
     let out = tree([wt("w1", "r1", "main"), wt("w2", "r1", "old", archived: true)], [agent("a1", in: "w1", .working)]).build()
     #expect(out[0].workspace == "w1" && kinds(out[0].children) == [.agent("a1")])   // the agents right under the project

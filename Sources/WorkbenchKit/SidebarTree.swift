@@ -29,6 +29,8 @@ public struct SidebarTree {
     public var current: String?
     public var statusLabel: (AgentStatus) -> String = { $0.rawValue }
     public var hasPR: (Worktree) -> Bool = { _ in false }
+    /// Projects with live agents first, each part in the order people gave them (Settings › Project order).
+    public var activeFirst = false
 
     public init(projects: [Repo], workspaces: [Worktree], sessions: [Session]) {
         self.projects = projects; self.workspaces = workspaces; self.sessions = sessions
@@ -63,13 +65,15 @@ public struct SidebarTree {
             workspaces.first { $0.id == id }.flatMap { w in projects.first { $0.id == w.repoId }.flatMap { workspace(w, $0) } }
         }
         if !pinnedItems.isEmpty { out.append(SidebarItem(kind: .section("Pinned"), children: pinnedItems)) }
-        out += projects.compactMap { r in
+        let listed = projects.compactMap { r -> SidebarItem? in
             let mine = live.filter { $0.repoId == r.id && !pinned.contains($0.id) }
             let kids = mine.compactMap { workspace($0, r) }
             if kids.isEmpty && narrowed { return nil }
             if mine.count == 1, let only = kids.first { return SidebarItem(kind: .project(r.id), children: only.children, workspace: mine[0].id) }
             return SidebarItem(kind: .project(r.id), children: kids)
         }
+        func busy(_ i: SidebarItem) -> Bool { i.children.contains { if case .agent = $0.kind { true } else { busy($0) } } }
+        out += activeFirst ? listed.filter(busy) + listed.filter { !busy($0) } : listed
         return out
     }
 }

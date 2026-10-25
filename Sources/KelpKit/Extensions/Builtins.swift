@@ -69,6 +69,8 @@ package enum Builtins {
         s("workbench.sidebar.agentIcons", "Agent icons", "enum", "others", "The default agent is set in Agents.",
           options: ["others", "always", "never"], group: "Sidebar"),
         s("workbench.sidebar.gitBadges", "Changes and pull requests", "boolean", true,
-          "“+6 −2” and “#128” beside folders. Off also stops checking GitHub for them.", group: "Sidebar")
+          "“+6 −2” and “#128” beside folders. Off also stops checking GitHub for them.", group: "Sidebar"),
+        s("workbench.sidebar.order", "Project order", "enum", "manual", "Agents First moves rows as agents start and stop.",
+          options: ["manual", "active"], group: "Sidebar")
     ]
 }

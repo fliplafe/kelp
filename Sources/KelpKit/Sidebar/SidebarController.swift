@@ -132,6 +132,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         track(owner: self) { [app] in ["rowHeight", "agentDetail", "agentIcons"].map { app.settings.string("workbench.sidebar." + $0) } }
             changed: { [weak self] _ in self?.updateVisibleCells() }
         track(owner: self) { [app] in app.settings.bool("workbench.sidebar.gitBadges") } changed: { [weak self] _ in self?.updateVisibleCells() }
+        track(owner: self) { [app] in app.settings.string("workbench.sidebar.order") } changed: { [weak self] _ in self?.refresh() }
         // "now" becomes "1m": the times on the right move on their own (a clock: nothing is asked of the daemon).
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in   // main run loop
             MainActor.assumeIsolated { if self?.view.window?.occlusionState.contains(.visible) == true { self?.updateVisibleCells() } }
@@ -211,6 +212,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         tree.query = query
         tree.filter = filter
         tree.current = app.workbench.workspaceId
+        tree.activeFirst = app.settings.string("workbench.sidebar.order") == "active"
         tree.statusLabel = { $0.label }
         tree.hasPR = { [app] w in
             (app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)).map { [app] in app.rowBadges.prs[$0.id] != nil } ?? false

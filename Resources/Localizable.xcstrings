@@ -11283,6 +11283,28 @@
           }
         }
       }
+    },
+    "Project order": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Порядок проектов"
+          }
+        }
+      }
+    },
+    "Agents First moves rows as agents start and stop.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Сначала с агентами» двигает строки, когда агенты запускаются и останавливаются."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
