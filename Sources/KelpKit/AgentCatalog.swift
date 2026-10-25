@@ -66,6 +66,13 @@ package struct AgentCatalog {
         case "hermes": String(localized: "Nous Research’s self-improving agent")
         case "omp": String(localized: "Pi with an IDE’s tools wired in, any model")
         case "fx": String(localized: "Vercel’s small native agent, any model")
+        case "pi": String(localized: "A minimal, extensible terminal agent, any model")
+        case "grok": String(localized: "xAI’s coding agent")
+        case "antigravity": String(localized: "Google’s Antigravity agent in the terminal")
+        case "kimi": String(localized: "Moonshot AI’s coding agent")
+        case "kilo": String(localized: "Open source agent, any model provider")
+        case "goose": String(localized: "Open source, extensible agent, any model")
+        case "kiro": String(localized: "AWS’s agent in the terminal")
         default: nil
         }
     }
@@ -74,9 +81,18 @@ package struct AgentCatalog {
         ["claude", "codex", "gemini", "opencode", "cursor"].compactMap { id in all.first { $0.id == id && $0.install != nil } }
     }
     /// The agent's own install command in a terminal tab of `e`, in plain sight; once it ends, the agent is looked for again.
+    /// An installer that needs npm or Homebrew, on a Mac without it, says so here instead of failing in its tab.
     package func install(_ m: AgentManifest, in e: EditorArea) {
         guard let cmd = m.install else { return }
-        e.run(command: cmd, title: String(localized: "Install \(m.name)")) { [app] s in app.availability.watchInstall(s.id) }
+        Task { [app] in
+            if let tool = m.installNeeds, let found = await app.quiet(ProcessWhich(commands: [tool])), found[tool] == nil {
+                let first = tool == "npm" ? String(localized: "Install Node.js first (nodejs.org, or brew install node).")
+                                          : String(localized: "Install Homebrew first (brew.sh).")
+                Banner.show(String(localized: "\(m.name) installs with \(tool), which isn’t on this Mac. ") + first, style: .error)
+                return
+            }
+            e.run(command: cmd, title: String(localized: "Install \(m.name)")) { s in app.availability.watchInstall(s.id) }
+        }
     }
 
     /// The agent's real icon when there is one (AgentIcons), else its initial on a tile of the same shape; a terminal's symbol.
@@ -114,10 +130,11 @@ package final class AgentAvailability {
     /// An install running in session `id`: when it ends, the agents are looked for again (no wait for the next check).
     func watchInstall(_ id: String) { installs.insert(id) }
     func sessionChanged(_ s: Session) {
-        if s.status == .exited, installs.remove(s.id) != nil { refresh(force: true) }
+        if s.status == .exited, installs.remove(s.id) != nil { refresh(force: true, rereadPath: true) }
     }
 
-    package func refresh(force: Bool = false) {
+    /// `rereadPath`: an installer just ran; the daemon reads the login shell's PATH again first, for the folder it added to the profile.
+    package func refresh(force: Bool = false, rereadPath: Bool = false) {
         let app = self.app
         guard !checking, force || Date().timeIntervalSince(checkedAt) > 300 else { return }
         checking = true
@@ -129,6 +146,7 @@ package final class AgentAvailability {
             guard await MainActor.run(body: { app.connected }) else {
                 await MainActor.run { self.checking = false }; return
             }
+            if rereadPath { _ = await app.quiet(ProcessRefreshPath(), timeout: 20) }   // the shell is asked: up to 8 s
             // Where the daemon finds them on its login-shell PATH ("tmux" too); not knowing, nothing changes.
             guard let paths = await app.quiet(ProcessWhich(commands: commands.map(\.1) + ["tmux"])) else {
                 await MainActor.run { self.checking = false }; return

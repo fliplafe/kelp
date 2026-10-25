@@ -499,3 +499,12 @@ import TestSupport
     #expect(r[1].percent == 12.5 && r[1].resets == "Nov 23")
     #expect(ClaudeLimits.parseCursorUsage("Loading usage data...").isEmpty)
 }
+
+/// Every preset an installer exists for offers it; the ones that need npm or Homebrew say so, so the app can check first.
+@Test func presetsWithAnInstallerOfferIt() throws {
+    func installed(_ id: String) throws -> AgentManifest { AgentManifest.withInstall(try #require(AgentManifest.presets.first { $0.id == id })) }
+    for id in ["pi", "grok", "antigravity", "kilo", "goose", "kiro"] { #expect(try installed(id).install != nil, "\(id) installs") }
+    #expect(try installed("kilo").installNeeds == "npm" && installed("codex").installNeeds == "npm" && installed("crush").installNeeds == "brew")
+    #expect(try installed("claude").installNeeds == nil && installed("pi").installNeeds == nil && installed("goose").installNeeds == nil)
+    #expect(try installed("goose").install?.contains("CONFIGURE=false") == true)
+}

@@ -310,6 +310,17 @@ final class Flag: @unchecked Sendable {   // the bool under lock
     #expect(refused.value == LoginPath.path("") && refused.ifRead == nil)
 }
 
+/// After an installer, the shell is asked again and the new PATH replaces the old; an answer that isn't one keeps the old.
+@Test func theLoginPathIsReadAgainAfterAnInstallerButNotForAFailedRead() {
+    let once = LoginPath.Once { "/old" }
+    #expect(once.value == "/old")
+    LoginPath.reread(once, from: nil)
+    LoginPath.reread(once, from: "")
+    #expect(once.value == "/old")
+    LoginPath.reread(once, from: "/home/me/.grok/bin:/usr/bin")
+    #expect(once.value.hasPrefix("/home/me/.grok/bin:/usr/bin") && once.value != "/old")
+}
+
 /// A reply in the daemon's layout is matched to its call from its first bytes; anything else goes to the full decode.
 @Test func aRepliesIdIsReadFromItsFirstBytes() {
     func id(_ s: String) -> Int? { RPCClient.resultID(Data(s.utf8)) }

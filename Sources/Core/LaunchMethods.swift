@@ -157,6 +157,12 @@ public struct ProcessWhich: RPCMethod {
     public var commands: [String]
     public init(commands: [String]) { self.commands = commands }
 }
+/// The login shell's PATH read again, after an installer changed the shell profile: `process.which` and new sessions
+/// then find what it installed. Answered once the shell has been asked (seconds, with a slow profile).
+public struct ProcessRefreshPath: RPCMethod {
+    public static let name = "process.refreshPath"; public typealias Result = Done
+    public init() {}
+}
 /// "pong".
 public struct Ping: RPCMethod { public static let name = "ping"; public typealias Result = String; public init() {} }
 public struct DaemonShutdown: RPCMethod { public static let name = "daemon.shutdown"; public typealias Result = Done; public init() {} }

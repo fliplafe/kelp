@@ -11,6 +11,18 @@ public enum LoginPath {
     /// The PATH, waiting for the login shell the first time (seconds, with a slow profile).
     public static var value: String { shared.value }
 
+    /// The login shell asked again, for an installer that has just added its folder to the profile (opencode, Grok and
+    /// Kimi do): the PATH read at launch doesn't have it. A read that fails or comes back empty keeps the old PATH.
+    public static func reread(shell: String = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") {
+        guard ProcessInfo.processInfo.environment["KELP_LOGIN_PATH"] == nil else { return }   // given outright: nothing to read
+        reread(shared, from: shellPath(shell: shell))
+    }
+
+    static func reread(_ once: Once, from shell: String?) {
+        guard let shell, !shell.isEmpty else { return }
+        once.replace(path(shell))
+    }
+
     /// Absolute path of `command`, or a message the UI can show as is.
     public static func resolve(_ command: String) throws -> String { try resolve(command, in: value) }
 
@@ -66,6 +78,8 @@ public enum LoginPath {
         init(_ read: @escaping @Sendable () -> String?) { self.read = read }
 
         var ifRead: String? { known.withLock { $0 } }
+
+        func replace(_ v: String) { known.withLock { $0 = v } }
 
         var value: String {
             if let v = ifRead { return v }

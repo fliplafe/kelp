@@ -145,7 +145,16 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
             "hermes": ("curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", "hermes update", nil),
             "kimi": ("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash", "kimi upgrade", nil),
             "omp": ("curl -fsSL https://omp.sh/install | sh", "omp update", "@oh-my-pi/pi-coding-agent"),
-            "fx": ("curl -fsSL https://fx.sh/setup.sh | bash", "fx upgrade", nil)
+            "fx": ("curl -fsSL https://fx.sh/setup.sh | bash", "fx upgrade", nil),
+            // Pi's and Grok's installers run again as the update; Pi's fetches Node when it's missing, which npm wouldn't.
+            "pi": ("curl -fsSL https://pi.dev/install.sh | sh", "curl -fsSL https://pi.dev/install.sh | sh", "@earendil-works/pi-coding-agent"),
+            "grok": ("curl -fsSL https://x.ai/cli/install.sh | bash", "curl -fsSL https://x.ai/cli/install.sh | bash", nil),
+            "antigravity": ("curl -fsSL https://antigravity.google/cli/install.sh | bash", nil, nil),   // updates itself while it runs
+            "kilo": ("npm install -g @kilocode/cli", "kilo upgrade", "@kilocode/cli"),
+            // CONFIGURE=false: no provider questions in the installer's tab; goose asks on its first run.
+            "goose": ("curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash",
+                      "goose update", nil),
+            "kiro": ("curl -fsSL https://cli.kiro.dev/install | bash", "kiro-cli update", nil)
         ]
         guard let k = known[m.id] else { return m }
         var m = m
@@ -153,6 +162,12 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         if m.update == nil { m.update = k.update }
         if m.npm == nil { m.npm = k.npm }
         return m
+    }
+
+    /// The package manager its install command needs, when that's not something every Mac has (npm, Homebrew).
+    public var installNeeds: String? {
+        guard let first = install?.split(separator: " ").first.map(String.init), ["npm", "brew"].contains(first) else { return nil }
+        return first
     }
 
     public static let defaultWaiting = [

@@ -86,6 +86,7 @@ pane.report_agent
 ping
 ports.list
 ports.stop
+process.refreshPath
 process.run
 process.which
 recipe.render

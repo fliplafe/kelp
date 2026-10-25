@@ -293,7 +293,12 @@ extension TaskFromIssue: AsyncHandled {
 
 extension Methods {
     static let launchMethods: [any Handled.Type] = [SessionCreate.self, TmuxList.self, SessionRestart.self, SessionHandoff.self, HistoryResume.self,
-        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, DaemonUpgrade.self, ProcessRun.self, ProcessWhich.self]
+        SessionHook.self, SessionAnnotate.self, RecipeRender.self, Ping.self, DaemonShutdown.self, DaemonUpgrade.self, ProcessRun.self, ProcessWhich.self,
+        ProcessRefreshPath.self]
+}
+
+extension ProcessRefreshPath: Handled {
+    func handle(_: NoService) throws -> Done { LoginPath.reread(); return Done() }   // runs the user's shell: not `quick`, on an offload thread
 }
 
 extension ProcessWhich: Handled {
