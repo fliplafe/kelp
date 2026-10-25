@@ -144,6 +144,14 @@ public struct StatusDetector: Sendable {
     /// `typing`: keys without Return (the prompt is still being written); output in the next seconds is their echo.
     public mutating func input(typing: Bool = false, at now: Date = Date()) { tail = ""; active = true; settledAt = nil; typedAt = typing ? now : nil }
 
+    /// The agent printed that its turn was cut short: idle at once, and its redraws in the next seconds ("Conversation
+    /// interrupted") aren't new work.
+    public mutating func interrupted(at now: Date = Date()) {
+        guard !settled else { return }
+        status = .idle
+        settledAt = now
+    }
+
     /// A better guess from elsewhere (local model) that does not switch heuristics off like a hook does.
     public mutating func override(_ s: AgentStatus) { if status != .exited && status != .hibernated { status = s } else if s == .hibernated { status = s } }
 

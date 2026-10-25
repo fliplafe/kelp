@@ -208,3 +208,9 @@ import Agents
     let command = try await w.c.call(SessionCreate(worktreeId: wt.id, command: "exec cat"))
     #expect(w.d.sessions.live[agent.id]?.resumable == true && w.d.sessions.live[command.id]?.resumable == false)
 }
+
+@Test func cutShortTurnsAreRecognisedOnScreen() {
+    #expect(LiveSession.printedStopped("⎿ Interrupted · What should Claude do instead?"))
+    #expect(LiveSession.printedStopped("■ Conversation   interrupted - tell the model\nwhat to do differently."))
+    #expect(!LiveSession.printedStopped("Reading the interrupt handler in main.swift"))
+}

@@ -460,3 +460,14 @@ import TestSupport
     #expect(d.status == .idle)
     #expect(StatusDetector.wholeSequences("ok\u{1B}[31").rest == "\u{1B}[31" && StatusDetector.wholeSequences("ok\u{1B}[31m").rest.isEmpty)
 }
+
+@Test func aCutShortTurnIsIdleAndItsRedrawIsNoWork() {
+    var d = StatusDetector(manifest: AgentManifest.presets.first { $0.id == "codex" }!)
+    let t = Date()
+    d.input(at: t)
+    d.output("Working on the tests for the login form", at: t)
+    #expect(d.status == .working)
+    d.interrupted(at: t.addingTimeInterval(1))
+    d.output("Conversation interrupted again, more words here", at: t.addingTimeInterval(2))
+    #expect(d.status == .idle)
+}

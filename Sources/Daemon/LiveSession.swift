@@ -41,7 +41,14 @@ final class LiveSession: Sendable {
     private let turnWork = DispatchQueue(label: "kelp.session.turn", qos: .utility)
     // swiftlint:disable:next force_try
     static let urlRegex = try! NSRegularExpression(pattern: #"https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(:\d+)?[^\s\x1b'"]*"#)
-    static let stoppedMarkers = ["Interrupted", "What should Claude do instead", "tell Claude what to do"]
+    /// What an agent prints once its turn was cut short: Claude Code's "Interrupted · What should Claude do instead?", Codex's
+    /// "■ Conversation interrupted - tell the model what to do differently." Words placed one by one come with odd spacing.
+    static let stoppedMarkers = ["Interrupted", "What should Claude do instead", "tell Claude what to do",
+                                 "Conversation interrupted", "tell the model what to do"]
+    static func printedStopped(_ seen: String) -> Bool {
+        let flat = seen.replacing(/\s+/, with: " ")
+        return stoppedMarkers.contains(where: flat.contains)
+    }
 
     /// One turn of the agent: the tree when it started working, and what it changed by the time it stopped.
     struct Turn: Codable, Sendable {
@@ -271,8 +278,8 @@ final class LiveSession: Sendable {
             s.detector.tick()
             if let arm = s.interruptArmed {
                 if s.lastHookAt > arm.at { s.interruptArmed = nil }
-                else if Self.stoppedMarkers.contains(where: arm.seen.contains) {
-                    s.detector.override(.idle)
+                else if Self.printedStopped(arm.seen) {
+                    s.detector.interrupted()
                     s.record.summary = "Stopped by you"
                     s.interruptArmed = nil
                 } else if Date().timeIntervalSince(arm.at) > 10 { s.interruptArmed = nil }
@@ -317,8 +324,9 @@ final class LiveSession: Sendable {
             s.detector.input(typing: !d.contains(0x0D))   // keys without Return: the prompt is still being written
             var read: Session?
             if s.record.unread { s.record.unread = false; read = s.record }   // typing into it is having read it
+            // Hooks send nothing for a cut-short turn, and a heuristic would call it done a few seconds late: the screen decides.
+            if Self.isStopKey(d), s.record.status == .working || (s.hooked && s.record.status == .waiting) { s.interruptArmed = (Date(), "") }
             if s.hooked {
-                if Self.isStopKey(d), s.record.status == .working || s.record.status == .waiting { s.interruptArmed = (Date(), "") }
                 // An answer to a question or a permission menu: it works again (Claude Code sends no hook for that).
                 if s.record.status == .waiting, d.contains(0x0D) || (d.count == 1 && (0x31...0x39).contains(d[0])) {
                     s.detector.override(.working); s.interruptArmed = (Date(), "")
