@@ -203,7 +203,8 @@ final class CommitCell: NSTableCellView, Hoverable {
         bang?.setAccessibilityLabel(String(localized: "Breaking change"))
         let mark = Self.mark(s, merge: c.parents.count > 1).map { m in
             let v = NSImageView(image: .symbol(m.symbol, s.type ?? String(localized: "Merge commit")))
-            v.symbolConfiguration = .init(pointSize: 10, weight: .medium); v.contentTintColor = m.color
+            // One colour in the list, so the subjects lead; the card under the pointer shows the type's own.
+            v.symbolConfiguration = .init(pointSize: 10, weight: .medium); v.contentTintColor = .secondaryLabelColor
             v.widthAnchor.constraint(equalToConstant: 13).isActive = true
             return v
         }
