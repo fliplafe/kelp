@@ -11061,12 +11061,12 @@
         }
       }
     },
-    "More Agents…": {
+    "Agent Catalog…": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Другие агенты…"
+            "value": "Каталог агентов…"
           }
         }
       }
@@ -11555,6 +11555,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "Автоматически"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все"
+          }
+        }
+      }
+    },
+    "Installed %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлены: %lld"
+          }
+        }
+      }
+    },
+    "Available %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступны: %lld"
+          }
+        }
+      }
+    },
+    "No agent is installed yet.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока не установлено ни одного агента."
+          }
+        }
+      }
+    },
+    "Every agent Kelp knows is installed.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлены все агенты, которые знает Kelp."
           }
         }
       }

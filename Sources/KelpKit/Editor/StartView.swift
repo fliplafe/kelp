@@ -91,7 +91,7 @@ final class StartView: NSView, NSTextFieldDelegate {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The agents to start, in two columns when there are many; with none, what to install.
+    /// The agents to start, in two columns when there are many; with none, what to install; then the catalog.
     private func agentRows(_ agents: [AgentManifest], tiles: [StartRow]) -> [NSView] {
         let app = self.app
         var rows: [NSView] = []
@@ -104,9 +104,6 @@ final class StartView: NSView, NSTextFieldDelegate {
                     self?.onInstall?(m)
                 }
             }
-            rows.append(StartRow(image: .symbol("ellipsis.circle"), title: String(localized: "More Agents…"), shortcut: nil) {
-                SettingsWindow.show(app, section: "catalog")
-            })
         } else if tiles.count > 5 {
             let grid = NSGridView(numberOfColumns: 2, rows: 0)
             grid.columnSpacing = 4
@@ -118,6 +115,10 @@ final class StartView: NSView, NSTextFieldDelegate {
         } else {
             rows += tiles
         }
+        // Installing, updating and setting up agents is the catalog's (Settings), not something the "+" menu starts.
+        rows.append(StartRow(image: .symbol("square.grid.2x2"), title: String(localized: "Agent Catalog…"), shortcut: nil) {
+            SettingsWindow.show(app, section: "catalog")
+        })
         return rows
     }
 

@@ -10,9 +10,15 @@ import KelpKit
 struct AgentsSettings: View {
     let app: AppModel
     init(app: AppModel) { self.app = app }
-    @State private var agents = AgentManifest.load(dir: Paths.agents)
+    @State private var files = AgentManifest.load(dir: Paths.agents)
+    /// The presets and ~/.kelp/agents, then the agents extensions add.
+    private var agents: [AgentManifest] {
+        (files + app.catalog.all.filter { a in !files.contains { $0.id == a.id } }).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
     @State private var selection: String? = "claude"
     @State private var query = ""
+    @State private var show = Show.all
+    private enum Show { case all, installed, available }
     @State private var command = ""
     @State private var args = ""
     @State private var env = ""
@@ -33,21 +39,31 @@ struct AgentsSettings: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 TextField("Search agents", text: $query, prompt: Text("Search agents")).textFieldStyle(.roundedBorder).labelsHidden()
+                // Every agent Kelp knows, on this Mac or not: one click to the ones there are to install.
+                let haveCount = agents.filter(installed).count
+                Picker("Show", selection: $show) {
+                    Text("All").tag(Show.all)
+                    Text("Installed \(haveCount)").tag(Show.installed)
+                    Text("Available \(agents.count - haveCount)").tag(Show.available)
+                }.pickerStyle(.segmented).labelsHidden()
                 // What's on this Mac first; the rest under it, greyed, to install from the card.
                 List(selection: $selection) {
                     let shown = agents.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-                    let have = shown.filter(installed)
+                    let have = show == .available ? [] : shown.filter(installed)
                     if !have.isEmpty { Section("Installed") { ForEach(have, id: \.id) { row($0) } } }
-                    let rest = shown.filter { !installed($0) }
+                    let rest = show == .installed ? [] : shown.filter { !installed($0) }
                     if !rest.isEmpty { Section("Not Installed") { ForEach(rest, id: \.id) { row($0) } } }
-                    if shown.isEmpty { Text("No agents match “\(query)”.").foregroundStyle(.secondary) }
+                    if have.isEmpty && rest.isEmpty {
+                        Text(!query.isEmpty ? "No agents match “\(query)”." : show == .installed ? "No agent is installed yet." : "Every agent Kelp knows is installed.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if !updates.isEmpty {
                     Text(updates.count == 1 ? String(localized: "1 update available") : String(localized: "\(updates.count) updates available"))
                         .font(.caption).foregroundStyle(.orange)
                 }
             }
-            .frame(width: 210)
+            .frame(width: 250)
             ScrollView {
                 if let m = current { card(m).padding(.leading, 16).padding(.trailing, 4) }
             }
@@ -288,7 +304,7 @@ struct AgentsSettings: View {
         command = m.command; args = m.args.joined(separator: " ")
         env = m.env.map { "\($0)=\($1)" }.sorted().joined(separator: "\n"); saved = false
     }
-    private func reload() { agents = AgentManifest.load(dir: Paths.agents); load() }
+    private func reload() { files = AgentManifest.load(dir: Paths.agents); load() }
     /// "Saved" only once it is: a secret the keychain refused, or a file that couldn't be written, says why instead.
     private func save() async {
         guard var m = current else { return }
