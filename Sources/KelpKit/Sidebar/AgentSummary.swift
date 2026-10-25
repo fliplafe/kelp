@@ -6,7 +6,7 @@ import WorkbenchKit
 /// 1 working") that goes to the next one, as ⇧⌘U does. Otherwise how many work, in grey on the projects' icon axis.
 /// The rows say what each one wants (SidebarCell's second line), so the capsule doesn't list them again. The line
 /// keeps its height whatever it says: nothing in the list moves when an agent starts asking or stops. A new question
-/// lights the capsule up for a moment. No agents at all: the line goes.
+/// lights the capsule up for a moment. Nobody asking and nobody working: the line goes.
 @MainActor
 final class AgentSummary: NSView {
     /// The line's place in the layout: the list starts under it.
@@ -89,7 +89,7 @@ final class AgentSummary: NSView {
         let questions = Set(inbox.queue.filter(asks).map(\.id)), new = shown.filter(asks).map(\.id).filter { !(seen ?? questions).contains($0) }
         seen = (seen ?? questions).union(shown.filter(asks).map(\.id)).union(inbox.viewing).intersection(questions)
 
-        isHidden = agents.isEmpty && shown.isEmpty
+        isHidden = busy == 0 && shown.isEmpty   // nothing to say: no empty band over the list
         lineHeight?.constant = isHidden ? 0 : TextSize.of(30)
         asking = !shown.isEmpty
         glass.isHidden = !asking
