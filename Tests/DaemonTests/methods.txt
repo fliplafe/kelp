@@ -48,6 +48,7 @@ git.stash
 git.status
 git.switch
 git.unstage
+git.unsynced
 git.webPages
 git.webURL
 github.branchPR

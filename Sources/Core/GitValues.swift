@@ -185,6 +185,20 @@ public struct BranchInfo: Codable, Sendable, Equatable {
     }
 }
 
+/// The newest commits a sync would move: `outgoing` is what a push sends, `incoming` what a pull brings (none without an upstream).
+public struct Unsynced: Codable, Sendable, Equatable {
+    public struct Commit: Codable, Sendable, Equatable {
+        public var hash: String, subject: String, author: String
+        /// Seconds since 1970.
+        public var date: Double
+        public init(hash: String, subject: String, author: String, date: Double) {
+            self.hash = hash; self.subject = subject; self.author = author; self.date = date
+        }
+    }
+    public var outgoing: [Commit], incoming: [Commit]
+    public init(outgoing: [Commit], incoming: [Commit]) { self.outgoing = outgoing; self.incoming = incoming }
+}
+
 /// Lines added / removed in the working tree (staged, unstaged and new files) against HEAD, split by what kind of file.
 public struct LineStats: Codable, Sendable, Equatable {
     public enum Kind: String, Codable, Sendable, CaseIterable { case code, tests, generated }

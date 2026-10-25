@@ -122,6 +122,27 @@ extension Git {
         return b
     }
 
+    /// The newest `limit` commits a push would send and a pull would bring. With an upstream: HEAD against it; without
+    /// one (never pushed, or its branch deleted), what is on no remote branch yet, as `branches` counts it.
+    public static func unsynced(_ path: String, limit: Int = 5, remotes: Remotes = .none) throws -> Unsynced {
+        func commits(_ range: [String]) throws -> [Unsynced.Commit] {
+            try run(["log", "--format=%h%x09%an%x09%at%x09%s", "-n\(max(1, limit))"] + range, cwd: path, remotes: remotes)
+                .split(separator: "\n").compactMap { l in
+                    let f = l.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false)
+                    return f.count == 4 ? Unsynced.Commit(hash: String(f[0]), subject: String(f[3]), author: String(f[1]), date: Double(f[2]) ?? 0) : nil
+                }
+        }
+        // 128: no upstream (or its branch deleted), in which case git prints nothing.
+        if !(try run(["rev-parse", "--abbrev-ref", "@{upstream}"], cwd: path, ok: [0, 128], remotes: remotes)).isEmpty {
+            return Unsynced(outgoing: try commits(["@{upstream}..HEAD"]), incoming: try commits(["HEAD..@{upstream}"]))
+        }
+        // Nothing to compare with before the first commit, or while no remote branch exists (a push has nowhere to land yet).
+        let remote = try run(["for-each-ref", "--format=%(refname)", "refs/remotes"], cwd: path, remotes: remotes)
+        let head = try run(["rev-parse", "--verify", "-q", "HEAD"], cwd: path, ok: [0, 1], remotes: remotes)
+        guard remote.split(separator: "\n").contains(where: { !$0.hasSuffix("/HEAD") }), !head.isEmpty else { return Unsynced(outgoing: [], incoming: []) }
+        return Unsynced(outgoing: try commits(["HEAD", "--not", "--remotes"]), incoming: [])
+    }
+
     /// Switch to a local branch, a remote one (creates the tracking branch), or a new one.
     public static func switchBranch(_ path: String, to name: String, create: Bool = false, remote: Bool = false, remotes: Remotes = .none) throws {
         let local = remote ? String(name.drop { $0 != "/" }.dropFirst()) : name
@@ -145,7 +166,11 @@ extension Git {
 
     public static func remote(_ path: String, _ op: Remote, remotes: Remotes = .none) throws {
         switch op {
-        case .pull: try run(["pull"], cwd: path, remotes: remotes)
+        case .pull:
+            // Diverged branches make git refuse until it's told how to reconcile them. With neither pull.rebase nor pull.ff set
+            // (the user's own answer), a merge: the first of git's hints.
+            let chosen = try ["pull.rebase", "pull.ff"].contains { !(try run(["config", "--get", $0], cwd: path, ok: [0, 1], remotes: remotes)).isEmpty }
+            try run(["pull"] + (chosen ? [] : ["--no-rebase"]), cwd: path, remotes: remotes)
         case .fetch: try run(["fetch", "--all", "--prune"], cwd: path, remotes: remotes)
         case .push:
             let b = try currentBranch(path, remotes: remotes)

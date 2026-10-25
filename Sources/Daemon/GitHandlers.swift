@@ -54,6 +54,12 @@ extension GitLog: Handled {
     }
 }
 
+extension GitUnsynced: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Result {
+        try Git.unsynced(workspaces.folder(id), limit: limit ?? 5, remotes: workspaces.remotes)
+    }
+}
+
 extension GitStage: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
         try Git.stage(workspaces.folder(id), files: files ?? [], remotes: workspaces.remotes)
@@ -227,7 +233,7 @@ extension CommentSend: Handled {
 
 extension Methods {
     static let gitMethods: [any Handled.Type] = [GitStatus.self, GitBranches.self, GitLineStats.self, GitPush.self, GitDiff.self, GitLog.self,
-        GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self, GitCommitFiles.self, GitCommitDetails.self,
-        GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self, FilesList.self, FilesIgnored.self, FilesSearch.self,
-        CommentAdd.self, CommentList.self, CommentSetState.self, CommentSend.self]
+        GitUnsynced.self, GitStage.self, GitUnstage.self, GitHunk.self, GitCommit.self, GitMerge.self, GitSwitch.self, GitGraph.self,
+        GitCommitFiles.self, GitCommitDetails.self, GitDiscard.self, GitRemoteOp.self, GitStash.self, GitWebURL.self, GitWebPages.self,
+        FilesList.self, FilesIgnored.self, FilesSearch.self, CommentAdd.self, CommentList.self, CommentSetState.self, CommentSend.self]
 }

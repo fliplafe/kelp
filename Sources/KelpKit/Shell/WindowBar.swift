@@ -22,6 +22,12 @@ final class WindowBar: NSView {
     /// The branch chip: the workspace on screen's git, as the daemon pushes it (ChangedFiles watches it).
     private var info: BranchInfo? { app.git[app.workbench.workspaceId ?? ""]?.branches }
 
+    /// Uncommitted changes in the workspace on screen (a dot on the chip), and what a sync running there says.
+    private var dirty: Bool { !(app.git[app.workbench.workspaceId ?? ""]?.changes ?? []).isEmpty }
+    private var syncing: String? { app.syncing[app.workbench.workspaceId ?? ""] }
+    private let popover = NSPopover()
+    private var closedAt = Date.distantPast
+
     private var worktree: Worktree? { app.worktree(app.workbench.workspaceId) }
     /// The folder the sidebar keeps the pull request for: a desk shares its project's.
     private var badgeFolder: Worktree? { worktree.flatMap { app.rowBadges.folder(workspace: $0.id) ?? app.rowBadges.folder(project: $0.repoId) } }
@@ -36,8 +42,8 @@ final class WindowBar: NSView {
         folder.action = #selector(folderMenu)
         folder.toolTip = String(localized: "Open In, Reveal in Finder, Copy Path")
         branch.target = self
-        branch.action = #selector(branchMenu)
-        branch.toolTip = String(localized: "Switch or create a branch")
+        branch.action = #selector(branchClicked)
+        branch.toolTip = String(localized: "Sync, commit or switch branch")
         pr.target = self; pr.action = #selector(openPR)
         context.setViews([icon, name, folder, branch, pr], in: .leading)
         context.spacing = 2
@@ -84,6 +90,8 @@ final class WindowBar: NSView {
         track(owner: self) { app.worktree(app.workbench.workspaceId) } changed: { [weak self] _ in self?.update() }
         // A branch switched anywhere (a terminal too) moves the workspace's refs: the daemon pushes it.
         track(owner: self) { [weak self] in self?.info } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { [weak self] in self?.dirty ?? false } changed: { [weak self] _ in self?.update() }
+        track(owner: self) { [weak self] in self?.syncing } changed: { [weak self] _ in self?.update() }
         track(owner: self) { app.rowBadges.prs } changed: { [weak self] _ in self?.update() }
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -105,11 +113,7 @@ final class WindowBar: NSView {
         name.stringValue = w.displayName
         folder.title = (w.path as NSString).abbreviatingWithTildeInPath
         branch.isHidden = info == nil
-        if let info {
-            let ahead = info.ahead ?? 0, behind = info.behind ?? 0
-            let sync = info.upstream == nil ? (ahead > 0 ? "  \(ahead)↑" : "") : (ahead + behind > 0 ? "  \(behind)↓ \(ahead)↑" : "")
-            branch.title = (info.current ?? info.head ?? "HEAD") + sync   // no upstream: only what publishing would push
-        }
+        if let info { showBranch(info) }
         let p = badgeFolder.flatMap { RowBadges.pr(app.rowBadges.prs[$0.id]) }
         pr.isHidden = p == nil
         if let p { pr.attributedTitle = p.0; pr.toolTip = p.1 }
@@ -125,28 +129,30 @@ final class WindowBar: NSView {
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: folder.bounds.height + 4), in: folder)
     }
 
-    /// The local branches to switch to, and a new one; the rest (remote branches, sync) is in Source Control.
-    @objc private func branchMenu() {
-        guard let info, let wid = worktree?.id else { return }
-        let m = NSMenu()
-        for b in info.local { m.add(b) { [weak self] in self?.switchBranch(GitSwitch(id: wid, branch: b)) }.state = b == info.current ? .on : .off }
-        m.addItem(.separator())
-        m.add(String(localized: "Create Branch…")) { [weak self] in
-            Task {
-                guard let name = await prompt(String(localized: "Create Branch"),
-                                              String(localized: "Starts from \(info.current ?? "HEAD") and switches to it.")),
-                    !name.isEmpty else { return }
-                self?.switchBranch(GitSwitch(id: wid, branch: name, create: true))
-            }
-        }
-        m.popUp(positioning: nil, at: NSPoint(x: 0, y: branch.bounds.height + 4), in: branch)
+    /// The branch, what is left to pull (orange) and push (blue), a dot while there are uncommitted changes; the sync arrows
+    /// instead of the branch glyph while a pull, push or fetch runs. No upstream: only what publishing would push.
+    private func showBranch(_ info: BranchInfo) {
+        let ahead = info.ahead ?? 0, behind = info.upstream == nil ? 0 : info.behind ?? 0
+        let font = NSFont.ui(12), count = NSFont.ui(12, weight: .semibold)
+        let t = NSMutableAttributedString(string: info.current ?? info.head ?? "HEAD", attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        if behind > 0 { t.append(NSAttributedString(string: "  ↓\(behind)", attributes: [.font: count, .foregroundColor: NSColor.systemOrange])) }
+        if ahead > 0 { t.append(NSAttributedString(string: "  ↑\(ahead)", attributes: [.font: count, .foregroundColor: NSColor.controlAccentColor])) }
+        if dirty { t.append(NSAttributedString(string: "  •", attributes: [.font: count, .foregroundColor: NSColor.secondaryLabelColor])) }
+        branch.attributedTitle = t
+        let running = syncing
+        branch.image = running == nil ? (Glyph.image("arrow.triangle.branch", size: 13) ?? .symbol("arrow.triangle.branch", ""))
+                                      : .symbol("arrow.triangle.2.circlepath", running ?? "")
+        branch.setAccessibilityLabel(running ?? String(localized: "Branch \(info.current ?? "HEAD"), \(behind) to pull, \(ahead) to push"))
     }
 
-    private func switchBranch(_ m: GitSwitch) {
-        Task {
-            if let e = await app.tryCall(m).error { Banner.show(e, style: .error) }
-            app.watchAgain(.git, m.id)   // the chip now, not on the next file event
-        }
+    @objc private func branchClicked() {
+        if popover.isShown { popover.performClose(nil); return }
+        guard let wid = worktree?.id, Date().timeIntervalSince(closedAt) > 0.25 else { return }   // else this click closed it
+        let vc = SyncPopover(app: app, worktree: wid)
+        vc.popover = popover
+        popover.behavior = .transient; popover.delegate = self
+        popover.contentViewController = vc
+        popover.show(relativeTo: branch.bounds, of: branch, preferredEdge: .maxY)
     }
 
     /// The setting ("always", "agents", "off"), or "working": agents keep the Mac awake right now (as the daemon counts them).
@@ -201,6 +207,10 @@ final class WindowBar: NSView {
         guard let w = badgeFolder, let u = app.rowBadges.prs[w.id]?.url else { return }
         app.workbench.open(u, workspace: worktree?.id)
     }
+}
+
+extension WindowBar: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) { closedAt = Date() }
 }
 
 /// Open Quickly as a place to click: it looks like a search field and opens the ⌘P palette (files, agents, commands).

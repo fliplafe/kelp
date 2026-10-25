@@ -49,6 +49,8 @@ package final class AppModel {
     package var contextShare: [String: Double] = [:]
     /// What the daemon pushes for what's watched (`watch(_:_:)`), by worktree id where it has one.
     package var git: [String: GitEvent] = [:]
+    /// A pull, push or fetch running in a workspace, by worktree id: what it says ("Pushing…"). See `GitSync`.
+    var syncing: [String: String] = [:]
     package var ports: [String: [PortsList.Port]] = [:]
     package var activity: ActivityEvent?
     package var ci: [String: CIEvent] = [:]

@@ -43,6 +43,12 @@ public struct GitLog: RPCMethod {
     public var id: String, all: Bool?
     public init(id: String, all: Bool? = nil) { self.id = id; self.all = all }
 }
+/// The commits a push would send and a pull would bring, `limit` (default 5) of each, newest first. The counts are `git.branches`'.
+public struct GitUnsynced: RPCMethod {
+    public static let name = "git.unsynced"; public typealias Result = Unsynced
+    public var id: String, limit: Int?
+    public init(id: String, limit: Int? = nil) { self.id = id; self.limit = limit }
+}
 public struct GitStage: RPCMethod {
     public static let name = "git.stage"; public typealias Result = Done
     public var id: String, files: [String]?
