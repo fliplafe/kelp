@@ -34,3 +34,10 @@ import AgentData
     d.agentUsage.codexLive.withLock { $0.limits = CodexUsage.limits(rateLimits: ["primary": ["usedPercent": 14]], at: Date()) }
     #expect(try await c.call(UsageGet(force: true)).codex.map(\.primaryUsedPercent) == [14, 80])
 }
+
+/// Nobody answers a hidden probe's "trust this folder?": Grok's and Kimi's get that from their env, not from a stored decision.
+@Test func probesOfAgentsThatAskTrustSetItInEnv() throws {
+    let env = { (agent: String) in AgentUsage.planProbes.first { $0.agent == agent }?.env }
+    #expect(env("grok")?["GROK_FOLDER_TRUST"] == "0")
+    #expect(env("kimi")?["KIMI_CODE_TRUST_WORKSPACE"] == "1")
+}

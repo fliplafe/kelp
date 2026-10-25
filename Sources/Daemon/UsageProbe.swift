@@ -25,8 +25,11 @@ extension AgentUsage {
     static let planProbes = [
         PlanProbe(agent: "claude", command: "claude", every: 600, ready: { $0.contains("❯") },
                   shown: { $0.contains("Current week") && $0.contains("% used") }, parse: ClaudeLimits.parseUsageScreen),
+        // With any hook of the user's own, Grok asks "Do you trust the contents of this directory?" in every folder; this
+        // run alone does without the question, and nothing is written to its trusted_folders.toml.
         PlanProbe(agent: "grok", command: "grok", every: 1800, ready: { $0.contains("Ctrl+x:shortcuts") },
-                  shown: { $0.contains("Weekly limit") && $0.contains("Resets") }, parse: ClaudeLimits.parseGrokUsage),
+                  shown: { $0.contains("Weekly limit") && $0.contains("Resets") }, parse: ClaudeLimits.parseGrokUsage,
+                  env: ["GROK_FOLDER_TRUST": "0"]),
         PlanProbe(agent: "antigravity", command: "agy", every: 1800, ready: { $0.contains("for shortcuts") },
                   shown: { $0.contains("Weekly Limit Remaining") && $0.contains("%") }, parse: ClaudeLimits.parseAntigravityUsage),
         // Trust for this process only: the probe has no one to answer "Trust this folder?".
@@ -135,9 +138,9 @@ extension AgentUsage {
         return l
     }
 
-    /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
-    /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up. Kimi's probe
-    /// trusts via env, and Copilot's answer lasts for the run, so they can use that same folder.
+    /// A folder the agent already works in, so it won't ask whether to trust it. Grok keeps a session per launch: it
+    /// gets Kelp's own folder and always the same session, so its history doesn't fill up. Grok's and Kimi's probes
+    /// trust via env, and Copilot's answer lasts for the run, so they can use that same folder.
     private func probeDir(_ agent: String) -> String? {
         if ["grok", "kimi", "copilot"].contains(agent) {
             let d = root.appendingPathComponent("probe")
