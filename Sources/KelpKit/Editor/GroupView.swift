@@ -175,21 +175,53 @@ private final class Glow: Veil {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    private var color: NSColor?
+
+    /// Fades in and out, and eases into and out of breathing, rather than switching at once.
     func show(_ color: NSColor?, breathing: Bool) {
-        isHidden = color == nil
-        frameLayer.removeAllAnimations(); frameLayer.opacity = 1
-        guard let color else { return }
-        layer?.borderColor = color.withAlphaComponent(0.5).cgColor
-        frameLayer.fillColor = color.cgColor; frameLayer.shadowColor = color.cgColor
-        guard breathing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        self.color = color
+        guard let color else {
+            // Keeps its colour and breathing while it fades; hidden at the end unless it was called back meanwhile.
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; animator().alphaValue = 0 }) { [weak self] in
+                MainActor.assumeIsolated {  // AppKit runs the completion on the main thread
+                    guard let self, self.color == nil else { return }
+                    self.isHidden = true
+                    self.frameLayer.removeAllAnimations()
+                }
+            }
+            return
+        }
+        if isHidden { alphaValue = 0; isHidden = false }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            ctx.allowsImplicitAnimation = true
+            animator().alphaValue = 1
+            layer?.borderColor = color.withAlphaComponent(0.5).cgColor
+            frameLayer.fillColor = color.cgColor; frameLayer.shadowColor = color.cgColor
+        }
+        breathe(breathing && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    private func breathe(_ on: Bool) {
+        let breathingNow = frameLayer.animation(forKey: "breathe") != nil
+        guard on != breathingNow else { return }
+        let opacity = frameLayer.presentation()?.opacity ?? 1
+        frameLayer.removeAnimation(forKey: "breathe")
         let a = CABasicAnimation(keyPath: "opacity")
-        a.fromValue = 0.35
-        a.toValue = 1
-        a.duration = 1.2
-        a.autoreverses = true
-        a.repeatCount = .infinity
+        a.fromValue = opacity
         a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        frameLayer.add(a, forKey: "breathe")
+        if on {
+            a.toValue = 0.35
+            a.duration = 1.2
+            a.autoreverses = true
+            a.repeatCount = .infinity
+            frameLayer.add(a, forKey: "breathe")
+        } else {
+            // Back to full from wherever the breath was.
+            a.toValue = 1
+            a.duration = 0.3
+            frameLayer.add(a, forKey: "settle")
+        }
     }
 
     override func layout() {
