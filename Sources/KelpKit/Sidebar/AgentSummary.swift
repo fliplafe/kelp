@@ -37,6 +37,8 @@ final class AgentSummary: NSView {
     /// Questions already shown or looked at: one that isn't lights the capsule as it comes in.
     private var seen: Set<String>?
     private var settleTimer: Timer?
+    /// After each update: who needs you may have changed (Automatic looks whether they are all in view).
+    var updated: () -> Void = {}
 
     init(app: AppModel) {
         self.app = app
@@ -73,9 +75,7 @@ final class AgentSummary: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func update() {
-        var inbox = Inbox(queue: AttentionQueue(app).sessions)
-        let tab = app.workbench.focusedTab ?? ""
-        if TabURI.scheme(tab) == "session" { inbox.viewing = [TabURI.body(tab)] }
+        let inbox = Inbox.current(app)
         let shown = inbox.shown
         settleTimer?.invalidate(); settleTimer = nil
         if let due = inbox.settlesAt {
@@ -117,6 +117,7 @@ final class AgentSummary: NSView {
             capsule.alphaValue = 0.4
             NSAnimationContext.runAnimationGroup { $0.duration = 0.5; capsule.animator().alphaValue = 1 }
         }
+        updated()
     }
 }
 

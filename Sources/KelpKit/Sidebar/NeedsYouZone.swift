@@ -46,6 +46,8 @@ final class NeedsYouZone: NSView {
     private var seen: Set<String>?
     private var folded = UserDefaults.standard.bool(forKey: NeedsYouZone.foldedKey)
     private var settleTimer: Timer?
+    /// After each update: who needs you may have changed (Automatic looks whether they are all in view).
+    var updated: () -> Void = {}
 
     init(app: AppModel) {
         self.app = app
@@ -84,9 +86,7 @@ final class NeedsYouZone: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func update() {
-        var inbox = Inbox(queue: AttentionQueue(app).sessions)
-        let tab = app.workbench.focusedTab ?? ""
-        if TabURI.scheme(tab) == "session" { inbox.viewing = [TabURI.body(tab)] }
+        let inbox = Inbox.current(app)
         shown = inbox.shown
         settleTimer?.invalidate(); settleTimer = nil
         if let due = inbox.settlesAt {
@@ -143,6 +143,7 @@ final class NeedsYouZone: NSView {
             }
         }
         if !new.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { flash() }
+        updated()
     }
 
     /// The chevron: the zone down to its heading, or open again; kept across launches.
@@ -171,6 +172,16 @@ final class NeedsYouZone: NSView {
         list.reflectScrolledClipView(clip)
     }
     override func scrollWheel(with e: NSEvent) { list?.scrollWheel(with: e) }   // it lies over the list: scrolling it is scrolling that
+}
+
+extension Inbox {
+    /// Who needs you now: the agent on screen isn't counted.
+    @MainActor static func current(_ app: AppModel) -> Inbox {
+        var inbox = Inbox(queue: AttentionQueue(app).sessions)
+        let tab = app.workbench.focusedTab ?? ""
+        if TabURI.scheme(tab) == "session" { inbox.viewing = [TabURI.body(tab)] }
+        return inbox
+    }
 }
 
 /// A view a click or VoiceOver presses.

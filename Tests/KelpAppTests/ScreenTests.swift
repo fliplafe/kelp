@@ -207,6 +207,22 @@ extension OneAtATime {
     }
 }
 
+@Test func automaticCountsWhileWhoNeedsYouIsInViewAndListsThemOnceOneIsNot() throws {
+    func asking(_ w: String) -> Session {
+        var s = Session(worktreeId: w, cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Ask " + w, summary: "Question")
+        s.statusAt = Date() - 60
+        return s
+    }
+    let many = (1...40).map { desk("w\($0)", "b\($0)") }
+    try withSidebar(repos: [project], worktrees: many, sessions: [asking("w1")], settings: ["workbench.sidebar.needsYou": .string("automatic")]) { vc, _ in
+        #expect(vc.view.subviews.contains { $0 is AgentSummary })   // its row is on screen: the count will do
+        vc.app.sessions = [asking("w1"), asking("w40")]   // the 40th workspace is far below the window's bottom
+        vc.refresh()
+        #expect(vc.view.subviews.contains { $0 is NeedsYouZone })
+        #expect(!vc.view.subviews.contains { $0 is AgentSummary })
+    }
+}
+
 @Test func nobodyAskingOrWorkingLeavesNoEmptyBandOverTheList() throws {
     let done = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .idle, title: "Old chat")
     try withSidebar(repos: [project], worktrees: [desk("w1", "main")], sessions: [done]) { vc, _ in
