@@ -26,18 +26,21 @@ struct ExtListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                ForEach(Array((def.toolbar ?? []).enumerated()), id: \.offset) { _, a in
+            // The bar every panel has: the first action in words, the others as icons, Refresh last.
+            HStack(spacing: 10) {
+                ForEach(Array((def.toolbar ?? []).enumerated()), id: \.offset) { i, a in
                     Button { ExtActions(app).perform(a, item: nil, folder: folder) { reload() } } label: {
-                        Label(a.title, systemImage: a.icon ?? "play")
+                        if i == 0 { Label(a.title, systemImage: a.icon ?? "play") } else { Image(systemName: a.icon ?? "play") }
                     }
                     .buttonStyle(.borderless).help(a.title)
+                    if i == 0 { Spacer() }
                 }
-                Spacer()
+                if def.toolbar?.isEmpty ?? true { Spacer() }
                 if loading { ProgressView().controlSize(.small) }
                 Button { reload() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("Refresh")
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12).frame(height: 36)
             Divider()
             if let error {
                 ContentUnavailableView { Label("Couldn't load", systemImage: "exclamationmark.triangle") } description: {

@@ -73,6 +73,7 @@ Both take the same view definitions; `editors` also appear in the editor area's 
   A `subtitle` that comes out empty takes no line.
 - `status` maps a field to a status dot: `working`, `waiting`, `done`, `idle`, `ended`.
 - The first action is the default (double-click / Return); all of them are in the row's context menu.
+- `toolbar`: the panel's bar shows the first one in words and the rest as icons (their `title` is the tooltip).
 - `refresh`: seconds between reloads (0 = only on open and after actions).
 
 ### badge — a mark on a panel's icon
