@@ -143,11 +143,11 @@ final class InspectorController: NSViewController {
         showCounts(); showSelected()
     }
 
-    /// A badge on the icon's top-right corner.
+    /// A badge past the icon's top-right corner, clear of its strokes.
     private func pin(_ n: CountBadge, on b: NSButton) {
         n.translatesAutoresizingMaskIntoConstraints = false; b.addSubview(n)
-        NSLayoutConstraint.activate([n.leadingAnchor.constraint(equalTo: b.centerXAnchor, constant: 2),
-                                     n.centerYAnchor.constraint(equalTo: b.centerYAnchor, constant: -6)])
+        NSLayoutConstraint.activate([n.leadingAnchor.constraint(equalTo: b.centerXAnchor, constant: 5),
+                                     n.centerYAnchor.constraint(equalTo: b.centerYAnchor, constant: -7)])
     }
 
     /// As many icons as the inspector's width holds, in the row's order; the rest go into the » menu. The shown
@@ -168,7 +168,11 @@ final class InspectorController: NSViewController {
             let off = hidden.contains(panels[i].id) || next.contains(i)
             if b.isHidden != off { b.isHidden = off }
         }
-        if next != folded { folded = next; showCounts() }
+        if next != folded {
+            folded = next
+            more.toolTip = next.isEmpty ? nil : String(localized: "More Panels: \(next.map { loc(panels[$0].title) }.joined(separator: ", "))")
+            showCounts()
+        }
     }
 
     @objc private func showMore(_ b: NSButton) {
