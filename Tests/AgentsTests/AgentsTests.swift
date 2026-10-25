@@ -471,3 +471,15 @@ import TestSupport
     d.output("Conversation interrupted again, more words here", at: t.addingTimeInterval(2))
     #expect(d.status == .idle)
 }
+
+@Test func copilotUsageScreenParses() {
+    let screen = """
+    AI Credits 0 (14s)
+    Plan ■■■■■■■■■■■■■■■■■■■■ 2% used 5 / 200 AIC ─╮╭╮
+    ─╯╰╯
+    """
+    #expect(ClaudeLimits.parseCopilotUsage(screen) == [.init(kind: "plan", percent: 2, resets: nil)])
+    let two = ClaudeLimits.parseCopilotUsage("│ Plan ███░░ 40.5% used resets in 3d │\n│ Plan ███░░ 41% used resets in 3d │")
+    #expect(two == [.init(kind: "plan", percent: 41, resets: "in 3d")])   // the last redraw wins
+    #expect(ClaudeLimits.parseCopilotUsage("Session: 0 AIC used").isEmpty)
+}

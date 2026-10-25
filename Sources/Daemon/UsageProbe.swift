@@ -5,7 +5,7 @@ import Agents
 import GitKit
 import AgentData
 
-/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok, Antigravity, Kimi). A hidden copy of
+/// Plan limits as the agents themselves show them in `/usage` (Claude Code, Grok, Antigravity, Kimi, Copilot). A hidden copy of
 /// the agent opens that screen now and then and quits: no tokens are spent and Kelp never touches their credentials.
 extension AgentUsage {
     struct PlanProbe: Sendable {
@@ -14,6 +14,7 @@ extension AgentUsage {
         let shown: @Sendable (String) -> Bool    // the usage screen has loaded
         let parse: @Sendable (String) -> [ClaudeLimits.Reading]
         var env: [String: String] = [:]          // extra launch env (e.g. Kimi's trust-this-run)
+        var answersTrust = false                 // its "trust this folder?" has a default that trusts for this run only (Copilot)
     }
     struct PlanState {
         var readings: [ClaudeLimits.Reading] = []
@@ -32,7 +33,10 @@ extension AgentUsage {
         PlanProbe(agent: "kimi", command: "kimi", every: 1800,
                   ready: { $0.contains("│ >") || $0.contains("context:") },
                   shown: { $0.contains("Plan usage") }, parse: ClaudeLimits.parseKimiUsage,
-                  env: ["KIMI_CODE_TRUST_WORKSPACE": "1"])
+                  env: ["KIMI_CODE_TRUST_WORKSPACE": "1"]),
+        // "Plan ■■■■ 2% used 5 / 200 AIC". Its folder question is answered with Enter: "1. Yes", for this session only.
+        PlanProbe(agent: "copilot", command: "copilot", every: 1800, ready: { $0.contains("/ commands") },
+                  shown: { $0.contains("Plan") && $0.contains("% used") }, parse: ClaudeLimits.parseCopilotUsage, answersTrust: true)
     ]
 
     /// Settings › Show plan limits.
@@ -130,9 +134,9 @@ extension AgentUsage {
 
     /// A folder the agent already works in, so it won't ask whether to trust it. Grok doesn't ask, but keeps a session
     /// per launch: it gets Kelp's own folder and always the same session, so its history doesn't fill up. Kimi's probe
-    /// trusts via env, so it can use that same folder.
+    /// trusts via env, and Copilot's answer lasts for the run, so they can use that same folder.
     private func probeDir(_ agent: String) -> String? {
-        if agent == "grok" || agent == "kimi" {
+        if ["grok", "kimi", "copilot"].contains(agent) {
             let d = root.appendingPathComponent("probe")
             try? Paths.ensure(d)
             return d.path
@@ -204,13 +208,21 @@ extension AgentUsage {
         pty.onOutput = { screen.append($0) }
         pty.start()
         defer { pty.terminate() }
+        var trusted = false
+        if p.answersTrust {
+            _ = screen.wait(15) { p.ready($0) || StartupQuestion.trustAsked($0) }
+            if !p.ready(StatusDetector.stripANSI(screen.text)), StartupQuestion.trustAsked(StatusDetector.stripANSI(String(screen.text.suffix(3000)))) {
+                pty.write(Data("\r".utf8))
+                trusted = true
+            }
+        }
         // Ready: the prompt is drawn and output went quiet (or it failed and said so).
         guard screen.wait(20, until: { (p.ready($0) && screen.quietFor > 1) || $0.contains("Error:") }),
               p.ready(StatusDetector.stripANSI(screen.text)) else { return ([], StatusDetector.stripANSI(screen.text)) }
         // Nobody watches this copy: a question on screen (trust this folder? use the project's new MCP servers?) is left
         // unanswered and the probe gives up. Typing /usage and Enter there would pick its default, usually "Yes".
         let drawn = StatusDetector.stripANSI(String(screen.text.suffix(3000)))
-        if StartupQuestion.trustAsked(drawn) || StartupQuestion.menuOpen(drawn) { return ([], drawn) }
+        if !trusted, StartupQuestion.trustAsked(drawn) || StartupQuestion.menuOpen(drawn) { return ([], drawn) }
         // Tips that say "esc to dismiss" steal the first keystrokes; clear them before typing /usage.
         if drawn.localizedCaseInsensitiveContains("esc to dismiss") {
             pty.write(Data("\u{1B}".utf8))

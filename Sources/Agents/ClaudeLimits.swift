@@ -121,6 +121,25 @@ public enum ClaudeLimits {
         return out
     }
 
+    /// GitHub Copilot's `/usage`: a row like "Plan ■■■■■■ 2% used 5 / 200 AIC" (AI credits), maybe with "resets in …".
+    public static func parseCopilotUsage(_ text: String) -> [Reading] {
+        var found: [String: Reading] = [:], order: [String] = []
+        let lines = text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))
+        for raw in lines {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard let pct = line.range(of: #"\d{1,3}(?:\.\d+)?% used"#, options: .regularExpression),
+                  let percent = Double(line[pct].dropLast("% used".count)) else { continue }
+            let label = line[..<pct.lowerBound].replacingOccurrences(of: #"[■□█░▒▓▪▫]+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            guard label.isEmpty || label.count <= 30 else { continue }
+            let kind = label.isEmpty ? "plan" : label
+            let resets = line.firstMatch(of: /(?i)resets?\s+((?:in|on|at)\s[^─│╮╭╯╰]+)/).map { $0.1.trimmingCharacters(in: .whitespaces) }
+            if found[kind] == nil { order.append(kind) }
+            found[kind] = Reading(kind: kind, percent: bounded(percent), resets: resets)
+        }
+        return order.compactMap { found[$0] }
+    }
+
     /// A TUI's text in pieces: lines, split again at dialog borders (│) and wide gaps between columns.
     static func cells(_ text: String) -> [String] {
         text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))

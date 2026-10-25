@@ -4,7 +4,7 @@ import Core
 /// How much of each agent's plan is used: a line per agent that reports it — name, a bar and percentage for its 5-hour
 /// window (or its fullest limit) with the week as a thin line under it, and when the 5 hours reset — and the details
 /// (each limit with its bar, when it resets) on hover.
-/// The numbers come from the agents' own /usage screens (Claude Code, Grok, Antigravity, Kimi — the daemon reads them) and
+/// The numbers come from the agents' own /usage screens (Claude Code, Grok, Antigravity, Kimi, Copilot — the daemon reads them) and
 /// Codex's app server (or its session logs, when newer); agents that don't report limits aren't listed.
 package struct UsageView: View {
     struct Line: Equatable { // used: 0...1
