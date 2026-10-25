@@ -23,7 +23,9 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     let outline = NSOutlineView()
     let graphOutline = NSOutlineView()
     private let graphBar = GraphBar()
-    private var graphHeight: NSLayoutConstraint?, barHeight: NSLayoutConstraint?
+    private var graphHeight: NSLayoutConstraint?, graphClosed: NSLayoutConstraint?, barHeight: NSLayoutConstraint?
+    /// The changes ask for just their rows while the graph is open, so the graph takes the rest instead of a gap.
+    private var changesFit: NSLayoutConstraint?, changesRoom: NSLayoutConstraint?
     let branchButton = NSButton()
     let syncButton = NSButton()
     let message = CommitTextView()
@@ -118,11 +120,17 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         sep.boxType = .separator
         separator = sep
         for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 0)
+        // Open, the graph keeps at least the height it was dragged to and takes whatever the changes leave.
+        let gh = graphScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 0)
         gh.priority = .defaultHigh
         graphHeight = gh
+        graphClosed = graphScroll.heightAnchor.constraint(equalToConstant: 0)
+        graphClosed?.priority = .defaultHigh
+        changesFit = scroll.heightAnchor.constraint(equalToConstant: 0)
+        changesFit?.priority = .init(740)
         let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
         let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
+        changesRoom = room
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: v.topAnchor), header.heightAnchor.constraint(equalToConstant: 32),
             header.leadingAnchor.constraint(equalTo: v.leadingAnchor), header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
@@ -134,7 +142,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             scroll.topAnchor.constraint(equalTo: sep.bottomAnchor), scroll.bottomAnchor.constraint(equalTo: graphBar.topAnchor), room,
             scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             graphBar.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphBar.trailingAnchor.constraint(equalTo: v.trailingAnchor), bh,
-            graphScroll.topAnchor.constraint(equalTo: graphBar.bottomAnchor), graphScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor), gh,
+            graphScroll.topAnchor.constraint(equalTo: graphBar.bottomAnchor), graphScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor),
             graphScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor), graphScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40)
@@ -313,6 +321,10 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         if changes.count >= FileChange.limit { out.append(Node(.note(String(localized: "Showing the first \(FileChange.limit) changes")))) }
         roots = out
         outline.reloadData(); outline.expandItem(nil, expandChildren: true)
+        let rows = outline.numberOfRows
+        let height = rows > 0 ? outline.rect(ofRow: rows - 1).maxY : 0
+        changesFit?.constant = height
+        changesRoom?.constant = min(80, height)
     }
 
     private func rebuildGraph() {
@@ -333,11 +345,14 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         graphBar.isHidden = !has; graphBar.expanded = open
         graphOutline.enclosingScrollView?.isHidden = !open
         barHeight?.constant = has ? GraphBar.height : 0
-        graphHeight?.constant = open ? UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260 : 0
+        graphHeight?.constant = UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260
+        graphHeight?.isActive = open
+        changesFit?.isActive = open
+        graphClosed?.isActive = !open
     }
 
     private func resizeGraph(by dy: CGFloat) {
-        guard let gh = graphHeight, gh.constant > 0, let changes = outline.enclosingScrollView, let graph = graphOutline.enclosingScrollView else { return }
+        guard let gh = graphHeight, gh.isActive, let changes = outline.enclosingScrollView, let graph = graphOutline.enclosingScrollView else { return }
         gh.constant = min(max(60, graph.frame.height + dy), changes.frame.height + graph.frame.height - 80)
         UserDefaults.standard.set(gh.constant, forKey: "scm.graphHeight")
     }
@@ -416,15 +431,6 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         }
     }
 
-    func open(_ f: FileChange, _ s: Section) {
-        guard let w = worktreeId else { return }
-        if s == .merge { openFile(f); return }
-        app.workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
-    }
-    func openFile(_ f: FileChange) {
-        if let w = app.worktree(worktreeId) { app.workbench.open(TabURI.file(w.path + "/" + f.path)) }
-    }
-
     private func toggle(commit hash: String) {
         if openCommits.contains(hash) {
             openCommits.remove(hash)
@@ -445,8 +451,19 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
             rebuildGraph()
         }
     }
+}
 
-    // MARK: status letters (VS Code's colors)
+// MARK: status letters (VS Code's colors)
+
+extension SourceControlController {
+    func open(_ f: FileChange, _ s: Section) {
+        guard let w = worktreeId else { return }
+        if s == .merge { openFile(f); return }
+        app.workbench.open(DiffTab.uri(w, file: f.path, source: s == .staged ? "staged" : "unstaged"))
+    }
+    func openFile(_ f: FileChange) {
+        if let w = app.worktree(worktreeId) { app.workbench.open(TabURI.file(w.path + "/" + f.path)) }
+    }
 
     static func letter(_ f: FileChange, _ s: Section) -> (String, NSColor) {
         let l = f.letter(inWorktree: s == .changes, merging: s == .merge)
