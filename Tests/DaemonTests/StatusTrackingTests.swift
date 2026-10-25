@@ -1,0 +1,90 @@
+import Foundation
+import Testing
+import Core
+import Agents
+@testable import Daemon
+
+/// An agent that reports itself through hooks (Claude Code's), as the daemon reads them.
+private func hooked() -> LiveSession.State {
+    LiveSession.State(record: Session(cwd: "/", command: "claude", agent: "claude"),
+                      manifest: AgentManifest(id: "claude", name: "Claude Code", command: "claude", hooks: .settingsFlag("--settings")),
+                      logSize: 0, callbacks: .init())
+}
+
+/// Claude Code compacts a conversation that sits idle ("Compacted while idle…", trigger "auto"): no turn follows to end it,
+/// so the row must not turn working (it stayed so for hours, with the Mac kept awake) nor done (a notification for nothing).
+@Test func anIdleCompactionLeavesTheRowAsItWas() {
+    var s = hooked()
+    s.hook("working"); s.hook("done"); _ = s.sync()
+    s.record.summary = "Asked what to do next"; s.record.unread = false
+    s.hook("compacting", trigger: "auto")
+    #expect(s.sync() == nil && s.record.status == .done)
+    #expect(s.record.summary == "Compacting the conversation…")
+    s.hook("compacted")
+    #expect(s.sync() == nil && s.record.status == .done && !s.record.unread)
+    #expect(s.record.summary == "Asked what to do next")
+}
+
+/// One in the middle of a turn goes on with it; a /compact the user typed ends at the prompt.
+@Test func aCompactionDuringATurnCarriesOnAndATypedOneEndsIdle() {
+    var s = hooked()
+    s.hook("working"); _ = s.sync()
+    s.hook("compacting", trigger: "auto")
+    s.hook("compacted"); _ = s.sync()
+    #expect(s.record.status == .working && s.record.summary.isEmpty)
+    s.hook("done"); _ = s.sync()
+    s.hook("compacting", trigger: "manual"); _ = s.sync()
+    #expect(s.record.status == .working && s.record.summary == "Compacting the conversation…")
+    s.hook("compacted"); _ = s.sync()
+    #expect(s.record.status == .idle && s.record.summary.isEmpty)
+}
+
+/// A row that says working while the screen stood still and no hook came is released: a Stop it missed. A Stop held for
+/// what the agent waits for is quiet by design, so it gets longer; a live screen or a hook starts the wait again.
+@Test func aWorkingRowThatWentQuietIsReleased() {
+    var s = hooked(), t = s.lastLifeUp
+    s.hook("working"); _ = s.sync()
+    t = s.lastLifeUp
+    s.releaseStale(at: t + 120); #expect(s.detector.status == .working)
+    s.lastLifeUp = t + 100   // it printed
+    s.releaseStale(at: t + 250); #expect(s.detector.status == .working)
+    s.releaseStale(at: t + 290)
+    #expect(s.sync() != nil && s.record.status == .done)
+
+    s.hook("working"); s.holding = true   // a Stop held for its subagents
+    t = s.lastLifeUp
+    s.record.goal = "tests pass"
+    s.releaseStale(at: t + 1000); #expect(s.detector.status == .working)
+    s.releaseStale(at: t + 1900)
+    #expect(s.detector.status == .done && s.record.goal == nil)
+}
+
+/// What no hook reports (a plain shell, a heuristic agent) isn't released by a quiet screen: its status comes from the screen.
+@Test func anAgentWithoutHooksIsNotReleased() {
+    var s = LiveSession.State(record: Session(cwd: "/", command: "aider", agent: "aider"),
+                              manifest: AgentManifest(id: "aider", name: "Aider", command: "aider"), logSize: 0, callbacks: .init())
+    s.detector.override(.working)
+    s.releaseStale(at: s.lastLifeUp + 5000)
+    #expect(s.detector.status == .working)
+}
+
+/// Notifications that ask nothing leave the row alone (a finished background agent turned an idle row into "needs you").
+@Test func aNotificationThatAsksNothingIsNoQuestion() async throws {
+    let w = try await world(); defer { w.d.stop() }
+    let desk = try await firstDesk(w)
+    let s: Session = try await w.c.call("session.create", .obj(["worktreeId": .string(desk.id), "command": "sleep 30"]), as: Session.self)
+    func status() async throws -> AgentStatus? { try await w.c.call("session.list", as: [Session].self).first { $0.id == s.id }?.status }
+    func notify(_ type: String) async throws {
+        _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "waiting",
+                                                       "notification": .obj(["notification_type": .string(type), "message": "x"])]))
+    }
+    _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "working"]))
+    _ = try await w.c.call("session.hook", .obj(["id": .string(s.id), "event": "done"]))
+    #expect(try await waitFor { try await status() == .done })
+    for type in ["agent_completed", "push_notification", "computer_use_exit", "quota_auto_resume_fired"] { try await notify(type) }
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(try await status() == .done)
+    try await notify("permission_prompt")
+    #expect(try await waitFor { try await status() == .waiting })
+    _ = try await w.c.call("session.kill", .obj(["id": .string(s.id)]))
+}

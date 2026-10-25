@@ -104,7 +104,7 @@ extension SessionHook: Handled {
         guard let ls = sessions.existing(id) else { return Done() }
         if let transcript, !transcript.isEmpty { ls.transcriptPath = transcript; sessions.follow(ls, transcript: transcript) }
         if let cwd, ls.workIn(cwd) != nil { sessions.publish(ls) }
-        if let notification, Hooks.isIdleReminder(notification) { return Done() }
+        if let notification, Hooks.isInformational(notification) { return Done() }
         guard let event else { throw RPCError.invalidParams("missing event") }
         guard event == "done" else { ls.hook(event, trigger: trigger, message: notification?["message"]?.string); return Done() }
         let path = ls.transcriptPath

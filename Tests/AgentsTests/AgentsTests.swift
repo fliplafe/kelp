@@ -89,10 +89,16 @@ import TestSupport
     #expect(throws: (any Error).self) { try Hooks.writeSettings(to: out, over: base) }
 }
 
-@Test func idleReminderIsNotAQuestion() {
-    #expect(Hooks.isIdleReminder(.obj(["notification_type": "idle_prompt", "message": "Claude is waiting for your input"])))
-    #expect(!Hooks.isIdleReminder(.obj(["notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"])))
-    #expect(Hooks.isIdleReminder(.obj(["notification_type": "auth_success", "message": "Login successful"])))
+@Test func notificationsThatAskNothingAreNotQuestions() {
+    func note(_ type: String, _ message: String = "") -> JSONValue { .obj(["notification_type": .string(type), "message": .string(message)]) }
+    #expect(Hooks.isInformational(note("idle_prompt", "Claude is waiting for your input")))
+    #expect(Hooks.isInformational(note("auth_success", "Login successful")))
+    #expect(Hooks.isInformational(note("agent_completed", "Review finished")))
+    #expect(Hooks.isInformational(note("push_notification")) && Hooks.isInformational(note("computer_use_exit")))
+    #expect(!Hooks.isInformational(note("permission_prompt", "Claude needs your permission to use Bash")))
+    #expect(!Hooks.isInformational(note("elicitation_dialog")) && !Hooks.isInformational(note("agent_needs_input")))
+    #expect(!Hooks.isInformational(note("a_type_it_has_not_had_before")))   // asked until known to ask nothing
+    #expect(Hooks.isInformational(.obj(["message": "Claude is waiting for your input"])))   // Qwen Code names no type
 }
 
 @Test func stripKeepsWordGapsFromCursorMoves() {

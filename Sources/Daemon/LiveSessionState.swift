@@ -34,6 +34,12 @@ extension LiveSession {
         var sawURL = false, lastLimits: [ClaudeLimits.Reading] = []
         var transcript: String?
         var lastHookAt = Date.distantPast, compactManual = false
+        /// What the row said before a compaction wrote on it.
+        var compactSummary: String?
+        /// The last output or hook on the clock that stands still while the Mac sleeps (`releaseStale`).
+        var lastLifeUp = ProcessInfo.processInfo.systemUptime
+        /// The last Stop was held as working (subagents, a goal, a command): the agent is quiet by design until it wakes.
+        var holding = false
         var turnEnd = TurnEnd()
         /// Esc / ⌃C / an answer while it works or asks: Claude Code sends no hook when a turn is cut short, so the
         /// screen decides ("Interrupted…") within a few seconds. `seen` is the text printed since.
@@ -163,6 +169,46 @@ extension LiveSession {
             detector.program(r.state); lastHookAt = Date()
             if let msg = r.msg, !msg.isEmpty { record.summary = msg } else if r.state == "idle" || r.state == "clear" { record.summary = "" }
             record.progress = r.progress
+        }
+
+        /// A hook event from the agent: its status, and what a compaction or a question says on the row. `trigger`: PreCompact's
+        /// manual / auto; `message`: what a Notification says ("Claude needs your permission to use Bash").
+        mutating func hook(_ event: String, trigger: String? = nil, message: String? = nil) {
+            heard()
+            holding = false
+            let compacting = "Compacting the conversation…"
+            switch event {
+            case "compacting":
+                compactManual = trigger == "manual"
+                // Claude Code also compacts a conversation left idle (trigger "auto", nothing running): no turn follows to end
+                // it, so the row keeps its status and only says what is going on.
+                compactSummary = record.summary
+                record.summary = compacting
+                if compactManual || detector.status == .working { detector.hook("working") }
+            case "compacted":
+                if record.summary == compacting { record.summary = compactSummary ?? "" }
+                compactSummary = nil
+                if compactManual { detector.override(.idle) }   // /compact finished: back at the prompt; an auto one carries on
+                compactManual = false
+            case "waiting":
+                if let message, !message.isEmpty { record.summary = message }
+                detector.hook(event)
+            default: detector.hook(event)
+            }
+        }
+
+        /// A sign of life from the agent: a hook, or what it printed.
+        mutating func heard(at now: Date = Date()) { lastHookAt = now; lastLifeUp = ProcessInfo.processInfo.systemUptime }
+
+        /// A row that says working while the screen stood still for minutes and no hook came: a Stop (or a compaction's end) was
+        /// one Kelp doesn't know of or missed, and the row would stay working, keeping the Mac awake, until the next prompt.
+        /// Claude Code redraws its timer every second while it works; one held for what it waits for is quiet by design.
+        /// Limit: a still screen is the only evidence, and the answer, done, is also what a quiet but live agent would get.
+        mutating func releaseStale(at up: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            guard hooked, detector.status == .working, up - lastLifeUp > (holding ? 1800 : 180) else { return }
+            holding = false
+            record.goal = nil
+            detector.hook("done")
         }
 
         /// The detector's status into the record; the record when it changed. Ended is final: a hook or a keystroke that

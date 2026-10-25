@@ -279,7 +279,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum Hooks {
-    /// Claude-style settings file: Stop → done, Notification → waiting (`kelp hook` drops the idle reminder),
+    /// Claude-style settings file: Stop → done, Notification → waiting (`kelp hook` drops the ones that ask nothing),
     /// AskUserQuestion → waiting until answered. `kelp` must be on PATH in the session.
     public static func settingsJSON() -> String {
         func hook(_ ev: String, _ matcher: String? = nil) -> String {
@@ -290,10 +290,17 @@ public enum Hooks {
             + #""PreCompact":\#(hook("compacting")),"SessionStart":\#(hook("compacted", "compact"))}}"#
     }
 
-    /// Claude Code (and Qwen Code) repeat "waiting for your input" a minute after a turn ends; that's a finished agent, not a
-    /// question. Nor is a login that went through (auth_success).
-    public static func isIdleReminder(_ payload: JSONValue) -> Bool {
-        ["idle_prompt", "auth_success"].contains(payload["notification_type"]?.string)
+    /// Notifications that ask the user nothing, by Claude Code's `notification_type`: the "waiting for your input" it repeats a
+    /// minute after a turn ends (Qwen Code too), a login that went through, a background agent that finished, a push Claude
+    /// sent, computer use starting or ending, a resume after a plan limit, a refusal fallback, a keychain that failed, a
+    /// plugin's. Any other type (or none) is a permission or a question.
+    static let informational: Set<String> = [
+        "idle_prompt", "auth_success", "agent_completed", "push_notification", "computer_use_enter", "computer_use_exit",
+        "quota_auto_resume_fired", "quota_auto_resume_stale", "quota_auto_resume_disabled", "model_refusal_fallback",
+        "auth_storage_failure", "plugin_notification"
+    ]
+    public static func isInformational(_ payload: JSONValue) -> Bool {
+        payload["notification_type"]?.string.map(informational.contains) == true
             || payload["message"]?.string?.hasPrefix("Claude is waiting for your input") == true
     }
 

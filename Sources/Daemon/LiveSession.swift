@@ -172,6 +172,7 @@ final class LiveSession: Sendable {
 
     /// Inside the lock: the chunk into the ring and the readers, and what to do about it once the lock is let go.
     private func hear(_ d: Data, _ text: String, _ s: inout State) -> Heard {
+        s.lastLifeUp = ProcessInfo.processInfo.systemUptime
         s.ring.append(d)
         // A copy, at twice the limit: removeFirst on Data only re-slices, and the storage kept every byte the session
         // ever printed (300 MB of output held 300 MB). The slack makes the copy rare.
@@ -276,6 +277,7 @@ final class LiveSession: Sendable {
         steer()
         state.withLock { s in
             s.detector.tick()
+            s.releaseStale()
             if let arm = s.interruptArmed {
                 if s.lastHookAt > arm.at { s.interruptArmed = nil }
                 else if Self.printedStopped(arm.seen) {
@@ -349,25 +351,12 @@ final class LiveSession: Sendable {
 
     func overrideStatus(_ status: AgentStatus) { state.withLock { s in s.detector.override(status); emit(s.sync()) } }
 
-    /// `trigger`: PreCompact's manual / auto; `message`: what a Notification says ("Claude needs your permission to use Bash").
+    /// `State.hook`: the record goes out when its status or what the row says changed.
     func hook(_ event: String, trigger: String? = nil, message: String? = nil) {
         state.withLock { s in
-            s.lastHookAt = Date()
-            let compacting = "Compacting the conversation…"
-            switch event {
-            case "compacting":
-                s.compactManual = trigger == "manual"
-                s.record.summary = compacting
-                s.detector.hook("working")
-            case "compacted":
-                if s.record.summary == compacting { s.record.summary = "" }
-                if s.compactManual { s.detector.override(.idle) }   // /compact finished: back at the prompt; an auto one carries on
-            case "waiting":
-                if let message, !message.isEmpty { s.record.summary = message }
-                s.detector.hook(event)
-            default: s.detector.hook(event)
-            }
-            emit(s.sync())
+            let said = s.record.summary
+            s.hook(event, trigger: trigger, message: message)
+            emit(s.sync() ?? (s.record.summary != said ? s.record : nil))
         }
     }
 
@@ -376,8 +365,9 @@ final class LiveSession: Sendable {
     func stop(_ tasks: [JSONValue], goal: GoalStatus?) -> (TurnEnd.Verdict, Date) {
         state.withLock { s in
             let now = Date()
-            s.lastHookAt = now
+            s.heard(at: now)
             let (verdict, running) = s.turnEnd.stop(tasks, goal: goal)
+            s.holding = verdict != .done
             s.record.background = running.isEmpty ? nil : running
             if case .goal(let c) = verdict { s.record.goal = c } else if goal?.met != false { s.record.goal = nil }
             s.detector.hook(verdict == .done ? "done" : "working")
@@ -390,6 +380,7 @@ final class LiveSession: Sendable {
     func release(_ at: Date) {
         state.withLock { s in
             guard s.lastHookAt == at, s.detector.status == .working else { return }
+            s.holding = false
             s.record.goal = nil
             s.detector.hook("done")
             emit(s.sync())
