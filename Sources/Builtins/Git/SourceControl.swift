@@ -27,7 +27,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     /// The changes ask for just their rows while the graph is open, so the graph takes the rest instead of a gap.
     private var changesFit: NSLayoutConstraint?, changesRoom: NSLayoutConstraint?
     let branchButton = NSButton()
-    let syncButton = NSButton()
+    lazy var bar = SourceControlBar(self)
     let message = CommitTextView()
     private let placeholder = NSTextField(labelWithString: "")
     private var messageHeight: NSLayoutConstraint?
@@ -67,7 +67,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         return c
     }()
     private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "scm.collapsed") ?? [])
-    private var roots: [Node] = [], graphRoots: [Node] = []
+    private(set) var roots: [Node] = []
+    private var graphRoots: [Node] = []
     var graphWidth: CGFloat = GraphView.width(lanes: 1)
     /// The workspace's git and its branch's CI, watched while the panel is on screen (the daemon pushes changes).
     lazy var gitWatch = Watched(.git, in: app)
@@ -92,19 +93,12 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         branchButton.action = #selector(branchMenu)
         branchButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         branchButton.toolTip = String(localized: "Switch or create a branch")
-        syncButton.isBordered = false
-        syncButton.imagePosition = .imageLeading
-        syncButton.font = .uiDigits(11, weight: .regular)
-        syncButton.contentTintColor = .secondaryLabelColor
-        syncButton.target = self
-        syncButton.action = #selector(sync)
-        let refresh = iconButton("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reloadAll() }
-        let more = iconButton("ellipsis.circle", String(localized: "More Actions")) { [weak self] in self?.showMoreMenu() }
-        moreButton = more
-        stats.font = .uiDigits(11, weight: .regular); stats.textColor = .secondaryLabelColor
-        stats.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let header = NSStackView(views: [branchButton, syncButton, NSView(), stats, refresh, more])
-        header.spacing = 6; header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 8)
+        branchButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
+        moreButton = bar.more
+        stats.font = .uiDigits(10, weight: .medium)
+        let header = NSStackView(views: [branchButton])
+        bar.add(to: header)
+        header.spacing = 4; header.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 8)
 
         let box = commitBox(); commitArea = box
         let scroll = list(outline), graphScroll = list(graphOutline)
@@ -132,7 +126,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
         changesRoom = room
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: v.topAnchor), header.heightAnchor.constraint(equalToConstant: 32),
+            header.topAnchor.constraint(equalTo: v.topAnchor), header.heightAnchor.constraint(equalToConstant: 36),
             header.leadingAnchor.constraint(equalTo: v.leadingAnchor), header.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             box.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 2),
             box.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12), box.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
@@ -181,16 +175,6 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         s.drawsBackground = false
         s.autohidesScrollers = true
         return s
-    }
-
-    private func iconButton(_ symbol: String, _ tip: String, _ action: @escaping () -> Void) -> NSButton {
-        let b = ClosureButton(title: "", action: action)
-        b.image = .symbol(symbol, tip)
-        b.isBordered = false
-        b.toolTip = tip
-        b.contentTintColor = .secondaryLabelColor
-        b.symbolConfiguration = .init(pointSize: 12, weight: .regular)
-        return b
     }
 
     /// The message field (grows to six lines) and Commit with its split menu.
@@ -264,10 +248,7 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     }
 
     func updateCommitButton() {
-        let staged = changes.contains { $0.staged && !$0.conflicted }
-        let branch = info?.current ?? "HEAD"
-        placeholder.stringValue = staged || changes.isEmpty
-            ? String(localized: "Message (⌘↩ to commit on “\(branch)”)") : String(localized: "Message (⌘↩ to commit all changes on “\(branch)”)")
+        placeholder.stringValue = String(localized: "Message")   // ⌘↩ and what a commit takes are in Commit's tooltip
         guard let cb = commitButton else { return }
         let next = changes.isEmpty ? nextStep : nil
         // What a commit takes: the staged files, or all of them when none are staged.
@@ -279,9 +260,13 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         moreMenu = next == nil ? commitMenu : syncMenu
         pullItem?.isHidden = info?.upstream == nil
         cb.action = next == nil ? #selector(commitPressed) : #selector(sync)
-        cb.toolTip = next == nil ? String(localized: "Commit (⌘↩ in the message)") : syncButton.toolTip
+        let branch = info?.current ?? "HEAD"
+        let what = files > 0 ? String(localized: "Commit the staged files on “\(branch)” (⌘↩ in the message)")
+            : String(localized: "Commit all changes on “\(branch)” (⌘↩ in the message)")
+        cb.toolTip = next == nil ? what : info?.upstream.map { String(localized: "Pull from and push to \($0)") }
         cb.isEnabled = !busy && (!changes.isEmpty || next != nil)   // with no message, Commit opens a page to write one
         commitMore.isEnabled = cb.isEnabled
+        bar.update(info, changes: changes.count, busy: busy)
         if #available(macOS 26, *) { cb.tintProminence = idle && !changes.isEmpty ? .primary : .automatic }
     }
 
@@ -385,7 +370,11 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         guard let n = item as? Node else { return nil }
         switch n.kind {
         case .section(let s):
-            return SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n))
+            // The first section carries what isn't committed yet ("+120 −30"), the header's room being the quick actions'.
+            let cell = SectionCell(title: loc(s.rawValue), count: n.files.count, expanded: !collapsed.contains(s.rawValue), actions: sectionActions(s, n),
+                                   detail: n === roots.first && !stats.isHidden ? stats.attributedStringValue : nil)
+            cell.toolTip = n === roots.first && !stats.isHidden ? stats.toolTip : nil
+            return cell
         case .file(let f, let s):
             return FileCell(f, icon: app.fileIcons.image((f.path as NSString).lastPathComponent), letter: Self.letter(f, s),
                             indent: 16, actions: fileActions(f, s))

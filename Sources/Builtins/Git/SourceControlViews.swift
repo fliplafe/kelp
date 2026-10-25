@@ -65,7 +65,7 @@ final class SectionCell: NSTableCellView, Hoverable {
     private let actions: NSStackView
     var expanded = true { didSet { showChevron() } }
     private func showChevron() { chevron.image = .symbol(expanded ? "chevron.down" : "chevron.right") }
-    init(title: String, count: Int?, expanded: Bool, actions a: [RowAction]) {
+    init(title: String, count: Int?, expanded: Bool, actions a: [RowAction], detail: NSAttributedString? = nil) {
         actions = actionButtons(a)
         super.init(frame: .zero)
         chevron.symbolConfiguration = .init(pointSize: 9, weight: .semibold); chevron.contentTintColor = .tertiaryLabelColor
@@ -75,7 +75,9 @@ final class SectionCell: NSTableCellView, Hoverable {
         t.textColor = .secondaryLabelColor
         let c = NSTextField(labelWithString: count.map(String.init) ?? ""); c.font = .uiDigits(10, weight: .medium)
         c.textColor = .secondaryLabelColor
-        pinRow(self, [chevron, t, NSView(), actions, c], leading: 10)
+        let d = NSTextField(labelWithAttributedString: detail ?? NSAttributedString())
+        d.isHidden = detail == nil
+        pinRow(self, [chevron, t, NSView(), actions, d, c], leading: 10)
         self.expanded = expanded; showChevron()   // didSet doesn't run in init
     }
     required init?(coder: NSCoder) { fatalError() }

@@ -61,7 +61,7 @@ extension SourceControlController {
         info = br
         showError(nil)
         updateHeader(); updateCommitButton()
-        showStats(ch.isEmpty ? nil : e.stats)   // the "+6 −2" beside the header
+        showStats(ch.isEmpty ? nil : e.stats)   // the "+6 −2" on the first section
         followWatches()
         if pushed { app.watchAgain(.ci, e.worktree) }
         if graphStale || commits.isEmpty { Task { await loadGraph() } } else if changed { rebuildChanges() }
@@ -153,6 +153,7 @@ extension SourceControlController {
 
     /// "+120 −30" for everything not committed yet; hovering splits it into code, tests and generated files.
     private func showStats(_ s: LineStats?) {
+        defer { if !roots.isEmpty { outline.reloadData(forRowIndexes: [0], columnIndexes: [0]) } }   // the first section shows them
         guard let s, s.totalAdded + s.totalRemoved > 0 else { stats.isHidden = true; return }
         stats.isHidden = false
         stats.attributedStringValue = RowBadges.changes(s) ?? NSAttributedString()
@@ -164,19 +165,9 @@ extension SourceControlController {
     }
 
     func updateHeader() {
-        guard let info else {
-            branchButton.title = ""
-            syncButton.isHidden = true
-            return
-        }
+        bar.update(info, changes: changes.count, busy: busy)
+        guard let info else { branchButton.title = ""; return }
         branchButton.title = info.current ?? String(localized: "Detached at \(info.head ?? "?")")
         if info.merging { branchButton.title += String(localized: " (Merging)") }
-        if let up = info.upstream {
-            syncButton.isHidden = false; syncButton.image = .symbol("arrow.triangle.2.circlepath", String(localized: "Sync"))
-            syncButton.title = "\(info.behind ?? 0)↓ \(info.ahead ?? 0)↑"; syncButton.toolTip = String(localized: "Pull from and push to \(up)")
-        } else if info.current != nil, !info.remote.isEmpty {
-            syncButton.isHidden = false; syncButton.image = .symbol("icloud.and.arrow.up", String(localized: "Publish Branch"))
-            syncButton.title = (info.ahead ?? 0) > 0 ? "\(info.ahead ?? 0)↑" : ""; syncButton.toolTip = String(localized: "Publish Branch")
-        } else { syncButton.isHidden = true }
     }
 }

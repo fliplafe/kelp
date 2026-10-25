@@ -115,6 +115,14 @@ extension SourceControlController {
         }
     }
 
+    func pullPressed() { run(done: String(localized: "Pulled")) { GitRemoteOp(id: $0, op: "pull") } }
+    func fetchPressed() { run { GitRemoteOp(id: $0, op: "fetch") } }
+    /// Push, or publish a branch with no upstream.
+    func pushPressed() {
+        if info?.upstream == nil { sync(); return }
+        run(done: String(localized: "Pushed")) { GitRemoteOp(id: $0, op: "push") }
+    }
+
     @objc func branchMenu() {
         guard let info else { return }
         let m = NSMenu()
