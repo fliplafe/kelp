@@ -1,17 +1,13 @@
 import AppKit
 
-/// Levels line up as Mail nests mailboxes: a workspace's name under its project's (the cell's 2 pt, icon 16, gap 6),
-/// an agent's icon under the workspace's name, the chevron on the project icon's axis.
+/// Two levels, as a Finder sidebar keeps them: a project, then what's in it 12 pt further in (an agent's mark under
+/// the right half of the project's icon), workspaces as headings at the same depth as their agents.
 final class SidebarOutline: NSOutlineView {
-    static let lead: CGFloat = 14, step: CGFloat = 22
+    static let lead: CGFloat = 14, step: CGFloat = 12
     /// Room over and under a row's content, where its project's card opens and closes (SidebarRowView.group).
     var pads: (Int) -> (top: CGFloat, bottom: CGFloat) = { _ in (0, 0) }
-    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
-        if level(forRow: row) == 0 { return .zero }   // a project folds from the chevron on its row
-        var r = padded(super.frameOfOutlineCell(atRow: row), row)
-        r.origin.x = Self.lead + 2 + 8 - r.width / 2
-        return r
-    }
+    /// No disclosure triangles: projects and workspaces fold from a chevron at their row's end (SidebarCell).
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var r = padded(super.frameOfCell(atColumn: column, row: row), row)
         // The content ends as far inside its card on the right as a project's icon starts on the left (SidebarRowView.band).

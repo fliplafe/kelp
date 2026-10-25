@@ -326,7 +326,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     func outlineView(_ o: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let n = item as? Node else { return TextSize.of(rowBase) }
         let pad = pads(n)
-        return TextSize.of(rowBase + (hasAsk(n) ? 16 : 0)) + pad.top + pad.bottom
+        let base = { if case .workspace = n.kind { rowBase - 6 } else { rowBase } }()   // a heading, a little shorter
+        return TextSize.of(base + (hasAsk(n) ? 16 : 0)) + pad.top + pad.bottom
     }
     /// Settings › Appearance › Row height; Match System reads macOS's Sidebar icon size (small, medium, large), as
     /// Finder and Mail do. Limit: only the height follows it, the text stays 13 pt (Text size scales that).

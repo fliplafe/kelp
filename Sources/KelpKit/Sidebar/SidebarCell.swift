@@ -61,13 +61,7 @@ final class SidebarCell: NSTableCellView {
             b.toolTip = String(localized: "New workspace (⌘N)")
             b.isHidden = true
             add = b   // on hover, like Finder's sidebar
-            let f = ClosureButton(title: "") { [weak owner, node] in owner?.toggle(node) }
-            f.isBordered = false
-            f.contentTintColor = .secondaryLabelColor
-            f.isHidden = true
-            fold = f
-            f.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
-            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+            let f = makeFold()
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 16).isActive = true; icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
             detail.font = .ui(12)
@@ -77,14 +71,17 @@ final class SidebarCell: NSTableCellView {
             summary.spacing = 3
             detail.setContentHuggingPriority(.init(1), for: .horizontal)   // takes the room, the badges sit at the right
             layout(row: [icon, title, detail, summary, changes, pr, trailing, b, f])
+            detail.isHidden = true   // the workspace's name shows in the hover card; here only while it's renamed
         case .section:
             title.font = .ui(11, weight: .semibold); title.textColor = .secondaryLabelColor
             count.font = .ui(11); count.textColor = .secondaryLabelColor
             icon.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
             layout(row: [icon, title, count, NSView()])
         case .workspace:
-            title.font = .ui(13)
-            layout(row: [title, changes, pr, trailing, mark])
+            // A heading over its agents inside the project's card, not a level of its own: the sidebar stays two deep.
+            title.font = .ui(11, weight: .semibold)
+            title.textColor = .secondaryLabelColor
+            layout(row: [title, changes, pr, trailing, mark, makeFold()])
         case .agent:
             title.font = .ui(13)
             for (v, side) in [(icon, 14.0), (glyph, 12.0)] {
@@ -137,6 +134,18 @@ final class SidebarCell: NSTableCellView {
         add?.isHidden = true
         showFold()
         fitBadges()
+    }
+
+    /// The chevron that folds a project or a workspace, at the row's end; shown by `showFold`.
+    private func makeFold() -> NSButton {
+        let f = ClosureButton(title: "") { [weak owner, node] in owner?.toggle(node) }
+        f.isBordered = false
+        f.contentTintColor = .secondaryLabelColor
+        f.isHidden = true
+        f.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+        fold = f
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+        return f
     }
 
     /// The fold shows on hover, like Finder's sections, and stays while folded: the row says there's more under it.
@@ -212,12 +221,14 @@ final class SidebarCell: NSTableCellView {
             if let r, !missing { ProjectIcon.show(r.path, in: icon) } else { icon.image = missing ? .symbol("questionmark.folder") : nil }
             icon.contentTintColor = .secondaryLabelColor
             title.stringValue = r?.name ?? ""
+            // Bold where agents are: a project with none is a quieter name the eye passes over.
+            let busy = !missing && node.children.contains { if case .agent = $0.kind { true } else { !$0.children.isEmpty } }
+            title.font = .ui(13, weight: busy ? .semibold : .regular)
+            title.textColor = busy || selected ? .labelColor : .secondaryLabelColor
             toolTip = missing ? String(localized: "\(r?.path ?? "") isn't there anymore. Right-click › Locate… if it moved.") : r?.path
             // Who needs you is on the agents' own rows and in the line above the projects; folded, the row sums them up.
             trailing.stringValue = missing ? String(localized: "Folder missing") : ""
-            let w = owner?.renaming == nil ? node.workspace.flatMap(m.worktree) : nil
-            detail.stringValue = w.flatMap { Self.isDefaultName($0) ? nil : $0.displayName } ?? ""
-            detail.isHidden = detail.stringValue.isEmpty
+            if !detail.isEditable { detail.isHidden = true }
             showSummary(owner?.isCollapsed(node) == true ? node : nil)
             showFold()
         case .section:
@@ -228,9 +239,8 @@ final class SidebarCell: NSTableCellView {
             guard let w = m.worktree(id) else { return }
             let agents = live(id)
             title.stringValue = w.displayName
-            title.font = .ui(13, weight: agents.contains(where: Self.isNews) ? .semibold : .medium)   // a heading for its agents
-            let paused = !agents.isEmpty && agents.allSatisfy { $0.status == .hibernated }
-            title.textColor = paused ? .secondaryLabelColor : .labelColor
+            title.textColor = selected ? .labelColor : .secondaryLabelColor
+            showFold()
             // Expanded, its agents show their own state; collapsed, the workspace sums them up.
             let collapsed = owner?.isCollapsed(node) ?? false
             let top = AgentStatus.mostUrgent(agents.map(Self.shownStatus))
@@ -296,9 +306,6 @@ final class SidebarCell: NSTableCellView {
         default: return nil
         }
     }
-
-    /// "Workspace 2", as a new desk is named: nothing to tell beside the project's name.
-    static func isDefaultName(_ w: Worktree) -> Bool { w.note.range(of: #"^Workspace \d+$"#, options: .regularExpression) != nil }
 
     /// A folded project's agents, by what they want: asking (or failed), working, done and not looked at.
     private func showSummary(_ folded: SidebarController.Node?) {
