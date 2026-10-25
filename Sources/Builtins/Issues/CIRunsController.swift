@@ -47,7 +47,7 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         let refresh = button("arrow.clockwise", String(localized: "Refresh")) { [weak self] in self?.reload() }
         workflowsButton.isHidden = true
         for (b, symbol, tip) in [(workflowsButton, "play.circle", String(localized: "Run Workflow…")),
-                                 (webButton, "globe", String(localized: "Open in Browser"))] {
+                                 (webButton, "arrow.up.forward.square", String(localized: "Open in Browser"))] {
             b.image = .symbol(symbol, tip)
             b.isBordered = false
             b.toolTip = tip
@@ -93,10 +93,12 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         split.dividerStyle = .thin
         split.addArrangedSubview(scroll); split.addArrangedSubview(bottom)
         split.setHoldingPriority(.init(260), forSubviewAt: 0)   // the runs keep their room; the log takes what's left
-        let v = stacked(header, split)
+        let line = NSBox(); line.boxType = .separator
+        let v = stacked(header, line, split)
         empty.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(empty)
         NSLayoutConstraint.activate([
-            header.heightAnchor.constraint(equalToConstant: 32),   // else it and the split share the height
+            header.heightAnchor.constraint(equalToConstant: 36),   // else it and the split share the height
+            line.heightAnchor.constraint(equalToConstant: 1),
             empty.centerXAnchor.constraint(equalTo: v.centerXAnchor), empty.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
             empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -40),
             bottom.heightAnchor.constraint(greaterThanOrEqualToConstant: 120), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200)
@@ -375,10 +377,13 @@ final class CIRunsController: NSViewController, NSOutlineViewDataSource, NSOutli
         switch i.kind {
         case .run(let r):
             let t = NSTextField(labelWithString: r.title)
-            t.font = .ui(12, weight: .medium)
+            t.font = .ui(12)
             t.lineBreakMode = .byTruncatingTail
-            let state = r.status == "completed" ? "" : CIRunLook.words(r.status, nil) + " · "
-            let s = NSTextField(labelWithString: "\(state)\(r.workflow) · \(r.event) · \(CIRunLook.ago(r.createdAt))"); s.font = .ui(11)
+            // What tells runs apart: the workflow only when there are several, the event only when it isn't a push.
+            let several = Set(runs.compactMap { if case .run(let x) = $0.kind { x.workflow } else { nil } }).count > 1
+            let parts = [r.status == "completed" ? nil : CIRunLook.words(r.status, nil), several ? r.workflow : nil,
+                         r.event == "push" ? nil : r.event, CIRunLook.ago(r.createdAt)]
+            let s = NSTextField(labelWithString: parts.compactMap { $0 }.joined(separator: " · ")); s.font = .ui(11)
             s.textColor = .secondaryLabelColor; s.lineBreakMode = .byTruncatingTail
             let text = NSStackView(views: [t, s])
             text.orientation = .vertical
