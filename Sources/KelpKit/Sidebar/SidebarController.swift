@@ -331,34 +331,31 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         guard let p = group(n) else { return (0, 0) }
         return SidebarRowView.pads(p)
     }
-    /// Where this row is in its project's card: nil outside a project (the sections over them).
+    /// Where this row is in its project's card: nil outside a project (the sections over them) and for a project with
+    /// nothing under it, which is a plain row.
     private func group(_ n: Node) -> (first: Bool, last: Bool)? {
         var top = n
         while let up = outline.parent(forItem: top) as? Node { top = up }
-        guard case .project = top.kind else { return nil }
+        guard case .project = top.kind, !top.children.isEmpty else { return nil }
         var last = top
         while outline.isItemExpanded(last), let c = last.children.last { last = c }
         return (n === top, n === last)
     }
 
     func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { SidebarRowView() }
+    /// Typing a name jumps to its row (the cells have no textField the outline could read it from).
+    func outlineView(_ o: NSOutlineView, typeSelectStringFor tc: NSTableColumn?, item: Any) -> String? {
+        switch (item as? Node)?.kind {
+        case .project(let id)?: app.repo(id)?.name
+        case .workspace(let id)?: app.worktree(id)?.displayName
+        case .agent(let id)?: app.session(id).map(app.catalog.displayName)
+        default: nil
+        }
+    }
     func outlineView(_ o: NSOutlineView, didAdd rowView: NSTableRowView, forRow row: Int) { place(rowView, row) }
 
-    /// The workspace on screen and its agents are drawn as one card, like a tab group in Safari.
-    private func cardPlace(_ row: Int) -> (first: Bool, last: Bool)? {
-        // A workspace without agents showing is just its pill.
-        guard let id = app.workbench.workspaceId, let w = node("w:" + id), outline.isItemExpanded(w) else { return nil }
-        func inCard(_ r: Int) -> Bool {
-            guard let n = outline.item(atRow: r) as? Node else { return false }
-            return n === w || outline.parent(forItem: n) as? Node === w
-        }
-        guard inCard(row) else { return nil }
-        return (outline.item(atRow: row) as? Node === w, !inCard(row + 1))
-    }
     private func place(_ v: NSTableRowView, _ row: Int) {
-        guard let v = v as? SidebarRowView else { return }
-        v.card = cardPlace(row)
-        v.group = (outline.item(atRow: row) as? Node).flatMap(group)
+        (v as? SidebarRowView)?.group = (outline.item(atRow: row) as? Node).flatMap(group)
     }
     /// The cards follow rows that open, close or move; a project's last row changes height with them.
     private func updateCard() {

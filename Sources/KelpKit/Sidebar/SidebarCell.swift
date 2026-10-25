@@ -24,6 +24,12 @@ final class SidebarCell: NSTableCellView {
     private let summary = NSStackView()
     private var fold: NSButton?
     private var hovering = false
+    /// On the selection pill (SidebarRowView): grey text a step lighter there, where secondary label is 3.3:1.
+    var selected = false { didSet { if selected != oldValue { update() } } }
+    /// Grey text on the pill: 5.3:1 on dark's white 12%; light's white pill already gives secondary label 6:1.
+    static let onPill = NSColor(name: nil) {
+        $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.white.withAlphaComponent(0.78) : .secondaryLabelColor
+    }
     /// Lines not committed and the PR, for rows that stand for a folder (RowBadges); they go first when the row is short of room.
     private let changes = NSButton(), pr = NSButton()
 
@@ -34,12 +40,12 @@ final class SidebarCell: NSTableCellView {
         super.init(frame: .zero)
         title.lineBreakMode = .byTruncatingTail
         trailing.font = .uiDigits(11, weight: .regular); trailing.textColor = .secondaryLabelColor
-        textField = title
+        // Not the cell's textField: the source list would restyle it, a project's as a grey group heading and a picked
+        // row's in bold, which here means "something new". Type-select reads the name from the controller instead.
+        textField = nil
         switch node.kind {
         case .project(let id):
             // A name, not a section label: what's under it is the project's. On the right only what needs doing.
-            // Not the cell's textField: the source list would restyle it as a grey group heading.
-            textField = nil
             title.font = .ui(13, weight: .semibold)
             title.textColor = .labelColor
             trailing.font = .ui(11, weight: .semibold); trailing.textColor = .textOrange
@@ -265,7 +271,7 @@ final class SidebarCell: NSTableCellView {
     /// the colour stays on the mark (orange text on a light sidebar is 2:1). What it asks or did is on the hover card.
     private func showState(_ s: Session) {
         title.textColor = s.status == .hibernated ? .secondaryLabelColor : .labelColor
-        trailing.textColor = .secondaryLabelColor
+        trailing.textColor = selected ? Self.onPill : .secondaryLabelColor
         toolTip = nil
     }
 
@@ -311,104 +317,6 @@ final class SidebarCell: NSTableCellView {
         window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
     }
-}
-
-/// Levels line up as Mail nests mailboxes: a workspace's name under its project's (the cell's 2 pt, icon 16, gap 6),
-/// an agent's icon under the workspace's name, the chevron on the project icon's axis.
-final class SidebarOutline: NSOutlineView {
-    static let lead: CGFloat = 14, step: CGFloat = 22
-    /// Room over and under a row's content, where its project's card opens and closes (SidebarRowView.group).
-    var pads: (Int) -> (top: CGFloat, bottom: CGFloat) = { _ in (0, 0) }
-    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
-        if level(forRow: row) == 0 { return .zero }   // a project folds from the chevron on its row
-        var r = padded(super.frameOfOutlineCell(atRow: row), row)
-        r.origin.x = Self.lead + 2 + 8 - r.width / 2
-        return r
-    }
-    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
-        var r = padded(super.frameOfCell(atColumn: column, row: row), row)
-        // The content ends as far inside its card on the right as a project's icon starts on the left (SidebarRowView.band).
-        let x = Self.lead + (level(forRow: row) > 0 ? Self.step : 0)
-        r.origin.x = x; r.size.width = bounds.width - 8 - x
-        return r
-    }
-    private func padded(_ r: NSRect, _ row: Int) -> NSRect {
-        let p = pads(row)
-        return NSRect(x: r.minX, y: r.minY + p.top, width: r.width, height: r.height - p.top - p.bottom)
-    }
-}
-
-/// Like Safari's tab groups: each project sits on a quiet card, the workspace on screen and its agents on a stronger
-/// one inside it, and the row you're on is a raised pill (no accent colour, so the text keeps its colours).
-@MainActor
-final class SidebarRowView: NSTableRowView {
-    /// Where this row is in the workspace's card: nil outside it.
-    var card: (first: Bool, last: Bool)? { didSet { if card?.first != oldValue?.first || card?.last != oldValue?.last { needsDisplay = true } } }
-    /// Where this row is in its project's card; the outline leaves room for its ends (`pads`).
-    var group: (first: Bool, last: Bool)? { didSet { if group?.first != oldValue?.first || group?.last != oldValue?.last { needsDisplay = true } } }
-
-    /// A project's card: 4 pt over its first row and under its last (8 between cards), 4 more inside under the rows below its name.
-    static func pads(_ g: (first: Bool, last: Bool)) -> (top: CGFloat, bottom: CGFloat) { (g.first ? 4 : 0, g.last ? (g.first ? 4 : 8) : 0) }
-
-    static let groupFill = NSColor.labelColor.withAlphaComponent(0.045)
-    static let cardFill = NSColor.labelColor.withAlphaComponent(0.075)
-    static let pillFill = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor.black.withAlphaComponent(0.32) : .white }
-
-    override func drawBackground(in r: NSRect) {
-        // Each card is 6 pt in from the one around it, the pill 4 pt inside its card (corners 10, 8, 6).
-        // Rows in the middle extend past their bounds, so only a card's ends are rounded. Flipped: y grows down.
-        let pad = group.map(Self.pads) ?? (top: 0, bottom: 0)
-        if let group {
-            fill(band(6), first: group.first, top: 4, last: group.last, bottom: 4, radius: 10, Self.groupFill)
-        }
-        let side: CGFloat = group == nil ? 6 : 12
-        if let card {
-            fill(band(side), first: card.first, top: 0, last: card.last, bottom: pad.bottom, radius: 8, Self.cardFill)
-        }
-        guard isSelected else { return }   // the outline draws no selection of its own (selectionHighlightStyle .none)
-        var pill = band((card == nil ? 6 : side) + 4).insetBy(dx: 0, dy: 2)
-        if card?.first == true { pill.origin.y += 1; pill.size.height -= 1 }
-        if card?.last == true { pill.size.height -= 1 }
-        pill.origin.y += pad.top; pill.size.height -= pad.top + pad.bottom
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = .black.withAlphaComponent(0.12)
-        shadow.shadowBlurRadius = 2
-        shadow.shadowOffset = .init(width: 0, height: -0.5)
-        shadow.set()
-        Self.pillFill.setFill()
-        NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
-        NSGraphicsContext.restoreGraphicsState()
-    }
-    /// The row inset by `inset` on the left and 8 pt less on the right: past the sidebar's right edge come the divider
-    /// and the editor area's own margin, so a card leaves the same gap to the window's edge and to the editor (8 pt).
-    private func band(_ inset: CGFloat) -> NSRect {
-        NSRect(x: bounds.minX + inset + 2, y: bounds.minY, width: bounds.width - 2 * inset + 4, height: bounds.height)
-    }
-    // swiftlint:disable:next function_parameter_count
-    private func fill(_ r: NSRect, first: Bool, top: CGFloat, last: Bool, bottom: CGFloat, radius: CGFloat, _ color: NSColor) {
-        var r = r
-        let grow = first ? -top : 12
-        r.origin.y -= grow
-        r.size.height += grow
-        r.size.height += last ? -bottom : 12
-        color.setFill()
-        NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
-    }
-    /// The outline sizes a row's cell once; when the row's height changes later (a project's last row gains or loses the
-    /// card's foot) the cell would only stretch with it, its text off the chevron. Put it where the outline says.
-    override func resizeSubviews(withOldSize old: NSSize) {
-        super.resizeSubviews(withOldSize: old)
-        guard let o = superview as? NSOutlineView, case let row = o.row(for: self), row >= 0,
-              let cell = subviews.first(where: { $0 is NSTableCellView }) else { return }
-        let f = o.frameOfCell(atColumn: 0, row: row)   // only its height: mid-update a project's row comes back narrower
-        cell.frame = NSRect(x: cell.frame.minX, y: f.minY - o.rect(ofRow: row).minY, width: cell.frame.width, height: f.height)
-    }
-    override var isSelected: Bool { didSet { if isSelected != oldValue { needsDisplay = true } } }
-    /// In the sidebar's vibrant material a dark fill would come out lighter; the card and pill are drawn as they are.
-    override var allowsVibrancy: Bool { false }
-    /// The pill isn't the accent colour, so the cell draws as unselected (white text on it would vanish).
-    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 }
 
 /// What an agent goes on with by itself, beside its name: a symbol and a word on a faint capsule. A label, not a button:
