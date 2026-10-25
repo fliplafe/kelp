@@ -19,7 +19,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
     let leftScroll = NSScrollView(), resultsScroll = NSScrollView()
     private var nodes: [FileNode] = []
     private var status: [String: FileChange] = [:]
-    /// Folders with a changed file somewhere under them (drawn orange).
+    /// Folders with a changed file somewhere under them (a grey dot).
     private var changedFolders = Set<String>()
     /// The paths the tree was built from (listed, ignored): an edit that adds or removes none only changes badges.
     private var shownPaths: ([String], [String]?)?
@@ -89,17 +89,18 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         loadError.textColor = .secondaryLabelColor
         loadError.alignment = .center
         loadError.isHidden = true
-        for x in [search, leftScroll, resultsScroll, empty, loadError] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        let bar = header()
+        for x in [bar, leftScroll, resultsScroll, empty, loadError] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo: v.centerXAnchor),
-                                     empty.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
+                                     empty.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 40),
                                      empty.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32),
                                      loadError.centerXAnchor.constraint(equalTo: v.centerXAnchor),
-                                     loadError.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
+                                     loadError.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 40),
                                      loadError.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32)])
         NSLayoutConstraint.activate([
-            search.topAnchor.constraint(equalTo: v.topAnchor, constant: 8), search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10),
-            search.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
-            leftScroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), leftScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            bar.topAnchor.constraint(equalTo: v.topAnchor), bar.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+            leftScroll.topAnchor.constraint(equalTo: bar.bottomAnchor), leftScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             leftScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), leftScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor),
             resultsScroll.topAnchor.constraint(equalTo: leftScroll.topAnchor), resultsScroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             resultsScroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), resultsScroll.bottomAnchor.constraint(equalTo: v.bottomAnchor)
@@ -245,10 +246,12 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
             let (letter, color) = s.badge
             badge.stringValue = letter
             badge.textColor = color
-            tf.textColor = color
-        } else if n.children != nil, changedFolders.contains(n.path) { tf.textColor = .textOrange
+        } else if n.children != nil, changedFolders.contains(n.path) {
+            badge.stringValue = "●"
+            badge.textColor = .tertiaryLabelColor
+            badge.setAccessibilityLabel(String(localized: "Has changes"))
         } else if n.ignored { tf.textColor = .secondaryLabelColor; img.alphaValue = 0.5 }
-        badge.font = .ui(10, weight: .bold)
+        badge.font = badge.stringValue == "●" ? .ui(7) : .ui(10, weight: .bold)
         for v in [img, tf, badge] as [NSView] { v.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(v) }
         cell.textField = tf; cell.imageView = img
         NSLayoutConstraint.activate([
@@ -371,7 +374,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         openFile(n.path, focus: false)
     }
     /// Like Finder's new folder: "untitled" appears with its name selected; type one and it opens.
-    @objc private func newFile() {
+    @objc func newFile() {
         let made = create(in: URL(fileURLWithPath: root).appendingPathComponent(selectedDir).path, undo: String(localized: "New File")), root = root
         Task {
             guard let path = await made.value else { return }
@@ -380,7 +383,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         }
     }
     /// Markdown templates from <repo>/.kelp/templates and ~/.kelp/templates with {{date}}, {{branch}}, {{title}}…
-    @objc private func newFromTemplate() {
+    @objc func newFromTemplate() {
         let repo = app.repo(worktree?.repoId)
         let dirs = [URL(fileURLWithPath: root).appendingPathComponent(".kelp/templates"), Paths.root.appendingPathComponent("templates")]
         let all = dirs.flatMap { Templates.list(in: $0) }
@@ -413,7 +416,7 @@ final class FilesPanel: NSViewController, NSOutlineViewDataSource, NSOutlineView
         }
     }
 
-    @objc private func newFolder() { Task { await newFolderNamed() } }
+    @objc func newFolder() { Task { await newFolderNamed() } }
     private func newFolderNamed() async {
         let dir = selectedDir
         guard let name = await prompt(String(localized: "New folder"), String(localized: "In /\(dir)")), !name.isEmpty else { return }
