@@ -207,6 +207,8 @@ struct SettingRow: View {
         case "workbench.iconTheme": return app.fileIcons.themes.first { $0.id == v }?.label ?? v
         case "power.keepAwake":
             return ["agents": String(localized: "While agents work"), "always": String(localized: "Always"), "off": String(localized: "Never")][v] ?? v
+        // Each language in its own words, so it can be found whichever language Kelp is in.
+        case "workbench.language": return ["en": "English", "ru": "Русский"][v] ?? String(localized: "Match System")
         case "workbench.sidebar.rowHeight" where v == "system": return String(localized: "Match System")
         case "workbench.sidebar.agentDetail" where v == "needsYou": return String(localized: "When They Need You")
         case "workbench.sidebar.agentIcons" where v == "others": return String(localized: "Other Agents Only")

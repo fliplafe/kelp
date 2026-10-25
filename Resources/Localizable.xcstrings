@@ -3682,6 +3682,16 @@
         }
       }
     },
+    "Language": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Язык"
+          }
+        }
+      }
+    },
     "Language server %@ isn't installed.": {
       "localizations": {
         "ru": {
@@ -7293,6 +7303,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Таблица"
+          }
+        }
+      }
+    },
+    "Takes effect the next time Kelp opens.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Применится при следующем запуске Kelp."
           }
         }
       }

@@ -39,6 +39,8 @@ package enum Builtins {
                                             icon: "paintpalette", essential: true) { _ in
         var c = Contributions()
         c.settings = [SettingsSection(id: "appearance", title: "Appearance", icon: "paintpalette", specs: [
+            s("workbench.language", "Language", "enum", "system", "Takes effect the next time Kelp opens.",
+              options: ["system", "en", "ru"]),
             s("workbench.theme", "Color Theme", "theme", "auto",
               "The window, terminal and editor together. Match System switches Kelp Light / Dark with macOS; Ghostty keeps your Ghostty terminal colors."),
             s("workbench.iconTheme", "File Icon Theme", "enum", .string(FileIcon.system),
