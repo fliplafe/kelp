@@ -54,6 +54,7 @@ package final class AppModel {
     package var ci: [String: CIEvent] = [:]
     var prs: [String: GitHub.PullRequest] = [:]
     var limits: UsageGet.Result?
+    @ObservationIgnored var forecast = LimitForecast()   // the pace of each limit, from the readings pushed so far
     /// Watched files' versions by path (`WatchTopic.file`; a nil stamp: gone), and workspaces' files (`WatchTopic.files`).
     package var fileVersions: [String: FileEvent] = [:]
     package var fileLists: [String: FilesEvent] = [:]

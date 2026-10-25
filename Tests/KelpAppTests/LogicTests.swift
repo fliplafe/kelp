@@ -255,3 +255,31 @@ extension OneAtATime {
     #expect(LimitAlerts.readings(u(60), now: now).count == 1)
     #expect(LimitAlerts.readings(u(7200), now: now).isEmpty)
 }
+
+@Test func limitForecastWarnsOnlyWhenItFillsBeforeItResets() {
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    func u(_ p: Double) -> UsageGet.Result { .init(claude: [], codex: [], plans: ["grok": [.init(kind: "session", percent: p, resets: "in 4h")]]) }
+    var f = LimitForecast()
+    let key = LimitForecast.key("grok", "session")
+    f.record(u(20), now: t0)
+    #expect(f.untilFull(key, now: t0) == nil)                                 // one reading tells no pace
+    f.record(u(30), now: t0.addingTimeInterval(600))                          // 1 point a minute
+    let now = t0.addingTimeInterval(600)
+    #expect(abs((f.untilFull(key, now: now) ?? 0) - 70 * 60) < 1)
+    #expect(f.warning(key, resetAt: now.addingTimeInterval(4 * 3600), now: now) != nil)   // full in 70 min, resets in 4 h
+    #expect(f.warning(key, resetAt: now.addingTimeInterval(3600), now: now) == nil)       // resets first
+    f.record(u(5), now: t0.addingTimeInterval(1500))                          // the window reset
+    #expect(f.untilFull(key, now: t0.addingTimeInterval(1500)) == nil)
+}
+
+@Test func resetTimesParse() {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 1_792_000_000)   // 2026-10-14 17:46 UTC
+    #expect(ResetTime.parse("in 1h 30m", now: now, calendar: cal) == now.addingTimeInterval(5400))
+    #expect(ResetTime.parse("in 3d", now: now, calendar: cal) == now.addingTimeInterval(3 * 86400))
+    let three = ResetTime.parse("3pm", now: now, calendar: cal)
+    #expect(three.map { cal.component(.hour, from: $0) } == 15 && three! > now)
+    #expect(ResetTime.parse("7:40am", now: now, calendar: cal).map { cal.component(.minute, from: $0) } == 40)
+    #expect(ResetTime.parse("Oct 20 at 5am", now: now, calendar: cal).map { cal.component(.day, from: $0) } == 20)
+    #expect(ResetTime.parse("soon", now: now, calendar: cal) == nil)
+}

@@ -24,6 +24,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private var limitAlerts = LimitAlerts()
+    private var forecastTold = Set<String>()   // limits already warned about, until they stop filling faster than they reset
     private func limitsChanged(_ u: UsageGet.Result?) {
         guard let u else { return }
         for a in limitAlerts.update(u, first: Int(app.settings.string("usage.alertAt") ?? "80")) {
@@ -35,6 +36,25 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             center?.add(UNNotificationRequest(identifier: "limit-\(a.agent)-\(a.kind)-\(a.level)", content: c, trigger: nil))
             if !allowed, NSApp.isActive { Banner.show("\(c.title) · \(c.body)") }
         }
+        forecastChanged(u)
+    }
+
+    private func forecastChanged(_ u: UsageGet.Result) {
+        guard Int(app.settings.string("usage.alertAt") ?? "80") != nil else { return }
+        var now = Set<String>()
+        for (agent, l, resetAt) in LimitAlerts.readings(u) {
+            let key = LimitForecast.key(agent, l.kind)
+            guard let eta = app.forecast.warning(key, resetAt: resetAt) else { continue }
+            now.insert(key)
+            guard forecastTold.insert(key).inserted else { continue }
+            let name = app.catalog.all.first { $0.id == agent }?.name ?? agent
+            let c = UNMutableNotificationContent()
+            c.title = name + String(localized: ": \(l.kind) limit full in \(LimitForecast.duration(eta))")
+            c.body = String(localized: "At this pace it fills before it resets.")
+            center?.add(UNNotificationRequest(identifier: "forecast-\(key)", content: c, trigger: nil))
+            if !allowed, NSApp.isActive { Banner.show("\(c.title) · \(c.body)") }
+        }
+        forecastTold.formIntersection(now)
     }
 
     /// macOS can switch Kelp's banners off (System Settings › Notifications): say so once, instead of failing silently.

@@ -11,24 +11,29 @@ struct LimitAlerts {
     private var told: [String: Int] = [:]   // "agent|kind" → highest level already announced
     private var seeded = false
 
-    /// Every limit the agents report now, as the sidebar's rings show them.
+    /// Every limit the agents report now, as the sidebar's rings show them, with when it resets if that can be told.
     /// Not the ones the sidebar dims: a reading from more than half an hour ago says nothing about now.
-    static func readings(_ u: UsageGet.Result, now: Date = Date()) -> [(agent: String, limit: UsageGet.Limit)] {
+    static func readings(_ u: UsageGet.Result, now: Date = Date()) -> [(agent: String, limit: UsageGet.Limit, resetAt: Date?)] {
         let fresh = { (agent: String) in u.plansReadAt?[agent].map { now.timeIntervalSince1970 - $0 <= 1800 } ?? true }
-        var out = (u.plans ?? [:]).filter { fresh($0.key) }.flatMap { a, ls in ls.map { (a, $0) } }.filter { $0.0 != "claude" }
-        if fresh("claude") { out += (u.plans?["claude"] ?? u.claudeLimits ?? []).map { ("claude", $0) } }
-        if let x = u.codex.first, now.timeIntervalSince1970 - x.observedAt <= 1800 {
-            if let p = x.primaryUsedPercent { out.append(("codex", .init(kind: "session", percent: p, resets: nil))) }
-            if let p = x.secondaryUsedPercent { out.append(("codex", .init(kind: "week", percent: p, resets: nil))) }
+        var out: [(agent: String, limit: UsageGet.Limit, resetAt: Date?)] = []
+        func add(_ agent: String, _ ls: [UsageGet.Limit]) {
+            out += ls.map { (agent, $0, $0.resets.flatMap { ResetTime.parse($0, now: now) }) }
         }
-        return out.map { (agent: $0.0, limit: $0.1) }
+        for (agent, ls) in u.plans ?? [:] where agent != "claude" && fresh(agent) { add(agent, ls) }
+        if fresh("claude") { add("claude", u.plans?["claude"] ?? u.claudeLimits ?? []) }
+        if let x = u.codex.first, now.timeIntervalSince1970 - x.observedAt <= 1800 {
+            let at = { (t: Double?) in t.map { Date(timeIntervalSince1970: $0) } }
+            if let p = x.primaryUsedPercent { out.append(("codex", .init(kind: "session", percent: p, resets: nil), at(x.primaryResetsAt))) }
+            if let p = x.secondaryUsedPercent { out.append(("codex", .init(kind: "week", percent: p, resets: nil), at(x.secondaryResetsAt))) }
+        }
+        return out
     }
 
     /// The first reading only sets the baseline: what was already full when Kelp opened isn't news.
     mutating func update(_ u: UsageGet.Result, first: Int? = 80) -> [Alert] {
         let levels = Self.levels(first: first)
         var alerts: [Alert] = []
-        for (agent, l) in Self.readings(u) {
+        for (agent, l, _) in Self.readings(u) {
             let key = agent + "|" + l.kind
             let level = levels.last { l.percent >= Double($0) } ?? 0
             if l.percent < Double((levels.first ?? 100) - 10) { told[key] = nil }

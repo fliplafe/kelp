@@ -12,6 +12,7 @@ package struct UsageView: View {
         var used: Double
         var resets: String?
         var session = false
+        var kind = ""
     }
     struct Row: Identifiable, Equatable {
         var id: String, name: String, fullName: String
@@ -67,7 +68,7 @@ package struct UsageView: View {
                 .onHover { hovered = $0 ? r.id : (hovered == r.id ? nil : hovered) }
                 .onTapGesture { hovered = r.id }   // trackpads, and anyone who'd rather click
                 .popover(isPresented: Binding(get: { hovered == r.id }, set: { if !$0, hovered == r.id { hovered = nil } }), arrowEdge: .top) {
-                    Details(row: r)
+                    Details(row: r, forecast: app.forecast)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(r.lines.map { String(localized: "\(r.fullName) \($0.label): \(Int(($0.used * 100).rounded()))% used") }
@@ -108,6 +109,7 @@ package struct UsageView: View {
 
     private struct Details: View {
         let row: Row
+        let forecast: LimitForecast
         /// Each limit gets its own bar, so the one that's running out shows at a glance.
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
@@ -129,6 +131,10 @@ package struct UsageView: View {
                         }
                         Bar(used: l.used)
                         if let r = l.resets { Text("Resets \(r)").font(.caption).foregroundStyle(.secondary) }
+                        if !row.stale, let eta = forecast.warning(LimitForecast.key(row.id, l.kind), resetAt: l.resets.flatMap { ResetTime.parse($0) }) {
+                            Text("At this pace it's full in \(LimitForecast.duration(eta)), before it resets.").font(.caption).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
@@ -170,7 +176,7 @@ package struct UsageView: View {
             let label = kind == "session" ? String(localized: "5 hours") : kind == "week" ? String(localized: "Week")
                 : kind == "month" ? String(localized: "Month")
                 : kind.hasPrefix("week · ") ? String(localized: "Week, ") + kind.dropFirst(7) : kind.prefix(1).uppercased() + kind.dropFirst()
-            return Line(label: label, used: l.percent / 100, resets: l.resets, session: kind == "session")
+            return Line(label: label, used: l.percent / 100, resets: l.resets, session: kind == "session", kind: kind)
         }
     }
 
@@ -186,7 +192,7 @@ package struct UsageView: View {
                 (String(localized: "Week"), x.secondaryUsedPercent, x.secondaryResetsAt, false)].compactMap { label, used, reset, session in
             guard let p = used else { return nil }
             let t = reset ?? 0, expired = t > 0 && t < now
-            return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.at(t) : nil, session: session)
+            return Line(label: label, used: expired ? 0 : p / 100, resets: t > now ? Self.at(t) : nil, session: session, kind: session ? "session" : "week")
         }
     }
 
