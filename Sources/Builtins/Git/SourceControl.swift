@@ -24,8 +24,8 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
     let graphOutline = NSOutlineView()
     private let graphBar = GraphBar()
     private var graphHeight: NSLayoutConstraint?, graphClosed: NSLayoutConstraint?, barHeight: NSLayoutConstraint?
-    /// The changes ask for just their rows while the graph is open, so the graph takes the rest instead of a gap.
-    private var changesFit: NSLayoutConstraint?, changesRoom: NSLayoutConstraint?
+    /// Never dragged, the open graph has the lower half; the changes keep at least their rows' height up to 80 pt.
+    private var graphHalf: NSLayoutConstraint?, changesRoom: NSLayoutConstraint?
     let branchButton = NSButton()
     lazy var bar = SourceControlBar(self)
     let message = CommitTextView()
@@ -114,14 +114,14 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         sep.boxType = .separator
         separator = sep
         for x in [header, box, sep, scroll, graphBar, graphScroll, empty] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
-        // Open, the graph keeps at least the height it was dragged to and takes whatever the changes leave.
-        let gh = graphScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 0)
-        gh.priority = .init(495)   // over the changes' fit, under windowSizeStayPut: neither stretches the window
+        // Open, the graph is the height it was dragged to. Under windowSizeStayPut: it never stretches the window.
+        let gh = graphScroll.heightAnchor.constraint(equalToConstant: 260)
+        gh.priority = .init(495)
         graphHeight = gh
+        graphHalf = graphScroll.heightAnchor.constraint(equalTo: v.heightAnchor, multiplier: 0.5)
+        graphHalf?.priority = .init(495)
         graphClosed = graphScroll.heightAnchor.constraint(equalToConstant: 0)
         graphClosed?.priority = .defaultHigh
-        changesFit = scroll.heightAnchor.constraint(equalToConstant: 0)
-        changesFit?.priority = .init(490)   // under windowSizeStayPut: a long list scrolls instead of stretching the window
         let bh = graphBar.heightAnchor.constraint(equalToConstant: 0); barHeight = bh
         let room = scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80); room.priority = .init(760)   // the graph gives way first
         changesRoom = room
@@ -308,7 +308,6 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         outline.reloadData(); outline.expandItem(nil, expandChildren: true)
         let rows = outline.numberOfRows
         let height = rows > 0 ? outline.rect(ofRow: rows - 1).maxY : 0
-        changesFit?.constant = height
         changesRoom?.constant = min(80, height)
     }
 
@@ -331,16 +330,18 @@ final class SourceControlController: NSViewController, NSOutlineViewDataSource, 
         graphOutline.enclosingScrollView?.isHidden = !open
         barHeight?.constant = has ? GraphBar.height : 0
         // At most half the screen: a height saved while the window was being stretched stays out.
-        let saved = UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat ?? 260
-        graphHeight?.constant = min(saved, (NSScreen.main?.visibleFrame.height ?? 800) / 2)
-        graphHeight?.isActive = open
-        changesFit?.isActive = open
+        let saved = UserDefaults.standard.object(forKey: "scm.graphHeight") as? CGFloat
+        graphHeight?.constant = min(saved ?? 0, (NSScreen.main?.visibleFrame.height ?? 800) / 2)
+        graphHeight?.isActive = open && saved != nil
+        graphHalf?.isActive = open && saved == nil
         graphClosed?.isActive = !open
     }
 
     private func resizeGraph(by dy: CGFloat) {
-        guard let gh = graphHeight, gh.isActive, let changes = outline.enclosingScrollView, let graph = graphOutline.enclosingScrollView else { return }
+        guard let gh = graphHeight, graphClosed?.isActive == false, let changes = outline.enclosingScrollView,
+              let graph = graphOutline.enclosingScrollView else { return }
         gh.constant = min(max(60, graph.frame.height + dy), changes.frame.height + graph.frame.height - 80)
+        graphHalf?.isActive = false; gh.isActive = true
         UserDefaults.standard.set(gh.constant, forKey: "scm.graphHeight")
     }
 
