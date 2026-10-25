@@ -55,7 +55,9 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         set { app.uiState["sidebar.pinned"] = try? .from(newValue) }
     }
     private let noMatch = NSStackView()
-    private lazy var summary = AgentSummary(app: app)
+    /// Over the list, who needs you (Appearance › Sidebar › Needs You): a capsule counting them, or a row for each.
+    private var needsYou: NSView?
+    private weak var list: NSScrollView?
 
     override func loadView() {
         let col = NSTableColumn(identifier: .init("main")); col.resizingMask = .autoresizingMask
@@ -100,16 +102,14 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         let add = NSButton.titlebar("folder.badge.plus", String(localized: "Add Project"),
                                     tip: String(localized: "Add a project: a folder, a clone or one over SSH"))
         add.target = self; add.action = #selector(addMenu(_:))
-        for x in [add, search, scroll, summary, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
+        for x in [add, search, scroll, footer, empty, noMatch] as [NSView] { x.translatesAutoresizingMaskIntoConstraints = false; v.addSubview(x) }
         NSLayoutConstraint.activate([
             // Under the traffic lights, in the window's second row: level with the tab strips and the inspector's panel icons.
             search.centerYAnchor.constraint(equalTo: v.topAnchor, constant: WindowBar.height + TabStrip.height / 2),
             search.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10), search.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
             add.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -6), add.centerYAnchor.constraint(equalTo: search.centerYAnchor),
             // In line with the projects' cards (SidebarRowView.band): 8 pt to the window's edge and to the editor area.
-            summary.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), summary.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8),
-            summary.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: summary.line.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
+            scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
             footer.leadingAnchor.constraint(equalTo: v.leadingAnchor), footer.trailingAnchor.constraint(equalTo: v.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: v.bottomAnchor),
@@ -120,6 +120,8 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         ])
         buildEmpty()
         view = v
+        list = scroll
+        track(owner: self) { [app] in app.settings.string("workbench.sidebar.needsYou") } changed: { [weak self] in self?.placeNeedsYou($0) }
         track(owner: self) { [app] in app.repos } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { [app] in app.worktrees } changed: { [weak self] _ in self?.refresh() }
         track(owner: self) { [app] in app.sessions } changed: { [weak self] _ in self?.refresh() }
@@ -297,6 +299,31 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
     }
 
     /// The workspace on screen stays in view with its agents under it (they can show up after it was selected).
+    /// The capsule or the zone, under the search and over the list (added after it: the zone hangs over its top).
+    private func placeNeedsYou(_ mode: String?) {
+        guard let list else { return }
+        needsYou?.removeFromSuperview()
+        list.contentInsets.top = 0
+        let line: NSLayoutGuide, v: NSView
+        if mode == "tabs" {
+            let zone = NeedsYouZone(app: app)
+            line = zone.line; v = zone
+            view.addSubview(zone)
+            zone.list = list
+        } else {
+            let capsule = AgentSummary(app: app)
+            line = capsule.line; v = capsule
+            view.addSubview(capsule)
+        }
+        needsYou = v
+        v.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([   // in line with the projects' cards (SidebarRowView.band): 8 pt to the window's edge
+            v.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 6), v.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            v.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            list.topAnchor.constraint(equalTo: line.bottomAnchor, constant: 4)
+        ])
+    }
+
     private func keepOpenInView() {
         guard let id = app.workbench.workspaceId, let n = workspaceNode(id) else { return }
         let row = outline.row(forItem: n)

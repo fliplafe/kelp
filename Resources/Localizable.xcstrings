@@ -11525,6 +11525,28 @@
           }
         }
       }
+    },
+    "Over the list: how many agents wait for you, or a row for each.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Над списком: сколько агентов ждут вас, или строка для каждого."
+          }
+        }
+      }
+    },
+    "Count": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Счётчик"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

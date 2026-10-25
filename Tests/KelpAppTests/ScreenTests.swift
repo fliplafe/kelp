@@ -31,9 +31,11 @@ import Core
     (0..<o.numberOfRows).map { r in (o.view(atColumn: 0, row: r, makeIfNecessary: true)).map(texts) ?? [] }
 }
 
-@MainActor private func withSidebar(repos: [Repo], worktrees: [Worktree], sessions: [Session], _ check: (SidebarController, NSOutlineView) throws -> Void) throws {
+@MainActor private func withSidebar(repos: [Repo], worktrees: [Worktree], sessions: [Session], settings: [String: JSONValue] = [:],
+                                    _ check: (SidebarController, NSOutlineView) throws -> Void) throws {
     _ = testHome
     let m = AppModel(builtins: Builtins.all)
+    if !settings.isEmpty { m.settings.apply(settings) }
     m.repos = repos; m.worktrees = worktrees; m.sessions = sessions
     let vc = SidebarController(app: m)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 280, height: 600), styleMask: [.titled], backing: .buffered, defer: true)   // never shown
@@ -185,6 +187,31 @@ extension OneAtATime {
         #expect(texts(vc.view).contains("3 need you"))   // a question and two reports nobody has read
         let listed: [String] = rows(of: o).flatMap { $0 }
         #expect(listed.contains("Report A") && listed.contains("Report B"))   // each on its own row
+    }
+}
+
+@Test func asTabsEachAgentThatNeedsYouHasARowOverTheListAndPastSixTheLastSaysHowManyMore() throws {
+    let sessions = (1...8).map { i in
+        var s = Session(worktreeId: "w\(i)", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Ask \(i)", summary: "Question")
+        s.statusAt = Date() - 60
+        return s
+    }
+    try withSidebar(repos: [project], worktrees: (1...8).map { desk("w\($0)", "b\($0)") }, sessions: sessions,
+                    settings: ["workbench.sidebar.needsYou": .string("tabs")]) { vc, o in
+        let zone = try #require(vc.view.subviews.compactMap { $0 as? NeedsYouZone }.first)
+        let shown = texts(zone)
+        #expect(shown.contains("Needs You") && shown.contains("8"))
+        #expect(shown.filter { $0.hasPrefix("Ask ") }.count == 5 && shown.contains("3 more"))
+        #expect(!texts(vc.view).contains("8 need you"))   // no capsule beside the zone
+        #expect(rows(of: o).flatMap { $0 }.filter { $0 == "Ask 1" }.count == 1)   // the list keeps its own row too
+    }
+}
+
+@Test func nobodyAskingOrWorkingLeavesNoEmptyBandOverTheList() throws {
+    let done = Session(worktreeId: "w1", cwd: "/", command: "claude", agent: "claude", status: .idle, title: "Old chat")
+    try withSidebar(repos: [project], worktrees: [desk("w1", "main")], sessions: [done]) { vc, _ in
+        let line = try #require(vc.view.subviews.compactMap { $0 as? AgentSummary }.first)
+        #expect(line.isHidden)
     }
 }
 
