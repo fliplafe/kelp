@@ -36,7 +36,10 @@ package struct UsageView: View {
             if !rows.isEmpty {
                 Divider()
                 // A minute at a time: a reading ages while nothing else changes.
-                TimelineView(.periodic(from: .now, by: 60)) { _ in bars.padding(.horizontal, 14).padding(.vertical, 10) }
+                // The reset times only while the bars keep their room; a narrow sidebar has them on hover.
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    ViewThatFits(in: .horizontal) { bars(resets: true); bars(resets: false) }.padding(.horizontal, 14).padding(.vertical, 10)
+                }
             }
         }
         // Watched while shown: the daemon says when a plan read or the token count changed.
@@ -46,7 +49,7 @@ package struct UsageView: View {
         .onChange(of: app.availability.ids) { load() }
     }
 
-    private var bars: some View {
+    private func bars(resets: Bool) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(rows) { r in
                 let main = r.main ?? Line(label: "", used: 0)
@@ -58,7 +61,7 @@ package struct UsageView: View {
                     }
                     column((r.stale ? "~" : "") + Self.percent(main.used), [rows.contains(where: \.stale) ? "~100%" : "100%"], .trailing)
                         .monospacedDigit().foregroundStyle(UsageView.tint(main.used))
-                    if !sessionResets.isEmpty {
+                    if resets, !sessionResets.isEmpty {
                         column(main.session ? main.resets ?? "" : "", sessionResets, .leading).foregroundStyle(.secondary)
                     }
                 }
@@ -103,6 +106,7 @@ package struct UsageView: View {
                     Capsule().fill(UsageView.tint(used)).frame(width: max(height, g.size.width * min(used, 1)))
                 }
             }
+            .frame(minWidth: 48, maxWidth: .infinity)   // a bar, not a dot, when the text beside it is long
             .frame(height: height)
         }
     }
@@ -164,9 +168,10 @@ package struct UsageView: View {
         if next != rows { rows = next }
     }
 
-    /// "Claude Code" → "Claude", "Cursor Agent" → "Cursor": room for three in a sidebar.
+    /// "Claude Code" → "Claude", "Cursor Agent" → "Cursor", "GitHub Copilot" → "Copilot": room for three in a sidebar.
     static func short(_ name: String) -> String {
-        [" Code", " CLI", " Agent"].reduce(name) { $0.hasSuffix($1) ? String($0.dropLast($1.count)) : $0 }
+        let n = name.hasPrefix("GitHub ") ? String(name.dropFirst(7)) : name
+        return [" Code", " CLI", " Agent"].reduce(n) { $0.hasSuffix($1) ? String($0.dropLast($1.count)) : $0 }
     }
 
     /// Readings as the daemon passes them: kind ("session", "week", "week · Fable", "Gemini week"), percent, resets.
