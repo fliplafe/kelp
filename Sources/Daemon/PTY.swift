@@ -250,6 +250,9 @@ public final class PTY: @unchecked Sendable {   // phases under `phase`; source 
         // Don't leak the environment of whatever started the daemon (e.g. an agent's session markers) into new sessions.
         var e = daemon.filter { k, _ in !scrubbed.contains { k.hasPrefix($0) } }.merging(env) { $1 }
         e["TERM"] = "xterm-256color"; e["COLORTERM"] = "truecolor"
+        // Ghostty shows OSC 8 links, but programs only print them for terminals they know (TERM_PROGRAM, scrubbed
+        // above): without this, Claude Code's artifact chip is plain text. A user's FORCE_HYPERLINK=0 stays.
+        if e["FORCE_HYPERLINK"] == nil { e["FORCE_HYPERLINK"] = "1" }
         // A daemon started by launchd has no locale, and without one pbcopy reads UTF-8 as Mac Roman: Grok's copies of
         // Russian text came out as "–ü—è—Ç…". A locale the user set stays.
         if !e.keys.contains(where: { ["LANG", "LC_ALL", "LC_CTYPE"].contains($0) }) { e["LANG"] = "en_US.UTF-8" }

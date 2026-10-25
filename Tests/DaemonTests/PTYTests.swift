@@ -31,6 +31,12 @@ final class Box: @unchecked Sendable {
     #expect(PTY.environment([:], ["LC_CTYPE": "UTF-8"])["LANG"] == nil)
 }
 
+/// Programs print ⌘-clickable links (OSC 8) only when told the terminal shows them.
+@Test func aSessionIsToldLinksWork() {
+    #expect(PTY.environment([:], [:])["FORCE_HYPERLINK"] == "1")
+    #expect(PTY.environment(["FORCE_HYPERLINK": "0"], [:])["FORCE_HYPERLINK"] == "0")
+}
+
 /// Agents must own the PTY as controlling terminal, or resizes (SIGWINCH) never reach them.
 @Test func resizeReachesChild() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
