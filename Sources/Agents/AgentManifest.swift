@@ -228,7 +228,7 @@ public struct AgentManifest: Codable, Sendable, Equatable, Identifiable {
         .init(id: "kilo", name: "Kilo Code", command: "kilo", hooks: .pluginDir(env: "KILO_CONFIG_DIR"), modelFlag: "--model",
               resumeArgs: ["--continue"]),
         .init(id: "crush", name: "Crush", command: "crush", resumeArgs: ["--continue"]),
-        .init(id: "droid", name: "Droid", command: "droid", resumeArgs: ["--resume", "--last"]),
+        .init(id: "droid", name: "Droid", command: "droid", hooks: .settingsFlag("--settings"), resumeArgs: ["--resume", "--last"]),
         .init(id: "hermes", name: "Hermes", command: "hermes"),
         .init(id: "copilot", name: "GitHub Copilot", command: "copilot", modelFlag: "--model", resumeArgs: ["--continue"]),
         .init(id: "aider", name: "Aider", command: "aider"),

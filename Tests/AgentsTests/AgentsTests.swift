@@ -62,6 +62,8 @@ import TestSupport
         let m = try #require(AgentManifest.presets.first { $0.id == id })
         #expect(m.argv(resume: true) != m.argv(), "\(id) resumes")
     }
+    // Droid merges a `--settings` file for the run, and runs Claude-style hooks from it (checked with droid exec 0.248).
+    #expect(AgentManifest.presets.first { $0.id == "droid" }?.hooks == .settingsFlag("--settings"))
     let agy = try #require(AgentManifest.presets.first { $0.id == "antigravity" })
     #expect(agy.argv(model: "m", effort: "high", resume: true) == ["agy", "--model", "m", "--effort", "high", "--continue"])
 }
