@@ -11251,6 +11251,38 @@
           }
         }
       }
+    },
+    "+%lld −%lld not committed yet — click for the changes": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%1$lld −%2$lld ещё не закоммичено — нажмите, чтобы увидеть изменения"
+          }
+        }
+      }
+    },
+    "Changes and pull requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения и pull request’ы"
+          }
+        }
+      }
+    },
+    "“+6 −2” and “#128” beside folders. Off also stops checking GitHub for them.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«+6 −2» и «#128» рядом с папками. Если выключить, Kelp ещё и перестаёт ради них опрашивать GitHub."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

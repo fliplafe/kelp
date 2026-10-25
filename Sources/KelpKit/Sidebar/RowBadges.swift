@@ -16,7 +16,9 @@ package final class RowBadges {
         self.app = app
         track(owner: self) { [weak self] in
             guard let self else { return Set<String>() }
-            return Set(app.repos.compactMap { self.folder(project: $0.id)?.id } + app.worktrees.compactMap { self.folder(workspace: $0.id)?.id })
+            // Settings › Appearance › Changes and pull requests off: nothing is watched for the badges, gh isn't asked.
+        guard app.settings.bool("workbench.sidebar.gitBadges") != false else { return Set<String>() }
+        return Set(app.repos.compactMap { self.folder(project: $0.id)?.id } + app.worktrees.compactMap { self.folder(workspace: $0.id)?.id })
         } changed: { [weak self] in self?.follow($0) }
     }
 
@@ -40,13 +42,19 @@ package final class RowBadges {
     }
 
     /// "+6 −2" in green and red (text shades: NSColor.textGreen); a side with nothing changed is left out ("+6", not "+6 −0").
-    package static func changes(_ s: LineStats?) -> NSAttributedString? {
+    /// `compact`, for a row: "+21.7k" from ten thousand lines (generated files), the exact count left to its tooltip.
+    package static func changes(_ s: LineStats?, compact: Bool = false) -> NSAttributedString? {
         guard let s, s.totalAdded + s.totalRemoved > 0 else { return nil }
-        return changes(added: s.totalAdded, removed: s.totalRemoved)
+        return changes(added: s.totalAdded, removed: s.totalRemoved, compact: compact)
     }
-    package static func changes(added: Int, removed: Int) -> NSAttributedString {
+    package static func changes(added: Int, removed: Int, compact: Bool = false) -> NSAttributedString {
         let t = NSMutableAttributedString(), font = NSFont.uiDigits(11, weight: .regular)
-        for (text, n, color) in [("+\(added)", added, NSColor.textGreen), ("−\(removed)", removed, NSColor.textRed)] where n > 0 {
+        func n(_ v: Int) -> String {
+            guard compact, v >= 10_000 else { return "\(v)" }
+            let k = (Double(v) / 100).rounded() / 10
+            return (k == k.rounded() ? String(Int(k)) : String(k)) + "k"
+        }
+        for (text, v, color) in [("+" + n(added), added, NSColor.textGreen), ("−" + n(removed), removed, NSColor.textRed)] where v > 0 {
             t.append(NSAttributedString(string: (t.length > 0 ? " " : "") + text, attributes: [.font: font, .foregroundColor: color]))
         }
         return t

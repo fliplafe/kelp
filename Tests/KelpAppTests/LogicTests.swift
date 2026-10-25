@@ -83,6 +83,13 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(IconTile.initials("2024") == "2" && IconTile.initials("") == "?")
 }
 
+@MainActor @Test func aRowShortensTensOfThousandsOfChangedLines() {
+    #expect(RowBadges.changes(added: 21670, removed: 0, compact: true).string == "+21.7k")   // generated files: not wider than the name
+    #expect(RowBadges.changes(added: 10000, removed: 3, compact: true).string == "+10k −3")
+    #expect(RowBadges.changes(added: 9999, removed: 0, compact: true).string == "+9999")
+    #expect(RowBadges.changes(added: 21670, removed: 0).string == "+21670")   // a diff's header keeps the count
+}
+
 @MainActor @Test func anAgentThatNeedsYouSaysWhatUnderItsName() {
     let ask = SidebarCell.askLine(session(.waiting, summary: "May I run npm test?"), mode: "needsYou")
     #expect(ask?.prefix?.0 == "Asks:" && ask?.text == "May I run npm test?")

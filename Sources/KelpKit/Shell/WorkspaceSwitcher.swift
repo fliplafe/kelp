@@ -121,7 +121,7 @@ final class WorkspaceSwitcher {
             .systemFont(ofSize: 12), tag: 1)
         let folder = app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)
         let changes = label("", .uiDigits(11), tag: 2), pr = label("", .uiDigits(11), tag: 2)
-        if let c = folder.flatMap({ RowBadges.changes(app.rowBadges.stats[$0.id]) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
+        if let c = folder.flatMap({ RowBadges.changes(app.rowBadges.stats[$0.id], compact: true) }) { changes.attributedStringValue = c } else { changes.isHidden = true }
         if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
         let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), tag: 1)
         let top1 = NSStackView(views: [name, place, NSView(), changes, pr, when, mark])

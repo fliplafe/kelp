@@ -181,10 +181,13 @@ final class SidebarCell: NSTableCellView {
 
     /// The stack shows a badge only when there's something to say, and drops it first when the row is narrow.
     private func updateBadges() {
-        let w = folder
-        let c = w.flatMap { RowBadges.changes(app.rowBadges.stats[$0.id]) }
+        let w = app.settings.bool("workbench.sidebar.gitBadges") == false ? nil : folder, stats = w.flatMap { app.rowBadges.stats[$0.id] }
+        let c = RowBadges.changes(stats, compact: true)
         let p = w.flatMap { RowBadges.pr(app.rowBadges.prs[$0.id]) }
-        if let c { changes.attributedTitle = c; changes.toolTip = String(localized: "Not committed yet — click for the changes") }
+        if let c, let stats {
+            changes.attributedTitle = c
+            changes.toolTip = String(localized: "+\(stats.totalAdded) −\(stats.totalRemoved) not committed yet — click for the changes")
+        }
         if let p { pr.attributedTitle = p.0; pr.toolTip = p.1 }
         hasBadge = (c != nil, p != nil)
         fitBadges()
