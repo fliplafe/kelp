@@ -132,17 +132,18 @@ extension OneAtATime {
     }
 }
 
-@Test func theAgentWaitingForYouIsNamedOverTheListToo() throws {
+@Test func theAgentWaitingForYouSaysWhatItAsksAndTheLineOverTheListCountsIt() throws {
     var ask = Session(worktreeId: "w3", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Allow rm?", summary: "Needs permission")
     ask.statusAt = Date() - 60   // it has needed you a while (Inbox.settle)
     try withSidebar(repos: [project], worktrees: [desk("w1", "a"), desk("w2", "b"), desk("w3", "c")], sessions: [ask]) { vc, o in
-        let titled: [String] = rows(of: o).flatMap { $0 }.filter { $0 == "Allow rm?" }   // typed: CI's type check gave up on it
-        #expect(titled.count == 1)   // under its workspace only
-        #expect(texts(vc.view).filter { $0 == "Allow rm?" }.count == 2)   // over the list too
+        let all: [String] = rows(of: o).flatMap { $0 }   // typed: CI's type check gave up on it
+        #expect(all.filter { $0 == "Allow rm?" }.count == 1)                   // listed once, under its workspace
+        #expect(all.contains { $0.contains("Needs permission") })              // what it asks, under its name
+        #expect(texts(vc.view).contains("1 need you"))                         // and counted over the list
     }
 }
 
-@Test func everyAgentThatNeedsYouIsOverTheListAndTheListStaysPut() throws {
+@Test func moreAgentsAskingChangeTheCountNotTheList() throws {
     func asking(_ n: Int) -> [Session] {
         (1...n).map { i in
             var s = Session(worktreeId: "w\(i)", cwd: "/", command: "claude", agent: "claude", status: .waiting, title: "Ask \(i)", summary: "Question \(i)")
@@ -156,12 +157,12 @@ extension OneAtATime {
         vc.app.sessions = asking(4)
         for case let line as AgentSummary in vc.view.subviews { line.update() }   // what it hears on the main queue's next turn
         vc.view.layoutSubtreeIfNeeded()
-        #expect((1...4).allSatisfy { i in texts(vc.view).contains("Ask \(i)") })   // no click needed
-        #expect(top() == before)   // the three that came stack over the list: nothing in it moved
+        #expect(texts(vc.view).contains("4 need you"))
+        #expect(top() == before)   // the line over the list keeps its height: nothing in the list moved
     }
 }
 
-@Test func overTheListAHeadingCountsThemAndEachHasItsRow() throws {
+@Test func theLineOverTheListCountsWhatAskedAndWhatFinished() throws {
     func agent(_ w: String, _ status: AgentStatus, _ title: String) -> Session {
         var s = Session(worktreeId: w, cwd: "/", command: "claude", agent: "claude", status: status, title: title, summary: "Question")
         s.statusAt = Date() - 60
@@ -169,10 +170,10 @@ extension OneAtATime {
         return s
     }
     let sessions = [agent("w1", .waiting, "Ask"), agent("w2", .done, "Report A"), agent("w3", .done, "Report B")]
-    try withSidebar(repos: [project], worktrees: (1...3).map { desk("w\($0)", "b\($0)") }, sessions: sessions) { vc, _ in
-        let all = texts(vc.view)
-        #expect(all.contains { $0.contains("NEEDS YOU") && $0.contains("3") })
-        #expect(all.contains("Report A") && all.contains("Report B"))
+    try withSidebar(repos: [project], worktrees: (1...3).map { desk("w\($0)", "b\($0)") }, sessions: sessions) { vc, o in
+        #expect(texts(vc.view).contains("3 need you"))   // a question and two reports nobody has read
+        let listed: [String] = rows(of: o).flatMap { $0 }
+        #expect(listed.contains("Report A") && listed.contains("Report B"))   // each on its own row
     }
 }
 

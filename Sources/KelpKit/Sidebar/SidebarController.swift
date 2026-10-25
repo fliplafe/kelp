@@ -79,6 +79,7 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
+        scroll.automaticallyAdjustsContentInsets = false   // it starts under the line over the projects, not under the title bar
         // When the list gets shorter (the limits below load), the selected workspace stays in view.
         scroll.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
@@ -117,7 +118,6 @@ final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutl
             noMatch.centerXAnchor.constraint(equalTo: v.centerXAnchor), noMatch.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 40),
             noMatch.widthAnchor.constraint(lessThanOrEqualTo: v.widthAnchor, constant: -32)
         ])
-        summary.list = scroll   // the agents that need you stack over the list's top (it's added after it)
         buildEmpty()
         view = v
         track(owner: self) { [app] in app.repos } changed: { [weak self] _ in self?.refresh() }

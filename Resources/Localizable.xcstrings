@@ -11305,6 +11305,16 @@
           }
         }
       }
+    },
+    "Agents that need you: %lld. Show the next one.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ждут вас: %lld. Показать следующего."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
