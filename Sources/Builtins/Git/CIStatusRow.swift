@@ -39,7 +39,8 @@ final class CIStatusRow: NSView {
         let one = NSMutableParagraphStyle()
         one.lineBreakMode = .byTruncatingTail
         let look: [NSAttributedString.Key: Any] = [.font: NSFont.ui(12), .paragraphStyle: one]
-        let s = NSMutableAttributedString(string: head, attributes: look.merging([.foregroundColor: failing ? NSColor.labelColor : .secondaryLabelColor]) { $1 })
+        let headColor: NSColor = failing ? .labelColor : .secondaryLabelColor
+        let s = NSMutableAttributedString(string: head, attributes: look.merging([.foregroundColor: headColor]) { $1 })
         if !job.isEmpty { s.append(NSAttributedString(string: " · " + job, attributes: look.merging([.foregroundColor: NSColor.secondaryLabelColor]) { $1 })) }
         text.attributedStringValue = s
         time.stringValue = CIRunLook.ago(run.createdAt)
