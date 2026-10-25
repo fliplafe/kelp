@@ -76,6 +76,13 @@ private func session(_ status: AgentStatus, unread: Bool = false, agent: String?
     #expect(SidebarCell.isNews(session(.hibernated, unread: true)))   // bold as long as it's counted
 }
 
+@MainActor @Test func aProjectTileShowsTheInitialsOfItsFirstTwoWords() {
+    #expect(IconTile.initials("AgroStorage") == "AS" && IconTile.initials("AgroTrack") == "AT")   // apart, though both start with A
+    #expect(IconTile.initials("kelp-extensions") == "KE" && IconTile.initials("x_post") == "XP")
+    #expect(IconTile.initials("vangersert") == "V" && IconTile.initials("Area69-0.83-pc") == "AP")   // words that start with a letter
+    #expect(IconTile.initials("2024") == "2" && IconTile.initials("") == "?")
+}
+
 @MainActor @Test func anAgentThatNeedsYouSaysWhatUnderItsName() {
     let ask = SidebarCell.askLine(session(.waiting, summary: "May I run npm test?"), mode: "needsYou")
     #expect(ask?.prefix?.0 == "Asks:" && ask?.text == "May I run npm test?")
