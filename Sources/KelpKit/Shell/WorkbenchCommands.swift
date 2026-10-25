@@ -10,7 +10,7 @@ extension Builtins {
                                    icon: "macwindow", essential: true) { app in
         var c = Contributions()
         c.commands = [
-            cmd("workbench.openSettings", "Settings…", "cmd+,") { SettingsWindow.show(app) },
+            CommandSpec(id: "workbench.openSettings", title: "Settings…", key: "cmd+,") { a in SettingsWindow.show(app, section: a["section"]?.string) },
             cmd("workbench.openExtensions", "Extensions…") { SettingsWindow.show(app, section: "extensions") },
             cmd("workbench.restartService", "Restart Background Service…") { restartService(app) },
             cmd("workbench.toggleSidebar", "Show Sidebar", "cmd+0") { app.workbench.window?.toggleSidebarPanel() },

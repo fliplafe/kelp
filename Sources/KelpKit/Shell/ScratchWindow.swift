@@ -5,7 +5,7 @@ import Core
 /// Agents and terminals outside any project: a floating window over a folder of their own (~/.kelp/scratch), for a
 /// quick question or a one-off script. Window › Scratch, or ⌃⌥⌘K from any app. It isn't listed with the projects.
 @MainActor
-package final class ScratchWindow: NSObject, NSWindowDelegate {
+final class ScratchWindow: NSObject, NSWindowDelegate {
     let app: AppModel
     init(app: AppModel) { self.app = app; super.init() }
     private var panel: NSPanel?

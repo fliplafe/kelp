@@ -188,6 +188,8 @@ extension EditorArea {
             item.image = app.catalog.icon(a.id)
         }
         if agents.isEmpty { m.addItem(withTitle: String(localized: "No agent CLIs found"), action: nil, keyEquivalent: "").isEnabled = false }
+        m.add(String(localized: "More Agents…"), symbol: "square.grid.2x2") { SettingsWindow.show(app, section: "catalog") }
+        m.addItem(.separator())
         m.add(String(localized: "Terminal"), symbol: "terminal") { [weak self] in if let group { self?.layout.focused = group }; self?.newTerminal() }
         if app.catalog.hasTmux(app.worktree(workspaceId)) {
             m.add(String(localized: "tmux Session…"), symbol: "rectangle.split.3x1") { [weak self] in

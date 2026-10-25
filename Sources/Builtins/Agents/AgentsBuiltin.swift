@@ -16,7 +16,8 @@ extension Builtins {
         c.tabs.append(TabProvider(schemes: ["usage"]) { _ in UsageTab(app: app) })
         c.settings = [
             SettingsSection(id: "agents", title: "Agents", icon: "sparkles", specs: [
-                s("agents.default", "Default agent", "enum", "claude", "Used by New Agent (⌥⌘T).", options: app.catalog.all.map(\.id)),
+                s("agents.default", "Default agent", "enum", "claude",
+                  "Used by New Agent (⌥⌘T). Only installed agents are listed; find more in the Agent Catalog.", options: app.catalog.all.map(\.id)),
                 s("agents.skills.extensions", "Skill: write Kelp extensions", "boolean", true,
                   "Claude Code knows where an extension goes, its format and how to connect it. Ask it for a panel, tab or command."),
                 s("agents.skills.settings", "Skill: change Kelp settings", "boolean", true,
@@ -31,7 +32,9 @@ extension Builtins {
                     + "(every 10 minutes) and shows how much of each plan is used at the bottom of the sidebar. Uses no tokens."),
                 s("usage.alertAt", "Warn about limits at (%)", "enum", "80", "A notification when a plan limit reaches this, and again at 95. “off”: none.",
                   options: ["off", "70", "80", "90"])
-            ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { AgentsSettings(app: app).frame(height: 300); AccountsSettings(app: app) }) }),
+            ], custom: { AnyView(VStack(alignment: .leading, spacing: 16) { CatalogLink(app: app); AccountsSettings(app: app) }) }),
+            SettingsSection(id: "catalog", title: "Agent Catalog", icon: "square.grid.2x2", specs: [],
+                            custom: { AnyView(AgentsSettings(app: app).frame(height: 460)) }),
             SettingsSection(id: "terminal", title: "Terminal", icon: "terminal", specs: [
                 s("terminal.fontFamily", "Font", "font", "", "Default: the theme's / Ghostty's font."),
                 s("terminal.fontSize", "Font size", "number", 13),

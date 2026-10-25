@@ -4757,16 +4757,6 @@
         }
       }
     },
-    "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пока ни одного. Kelp запускает CLI агентов — Claude Code, Codex, Gemini: установите один в Терминале, "
-          }
-        }
-      }
-    },
     "None in “%@”.": {
       "localizations": {
         "ru": {
@@ -8442,16 +8432,6 @@
         }
       }
     },
-    "or from Settings › Agents, and it shows up here.": {
-      "localizations": {
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "или в Настройки › Агенты, и он появится здесь."
-          }
-        }
-      }
-    },
     "per active day": {
       "localizations": {
         "ru": {
@@ -10825,6 +10805,268 @@
           "stringUnit": {
             "state": "translated",
             "value": "Развернуть"
+          }
+        }
+      }
+    },
+    "Agent Catalog": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Каталог агентов"
+          }
+        }
+      }
+    },
+    "Used by New Agent (⌥⌘T). Only installed agents are listed; find more in the Agent Catalog.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Его запускает «Новый агент» (⌥⌘T). Здесь только установленные агенты, остальные — в каталоге агентов."
+          }
+        }
+      }
+    },
+    "Search agents": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск агентов"
+          }
+        }
+      }
+    },
+    "No agents match “%@”.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет агентов по запросу «%@»."
+          }
+        }
+      }
+    },
+    "Installing…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устанавливается…"
+          }
+        }
+      }
+    },
+    "In the tab “Install %@”. This page updates when it ends.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Во вкладке «Установить %@». Страница обновится, когда установка закончится."
+          }
+        }
+      }
+    },
+    "Show Tab": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать вкладку"
+          }
+        }
+      }
+    },
+    "The installer finished, but %@ isn’t found yet": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установщик закончил, но %@ пока не найден"
+          }
+        }
+      }
+    },
+    "Kelp asked your login shell for its PATH again and still didn’t see %@. ": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kelp снова прочитал PATH из оболочки входа, но %@ там нет. "
+          }
+        }
+      }
+    },
+    "If the installer printed a line to add to your shell profile, add it, then check again.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Если установщик вывел строку для профиля оболочки, добавьте её и проверьте снова."
+          }
+        }
+      }
+    },
+    "Needs %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужен %@"
+          }
+        }
+      }
+    },
+    "%@ isn’t on this Mac.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ нет на этом Mac."
+          }
+        }
+      }
+    },
+    "Runs its own installer in a terminal tab you can watch.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запускает свой установщик во вкладке терминала — всё видно."
+          }
+        }
+      }
+    },
+    "Install Node.js first, from nodejs.org or with Homebrew:": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала установите Node.js — с nodejs.org или через Homebrew:"
+          }
+        }
+      }
+    },
+    "Install Homebrew first, from brew.sh.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала установите Homebrew с brew.sh."
+          }
+        }
+      }
+    },
+    "Kelp has no installer for %@. Install it as its docs say; it shows up here once %@ is on your PATH.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У Kelp нет установщика для %1$@. Установите его по документации — он появится здесь, когда %2$@ будет в PATH."
+          }
+        }
+      }
+    },
+    "%@ is installed": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ установлен"
+          }
+        }
+      }
+    },
+    "Offered in New Agent.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступен в «Новом агенте»."
+          }
+        }
+      }
+    },
+    "Start %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить %@"
+          }
+        }
+      }
+    },
+    "Open a workspace to start %@ there.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте рабочее пространство, чтобы запустить в нём %@."
+          }
+        }
+      }
+    },
+    "Launch": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запуск"
+          }
+        }
+      }
+    },
+    "Open Catalog": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть каталог"
+          }
+        }
+      }
+    },
+    "%lld installed · %lld more to install": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлено: %1$lld · можно установить ещё: %2$lld"
+          }
+        }
+      }
+    },
+    "More Agents…": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другие агенты…"
+          }
+        }
+      }
+    },
+    "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini. Pick one in the Agent Catalog and it shows up here.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пока ни одного. Kelp запускает CLI агентов — Claude Code, Codex, Gemini. Выберите один в каталоге агентов, и он появится здесь."
+          }
+        }
+      }
+    },
+    "Open Agent Catalog": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть каталог агентов"
           }
         }
       }

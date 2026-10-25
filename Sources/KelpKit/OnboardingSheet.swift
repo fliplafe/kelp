@@ -99,11 +99,13 @@ final class OnboardingSheet: SheetController {
             agents.addArrangedSubview(grid)
         }
         if found.isEmpty {
-            let none = NSTextField(wrappingLabelWithString:
-                                   String(localized: "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini: install one in Terminal, ")
-                                   + String(localized: "or from Settings › Agents, and it shows up here."))
+            let none = NSTextField(wrappingLabelWithString: String(localized:
+                "None found yet. Kelp runs agent CLIs such as Claude Code, Codex or Gemini. Pick one in the Agent Catalog and it shows up here."))
             none.textColor = .secondaryLabelColor; none.preferredMaxLayoutWidth = 410
+            let open = ClosureButton(title: String(localized: "Open Agent Catalog")) { [app] in SettingsWindow.show(app, section: "catalog") }
+            open.bezelStyle = .push
             agents.addArrangedSubview(none)
+            agents.addArrangedSubview(open)
         }
         pick.removeAllItems()
         for a in found {

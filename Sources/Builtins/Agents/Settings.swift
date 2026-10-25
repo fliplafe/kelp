@@ -4,18 +4,21 @@ import Core
 import Agents
 import KelpKit
 
-/// Per-agent: its version (and a newer one, if published), Install / Update in a terminal you can watch, and overrides:
+/// Settings › Agent Catalog: every agent Kelp knows, installed first. Its card: Install (its own installer in a terminal you
+/// can watch, or what it needs first), the version (and a newer one, if published) and Update, and how it's launched:
 /// binary, arguments, environment. Secrets in the environment go to the login keychain. Reset deletes the override.
 struct AgentsSettings: View {
     let app: AppModel
     init(app: AppModel) { self.app = app }
     @State private var agents = AgentManifest.load(dir: Paths.agents)
     @State private var selection: String? = "claude"
+    @State private var query = ""
     @State private var command = ""
     @State private var args = ""
     @State private var env = ""
     @State private var saved = false
     @State private var versions: [String: (version: String?, latest: String?)] = [:]
+    @State private var lacking: Set<String> = []   // npm, brew: not on this Mac
 
     private var updates: [AgentManifest] { agents.filter { newer(versions[$0.id]) } }
     /// "2.1.310" is newer than "2.1.304" (numbers, not text; a build ahead of npm isn't behind).
@@ -23,77 +26,162 @@ struct AgentsSettings: View {
         guard let a = v?.version, let b = v?.latest else { return false }
         return a.compare(b, options: .numeric) == .orderedAscending
     }
+    /// Found on this Mac: offered in New Agent.
+    private func installed(_ m: AgentManifest) -> Bool { app.availability.ids.contains(m.id) || versions[m.id]?.version != nil }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                // What's on this Mac first; the rest under it, greyed, to install from the right side.
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Search agents", text: $query, prompt: Text("Search agents")).textFieldStyle(.roundedBorder).labelsHidden()
+                // What's on this Mac first; the rest under it, greyed, to install from the card.
                 List(selection: $selection) {
-                    let installed = agents.filter { versions[$0.id]?.version != nil }
-                    if versions.isEmpty { ForEach(agents, id: \.id) { row($0) } } else {
-                        Section("Installed") { ForEach(installed, id: \.id) { row($0) } }
-                        Section("Not Installed") { ForEach(agents.filter { a in !installed.contains { $0.id == a.id } }, id: \.id) { row($0) } }
-                    }
+                    let shown = agents.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+                    let have = shown.filter(installed)
+                    if !have.isEmpty { Section("Installed") { ForEach(have, id: \.id) { row($0) } } }
+                    let rest = shown.filter { !installed($0) }
+                    if !rest.isEmpty { Section("Not Installed") { ForEach(rest, id: \.id) { row($0) } } }
+                    if shown.isEmpty { Text("No agents match “\(query)”.").foregroundStyle(.secondary) }
                 }
                 if !updates.isEmpty {
                     Text(updates.count == 1 ? String(localized: "1 update available") : String(localized: "\(updates.count) updates available"))
-                        .font(.caption).foregroundStyle(.orange).padding(8)
+                        .font(.caption).foregroundStyle(.orange)
                 }
             }
-            .frame(width: 190)
-            Form {
-                if let m = current { versionRow(m) }
-                TextField("Command", text: $command)
-                TextField("Arguments", text: $args, prompt: Text("space separated"))
-                TextField("Environment", text: $env, prompt: Text("KEY=value, one per line"), axis: .vertical).lineLimit(3...6)
-                if let m = current, !Self.presets(m.id).isEmpty {
-                    Menu("Provider Presets") {
-                        ForEach(Self.presets(m.id), id: \.0) { name, lines in Button(name) { addLines(lines) } }
-                    }.fixedSize()
-                }
-                HStack {
-                    Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id, dir: Paths.agents); reload() } }
-                    Spacer()
-                    if saved { Text("Saved").foregroundStyle(.secondary) }
-                    Button("Save") { Task { await save() } }.keyboardShortcut(.defaultAction)
-                }
-                Text("Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.kelp/agents — add a file to add any CLI agent.")
-                    .font(.caption).foregroundStyle(.secondary)
+            .frame(width: 210)
+            ScrollView {
+                if let m = current { card(m).padding(.leading, 16).padding(.trailing, 4) }
             }
-            .formStyle(.columns)   // already inside Settings' grouped section: a second card in it would nest boxes
-            .padding(.leading, 16)
         }
         .onChange(of: selection) { _, _ in load() }
         .onAppear { load() }
         .task { await loadVersions() }
+        .onChange(of: app.availability.ids) { _, _ in Task { await loadVersions() } }   // an install ended
     }
 
     private func row(_ a: AgentManifest) -> some View {
-        let version = versions[a.id]?.version
+        let have = installed(a)
+        var caption = String(localized: "Not installed")
+        if have { caption = versions[a.id]?.version.map { "\($0) · \(a.command)" } ?? a.command }
+        else if case .running? = app.availability.phases[a.id] { caption = String(localized: "Installing…") }
         return HStack(spacing: 8) {
-            Image(nsImage: app.catalog.icon(a.id, size: 18) ?? NSImage()).resizable().frame(width: 18, height: 18)
-                .opacity(version == nil && !versions.isEmpty ? 0.5 : 1)
+            Image(nsImage: app.catalog.icon(a.id, size: 18) ?? NSImage()).resizable().frame(width: 18, height: 18).opacity(have ? 1 : 0.5)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text(a.name).foregroundStyle(version == nil && !versions.isEmpty ? .secondary : .primary)
+                    Text(a.name).foregroundStyle(have ? .primary : .secondary)
                     if updates.contains(where: { $0.id == a.id }) { Circle().fill(.orange).frame(width: 6, height: 6).help("Update available") }
                 }
-                Text(version.map { "\($0) · \(a.command)" } ?? (versions.isEmpty ? " " : String(localized: "Not installed")))
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(caption).font(.caption).foregroundStyle(.secondary)
             }
         }.tag(Optional(a.id))
     }
 
+    @ViewBuilder private func card(_ m: AgentManifest) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(nsImage: app.catalog.icon(m.id, size: 32) ?? NSImage()).resizable().frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(m.name).font(.title3.weight(.semibold))
+                    if let about = app.catalog.about(m.id) { Text(about).foregroundStyle(.secondary) }
+                }
+            }
+            if installed(m) {
+                if app.availability.phases[m.id] == .done { started(m) }
+                versionRow(m)
+                Divider()
+                launch(m)
+            } else { installBox(m) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Not on this Mac: its installer, what it needs first, the installer running, or ended without the agent found.
+    @ViewBuilder private func installBox(_ m: AgentManifest) -> some View {
+        switch app.availability.phases[m.id] {
+        case .running(let tab)?:
+            HStack {
+                ProgressView().controlSize(.small)
+                status(String(localized: "Installing…"), String(localized: "In the tab “Install \(m.name)”. This page updates when it ends."))
+                Spacer()
+                Button("Show Tab") { show(tab) }
+            }
+            if let cmd = m.install { commandLine(cmd) }
+        case .notFound(let tab)?:
+            Label {
+                status(String(localized: "The installer finished, but \(m.name) isn’t found yet"),
+                       String(localized: "Kelp asked your login shell for its PATH again and still didn’t see \(m.command). ")
+                        + String(localized: "If the installer printed a line to add to your shell profile, add it, then check again."))
+            } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+            HStack {
+                Spacer()
+                Button("Show Tab") { show(tab) }
+                Button("Check Again") { app.availability.refresh(force: true, rereadPath: true, expecting: [m.id]) }
+            }
+        default:
+            if let cmd = m.install {
+                let tool = m.installNeeds.flatMap { lacking.contains($0) ? $0 : nil }
+                HStack {
+                    if let tool { status(String(localized: "Needs \(tool)"), String(localized: "\(tool) isn’t on this Mac.")) }
+                    else { status(String(localized: "Not installed"), String(localized: "Runs its own installer in a terminal tab you can watch.")) }
+                    Spacer()
+                    Button("Install") { install(m) }.disabled(tool != nil).help(cmd)
+                }
+                if tool == "npm" {
+                    Text("Install Node.js first, from nodejs.org or with Homebrew:").foregroundStyle(.secondary)
+                    commandLine("brew install node")
+                } else if tool != nil {
+                    Text("Install Homebrew first, from brew.sh.").foregroundStyle(.secondary)
+                }
+                commandLine(cmd)
+            } else {
+                Text("Kelp has no installer for \(m.name). Install it as its docs say; it shows up here once \(m.command) is on your PATH.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Found after its installer ended: offered in New Agent from now on.
+    private func started(_ m: AgentManifest) -> some View {
+        HStack {
+            Label { status(String(localized: "\(m.name) is installed"), String(localized: "Offered in New Agent.")) } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            Spacer()
+            Button("Start \(m.name)") {
+                guard let e = app.workbench.editor else { Banner.show(String(localized: "Open a workspace to start \(m.name) there.")); return }
+                e.newAgent(m.id)
+                app.workbench.bringToFront()
+            }
+        }
+    }
+
+    private func status(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).fontWeight(.medium)
+            Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// A command as it runs, to read or copy.
+    private func commandLine(_ cmd: String) -> some View {
+        HStack(alignment: .top) {
+            Text(cmd).font(.system(.caption, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(cmd, forType: .string) } label: {
+                Image(systemName: "doc.on.doc")
+            }.buttonStyle(.borderless).help("Copy")
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+    }
+
     @ViewBuilder private func versionRow(_ m: AgentManifest) -> some View {
         let v = versions[m.id]
-        if let about = app.catalog.about(m.id) { Text(about).foregroundStyle(.secondary) }
         HStack {
             if let installed = v?.version {
                 Text("Version \(installed)") + Text(newer(v) ? String(localized: " · \(v?.latest ?? "") available") : "").foregroundColor(.orange)
-            } else { Text(versions.isEmpty ? String(localized: "Checking…") : String(localized: "Not installed")).foregroundStyle(.secondary) }
+            } else if versions.isEmpty { Text("Checking…").foregroundStyle(.secondary) }
             Spacer()
-            if v?.version == nil, let cmd = m.install { Button("Install…") { install(m) }.help(cmd) }
-            else if let cmd = m.update {
+            if let cmd = m.update {
                 Button(newer(v) ? String(localized: "Update") : String(localized: "Check for Update")) {
                     run(cmd, String(localized: "Update \(m.name)"))
                 }.help(cmd)
@@ -110,6 +198,30 @@ struct AgentsSettings: View {
         }
     }
 
+    /// How Kelp starts it: binary, arguments, environment (and a provider's variables).
+    @ViewBuilder private func launch(_ m: AgentManifest) -> some View {
+        Text("Launch").font(.headline)
+        Form {
+            TextField("Command", text: $command)
+            TextField("Arguments", text: $args, prompt: Text("space separated"))
+            TextField("Environment", text: $env, prompt: Text("KEY=value, one per line"), axis: .vertical).lineLimit(3...6)
+            if !Self.presets(m.id).isEmpty {
+                Menu("Provider Presets") {
+                    ForEach(Self.presets(m.id), id: \.0) { name, lines in Button(name) { addLines(lines) } }
+                }.fixedSize()
+            }
+            HStack {
+                Button("Reset to Default") { if let id = selection { AgentManifest.resetOverride(id: id, dir: Paths.agents); reload() } }
+                Spacer()
+                if saved { Text("Saved").foregroundStyle(.secondary) }
+                Button("Save") { Task { await save() } }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .formStyle(.columns)   // already inside Settings' grouped section: a second card in it would nest boxes
+        Text("Values of *_KEY, *_TOKEN and *_SECRET are kept in your login keychain, not in the agent's file. Agents are JSON files in ~/.kelp/agents — add a file to add any CLI agent.")
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
     /// One remote project's folder per host: a command run in it runs on that host, in its login shell.
     private var hosts: [(host: String, folder: String)] {
         var seen = Set<String>()
@@ -119,6 +231,11 @@ struct AgentsSettings: View {
     private func install(_ m: AgentManifest) {
         guard let e = app.workbench.editor else { run(m.install ?? "", String(localized: "Install \(m.name)")); return }   // says what to do
         app.catalog.install(m, in: e)
+        app.workbench.bringToFront()
+    }
+
+    private func show(_ tab: String) {
+        app.workbench.focus(session: tab)
         app.workbench.bringToFront()
     }
 
@@ -133,12 +250,14 @@ struct AgentsSettings: View {
     }
 
     private func loadVersions() async {
-        // Quiet: a version column beside each agent (npm offline, say); unknown versions just stay blank.
+        // Quiet: a version beside each agent (npm offline, say); unknown versions just stay blank.
         let rows = await app.quiet(AgentsVersions(), timeout: 60) ?? []
         var v: [String: (String?, String?)] = [:]
         for r in rows { v[r.id] = (r.version, r.latest) }
         for a in agents where v[a.id] == nil { v[a.id] = (nil, nil) }
         versions = v
+        // What an installer runs with: without it, Install says what to get first. Not knowing, nothing is held back.
+        if let found = await app.quiet(ProcessWhich(commands: ["npm", "brew"])) { lacking = Set(["npm", "brew"].filter { found[$0] == nil }) }
     }
 
     /// Ways to run an agent through another provider, as environment variables its docs define.
@@ -193,5 +312,19 @@ struct AgentsSettings: View {
         reload(); saved = true
         app.agents = AgentManifest.load(dir: Paths.agents)
         app.availability.refresh(force: true)
+    }
+}
+
+/// Settings › Agents: where the agents are, and how many are on this Mac.
+struct CatalogLink: View {
+    let app: AppModel
+    var body: some View {
+        let all = app.catalog.all.count, have = app.catalog.all.filter { app.availability.ids.contains($0.id) }.count
+        LabeledContent {
+            Button("Open Catalog") { app.extensions.run("workbench.openSettings", ["section": .string("catalog")]) }
+        } label: {
+            Text("Agent Catalog")
+            Text("\(have) installed · \(all - have) more to install")
+        }
     }
 }

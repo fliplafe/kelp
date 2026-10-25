@@ -76,7 +76,7 @@ package struct AgentCatalog {
         default: nil
         }
     }
-    /// What the empty workspace offers to install when no agent is on this Mac; the rest are in Settings › Agents.
+    /// What the empty workspace offers to install when no agent is on this Mac; the rest are in Settings › Agent Catalog.
     var suggested: [AgentManifest] {
         ["claude", "codex", "gemini", "opencode", "cursor"].compactMap { id in all.first { $0.id == id && $0.install != nil } }
     }
@@ -91,7 +91,7 @@ package struct AgentCatalog {
                 Banner.show(String(localized: "\(m.name) installs with \(tool), which isn’t on this Mac. ") + first, style: .error)
                 return
             }
-            e.run(command: cmd, title: String(localized: "Install \(m.name)")) { s in app.availability.watchInstall(s.id) }
+            e.run(command: cmd, title: String(localized: "Install \(m.name)")) { s in app.availability.watchInstall(s.id, agent: m.id) }
         }
     }
 
@@ -125,31 +125,40 @@ package final class AgentAvailability {
     private(set) package var ids = Set(UserDefaults.standard.stringArray(forKey: "agents.available") ?? [])
     @ObservationIgnored private var checkedAt = Date.distantPast
     @ObservationIgnored private var checking = false
-    @ObservationIgnored private var installs = Set<String>()
+    /// A forced check asked for while one runs: it runs once that one is done (an installer's end isn't dropped).
+    @ObservationIgnored private var queued: (rereadPath: Bool, expecting: Set<String>)?
 
-    /// An install running in session `id`: when it ends, the agents are looked for again (no wait for the next check).
-    func watchInstall(_ id: String) { installs.insert(id) }
+    /// An installer started from Kelp, by agent: running in its tab, ended without the agent found, or ended with it.
+    package enum InstallPhase: Equatable { case running(tab: String), notFound(tab: String), done }
+    private(set) package var phases: [String: InstallPhase] = [:]
+
+    /// `agent`'s installer runs in session `tab`: when it ends, the agents are looked for again (no wait for the next check).
+    func watchInstall(_ tab: String, agent: String) { phases[agent] = .running(tab: tab) }
     func sessionChanged(_ s: Session) {
-        if s.status == .exited, installs.remove(s.id) != nil { refresh(force: true, rereadPath: true) }
+        guard s.status == .exited, let agent = phases.first(where: { $0.value == .running(tab: s.id) })?.key else { return }
+        refresh(force: true, rereadPath: true, expecting: [agent])
     }
 
     /// `rereadPath`: an installer just ran; the daemon reads the login shell's PATH again first, for the folder it added to the profile.
-    package func refresh(force: Bool = false, rereadPath: Bool = false) {
+    /// `expecting`: agents whose installer ended; one that still isn't found is `.notFound`.
+    package func refresh(force: Bool = false, rereadPath: Bool = false, expecting: Set<String> = []) {
         let app = self.app
-        guard !checking, force || Date().timeIntervalSince(checkedAt) > 300 else { return }
+        guard !checking else {
+            if force { queued = (rereadPath || queued?.rereadPath == true, expecting.union(queued?.expecting ?? [])) }
+            return
+        }
+        guard force || Date().timeIntervalSince(checkedAt) > 300 else { return }
         checking = true
         let commands = app.catalog.all.filter { $0.id != "custom" }.map { ($0.id, $0.command) }
         let ran = UserDefaults.standard.dictionary(forKey: "agents.ran") as? [String: Double] ?? [:]
         Task.detached(priority: .utility) {
             // The daemon runs the `--version`s: without it every agent would look missing. Asked again next time.
             await app.waitForConnection()
-            guard await MainActor.run(body: { app.connected }) else {
-                await MainActor.run { self.checking = false }; return
-            }
+            guard await MainActor.run(body: { app.connected }) else { await self.finish(nil, expecting: expecting); return }
             if rereadPath { _ = await app.quiet(ProcessRefreshPath(), timeout: 20) }   // the shell is asked: up to 8 s
             // Where the daemon finds them on its login-shell PATH ("tmux" too); not knowing, nothing changes.
             guard let paths = await app.quiet(ProcessWhich(commands: commands.map(\.1) + ["tmux"])) else {
-                await MainActor.run { self.checking = false }; return
+                await self.finish(nil, expecting: expecting); return
             }
             let found = await withTaskGroup(of: (id: String, binary: String)?.self) { g in
                 for (id, command) in commands { if let path = paths[command] { g.addTask { await Self.runs(path, ran: ran, app: app).map { (id, $0) } } } }
@@ -161,13 +170,21 @@ package final class AgentAvailability {
             let tmux = paths["tmux"] != nil
             let ok = Set(found.map(\.id) + (tmux ? ["tmux"] : [])), now = Date().timeIntervalSince1970
             let keep = Dictionary(found.map { ($0.binary, ran[$0.binary] ?? now) }) { a, _ in a }
-            await MainActor.run {
-                let me = self
-                me.checking = false; me.checkedAt = Date()
-                if ok != me.ids { me.ids = ok; UserDefaults.standard.set(Array(ok).sorted(), forKey: "agents.available") }
-                UserDefaults.standard.set(keep, forKey: "agents.ran")
-            }
+            await self.finish(ok, expecting: expecting, ran: keep)
         }
+    }
+
+    /// A check is done: `ok` the agents found (nil: not known). Installers' agents found are `.done`, those expected and not are `.notFound`.
+    private func finish(_ ok: Set<String>?, expecting: Set<String>, ran: [String: Double] = [:]) {
+        checking = false
+        if let ok {
+            checkedAt = Date()
+            if ok != ids { ids = ok; UserDefaults.standard.set(Array(ok).sorted(), forKey: "agents.available") }
+            UserDefaults.standard.set(ran, forKey: "agents.ran")
+            for (id, p) in phases where ok.contains(id) && p != .done { phases[id] = .done }
+        }
+        for id in expecting { if case .running(let tab)? = phases[id] { phases[id] = .notFound(tab: tab) } }
+        if let q = queued { queued = nil; refresh(force: true, rereadPath: q.rereadPath, expecting: q.expecting) }
     }
 
     /// `<path> --version` exits 0 within a few seconds: then the binary (real path and modification time), else nil.

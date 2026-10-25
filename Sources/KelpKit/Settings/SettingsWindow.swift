@@ -78,7 +78,7 @@ private struct SettingsIcon: View {
             .frame(width: 20, height: 20)
             .background(Self.tint[id, default: .gray].gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
-    static let tint: [String: Color] = ["agents": .purple, "terminal": Color(white: 0.3), "appearance": .blue, "keyboard": .gray,
+    static let tint: [String: Color] = ["agents": .purple, "catalog": .indigo, "terminal": Color(white: 0.3), "appearance": .blue, "keyboard": .gray,
                                         "editor": .indigo, "git": .orange, "integrations": .green, "extensions": .gray]
 }
 

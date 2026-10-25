@@ -92,6 +92,7 @@ extension AppDelegate {
         b.add(file, "workspace.new", "agents.new", "terminal.new", "terminal.tmux")
         let with = NSMenu()
         for a in app.catalog.installed(app.catalog.all) { with.add(a.name) { app.extensions.run("agents.new", ["agent": .string(a.id)]) } }
+        with.add(String(localized: "More Agents…"), symbol: "square.grid.2x2") { SettingsWindow.show(app, section: "catalog") }
         with.addItem(.separator())
         for e in b.reg.all.editors {
             with.add(e.title, symbol: e.icon) { e.open(IDEContext.of(app), in: app) }

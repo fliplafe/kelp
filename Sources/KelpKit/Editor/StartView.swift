@@ -105,7 +105,7 @@ final class StartView: NSView, NSTextFieldDelegate {
                 }
             }
             rows.append(StartRow(image: .symbol("ellipsis.circle"), title: String(localized: "More Agents…"), shortcut: nil) {
-                SettingsWindow.show(app, section: "agents")
+                SettingsWindow.show(app, section: "catalog")
             })
         } else if tiles.count > 5 {
             let grid = NSGridView(numberOfColumns: 2, rows: 0)

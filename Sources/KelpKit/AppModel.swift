@@ -24,7 +24,7 @@ package final class AppModel {
     @ObservationIgnored private(set) lazy var agentIcons = AgentIcons()
     @ObservationIgnored private(set) package lazy var quickOpen = QuickOpen(app: self)
     @ObservationIgnored private(set) package lazy var scripts = ScriptsMenu(app: self)
-    @ObservationIgnored private(set) package lazy var scratch = ScratchWindow(app: self)
+    @ObservationIgnored private(set) lazy var scratch = ScratchWindow(app: self)
     @ObservationIgnored private(set) lazy var switcher = WorkspaceSwitcher(app: self)
     /// What a built-in keeps once per app (its windows, what it asked about), made when first asked for: the app holds
     /// them by type without naming them (see `part`).
