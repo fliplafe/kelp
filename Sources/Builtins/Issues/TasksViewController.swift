@@ -11,10 +11,13 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
     init(app: AppModel) { self.app = app; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError() }
     let source = NSPopUpButton()
-    private let split = NSSplitView()
+    let split = NSSplitView()
     private var dividerPlaced = false
-    private let filter = NSPopUpButton()
-    let status = NSTextField(labelWithString: "")
+    let filter = NSPopUpButton()
+    /// What an action just did ("Merged #12"); a line only while it says something.
+    let status = StatusLine(labelWithString: "")
+    /// No rows: the list gives way to this, in the middle, with the button that helps (show all, sign in).
+    let emptyBox = NSStackView(), emptyIcon = NSImageView(), emptyLabel = NSTextField(wrappingLabelWithString: "")
     let table = NSTableView()
     private let detail = NSStackView()
     /// What the selected source lists.
@@ -42,28 +45,7 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         source.target = self
         source.action = #selector(sourceChanged)
         filter.target = self; filter.action = #selector(filterChanged)
-        let refresh = NSButton(image: .symbol("arrow.clockwise", String(localized: "Refresh")), target: self, action: #selector(reload))
-        refresh.bezelStyle = .texturedRounded
-        status.textColor = .secondaryLabelColor; status.font = .ui(11)
-        status.lineBreakMode = .byWordWrapping
-        status.maximumNumberOfLines = 3
-        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for c in [source, filter] as [NSControl] { c.controlSize = .small; c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
-        // An inspector panel: controls on one line, the status under them, list above the details.
-        let controls = NSStackView(views: [source, filter, refresh]); controls.spacing = 6
-        for b in [showAll, setupButton] {
-            b.bezelStyle = .push
-            b.controlSize = .small
-            b.isHidden = true
-        }
-        let statusRow = NSStackView(views: [status, showAll]); statusRow.spacing = 6
-        let bar = NSStackView(views: [controls, statusRow, setupButton])
-        bar.orientation = .vertical
-        bar.alignment = .leading
-        bar.spacing = 4
-        bar.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
-        statusRow.widthAnchor.constraint(equalTo: bar.widthAnchor, constant: -20).isActive = true   // else the status wraps to no width
-        for row in [controls, statusRow] { row.setHuggingPriority(.defaultHigh, for: .vertical) }   // as tall as their views; the list takes the rest
+        let bar = makeBar()
 
         let col = NSTableColumn(identifier: .init("t"))
         table.addTableColumn(col)
@@ -89,7 +71,9 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         split.isVertical = false; split.dividerStyle = .thin
         split.addArrangedSubview(ts); split.addArrangedSubview(ds)
         split.setHoldingPriority(.defaultLow + 1, forSubviewAt: 1)
-        view = stacked(bar, split)
+        let v = stacked(bar, split)
+        addEmpty(to: v)
+        view = v
         sourceChanged(); nameSources()   // the workspace came before the view: show(worktree:) left naming to here
     }
 
@@ -100,10 +84,10 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         dividerPlaced = true; split.setPosition(split.bounds.height * 0.55, ofDividerAt: 0)
     }
 
-    private lazy var showAll = ClosureButton(title: String(localized: "Show All Open")) { [weak self] in self?.filter.selectItem(at: 0); self?.reload() }
+    lazy var showAll = ClosureButton(title: String(localized: "Show All Open")) { [weak self] in self?.filter.selectItem(at: 0); self?.reload() }
     /// gh or glab isn't installed or signed in: runs what fixes it in a terminal tab.
     private var setup: Forge.Setup?
-    private lazy var setupButton = ClosureButton(title: "") { [weak self] in if let self, let s = setup { Forge.run(s, in: app) } }
+    lazy var setupButton = ClosureButton(title: "") { [weak self] in if let self, let s = setup { Forge.run(s, in: app) } }
 
     func show(worktree id: String?) {
         let r = app.worktree(id)?.repoId ?? app.repos.first?.id
@@ -153,14 +137,17 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 
-    @objc private func reload() {
+    @objc func reload() {
         guard let repoId else {
             rows = []
             table.reloadData()
-            status.stringValue = String(localized: "Select a project")
+            showEmpty(String(localized: "Select a project"))
             return
         }
-        let slow = whileSlow { [weak self] in self?.status.stringValue = String(localized: "Loading…") }
+        let slow = whileSlow { [weak self] in
+            guard let self else { return }
+            if rows.isEmpty { showEmpty(String(localized: "Loading…"), symbol: "ellipsis") } else { status.stringValue = String(localized: "Loading…") }
+        }
         let src = source.indexOfSelectedItem, f = filter.indexOfSelectedItem
         Task {
             defer { slow.cancel() }
@@ -194,9 +181,11 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 self.rows = rows
                 // Empty because of the filter isn't the same as empty: say which, and offer the way back.
                 let narrowed = rows.isEmpty && f > 0 && src < 2
-                status.stringValue = rows.isEmpty
-                    ? (narrowed ? String(localized: "None in “\(filter.titleOfSelectedItem ?? "")”.") : String(localized: "Nothing open here."))
-                    : String(localized: "\(rows.count) items")
+                let none = [String(localized: "No open pull requests"), String(localized: "No open issues")]
+                status.stringValue = ""
+                let picked = filter.titleOfSelectedItem ?? ""
+                let why = narrowed ? String(localized: "None in “\(picked)”.") : src < 2 ? none[src] : String(localized: "Nothing here")
+                showEmpty(rows.isEmpty ? why : nil)
                 showAll.isHidden = !narrowed; setupButton.isHidden = true
             } catch {
                 guard repoId == self.repoId, src == source.indexOfSelectedItem else { return }
@@ -206,10 +195,13 @@ final class TasksViewController: NSViewController, NSTableViewDataSource, NSTabl
                 setupButton.title = setup?.title ?? ""
                 setupButton.toolTip = setup?.command
                 setupButton.isHidden = setup == nil
-                self.rows = []; status.stringValue = setup?.note ?? message
-                if src == 2 { status.stringValue = String(localized: "Connect Linear in Settings › Integrations") }
-                if src == 3 { status.stringValue = String(localized: "Connect Jira in Settings › Integrations") }
-                if src == 4, setup == nil { status.stringValue = String(localized: "Projects need `gh auth refresh -s read:project`") }
+                self.rows = []
+                var why = setup?.note ?? message
+                if src == 2 { why = String(localized: "Connect Linear in Settings › Integrations") }
+                if src == 3 { why = String(localized: "Connect Jira in Settings › Integrations") }
+                if src == 4, setup == nil { why = String(localized: "Projects need `gh auth refresh -s read:project`") }
+                status.stringValue = ""
+                showEmpty(why, symbol: "exclamationmark.triangle")
             }
             table.reloadData(); showDetail(nil)
         }
