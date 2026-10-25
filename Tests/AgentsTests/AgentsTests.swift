@@ -506,6 +506,17 @@ import TestSupport
     #expect(ClaudeLimits.parseCursorUsage("Loading usage data...").isEmpty)
 }
 
+@Test func cursorLimitHitParses() {
+    let screen = """
+      Error: You've hit your usage limit
+      chatMessage: *You've hit your free requests limit. [Upgrade to
+      Pro](https://www.cursor.com/api/auth/checkoutDeepControl?tier=pro) for more usage. Your usage limits will reset when your monthly cycle ends on 11/23/2026.*
+    """
+    #expect(ClaudeLimits.parseCursorLimitHit(screen) == .init(kind: "month", percent: 100, resets: "Nov 23"))
+    #expect(ClaudeLimits.parseCursorLimitHit("Error: You've hit your usage limit")?.resets == nil)
+    #expect(ClaudeLimits.parseCursorLimitHit("→ Plan, search, build anything") == nil)
+}
+
 /// Every preset an installer exists for offers it; the ones that need npm or Homebrew say so, so the app can check first.
 @Test func presetsWithAnInstallerOfferIt() throws {
     func installed(_ id: String) throws -> AgentManifest { AgentManifest.withInstall(try #require(AgentManifest.presets.first { $0.id == id })) }

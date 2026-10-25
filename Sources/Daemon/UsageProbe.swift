@@ -20,6 +20,32 @@ extension AgentUsage {
         var readings: [ClaudeLimits.Reading] = []
         var at: Date?, readAt: Date?
         var running = false
+        /// Limits a session saw run out that `/usage` doesn't show (Cursor's Free plan reads 0% after its last request): held
+        /// over the probe's readings until the probe's reset date for that limit moves on.
+        var hits: [ClaudeLimits.Reading] = []
+
+        /// The probe's `readings`, with each hit still in its cycle over the reading of its kind.
+        mutating func read(_ fresh: [ClaudeLimits.Reading]) {
+            hits.removeAll { h in fresh.contains { $0.kind == h.kind && $0.resets != h.resets } }
+            readings = fresh
+            for i in readings.indices {
+                if let hit = hits.first(where: { $0.kind == readings[i].kind }) { readings[i].percent = max(readings[i].percent, hit.percent) }
+            }
+            readAt = Date()
+        }
+    }
+
+    /// A session printed that `agent`'s plan ran out.
+    func recordPlanHit(_ agent: String, _ r: [ClaudeLimits.Reading]) {
+        plans.withLock { plans in
+            var s = plans[agent] ?? PlanState()
+            // No date in what it printed: the cycle /usage last showed.
+            var r = r
+            for i in r.indices where r[i].resets == nil { r[i].resets = s.readings.first { $0.kind == r[i].kind }?.resets }
+            s.hits = r + s.hits.filter { h in !r.contains { $0.kind == h.kind } }
+            s.read(s.readings.isEmpty ? r : s.readings)
+            plans[agent] = s
+        }
     }
 
     static let planProbes = [
@@ -72,7 +98,7 @@ extension AgentUsage {
                     }
                 }
                 plans.withLock { [readings] plans in
-                    if !readings.isEmpty { plans[probe.agent]?.readings = readings; plans[probe.agent]?.readAt = Date() }
+                    if !readings.isEmpty { plans[probe.agent]?.read(readings) }
                     // A failed probe retries in 2 minutes rather than waiting a whole round.
                     plans[probe.agent]?.at = readings.isEmpty ? Date().addingTimeInterval(120 - probe.every) : Date()
                     plans[probe.agent]?.running = false

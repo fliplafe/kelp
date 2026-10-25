@@ -156,6 +156,17 @@ public enum ClaudeLimits {
         return order.compactMap { found[$0] }
     }
 
+    /// What a Cursor Agent session prints when the plan ran out: "You've hit your usage limit … Your usage limits will reset when
+    /// your monthly cycle ends on 11/23/2026." Its `/usage` still says "Included 0% used" on the Free plan, so this is the only sign.
+    /// `resets` as `/usage` writes it ("Nov 23").
+    public static func parseCursorLimitHit(_ text: String) -> Reading? {
+        guard text.contains("hit your usage limit") || text.contains("hit your free requests limit") else { return nil }
+        let date = text.firstMatch(of: /cycle\s+ends\s+on\s+(\d{1,2})\/(\d{1,2})\/\d{4}/)
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let resets = date.flatMap { m in Int(m.1).flatMap { (1...12).contains($0) ? "\(months[$0 - 1]) \(Int(m.2) ?? 0)" : nil } }
+        return Reading(kind: "month", percent: 100, resets: resets)
+    }
+
     /// A TUI's text in pieces: lines, split again at dialog borders (│) and wide gaps between columns.
     static func cells(_ text: String) -> [String] {
         text.components(separatedBy: CharacterSet(charactersIn: "\n│┃║"))

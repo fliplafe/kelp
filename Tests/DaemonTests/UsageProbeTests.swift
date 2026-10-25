@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import Core
 import AgentData
+import Agents
 @testable import Daemon
 
 /// Codex's limits come from its app server, asked over a terminal (with its input closed it quits before answering);
@@ -40,4 +41,15 @@ import AgentData
     let env = { (agent: String) in AgentUsage.planProbes.first { $0.agent == agent }?.env }
     #expect(env("grok")?["GROK_FOLDER_TRUST"] == "0")
     #expect(env("kimi")?["KIMI_CODE_TRUST_WORKSPACE"] == "1")
+}
+
+/// Cursor's Free plan reads "Included 0% used" after its last request: a session's "hit your usage limit" holds 100% until the cycle moves on.
+@Test func aPlanHitHoldsOverTheProbeUntilItsCycleEnds() throws {
+    let usage = { (resets: String) in ClaudeLimits.parseCursorUsage("Usage • Free   Resets \(resets)\nIncluded   0% used\nAuto   0% used") }
+    var s = AgentUsage.PlanState()
+    s.hits = [try #require(ClaudeLimits.parseCursorLimitHit("You've hit your usage limit … your monthly cycle ends on 11/23/2026."))]
+    s.read(usage("Nov 23"))
+    #expect(s.readings.map(\.percent) == [100, 0])
+    s.read(usage("Dec 23"))
+    #expect(s.readings.map(\.percent) == [0, 0] && s.hits.isEmpty)
 }

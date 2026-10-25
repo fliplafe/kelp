@@ -201,6 +201,7 @@ final class Sessions: Sendable {
             if s.status == .exited { _ = live.remove(ls) }
         }
         if rec.agent == "claude" { c.limits = { [weak self] r in self?.agentUsage.recordLimits(r) } }
+        if rec.agent == "cursor" { c.limits = { [weak self] r in self?.agentUsage.recordPlanHit("cursor", r) } }
         // Naming follows the session however it started (created, or woken from a pause).
         c.firstPrompt = { [weak self] text in self?.autoTitle(session: sid, prompt: text) }
         if !["shell", "custom"].contains(rec.agent ?? "custom") {

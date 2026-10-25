@@ -155,10 +155,11 @@ extension LiveSession {
             return String(plain[r]).replacingOccurrences(of: "0.0.0.0", with: "localhost").replacingOccurrences(of: "[::]", with: "localhost")
         }
 
-        /// Plan limits Claude Code printed, when they changed.
+        /// Plan limits Claude Code (or Cursor Agent, once it ran out) printed, when they changed.
         mutating func newLimits(_ d: Data) -> [ClaudeLimits.Reading] {
             guard wantsLimits, d.range(of: Data("limit".utf8)) != nil else { return [] }
-            let found = ClaudeLimits.parse(screen(1200))
+            let found = record.agent == "cursor" ? ClaudeLimits.parseCursorLimitHit(screen(1200)).map { [$0] } ?? []
+                : ClaudeLimits.parse(screen(1200))
             guard !found.isEmpty, found != lastLimits else { return [] }
             lastLimits = found
             return found
