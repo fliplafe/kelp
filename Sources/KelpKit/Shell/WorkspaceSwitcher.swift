@@ -95,7 +95,7 @@ final class WorkspaceSwitcher {
         panel = p
         // On screen once ⌃ is held a moment, as ⌘Tab: a quick ⌃Tab flips without the panel flashing up.
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
+            try await Task.sleep(for: .milliseconds(120))
             if self?.panel === p { window.addChildWindow(p, ordered: .above) }
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .mouseMoved, .leftMouseDown]) { [weak self] e in self?.handle(e) ?? e }
