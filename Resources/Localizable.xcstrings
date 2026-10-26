@@ -11579,12 +11579,22 @@
         }
       }
     },
-    "Available %lld": {
+    "Available": {
       "localizations": {
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Доступны: %lld"
+            "value": "Доступны"
+          }
+        }
+      }
+    },
+    "Not Installed %lld": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не установлены: %lld"
           }
         }
       }

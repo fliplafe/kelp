@@ -13,7 +13,8 @@ struct AgentsSettings: View {
     @State private var files = AgentManifest.load(dir: Paths.agents)
     /// The presets and ~/.kelp/agents, then the agents extensions add.
     private var agents: [AgentManifest] {
-        (files + app.catalog.all.filter { a in !files.contains { $0.id == a.id } }).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        (files + app.catalog.all.filter { a in !files.contains { $0.id == a.id } })
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     @State private var selection: String? = "claude"
     @State private var query = ""
@@ -39,23 +40,23 @@ struct AgentsSettings: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 TextField("Search agents", text: $query, prompt: Text("Search agents")).textFieldStyle(.roundedBorder).labelsHidden()
-                // Every agent Kelp knows, on this Mac or not: one click to the ones there are to install.
-                let haveCount = agents.filter(installed).count
+                // Every agent Kelp knows, on this Mac or not: one click to the ones there are to install. The counts sit on the
+                // sections: in the segments they made the control wider than the column (Russian), pushing the list off the pane.
                 Picker("Show", selection: $show) {
                     Text("All").tag(Show.all)
-                    Text("Installed \(haveCount)").tag(Show.installed)
-                    Text("Available \(agents.count - haveCount)").tag(Show.available)
+                    Text("Installed").tag(Show.installed)
+                    Text("Available").tag(Show.available)
                 }.pickerStyle(.segmented).labelsHidden()
                 // What's on this Mac first; the rest under it, greyed, to install from the card.
                 List(selection: $selection) {
                     let shown = agents.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
                     let have = show == .available ? [] : shown.filter(installed)
-                    if !have.isEmpty { Section("Installed") { ForEach(have, id: \.id) { row($0) } } }
+                    if !have.isEmpty { Section("Installed \(have.count)") { ForEach(have, id: \.id) { row($0) } } }
                     let rest = show == .installed ? [] : shown.filter { !installed($0) }
-                    if !rest.isEmpty { Section("Not Installed") { ForEach(rest, id: \.id) { row($0) } } }
+                    if !rest.isEmpty { Section("Not Installed \(rest.count)") { ForEach(rest, id: \.id) { row($0) } } }
                     if have.isEmpty && rest.isEmpty {
-                        Text(!query.isEmpty ? "No agents match “\(query)”." : show == .installed ? "No agent is installed yet." : "Every agent Kelp knows is installed.")
-                            .foregroundStyle(.secondary)
+                        let empty: LocalizedStringKey = show == .installed ? "No agent is installed yet." : "Every agent Kelp knows is installed."
+                        Text(!query.isEmpty ? "No agents match “\(query)”." : empty).foregroundStyle(.secondary)
                     }
                 }
                 if !updates.isEmpty {
