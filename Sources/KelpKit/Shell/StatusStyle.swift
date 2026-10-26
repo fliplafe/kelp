@@ -211,8 +211,6 @@ struct StatusIcon: View {
 extension Session {
     /// Ended on its own with a non-zero exit code (the daemon says so in the summary): shown red, not grey.
     package var endedWithError: Bool { status == .exited && summary.hasPrefix("Ended with an error") }
-    /// ssh ended with 255: the connection dropped, and a remote agent still runs in its tmux session on the host.
-    package var connectionLost: Bool { exitCode == 255 && RemoteHost.of(cwd) != nil }
     /// What its mark shows: a terminal or a command (not an agent) works while a program in it shows how far it got.
     package var markStatus: AgentStatus { progress != nil && (agent == "shell" || agent == "custom") ? .working : status }
     /// "Working · 40 %" when it says how far it got.
