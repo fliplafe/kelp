@@ -14,9 +14,15 @@ final class WorkspaceSwitcher {
     private var index = 0
     private var rows: [NSView] = []
 
-    /// The menu's ⌃Tab / ⌃⇧Tab.
+    /// The menu's ⌃Tab / ⌃⇧Tab: opens it. While it's open its key monitor steps, and the menu, which still gets the key,
+    /// would step a second time.
     func step(_ by: Int) {
-        if panel == nil { open() }
+        guard panel == nil else { return }
+        open()
+        move(by)
+    }
+
+    private func move(_ by: Int) {
         guard !items.isEmpty else { return }
         index = (index + by + items.count) % items.count
         highlight()
@@ -69,9 +75,9 @@ final class WorkspaceSwitcher {
     private func handle(_ e: NSEvent) -> NSEvent? {
         if e.type == .flagsChanged { if !e.modifierFlags.contains(.control) { commit() }; return e }
         switch e.keyCode {
-        case 48: step(e.modifierFlags.contains(.shift) ? -1 : 1)   // Tab
-        case 125: step(1)    // ↓
-        case 126: step(-1)   // ↑
+        case 48: move(e.modifierFlags.contains(.shift) ? -1 : 1)   // Tab
+        case 125: move(1)    // ↓
+        case 126: move(-1)   // ↑
         case 36, 76: commit()
         case 53: close()     // Esc
         default: break
