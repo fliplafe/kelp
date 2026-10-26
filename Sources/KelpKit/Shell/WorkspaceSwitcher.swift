@@ -56,6 +56,8 @@ final class WorkspaceSwitcher {
         list.widthAnchor.constraint(equalToConstant: 520).isActive = true
         let doc = FlippedView()
         doc.pin(list)
+        // The pointer selects (its moves reach the monitor even though the panel never becomes key).
+        doc.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: doc))
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
@@ -96,7 +98,7 @@ final class WorkspaceSwitcher {
             try? await Task.sleep(for: .milliseconds(120))
             if self?.panel === p { window.addChildWindow(p, ordered: .above) }
         }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] e in self?.handle(e) ?? e }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .mouseMoved, .leftMouseDown]) { [weak self] e in self?.handle(e) ?? e }
         // ⌘Tab away with ⌃ held: letting go of ⌃ never reaches Kelp, and the panel would keep every key.
         resigned = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }   // queue: .main
@@ -105,6 +107,7 @@ final class WorkspaceSwitcher {
 
     private func handle(_ e: NSEvent) -> NSEvent? {
         if e.type == .flagsChanged { if !e.modifierFlags.contains(.control) { commit() }; return e }
+        if e.type != .keyDown { return mouse(e) }
         switch e.keyCode {
         case 48: move(e.modifierFlags.contains(.shift) ? -1 : 1)   // Tab
         case 125: move(1)    // ↓
@@ -114,6 +117,23 @@ final class WorkspaceSwitcher {
         default: break
         }
         return nil   // while it's open, keys belong to it
+    }
+
+    /// Pointing at a row selects it, a click opens it; a click outside closes, as Esc, and goes on where it was meant.
+    private func mouse(_ e: NSEvent) -> NSEvent? {
+        guard let p = panel, e.window === p else {
+            if e.type == .leftMouseDown { close() }
+            return e
+        }
+        guard let i = rows.firstIndex(where: { $0.bounds.contains($0.convert(e.locationInWindow, from: nil)) }) else { return nil }
+        if e.type == .leftMouseDown {
+            index = i
+            commit()
+        } else if i != index {
+            index = i
+            highlight()
+        }
+        return nil
     }
 
     private func commit() {
