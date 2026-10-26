@@ -106,7 +106,7 @@ final class PaneView: NSView {
         let paused = !attached && s?.status == .hibernated
         ended.isHidden = attached && s?.status != .exited
         // ssh ends with 255 when the connection drops: Restart connects again (to the agent still running in tmux there).
-        let lost = s?.exitCode == 255 && s.flatMap { RemoteHost.of($0.cwd) } != nil
+        let lost = s?.connectionLost == true
         endedLabel.stringValue = paused ? String(localized: "Paused") : lost ? String(localized: "Connection lost") : String(localized: "Session ended")
         restartButton.title = paused ? String(localized: "Resume") : lost ? String(localized: "Reconnect") : String(localized: "Restart")
         restartButton.image = NSImage(systemSymbolName: paused ? "play.fill" : "arrow.clockwise", accessibilityDescription: nil)
