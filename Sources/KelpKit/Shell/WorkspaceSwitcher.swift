@@ -50,10 +50,10 @@ final class WorkspaceSwitcher {
         list.orientation = .vertical
         list.spacing = 2
         list.alignment = .leading
-        list.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        list.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
         rows = items.map { row($0) }
-        rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -16).isActive = true }
-        list.widthAnchor.constraint(equalToConstant: 460).isActive = true
+        rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -12).isActive = true }
+        list.widthAnchor.constraint(equalToConstant: 520).isActive = true
         let doc = FlippedView()
         doc.pin(list)
         let scroll = NSScrollView()
@@ -66,13 +66,15 @@ final class WorkspaceSwitcher {
         // At most 440 pt (eight two-line rows) and never past the window; more scroll.
         NSLayoutConstraint.activate([doc.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
                                      doc.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-                                     scroll.widthAnchor.constraint(equalToConstant: 460),
+                                     scroll.widthAnchor.constraint(equalToConstant: 520),
                                      scroll.heightAnchor.constraint(equalToConstant: min(list.fittingSize.height, 440, max(window.frame.height - 80, 160)))])
         let fx = NSVisualEffectView()
-        fx.material = .hudWindow
+        fx.material = .popover   // as Quick Open's
         fx.state = .active
         fx.wantsLayer = true
-        fx.layer?.cornerRadius = 12
+        fx.layer?.cornerRadius = 14
+        fx.layer?.borderWidth = 0.5   // a hairline edge, as menus have, so it holds against a window of the same grey
+        fx.effectiveAppearance.performAsCurrentDrawingAppearance { fx.layer?.borderColor = NSColor.separatorColor.cgColor }
         fx.pin(scroll)
         let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
@@ -128,16 +130,15 @@ final class WorkspaceSwitcher {
     private func highlight() {
         // In view, with the list's margin.
         if rows.indices.contains(index) { rows[index].scrollToVisible(rows[index].bounds.insetBy(dx: 0, dy: -8)) }
-        func labels(_ v: NSView) -> [NSTextField] { v.subviews.flatMap { [$0 as? NSTextField].compactMap { $0 } + labels($0) } }
+        // Grey, as ⌘Tab's: the status marks and the changes' colours stay readable on it.
         for (i, r) in rows.enumerated() {
-            r.layer?.backgroundColor = i == index ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
-            // Tag 2: coloured badges keep their colours.
-            for t in labels(r) where t.tag != 2 {
-                t.textColor = i == index ? .alternateSelectedControlTextColor : (t.tag == 1 ? .secondaryLabelColor : .labelColor)
+            r.effectiveAppearance.performAsCurrentDrawingAppearance {
+                r.layer?.backgroundColor = i == index ? NSColor.labelColor.withAlphaComponent(0.11).cgColor : nil
             }
         }
     }
 
+    /// Status | project | name, place, badges, when — and the agent the mark is for on a second line, when there is one.
     private func row(_ w: Worktree) -> NSView {
         let m = app
         let agents = m.sessions.filter { $0.worktreeId == w.id && $0.agent != "shell" && $0.status != .exited }
@@ -149,26 +150,33 @@ final class WorkspaceSwitcher {
 
         let icon = NSImageView(image: .symbol("folder"))
         if let r = m.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) }
-        icon.widthAnchor.constraint(equalToConstant: 20).isActive = true; icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        let name = label(w.displayName, .systemFont(ofSize: 14, weight: .medium))
+        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true; icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        let name = label(w.displayName, .systemFont(ofSize: 13, weight: .semibold))
         let repo = m.repo(w.repoId)
-        let place = label([repo?.name, w.path == repo?.path || w.branch == w.displayName ? nil : w.branch].compactMap { $0 }.joined(separator: " · "),
-            .systemFont(ofSize: 12), tag: 1)
+        // The branch even for the project's own folder: two projects' "Workspace 1" tell apart.
+        let place = label([repo?.name, w.branch == w.displayName ? nil : w.branch].compactMap { $0 }.joined(separator: " · "), .systemFont(ofSize: 12),
+            secondary: true)
         let folder = app.rowBadges.folder(workspace: w.id) ?? app.rowBadges.folder(project: w.repoId)
-        let changes = label("", .uiDigits(11), tag: 2), pr = label("", .uiDigits(11), tag: 2)
+        let changes = label("", .uiDigits(11)), pr = label("", .uiDigits(11))
         if let c = folder.flatMap({ RowBadges.changes(app.rowBadges.stats[$0.id], compact: true) }) {
             changes.attributedStringValue = c
         } else {
             changes.isHidden = true
         }
         if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
-        let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), tag: 1)
+        let current = w.id == app.workbench.workspaceId
+        let when = label(current ? String(localized: "Current") : shortAgo(lead.map { $0.statusAt ?? $0.createdAt }),
+            .monospacedDigitSystemFont(ofSize: 11, weight: .regular), secondary: true)
+        when.alignment = .right
+        when.setContentCompressionResistancePriority(.required, for: .horizontal)   // a long name truncates, not "Current"
+        when.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true   // the times line up
         let gap = NSView()
         gap.setContentHuggingPriority(.init(1), for: .horizontal)
-        let top1 = NSStackView(views: [name, place, gap, changes, pr, when, mark])
+        let top1 = NSStackView(views: [name, place, gap, changes, pr, when])
         top1.distribution = .fill   // the gap takes the slack: the badges sit at the right edge
-        top1.spacing = 8
-        top1.alignment = .centerY
+        top1.spacing = 6
+        top1.setCustomSpacing(8, after: changes); top1.setCustomSpacing(8, after: pr)
+        top1.alignment = .firstBaseline
         top1.detachesHiddenViews = true
 
         // "Claude Code · Needs your input — Which test runner?  +1 more": the agent the mark is for.
@@ -176,30 +184,34 @@ final class WorkspaceSwitcher {
         let said = lead.map { s in
             [app.catalog.displayName(s) + " · " + s.statusWords, s.summary].filter { !$0.isEmpty }.joined(separator: " — ")
                 + (others > 0 ? "  " + String(localized: "+\(others) more") : "")
-        } ?? String(localized: "No agents")
-        let detail = label(said, .systemFont(ofSize: 12), tag: 1)
+        }
+        let detail = label(said ?? "", .systemFont(ofSize: 12), secondary: true)
+        detail.isHidden = said == nil   // no agents: one line
         let text = NSStackView(views: [top1, detail])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 2
+        text.detachesHiddenViews = true
         top1.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
 
         text.setContentHuggingPriority(.init(1), for: .horizontal)
-        let r = NSStackView(views: [icon, text])
+        let slot = NSView()   // no agents hides the mark; its column stays, so the names line up
+        slot.pin(mark)
+        let r = NSStackView(views: [slot, icon, text])
         r.distribution = .fill
         r.spacing = 10
         r.alignment = .centerY
-        r.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
-        r.wantsLayer = true; r.layer?.cornerRadius = 7
+        r.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
+        r.wantsLayer = true; r.layer?.cornerRadius = 8
         return r
     }
 
-    private func label(_ s: String, _ font: NSFont, tag: Int = 0) -> NSTextField {
+    private func label(_ s: String, _ font: NSFont, secondary: Bool = false) -> NSTextField {
         let t = NSTextField(labelWithString: s)
         t.font = font
-        t.tag = tag
+        t.textColor = secondary ? .secondaryLabelColor : .labelColor
         t.lineBreakMode = .byTruncatingTail
-        t.setContentCompressionResistancePriority(tag == 0 ? .init(400) : .defaultLow, for: .horizontal)
+        t.setContentCompressionResistancePriority(secondary ? .defaultLow : .init(400), for: .horizontal)
         return t
     }
 }
