@@ -128,7 +128,10 @@ final class WorkspaceSwitcher {
         }
         if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
         let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), tag: 1)
-        let top1 = NSStackView(views: [name, place, NSView(), changes, pr, when, mark])
+        let gap = NSView()
+        gap.setContentHuggingPriority(.init(1), for: .horizontal)
+        let top1 = NSStackView(views: [name, place, gap, changes, pr, when, mark])
+        top1.distribution = .fill   // the gap takes the slack: the badges sit at the right edge
         top1.spacing = 8
         top1.alignment = .centerY
         top1.detachesHiddenViews = true
@@ -146,7 +149,9 @@ final class WorkspaceSwitcher {
         text.spacing = 2
         top1.widthAnchor.constraint(equalTo: text.widthAnchor).isActive = true
 
+        text.setContentHuggingPriority(.init(1), for: .horizontal)
         let r = NSStackView(views: [icon, text])
+        r.distribution = .fill
         r.spacing = 10
         r.alignment = .centerY
         r.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
