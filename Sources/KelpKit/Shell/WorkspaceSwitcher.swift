@@ -90,8 +90,12 @@ final class WorkspaceSwitcher {
             frame.origin.y = min(max(frame.minY, s.minY), s.maxY - frame.height)
         }
         p.setFrame(frame, display: true)
-        window.addChildWindow(p, ordered: .above)
         panel = p
+        // On screen once ⌃ is held a moment, as ⌘Tab: a quick ⌃Tab flips without the panel flashing up.
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            if self?.panel === p { window.addChildWindow(p, ordered: .above) }
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] e in self?.handle(e) ?? e }
         // ⌘Tab away with ⌃ held: letting go of ⌃ never reaches Kelp, and the panel would keep every key.
         resigned = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
