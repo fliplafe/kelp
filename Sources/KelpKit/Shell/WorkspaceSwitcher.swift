@@ -1,8 +1,8 @@
 import AppKit
 import Core
 
-/// ⌃Tab, like ⌘Tab for apps: hold ⌃ and press Tab to walk the workspaces you used last (⇧ goes back, ↑↓ too), let go
-/// to switch; Esc stays. A quick ⌃Tab flips to the previous workspace. Each row says what's there: project and branch,
+/// ⌃Tab, like ⌘Tab for apps: hold ⌃ and press Tab to walk the workspaces you used last (⇧ goes back, ↑↓ and the pointer
+/// too), let go or click to switch; Esc stays. A quick ⌃Tab flips to the previous workspace without showing it. Each row says what's there: project and branch,
 /// changes not committed, the pull request, and the agent that matters most (what it's doing and its last words).
 @MainActor
 final class WorkspaceSwitcher {
@@ -152,8 +152,13 @@ final class WorkspaceSwitcher {
     }
 
     private func highlight() {
-        // In view, with the list's margin.
-        if rows.indices.contains(index) { rows[index].scrollToVisible(rows[index].bounds.insetBy(dx: 0, dy: -8)) }
+        if rows.indices.contains(index) {
+            let r = rows[index]
+            r.scrollToVisible(r.bounds.insetBy(dx: 0, dy: -8))   // in view, with the list's margin
+            // VoiceOver says the row: the panel never takes focus, so moving through it would go unheard.
+            NSAccessibility.post(element: r, notification: .announcementRequested,
+                                 userInfo: [.announcement: r.accessibilityLabel() ?? "", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
         // Grey, as ⌘Tab's: the status marks and the changes' colours stay readable on it.
         for (i, r) in rows.enumerated() {
             r.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -171,6 +176,7 @@ final class WorkspaceSwitcher {
         let mark = StatusMark(size: 14)
         mark.status = top
         mark.unread = agents.contains { SidebarCell.shownStatus($0) == top && $0.unread }
+        mark.announces = false   // the row's label says the state
 
         let icon = NSImageView(image: .symbol("folder"))
         if let r = m.repo(w.repoId) { ProjectIcon.show(r.path, in: icon) }
@@ -227,6 +233,8 @@ final class WorkspaceSwitcher {
         r.alignment = .centerY
         r.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         r.wantsLayer = true; r.layer?.cornerRadius = 8
+        r.setAccessibilityElement(true)
+        r.setAccessibilityLabel([w.displayName, place.stringValue, said, when.stringValue].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
         return r
     }
 
