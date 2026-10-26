@@ -202,7 +202,8 @@ extension OneAtATime {
         let shown = texts(zone)
         #expect(shown.contains("Needs You") && shown.contains("8"))
         #expect(shown.filter { $0.hasPrefix("Ask ") }.count == 5 && shown.contains("3 more"))
-        #expect(!texts(vc.view).contains("8 need you"))   // no capsule beside the zone
+        let all = texts(vc.view)   // inside #expect, CI's compiler gives up type-checking it
+        #expect(!all.contains("8 need you"))   // no capsule beside the zone
         #expect(rows(of: o).flatMap { $0 }.filter { $0 == "Ask 1" }.count == 1)   // the list keeps its own row too
     }
 }
