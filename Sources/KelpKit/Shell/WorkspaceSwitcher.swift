@@ -10,6 +10,7 @@ final class WorkspaceSwitcher {
     init(app: AppModel) { self.app = app }
     private var panel: NSPanel?
     private var monitor: Any?
+    private var resigned: NSObjectProtocol?
     private var items: [Worktree] = []
     private var index = 0
     private var rows: [NSView] = []
@@ -70,6 +71,10 @@ final class WorkspaceSwitcher {
         window.addChildWindow(p, ordered: .above)
         panel = p
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] e in self?.handle(e) ?? e }
+        // ⌘Tab away with ⌃ held: letting go of ⌃ never reaches Kelp, and the panel would keep every key.
+        resigned = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }   // queue: .main
+        }
     }
 
     private func handle(_ e: NSEvent) -> NSEvent? {
@@ -94,6 +99,8 @@ final class WorkspaceSwitcher {
     private func close() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if let resigned { NotificationCenter.default.removeObserver(resigned) }
+        resigned = nil
         if let p = panel { p.parent?.removeChildWindow(p); p.orderOut(nil) }
         panel = nil; rows = []
     }
