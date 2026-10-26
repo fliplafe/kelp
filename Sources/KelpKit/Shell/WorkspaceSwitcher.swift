@@ -2,7 +2,8 @@ import AppKit
 import Core
 
 /// ⌃Tab, like ⌘Tab for apps: hold ⌃ and press Tab to walk the workspaces you used last (⇧ goes back, ↑↓ and the pointer
-/// too), let go or click to switch; Esc stays. A quick ⌃Tab flips to the previous workspace without showing it. Each row says what's there: project and branch,
+/// too), let go or click to switch; Esc stays. A quick ⌃Tab flips to the previous workspace without showing it. The one on
+/// screen isn't listed, so the first row is where you were before. Each row says what's there: project and branch,
 /// changes not committed, the pull request, and the agent that matters most (what it's doing and its last words).
 @MainActor
 final class WorkspaceSwitcher {
@@ -14,12 +15,14 @@ final class WorkspaceSwitcher {
     private var items: [Worktree] = []
     private var index = 0
     private var rows: [NSView] = []
+    private var pointerFrom: NSPoint?
 
     /// The menu's ⌃Tab / ⌃⇧Tab: opens it. While it's open its key monitor steps, and the menu, which still gets the key,
     /// would step a second time.
     func step(_ by: Int) {
         guard panel == nil else { return }
         open()
+        index = by > 0 ? -1 : 0   // ⌃Tab lands on the first row, ⌃⇧Tab on the last
         move(by)
     }
 
@@ -33,18 +36,20 @@ final class WorkspaceSwitcher {
     private func open() {
         let m = app, wb = app.workbench
         let live = app.workbench.workspacesInOrder
+        // Ones not on screen since Kelp started keeping the order: by their agents' last stir, else when they were made.
+        let stirred = live.map { w in (w.id, m.sessions.filter { $0.worktreeId == w.id }.map { $0.statusAt ?? $0.createdAt }.max() ?? w.createdAt) }
         var order: [String] = []
-        for id in [wb.workspaceId].compactMap({ $0 }) + wb.history.visits.reversed() where !order.contains(id) && live.contains(where: { $0.id == id }) {
+        for id in wb.recentWorkspaces + stirred.sorted { $0.1 > $1.1 }.map(\.0)
+        where id != wb.workspaceId && !order.contains(id) && live.contains(where: { $0.id == id }) {
             order.append(id)
         }
-        order += live.map(\.id).filter { !order.contains($0) }
         items = order.compactMap(m.worktree)
-        guard items.count > 1, let window = app.workbench.window?.window else {
+        guard !items.isEmpty, let window = app.workbench.window?.window else {
             items = []
             NSSound.beep()
             return
         }
-        index = 0
+        pointerFrom = NSEvent.mouseLocation
 
         let list = NSStackView()
         list.orientation = .vertical
@@ -125,6 +130,11 @@ final class WorkspaceSwitcher {
             if e.type == .leftMouseDown { close() }
             return e
         }
+        // A move picks once it's a real one: the panel opens under the pointer, and brushing the trackpad shouldn't take the pick.
+        if e.type == .mouseMoved, let from = pointerFrom {
+            guard hypot(NSEvent.mouseLocation.x - from.x, NSEvent.mouseLocation.y - from.y) > 10 else { return nil }
+            pointerFrom = nil
+        }
         guard let i = rows.firstIndex(where: { $0.bounds.contains($0.convert(e.locationInWindow, from: nil)) }) else { return nil }
         if e.type == .leftMouseDown {
             index = i
@@ -194,11 +204,9 @@ final class WorkspaceSwitcher {
             changes.isHidden = true
         }
         if let p = folder.flatMap({ RowBadges.pr(app.rowBadges.prs[$0.id]) }) { pr.attributedStringValue = p.0 } else { pr.isHidden = true }
-        let current = w.id == app.workbench.workspaceId
-        let when = label(current ? String(localized: "Current") : shortAgo(lead.map { $0.statusAt ?? $0.createdAt }),
-            .monospacedDigitSystemFont(ofSize: 11, weight: .regular), secondary: true)
+        let when = label(shortAgo(lead.map { $0.statusAt ?? $0.createdAt }), .monospacedDigitSystemFont(ofSize: 11, weight: .regular), secondary: true)
         when.alignment = .right
-        when.setContentCompressionResistancePriority(.required, for: .horizontal)   // a long name truncates, not "Current"
+        when.setContentCompressionResistancePriority(.required, for: .horizontal)   // a long name truncates, not the time
         when.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true   // the times line up
         let gap = NSView()
         gap.setContentHuggingPriority(.init(1), for: .horizontal)
