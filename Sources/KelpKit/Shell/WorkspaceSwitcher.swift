@@ -53,12 +53,27 @@ final class WorkspaceSwitcher {
         list.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         rows = items.map { row($0) }
         rows.forEach { list.addArrangedSubview($0); $0.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -16).isActive = true }
+        list.widthAnchor.constraint(equalToConstant: 460).isActive = true
+        let doc = FlippedView()
+        doc.pin(list)
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay   // a legacy scroller would take the rows' right edge
+        scroll.documentView = doc
+        doc.translatesAutoresizingMaskIntoConstraints = false
+        // At most 440 pt (eight two-line rows) and never past the window; more scroll.
+        NSLayoutConstraint.activate([doc.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+                                     doc.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+                                     scroll.widthAnchor.constraint(equalToConstant: 460),
+                                     scroll.heightAnchor.constraint(equalToConstant: min(list.fittingSize.height, 440, max(window.frame.height - 80, 160)))])
         let fx = NSVisualEffectView()
         fx.material = .hudWindow
         fx.state = .active
         fx.wantsLayer = true
         fx.layer?.cornerRadius = 12
-        fx.pin(list); list.widthAnchor.constraint(equalToConstant: 460).isActive = true
+        fx.pin(scroll)
         let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
         p.backgroundColor = .clear
@@ -67,7 +82,12 @@ final class WorkspaceSwitcher {
         p.contentView = fx
         fx.layoutSubtreeIfNeeded()
         let size = fx.fittingSize, f = window.frame
-        p.setFrame(NSRect(x: f.midX - size.width / 2, y: f.midY - size.height / 2 + f.height * 0.1, width: size.width, height: size.height), display: true)
+        var frame = NSRect(x: f.midX - size.width / 2, y: f.midY - size.height / 2 + f.height * 0.1, width: size.width, height: size.height)
+        if let s = window.screen?.visibleFrame {   // a window partly off screen keeps it on screen
+            frame.origin.x = min(max(frame.minX, s.minX), s.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, s.minY), s.maxY - frame.height)
+        }
+        p.setFrame(frame, display: true)
         window.addChildWindow(p, ordered: .above)
         panel = p
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] e in self?.handle(e) ?? e }
@@ -106,6 +126,8 @@ final class WorkspaceSwitcher {
     }
 
     private func highlight() {
+        // In view, with the list's margin.
+        if rows.indices.contains(index) { rows[index].scrollToVisible(rows[index].bounds.insetBy(dx: 0, dy: -8)) }
         func labels(_ v: NSView) -> [NSTextField] { v.subviews.flatMap { [$0 as? NSTextField].compactMap { $0 } + labels($0) } }
         for (i, r) in rows.enumerated() {
             r.layer?.backgroundColor = i == index ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.85).cgColor : NSColor.clear.cgColor
