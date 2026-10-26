@@ -196,17 +196,19 @@ extension OneAtATime {
         s.statusAt = Date() - 60
         return s
     }
-    try withSidebar(repos: [project], worktrees: (1...8).map { desk("w\($0)", "b\($0)") }, sessions: sessions,
-                    settings: ["workbench.sidebar.needsYou": .string("tabs")]) { vc, o in
+    let desks = (1...8).map { desk("w\($0)", "b\($0)") }
+    // Checked after the closure: its statements are type-checked with the call, and Xcode 26.6 ran out of budget there.
+    var shown: [String] = [], all: [String] = [], listed: [String] = []
+    try withSidebar(repos: [project], worktrees: desks, sessions: sessions, settings: ["workbench.sidebar.needsYou": .string("tabs")]) { vc, o in
         let zone = try #require(vc.view.subviews.compactMap { $0 as? NeedsYouZone }.first)
-        let shown = texts(zone)
-        #expect(shown.contains("Needs You") && shown.contains("8"))
-        #expect(shown.filter { $0.hasPrefix("Ask ") }.count == 5 && shown.contains("3 more"))
-        // Outside #expect: Xcode 26.6's compiler gives up type-checking a negated contains of a literal in it.
-        let capsule = texts(vc.view).contains("8 need you")
-        #expect(!capsule)   // no capsule beside the zone
-        #expect(rows(of: o).flatMap { $0 }.filter { $0 == "Ask 1" }.count == 1)   // the list keeps its own row too
+        shown = texts(zone)
+        all = texts(vc.view)
+        listed = rows(of: o).flatMap { $0 }
     }
+    #expect(shown.contains("Needs You") && shown.contains("8"))
+    #expect(shown.filter { $0.hasPrefix("Ask ") }.count == 5 && shown.contains("3 more"))
+    #expect(!all.contains("8 need you"))   // no capsule beside the zone
+    #expect(listed.filter { $0 == "Ask 1" }.count == 1)   // the list keeps its own row too
 }
 
 @Test func automaticCountsWhileWhoNeedsYouIsInViewAndListsThemOnceOneIsNot() throws {
