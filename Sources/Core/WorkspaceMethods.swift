@@ -19,6 +19,11 @@ public struct RepoRelocate: RPCMethod {
     public static let name = "repo.relocate"; public typealias Result = Repo; public var id: String, path: String
     public init(id: String, path: String) { self.id = id; self.path = path }
 }
+/// The project's own name; an empty one gives back its folder's. Its path, workspaces and agents stay as they are.
+public struct RepoRename: RPCMethod {
+    public static let name = "repo.rename"; public typealias Result = Repo; public var id: String, name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+}
 /// Its workspaces go with it, and their agents stop.
 public struct RepoRemove: RPCMethod {
     public static let name = "repo.remove"; public typealias Result = Done

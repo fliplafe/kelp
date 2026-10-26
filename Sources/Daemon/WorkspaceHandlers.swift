@@ -63,6 +63,19 @@ extension RepoRelocate: Handled {
     }
 }
 
+/// An empty name goes back to the folder's, as `repo.add` named it (a remote project's: the folder on its host).
+extension RepoRename: Handled {
+    func handle(_ workspaces: Workspaces) throws -> Repo {
+        guard var r = try workspaces.store.repo(id) else { throw RPCError.invalidParams("no repo") }
+        let given = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        r.name = !given.isEmpty ? given
+            : workspaces.remotes.of(r.path).map { Workspaces.remoteFolderName($0.path) } ?? (r.path as NSString).lastPathComponent
+        try workspaces.store.save(r)
+        workspaces.notify(ChangedEvent.repo)
+        return r
+    }
+}
+
 /// Its workspaces go with it, and so do their agents: none keeps working out of sight.
 extension RepoRemove: Handled {
     func handle(_ workspaces: Workspaces) throws -> Done {
@@ -202,7 +215,7 @@ extension Workspaces {
 }
 
 extension Methods {
-    static let workspaceMethods: [any Handled.Type] = [RepoAdd.self, RepoList.self, ScratchEnsure.self, RepoRelocate.self, RepoRemove.self,
+    static let workspaceMethods: [any Handled.Type] = [RepoAdd.self, RepoList.self, ScratchEnsure.self, RepoRelocate.self, RepoRename.self, RepoRemove.self,
         WorkspaceCreate.self, WorktreeCreate.self, WorktreeList.self, WorktreeArchive.self, WorktreeRemove.self, WorktreeUnarchive.self,
         WorktreeUnmerged.self, WorktreeDirty.self]
 }
